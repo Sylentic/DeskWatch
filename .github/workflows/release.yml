@@ -1,0 +1,81 @@
+# Builds the bridge for Linux x86_64 and attaches it to a GitHub release when a
+# version tag (v1.0.0, v1.2.3, ...) is pushed. Nothing here runs on branches or
+# pull requests. The release notes are the matching section of CHANGELOG.md.
+#
+# The binary is built on Ubuntu 22.04 (glibc 2.35) so it also runs on Debian 12
+# and newer. It links only libc, libm and libgcc, nothing else to install.
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # The tag must match the crate version, so a mistyped tag cannot ship a
+      # binary that reports another version.
+      - name: Check the tag against the crate version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          crate="$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "deskwatch-bridge") | .version')"
+          if [ "$tag" != "$crate" ]; then
+            echo "tag v$tag does not match deskwatch-bridge $crate" >&2
+            exit 1
+          fi
+
+      - name: Test the bridge
+        run: cargo test -p deskwatch-bridge --locked
+
+      - name: Build
+        run: cargo build -p deskwatch-bridge --release --locked
+
+      - name: Package
+        run: |
+          name="deskwatch-bridge-${GITHUB_REF_NAME}-x86_64-linux"
+          mkdir -p "dist/$name"
+          cp target/release/deskwatch-bridge "dist/$name/"
+          cp -r bridge/config.example.toml deploy homeassistant docs README.md CHANGELOG.md \
+            LICENSE-MIT LICENSE-APACHE "dist/$name/"
+          strip "dist/$name/deskwatch-bridge"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          (cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
+
+      # Release notes: the CHANGELOG section for this version.
+      - name: Extract release notes
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "CHANGELOG.md has no section for $version" >&2
+            exit 1
+          fi
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=""
+          case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" $prerelease \
+            --title "DeskWatch ${GITHUB_REF_NAME}" \
+            --notes-file notes.md \
+            dist/*.tar.gz dist/*.sha256

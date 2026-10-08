@@ -1,6 +1,6 @@
 # Sample systemd unit for the DeskWatch bridge.
 #
-# Install:
+# Full guide: docs/install.md. Short version:
 #   sudo install -m 755 target/release/deskwatch-bridge /usr/local/bin/
 #   sudo install -D -m 644 bridge/config.example.toml /etc/deskwatch/bridge.toml
 #   sudo install -m 644 deploy/deskwatch-bridge.service /etc/systemd/system/

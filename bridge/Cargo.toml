@@ -1,6 +1,6 @@
 [package]
 name = "deskwatch-bridge"
-version = "0.1.0"
+version.workspace = true
 description = "Bridge service for the DeskWatch desk panel: collects data and publishes pages over MQTT"
 edition.workspace = true
 license.workspace = true

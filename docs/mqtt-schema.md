@@ -10,12 +10,13 @@ The panel is a dumb MQTT client. It knows six **page templates** and draws whate
 bridge owns everything else: collecting data, priority, which page is up and for how long.
 
 ```
- sources                        bridge                               panel
- -------                        ------                               -----
- server stats   (local)  --+
- Gitea          (webhook + poll) |--> facts --> composer --> deskpanel/screen  --> draws page
- GitHub         (poll)     |                 (priority,     deskpanel/badges  --> draws header
- Home Assistant (MQTT)   --+                  rotation) <-- deskpanel/panel/event (button)
+ sources                          bridge                      panel
+ -------                          ------                      -----
+ server stats    (local)   --+
+ Prometheus      (poll)    --+
+ Gitea           (webhook) --+--> facts --> composer --> deskpanel/screen --> draws page
+ GitHub / GHE    (poll)    --+              (priority,   deskpanel/badges --> draws header
+ Home Assistant  (MQTT)    --+               rotation) <-- deskpanel/panel/event (button)
 ```
 
 New sources and new rotation rules never need a firmware update. A new kind of data reuses the `list` or `number`
@@ -45,7 +46,7 @@ Button, decided by the bridge from what is on screen:
 
 Configured on the bridge with `[[rotation]]` blocks (see `bridge/config.example.toml`). The stats page is the home
 page; pages with nothing to show (`skip_when_empty`) are skipped; after an interrupt ends, rotation restarts at the
-stats page. Pages the bridge fills today: `stats`, `prs`, `pipelines`, `alerts`.
+stats page. Pages the bridge fills: `stats` (this machine), `prs`, `pipelines`, `alerts`, and with a Prometheus source `stats:<host>` (one per machine) and `containers` (what is down).
 
 ## 4. Topics
 
@@ -97,12 +98,13 @@ for critical alerts at level 0), `warn` (amber) or `success` (green).
 ### `deskpanel/badges`
 
 [Sample](schema/badges.json). Drawn in the header on every page, including interrupts. Badges with `count` 0 are
-left out by the bridge, at most 4 are sent, in this order:
+left out by the bridge, at most 4 are sent (the first four that have a count), in this order:
 
 1. `alerts` (icon `home`): active warning and critical alerts, red if any is critical, else amber (`review`)
 2. `failed` (icon `pipeline`): failed runs not yet dismissed
 3. `prs` (icon `pr`): open PRs over all sources
-4. `warn` (icon `warn`): sources that cannot log in or connect
+4. `server` (icon `server`): hosts and containers that are down (Prometheus source)
+5. `warn` (icon `warn`): sources that cannot log in or connect
 
 Icons: `pr`, `pipeline`, `server`, `warn`, `home`; unknown icons fall back to a dot.
 
