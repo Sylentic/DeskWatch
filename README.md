@@ -19,7 +19,22 @@ The design lives in the project's shared files for now:
 
 ## Status
 
-No code yet. The bridge comes next, followed by a firmware spike once the screen arrives.
+The bridge skeleton is in `bridge/`: it publishes the server stats page every 5 seconds, with retained
+state and online/offline status topics. CI sources (Gitea first, then GitHub and Azure DevOps) come next,
+followed by a firmware spike once the screen arrives.
+
+## Running the bridge
+
+Needs a stable Rust toolchain and a Mosquitto broker.
+
+```sh
+cargo run -p deskwatch-bridge -- bridge/config.example.toml
+mosquitto_sub -t 'deskpanel/#' -v   # in another terminal
+```
+
+The config path can also come from `DESKWATCH_CONFIG`; the default is `/etc/deskwatch/bridge.toml`. The MQTT
+password, if any, is read from `DESKWATCH_MQTT_PASSWORD`. A sample systemd unit is in
+[deploy/deskwatch-bridge.service](deploy/deskwatch-bridge.service).
 
 ## License
 

@@ -1,0 +1,19 @@
+[package]
+name = "deskwatch-bridge"
+version = "0.1.0"
+description = "Bridge service for the DeskWatch desk panel: collects data and publishes pages over MQTT"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow = "1.0.104"
+nix = { version = "0.31.3", features = ["fs"] }
+rumqttc = { version = "0.25.1", default-features = false }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+tokio = { version = "1.53.2", features = ["macros", "rt-multi-thread", "signal", "time"] }
+toml = "1.1.7"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
