@@ -50,6 +50,30 @@ enabled = true
 max_active = 10                 # least urgent, oldest alert is dropped first
 # critical_ids = ["leak", "smoke"]  # only these ids may be critical, others become warnings
 
+# Host stats and container health from a Prometheus server that scrapes
+# node_exporter (and cAdvisor). Each host gets its own page: add
+# `stats:<name>` to the rotation below. The built-in `stats` page (the
+# bridge's own machine, read from /proc) keeps working without Prometheus.
+# [[source.prometheus]]
+# name = "home"                 # required: used in logs
+# url = "http://prometheus.example.lan:9090"  # required
+# # token_file = "prometheus-token"  # optional bearer token, for a proxy in front
+# interval_s = 5                # seconds between queries
+# disk_mountpoint = "/"         # filesystem shown as disk usage
+# # net_device = "eth0"         # default: the busiest real network device
+# hosts = [
+#   # The node_exporter `instance` label alone, or a table. `name` is the page
+#   # name and shown host name (defaults to the instance without its port).
+#   # With `cadvisor` (that machine's cAdvisor instance) and
+#   # `expect_containers`, a container that stopped shows on the `containers`
+#   # page and in the `server` badge.
+#   { instance = "node-exporter:9100", name = "home", cadvisor = "cadvisor:8080", expect_containers = ["gitea", "mosquitto"] },
+#   "nas.example.lan:9100",
+# ]
+# # Replace the PromQL of a field; it must return one value per `instance`.
+# # Fields: cpu_pct, cpu_temp_c, cpu_count, ram_pct, disk_pct, uptime_s.
+# # queries = { cpu_temp_c = 'max by (instance) (node_thermal_zone_temp)' }
+
 # GitHub, GitHub Enterprise Server or GHE.com: open PRs and Actions runs, by
 # polling (GitHub cannot reach your server, so no webhook). Setup is in the
 # README. Uncomment and adjust; add one block per account or instance.
@@ -74,7 +98,9 @@ max_active = 10                 # least urgent, oldest alert is dropped first
 
 # Idle pages, in order. Pages with nothing to show are skipped when
 # skip_when_empty is set. "prs" lists open PRs and "pipelines" the latest run
-# of each pipeline, from every CI source. "alerts" lists active alerts.
+# of each pipeline, from every CI source. "alerts" lists active alerts. With a
+# Prometheus source, add "stats:<host>" for each host and "containers" for what
+# is down. Pages with nothing to show are skipped when skip_when_empty is set.
 [[rotation]]
 page = "stats"
 dwell_s = 20
@@ -93,3 +119,13 @@ skip_when_empty = true
 page = "alerts"
 dwell_s = 8
 skip_when_empty = true
+
+# [[rotation]]
+# page = "stats:home"
+# dwell_s = 15
+# skip_when_empty = true
+
+# [[rotation]]
+# page = "containers"
+# dwell_s = 10
+# skip_when_empty = true

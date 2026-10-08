@@ -157,6 +157,7 @@ impl AlertsConfig {
 pub struct Sources {
     pub gitea: Vec<GiteaConfig>,
     pub github: Vec<GithubConfig>,
+    pub prometheus: Vec<PrometheusConfig>,
 }
 
 /// One `[[source.gitea]]` block: Actions webhooks, job step polling and open PRs.
@@ -225,6 +226,111 @@ pub struct GithubConfig {
     /// Short panel labels for repositories, such as `{ "team/service-a" = "work A" }`.
     #[serde(default)]
     pub alias: BTreeMap<String, String>,
+}
+
+/// One `[[source.prometheus]]` block: host stats from node_exporter and
+/// container health from cAdvisor, read through the Prometheus HTTP API.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PrometheusConfig {
+    /// Instance name, unique among Prometheus sources. Used in logs.
+    pub name: String,
+    /// Prometheus address, such as `http://prometheus.example.lan:9090`.
+    pub url: String,
+    /// Optional credential with a bearer token, for a Prometheus behind a
+    /// reverse proxy. Without it the bridge sends no credentials.
+    pub token_file: Option<String>,
+    /// The machines to show, each on its own `stats:<name>` page. An entry is
+    /// the node_exporter `instance` label (`"node-exporter:9100"`), or a table
+    /// with `instance`, `name`, `cadvisor` and `expect_containers`.
+    pub hosts: Vec<HostConfig>,
+    /// Seconds between queries.
+    #[serde(default = "default_prometheus_interval_s")]
+    pub interval_s: u64,
+    /// Mount point whose usage is shown as `disk_pct`.
+    #[serde(default = "default_disk_mountpoint")]
+    pub disk_mountpoint: String,
+    /// Network device to report. Defaults to the busiest one that is not
+    /// loopback, a bridge or a container interface.
+    pub net_device: Option<String>,
+    /// Replacement PromQL for a stats field, by field name (see
+    /// `prometheus::QUERY_KEYS`). Each query must return one value per `instance`.
+    #[serde(default)]
+    pub queries: BTreeMap<String, String>,
+}
+
+fn default_prometheus_interval_s() -> u64 {
+    5
+}
+
+fn default_disk_mountpoint() -> String {
+    "/".into()
+}
+
+/// One machine of a Prometheus source.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(from = "HostSpec")]
+pub struct HostConfig {
+    /// The `instance` label of its node_exporter target.
+    pub instance: String,
+    /// Page name (`stats:<name>`) and the host name shown on the panel.
+    /// Defaults to the instance without its port.
+    pub name: String,
+    /// The `instance` label of the cAdvisor target on this machine.
+    pub cadvisor: Option<String>,
+    /// Containers that must be running. A stopped container vanishes from
+    /// cAdvisor, so only listed names can be reported as down.
+    pub expect_containers: Vec<String>,
+}
+
+/// The two ways to write a host in the config.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum HostSpec {
+    Instance(String),
+    Table(HostTable),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HostTable {
+    instance: String,
+    name: Option<String>,
+    cadvisor: Option<String>,
+    #[serde(default)]
+    expect_containers: Vec<String>,
+}
+
+impl From<HostSpec> for HostConfig {
+    fn from(spec: HostSpec) -> Self {
+        let table = match spec {
+            HostSpec::Instance(instance) => HostTable {
+                instance,
+                name: None,
+                cadvisor: None,
+                expect_containers: Vec::new(),
+            },
+            HostSpec::Table(table) => table,
+        };
+        let name = table
+            .name
+            .unwrap_or_else(|| default_host_name(&table.instance));
+        Self {
+            instance: table.instance,
+            name,
+            cadvisor: table.cadvisor,
+            expect_containers: table.expect_containers,
+        }
+    }
+}
+
+/// `node-exporter:9100` becomes `node-exporter`; anything that cannot be in
+/// a page name turns into `-`.
+fn default_host_name(instance: &str) -> String {
+    let host = instance.rsplit_once(':').map_or(instance, |(host, _)| host);
+    host.chars()
+        .map(|c| if valid_name(&c.to_string()) { c } else { '-' })
+        .collect()
 }
 
 fn default_github_base_url() -> String {
@@ -336,6 +442,67 @@ impl Config {
                 github.repos.iter().all(|r| valid_repo(r)),
                 "source.github {name}: repos entries must look like owner/name"
             );
+        }
+        let mut names = HashSet::new();
+        for prom in &config.source.prometheus {
+            let name = &prom.name;
+            anyhow::ensure!(
+                valid_name(name),
+                "source.prometheus name {name:?} may only use letters, digits, - and _"
+            );
+            anyhow::ensure!(
+                names.insert(name),
+                "two source.prometheus blocks are named {name:?}"
+            );
+            anyhow::ensure!(
+                prom.url.starts_with("https://") || prom.url.starts_with("http://"),
+                "source.prometheus {name}: url must start with http:// or https://"
+            );
+            anyhow::ensure!(
+                prom.interval_s > 0,
+                "source.prometheus {name}: interval_s must be above 0"
+            );
+            anyhow::ensure!(
+                !prom.hosts.is_empty(),
+                "source.prometheus {name}: hosts needs at least one entry"
+            );
+            // The mount point and device go into PromQL label matchers.
+            for (key, value) in [
+                ("disk_mountpoint", Some(&prom.disk_mountpoint)),
+                ("net_device", prom.net_device.as_ref()),
+            ] {
+                anyhow::ensure!(
+                    value.is_none_or(|v| !v.contains(['"', '\\', '\n'])),
+                    "source.prometheus {name}: {key} must not contain quotes or backslashes"
+                );
+            }
+            let mut pages = HashSet::new();
+            for host in &prom.hosts {
+                anyhow::ensure!(
+                    valid_name(&host.name),
+                    "source.prometheus {name}: host name {:?} may only use letters, digits, - and _ \
+                     (set `name` for instance {:?})",
+                    host.name,
+                    host.instance
+                );
+                anyhow::ensure!(
+                    pages.insert(&host.name),
+                    "source.prometheus {name}: two hosts are named {:?}",
+                    host.name
+                );
+                anyhow::ensure!(
+                    host.expect_containers.is_empty() || host.cadvisor.is_some(),
+                    "source.prometheus {name}: host {} lists expect_containers but has no cadvisor instance",
+                    host.name
+                );
+            }
+            for key in prom.queries.keys() {
+                anyhow::ensure!(
+                    crate::prometheus::QUERY_KEYS.contains(&key.as_str()),
+                    "source.prometheus {name}: unknown query {key:?} (known: {})",
+                    crate::prometheus::QUERY_KEYS.join(", ")
+                );
+            }
         }
         Ok(config)
     }
@@ -491,6 +658,68 @@ mod tests {
             Config::from_toml(&block("token = \"ghp_x\"")).is_err(),
             "no inline tokens"
         );
+    }
+
+    #[test]
+    fn example_prometheus_block_parses_when_uncommented() {
+        let text = include_str!("../config.example.toml");
+        let start = text.find("# [[source.prometheus]]").unwrap();
+        let end = text.find("# GitHub, GitHub Enterprise").unwrap();
+        let block: String = text[start..end]
+            .lines()
+            .map(|l| l.strip_prefix("# ").unwrap_or(l.trim_start_matches('#')))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let config = Config::from_toml(&block).unwrap();
+        let prom = &config.source.prometheus[0];
+        assert_eq!(prom.interval_s, 5);
+        assert_eq!(prom.hosts.len(), 2);
+        assert_eq!(prom.hosts[0].name, "home");
+        assert_eq!(prom.hosts[0].expect_containers, ["gitea", "mosquitto"]);
+        assert_eq!(prom.hosts[1].instance, "nas.example.lan:9100");
+        assert_eq!(prom.hosts[1].name, "nas-example-lan");
+        assert!(prom.queries.is_empty(), "the override line stays commented");
+    }
+
+    #[test]
+    fn prometheus_defaults_and_checks() {
+        let block = |extra: &str| {
+            format!(
+                "[[source.prometheus]]\nname = \"home\"\nurl = \"http://prom.local:9090\"\n\
+                 hosts = [\"node-exporter:9100\"]\n{extra}"
+            )
+        };
+        let config = Config::from_toml(&block("")).unwrap();
+        let prom = &config.source.prometheus[0];
+        assert_eq!((prom.interval_s, prom.disk_mountpoint.as_str()), (5, "/"));
+        assert!(prom.token_file.is_none() && prom.net_device.is_none());
+        assert_eq!(prom.hosts[0].name, "node-exporter");
+        assert_eq!(prom.hosts[0].cadvisor, None);
+
+        let tabled = Config::from_toml(&block("")
+            .replace("[\"node-exporter:9100\"]", "[{ instance = \"a:9100\", name = \"srv\", cadvisor = \"c:8080\", expect_containers = [\"db\"] }]"))
+        .unwrap();
+        assert_eq!(tabled.source.prometheus[0].hosts[0].name, "srv");
+
+        assert!(Config::from_toml(&block("interval_s = 0")).is_err());
+        assert!(Config::from_toml(&block("disk_mountpoint = \"/\\\"x\"")).is_err());
+        assert!(Config::from_toml(&block("queries = { nonsense = \"up\" }")).is_err());
+        assert!(
+            Config::from_toml(&block("").replace("http://prom.local:9090", "prom.local")).is_err()
+        );
+        let no_hosts = block("").replace("[\"node-exporter:9100\"]", "[]");
+        assert!(Config::from_toml(&no_hosts).is_err());
+        // Containers need a cAdvisor instance to be looked up on.
+        let orphan = block("").replace(
+            "[\"node-exporter:9100\"]",
+            "[{ instance = \"a:9100\", expect_containers = [\"db\"] }]",
+        );
+        assert!(Config::from_toml(&orphan).is_err());
+        // Two hosts cannot share a page name.
+        let twice = block("").replace("[\"node-exporter:9100\"]", "[\"a:9100\", \"a:9101\"]");
+        assert!(Config::from_toml(&twice).is_err());
+        let twice = format!("{}{}", block(""), block(""));
+        assert!(Config::from_toml(&twice).is_err(), "duplicate source names");
     }
 
     #[test]

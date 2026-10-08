@@ -5,6 +5,7 @@
 //! state it needs, and reports to the main loop through a `FactSink`:
 //!
 //! - fact updates (`ci::Update`): running jobs, runs, open PRs, notices;
+//! - host stats (`fleet::StatsReport`): machines and what is down on them;
 //! - its health: working, auth failed, or unreachable.
 //!
 //! The main loop owns the fact store and the composer, so there are no locks.
@@ -25,6 +26,7 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 use crate::ci::Update;
+use crate::fleet::StatsReport;
 
 /// Environment variable systemd sets to the folder holding `LoadCredential=` files.
 pub const CREDENTIALS_DIR_ENV: &str = "CREDENTIALS_DIRECTORY";
@@ -134,6 +136,8 @@ pub struct SourceMsg {
 #[derive(Debug)]
 pub enum SourceBody {
     Facts(Vec<Update>),
+    /// Host stats and what is down, replacing the source's previous report.
+    Stats(StatsReport),
     Health(Health),
 }
 
@@ -159,6 +163,11 @@ impl FactSink {
             return true;
         }
         self.send(SourceBody::Facts(updates)).await
+    }
+
+    /// Send host stats. Returns false once the main loop has stopped.
+    pub async fn stats(&self, report: StatsReport) -> bool {
+        self.send(SourceBody::Stats(report)).await
     }
 
     /// Report health. Returns false once the main loop has stopped.

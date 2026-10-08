@@ -7,11 +7,12 @@
 
 use crate::alerts::{AlertMessage, Alerts};
 use crate::ci::CiFacts;
+use crate::fleet::Fleet;
 use crate::model::{
     AlertStatus, Badge, BadgeIcon, Badges, ButtonAction, Level, ListData, Rotation, RotationEntry,
     RowStatus, Screen, ScreenData, StatsData, pick,
 };
-use crate::source::{HealthBoard, SourceBody, SourceMsg};
+use crate::source::{Health, HealthBoard, SourceBody, SourceMsg};
 
 pub struct Composer {
     rotation: Rotation,
@@ -21,6 +22,7 @@ pub struct Composer {
     shown: Level,
     stats: Option<StatsData>,
     pub ci: CiFacts,
+    pub fleet: Fleet,
     pub alerts: Alerts,
     pub health: HealthBoard,
 }
@@ -33,6 +35,7 @@ impl Composer {
             shown: Level::Rotation,
             stats: None,
             ci: CiFacts::default(),
+            fleet: Fleet::default(),
             alerts: Alerts::default(),
             health: HealthBoard::default(),
         }
@@ -46,7 +49,11 @@ impl Composer {
                     self.ci.apply(update, now);
                 }
             }
-            SourceBody::Health(health) => self.health.set(&msg.source, health),
+            SourceBody::Stats(report) => self.fleet.apply(&msg.source, report),
+            SourceBody::Health(health) => {
+                self.health.set(&msg.source, health);
+                self.fleet.set_source_ok(&msg.source, health == Health::Ok);
+            }
         }
     }
 
@@ -88,12 +95,13 @@ impl Composer {
         let mut screen = Screen::new(Level::Rotation, page, data);
         screen.stale = stale;
         screen.pinned = self.rotation.is_pinned();
-        screen.position = self.rotation.position(|p| self.page_data(p).0.is_empty());
+        screen.position = self.rotation.position(|p| self.page_empty(p));
         screen
     }
 
     /// Header badges for the current facts, in the plan's order: active
-    /// alerts, failed runs, open PRs, then sources with a problem.
+    /// alerts, failed runs, open PRs, hosts and containers that are down,
+    /// then sources with a problem.
     pub fn badges(&self) -> Badges {
         let warn = Badge {
             id: "warn".into(),
@@ -101,11 +109,17 @@ impl Composer {
             count: self.health.problems(),
             status: RowStatus::Failed,
         };
+        let server = Badge {
+            id: "server".into(),
+            icon: BadgeIcon::Server,
+            count: self.fleet.down_count(),
+            status: RowStatus::Failed,
+        };
         Badges::new(
             [self.alerts.badge()]
                 .into_iter()
                 .chain(self.ci.badges())
-                .chain([warn]),
+                .chain([server, warn]),
         )
     }
 
@@ -140,14 +154,24 @@ impl Composer {
 
     fn next_page(&mut self, now: u64) {
         // Collect emptiness first: `advance` borrows the rotation mutably.
-        let empty: Vec<String> = ["prs", "pipelines", "alerts"]
-            .into_iter()
-            .filter(|p| self.page_data(p).0.is_empty())
+        let empty: Vec<String> = self
+            .rotation
+            .pages()
+            .filter(|p| self.page_empty(p))
             .map(String::from)
             .collect();
         self.rotation
             .advance(|page| empty.iter().any(|e| e == page) || !known_page(page));
         self.rotated_at = now;
+    }
+
+    /// Does a rotation page have nothing to show? Host pages are empty until
+    /// their source has reported that host.
+    fn page_empty(&self, page: &str) -> bool {
+        match page.strip_prefix("stats:") {
+            Some(host) => self.fleet.host(host).is_none(),
+            None => self.page_data(page).0.is_empty(),
+        }
     }
 
     /// Data for a rotation page, and whether it is stale. CI pages are stale
@@ -162,6 +186,11 @@ impl Composer {
             "prs" => (ScreenData::List(self.ci.pulls_page()), ci_stale),
             "pipelines" => (ScreenData::List(self.ci.pipelines_page()), ci_stale),
             "alerts" => (ScreenData::List(self.alerts.page()), false),
+            "containers" => (ScreenData::List(self.fleet.down_page()), false),
+            host if host.starts_with("stats:") => match self.fleet.host(&host["stats:".len()..]) {
+                Some((stats, stale)) => (ScreenData::Stats(stats.clone()), stale),
+                None => (ScreenData::Stats(StatsData::default()), true),
+            },
             other => (ScreenData::List(ListData::new(other, 0, vec![])), false),
         }
     }
@@ -169,7 +198,10 @@ impl Composer {
 
 /// Pages the composer can fill. Unknown names in the config show as empty lists.
 fn known_page(page: &str) -> bool {
-    matches!(page, "stats" | "prs" | "pipelines" | "alerts")
+    matches!(
+        page,
+        "stats" | "prs" | "pipelines" | "alerts" | "containers"
+    ) || page.starts_with("stats:")
 }
 
 #[cfg(test)]

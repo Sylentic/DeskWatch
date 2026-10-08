@@ -28,9 +28,11 @@ health. The Gitea source is in: a running Actions job takes over the screen with
 shows a red alert until the button is pressed, a successful run flashes green, open PRs show as a header
 badge and a rotation page, and the latest run of every pipeline shows on the pipelines page. A source that
 cannot log in or connect shows as a `warn` badge. The GitHub source does the same for github.com, GitHub
-Enterprise Server and GHE.com by polling. Home Assistant or any script can raise alerts on `deskpanel/alert`
-(info, warning, critical; see below). The panel UI and a desktop simulator are in `ui/` and `sim/`. A firmware
-spike follows once the screen arrives.
+Enterprise Server and GHE.com by polling. The Prometheus source adds a stats page per machine (from
+node_exporter) and a list of stopped containers (from cAdvisor), with the built-in `/proc` stats page as the
+fallback. Home Assistant or any script can raise alerts on `deskpanel/alert` (info, warning, critical; see
+below). The panel UI and a desktop simulator are in `ui/` and `sim/`. A firmware spike follows once the screen
+arrives.
 
 ## Running the bridge
 
@@ -48,6 +50,34 @@ Secrets never go in the config. Keys ending in `_file` name a credential: a plai
 is read from `$CREDENTIALS_DIRECTORY`, which systemd fills from the unit's `LoadCredential=` lines; an
 absolute path is read directly, which is handy when running by hand. The MQTT password can also come from
 `DESKWATCH_MQTT_PASSWORD`.
+
+## Host stats from Prometheus
+
+The built-in `stats` page shows the machine the bridge runs on, read from `/proc`. If you run Prometheus with
+node_exporter (and cAdvisor for containers), a `[[source.prometheus]]` block adds one `stats:<name>` page per
+machine, and a `containers` page that lists expected containers that stopped and hosts that stopped answering.
+Both pages only join the rotation when you list them in `[[rotation]]`; set `skip_when_empty` on `containers`
+so a quiet day never shows it. The `server` badge counts what is down. The bridge only reads, over the HTTP API;
+a bearer token (`token_file`) is optional and only needed behind a proxy.
+
+```toml
+[[source.prometheus]]
+name = "home"
+url = "http://prometheus.example.lan:9090"
+hosts = [
+  { instance = "node-exporter:9100", name = "home", cadvisor = "cadvisor:8080", expect_containers = ["db", "web"] },
+]
+
+[[rotation]]
+page = "stats:home"
+dwell_s = 15
+skip_when_empty = true
+```
+
+`instance` is the label Prometheus gives the node_exporter target. A stopped container disappears from cAdvisor,
+so only the names in `expect_containers` can be reported; they must match the container name exactly. When
+Prometheus cannot be reached or refuses the token, the host pages are greyed out and the `warn` badge appears.
+The PromQL for each field is in `bridge/src/prometheus/mod.rs` and can be replaced per field with `queries`.
 
 ## Demo mode
 

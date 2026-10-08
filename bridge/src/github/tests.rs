@@ -339,6 +339,7 @@ async fn source_polls_a_mock_enterprise_server() {
                     }
                 }
             }
+            SourceBody::Stats(_) => panic!("GitHub sends no host stats"),
         }
     }
     assert_eq!(health, Some(Health::Ok));

@@ -454,6 +454,11 @@ impl Rotation {
         self.pinned
     }
 
+    /// Every page name in the rotation, in order.
+    pub fn pages(&self) -> impl Iterator<Item = &str> {
+        self.entries.iter().map(|e| e.page.as_str())
+    }
+
     /// Long press: pin or unpin the current page.
     pub fn toggle_pin(&mut self) {
         self.pinned = !self.pinned;
