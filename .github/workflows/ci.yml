@@ -1,6 +1,7 @@
 # Checks every pull request and every push to main:
 # formatting, clippy (warnings are errors) and the test suite,
-# on current stable and on the minimum supported Rust version.
+# on current stable and on the minimum supported Rust version (Linux), plus
+# clippy and the tests on Windows. Linux and Windows are the supported systems.
 name: CI
 
 on:
@@ -58,6 +59,34 @@ jobs:
 
       - name: cargo clippy
         if: matrix.lint
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: cargo test
+        run: cargo test --workspace --locked
+
+  # The bridge and the simulator must build and pass their tests on Windows too.
+  # This job is also the only proof that the bundled SDL2 build works there.
+  windows:
+    name: windows (stable)
+    runs-on: windows-latest
+    env:
+      # The runner's CMake 4 refuses the old minimum-version line in SDL2's
+      # CMakeLists.txt; this tells it to accept it.
+      CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+    steps:
+      - uses: actions/checkout@v5
+
+      # SDL2 is built from source by the sdl2 crate (see sim/Cargo.toml), which
+      # needs CMake. It is preinstalled on the runner image.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows
+
+      - name: cargo clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: cargo test

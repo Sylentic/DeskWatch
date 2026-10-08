@@ -1,5 +1,7 @@
 # Installing DeskWatch on a Debian server
 
+> Using Windows? See [windows.md](windows.md). DeskWatch supports Linux and Windows; macOS is not covered yet.
+
 This guide takes a Debian 12 (or newer) server from nothing to a bridge that publishes pages to your
 Mosquitto broker. Every host name, address, port and name below is a placeholder: replace `gitea.example.com`,
 `broker.example.lan` and friends with your own.

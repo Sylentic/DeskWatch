@@ -27,6 +27,7 @@ requests and pipeline status. When a CI job runs it switches to live progress, s
 | Mosquitto logins, ACL example, TLS | Done |
 | Panel UI (`ui/`) and desktop simulator (`sim/`) | Done |
 | Linux x86_64 release binary, systemd unit, install guide | Done |
+| Windows x86_64 release zip (bridge and simulator), install and test guide | Done, see [docs/windows.md](docs/windows.md) |
 
 ## What is not in 0.9
 
@@ -42,6 +43,10 @@ requests and pipeline status. When a CI job runs it switches to live progress, s
 [docs/install.md](docs/install.md) walks through the whole setup on a Debian server: download or build the
 binary, config, systemd unit with credentials, Mosquitto logins, then each source and Home Assistant. A short
 overview of the sources is below.
+
+DeskWatch supports **Linux and Windows**. [docs/windows.md](docs/windows.md) covers Windows: the release zip,
+Mosquitto, trying the demo and the simulator, running the bridge as a service, and what differs (the local
+stats page needs Linux's `/proc` for now). macOS is not covered; contributions are welcome.
 
 ## Running the bridge by hand
 
@@ -132,7 +137,8 @@ draws the six page templates (stats, job, alert, list, number, notice) plus the 
 480x320 landscape screen. The firmware will use it unchanged; until the screen arrives, `sim/`
 (`deskwatch-sim`) draws the same pixels in a desktop window.
 
-The simulator needs SDL2 (`sudo apt install libsdl2-dev` on Debian or Ubuntu).
+The simulator needs SDL2 (`sudo apt install libsdl2-dev` on Debian or Ubuntu). On Windows SDL2 is built in, see
+[docs/windows.md](docs/windows.md).
 
 ```sh
 # Live: subscribe to the bridge's topics; click is the button (hold for a long press)
