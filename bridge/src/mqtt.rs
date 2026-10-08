@@ -12,7 +12,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use rumqttc::{AsyncClient, Event, EventLoop, LastWill, MqttOptions, Packet, QoS};
+use rumqttc::{
+    AsyncClient, Event, EventLoop, LastWill, MqttOptions, Packet, QoS, TlsConfiguration, Transport,
+};
 use serde::Serialize;
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
@@ -20,7 +22,7 @@ use tracing::{debug, info, warn};
 use crate::alerts::AlertMessage;
 use crate::config::MqttConfig;
 use crate::model::{Badges, PanelEvent, Screen};
-use crate::source::Secret;
+use crate::source::{Secret, load_secret};
 
 /// Payloads for the two status topics.
 const ONLINE: &str = "online";
@@ -84,8 +86,8 @@ pub struct Publisher {
 
 /// Build the client and its event loop. Nothing connects until the event loop
 /// is polled, which `run_event_loop` does. `password` is used with
-/// `config.username`.
-pub fn connect(config: &MqttConfig, password: Option<Secret>) -> (Publisher, EventLoop) {
+/// `config.username`. Fails only on unreadable TLS files.
+pub fn connect(config: &MqttConfig, password: Option<Secret>) -> Result<(Publisher, EventLoop)> {
     let topics = Topics::new(&config.topic_prefix);
 
     let mut options = MqttOptions::new(&config.client_id, &config.host, config.port);
@@ -104,6 +106,10 @@ pub fn connect(config: &MqttConfig, password: Option<Secret>) -> (Publisher, Eve
         options.set_credentials(username, password);
     }
 
+    if config.tls {
+        options.set_transport(Transport::tls_with_config(tls_config(config)?));
+    }
+
     // Capacity 16 is plenty: the bridge sends a few messages every few seconds.
     let (client, eventloop) = AsyncClient::new(options, 16);
     let publisher = Publisher {
@@ -111,7 +117,35 @@ pub fn connect(config: &MqttConfig, password: Option<Secret>) -> (Publisher, Eve
         topics,
         seq: Default::default(),
     };
-    (publisher, eventloop)
+    Ok((publisher, eventloop))
+}
+
+/// TLS settings: the platform's trusted roots, or the CA in `ca_file`, plus an
+/// optional client certificate for brokers that require one.
+fn tls_config(config: &MqttConfig) -> Result<TlsConfiguration> {
+    let Some(ca_file) = &config.ca_file else {
+        anyhow::ensure!(
+            config.client_cert_file.is_none(),
+            "mqtt.client_cert_file needs mqtt.ca_file"
+        );
+        return Ok(TlsConfiguration::default());
+    };
+    let ca = std::fs::read(ca_file)
+        .with_context(|| format!("cannot read mqtt.ca_file {}", ca_file.display()))?;
+    let client_auth = match (&config.client_cert_file, &config.client_key_file) {
+        (Some(cert), Some(key)) => {
+            let cert = std::fs::read(cert)
+                .with_context(|| format!("cannot read mqtt.client_cert_file {}", cert.display()))?;
+            let key = load_secret(key).context("mqtt.client_key_file")?;
+            Some((cert, key.expose().as_bytes().to_vec()))
+        }
+        _ => None,
+    };
+    Ok(TlsConfiguration::Simple {
+        ca,
+        alpn: None,
+        client_auth,
+    })
 }
 
 impl Publisher {
@@ -239,6 +273,21 @@ mod tests {
         assert_eq!(topics.panel_status(), "deskpanel/panel/status");
         assert_eq!(topics.panel_event(), "deskpanel/panel/event");
         assert_eq!(topics.alert(), "deskpanel/alert");
+    }
+
+    #[test]
+    fn tls_with_missing_ca_file_is_an_error() {
+        let config = MqttConfig {
+            tls: true,
+            ca_file: Some("/nonexistent/ca.pem".into()),
+            ..MqttConfig::default()
+        };
+        let err = connect_err(&config);
+        assert!(err.contains("mqtt.ca_file"), "{err}");
+    }
+
+    fn connect_err(config: &MqttConfig) -> String {
+        format!("{:#}", tls_config(config).unwrap_err())
     }
 
     #[test]

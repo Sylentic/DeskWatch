@@ -62,6 +62,17 @@ pub struct MqttConfig {
     pub topic_prefix: String,
     /// Seconds between MQTT keep-alive pings.
     pub keep_alive_s: u64,
+    /// Connect with TLS (usually port 8883). Off by default.
+    pub tls: bool,
+    /// PEM file with the CA that signed the broker certificate, for a private
+    /// CA. Without it the system's trusted roots are used. Public, so a plain
+    /// path is fine.
+    pub ca_file: Option<PathBuf>,
+    /// PEM client certificate, only when the broker asks for one
+    /// (`require_certificate true`). Needs `client_key_file` too.
+    pub client_cert_file: Option<PathBuf>,
+    /// Credential holding the PEM private key for `client_cert_file`.
+    pub client_key_file: Option<String>,
 }
 
 impl Default for MqttConfig {
@@ -74,6 +85,10 @@ impl Default for MqttConfig {
             password_file: None,
             topic_prefix: "deskpanel".into(),
             keep_alive_s: 30,
+            tls: false,
+            ca_file: None,
+            client_cert_file: None,
+            client_key_file: None,
         }
     }
 }
@@ -289,6 +304,15 @@ impl Config {
             !config.rotation.is_empty(),
             "rotation needs at least one page"
         );
+        let mqtt = &config.mqtt;
+        anyhow::ensure!(
+            mqtt.client_cert_file.is_some() == mqtt.client_key_file.is_some(),
+            "mqtt.client_cert_file and mqtt.client_key_file go together"
+        );
+        anyhow::ensure!(
+            mqtt.tls || (mqtt.ca_file.is_none() && mqtt.client_cert_file.is_none()),
+            "mqtt.ca_file and mqtt.client_cert_file need mqtt.tls = true"
+        );
         let mut names = HashSet::new();
         for gitea in &config.source.gitea {
             let name = &gitea.name;
@@ -376,6 +400,15 @@ mod tests {
         assert!(config.alerts.enabled);
         assert_eq!(config.alerts.max_active, 10);
         assert!(config.alerts.allows_critical("anything"));
+    }
+
+    #[test]
+    fn mqtt_tls_settings_are_checked() {
+        let ok = "[mqtt]\ntls = true\nport = 8883\nca_file = \"/etc/ca.pem\"\n";
+        assert!(Config::from_toml(ok).is_ok());
+        assert!(Config::from_toml("[mqtt]\nca_file = \"/etc/ca.pem\"\n").is_err());
+        let half = "[mqtt]\ntls = true\nclient_cert_file = \"/etc/c.pem\"\n";
+        assert!(Config::from_toml(half).is_err());
     }
 
     #[test]

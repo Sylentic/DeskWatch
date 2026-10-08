@@ -112,7 +112,7 @@ async fn main() -> Result<()> {
     }
 
     let (inbound_tx, mut inbound_rx) = mpsc::channel(16);
-    let (publisher, eventloop) = mqtt::connect(&config.mqtt, mqtt_password(&config.mqtt)?);
+    let (publisher, eventloop) = mqtt::connect(&config.mqtt, mqtt_password(&config.mqtt)?)?;
     tokio::spawn(mqtt::run_event_loop(
         eventloop,
         publisher.clone(),
