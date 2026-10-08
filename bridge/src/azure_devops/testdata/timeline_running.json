@@ -1,0 +1,164 @@
+{
+  "records": [
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "parentId": null,
+      "type": "Stage",
+      "name": "plan",
+      "state": "completed",
+      "result": "succeeded",
+      "order": 1,
+      "percentComplete": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000002",
+      "parentId": "00000000-0000-0000-0000-000000000001",
+      "type": "Phase",
+      "name": "Plan",
+      "state": "completed",
+      "result": "succeeded",
+      "order": 1,
+      "percentComplete": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000003",
+      "parentId": "00000000-0000-0000-0000-000000000002",
+      "type": "Job",
+      "name": "Plan",
+      "state": "completed",
+      "result": "succeeded",
+      "order": 1,
+      "percentComplete": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000004",
+      "parentId": "00000000-0000-0000-0000-000000000003",
+      "type": "Task",
+      "name": "Initialize job",
+      "state": "completed",
+      "result": "succeeded",
+      "order": 1,
+      "percentComplete": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000005",
+      "parentId": "00000000-0000-0000-0000-000000000003",
+      "type": "Task",
+      "name": "Checkout repo-a@main",
+      "state": "completed",
+      "result": "succeeded",
+      "order": 2,
+      "percentComplete": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000006",
+      "parentId": "00000000-0000-0000-0000-000000000003",
+      "type": "Task",
+      "name": "terraform init",
+      "state": "completed",
+      "result": "succeeded",
+      "order": 3,
+      "percentComplete": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000007",
+      "parentId": "00000000-0000-0000-0000-000000000003",
+      "type": "Task",
+      "name": "terraform plan",
+      "state": "completed",
+      "result": "succeeded",
+      "order": 4,
+      "percentComplete": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000008",
+      "parentId": "00000000-0000-0000-0000-000000000003",
+      "type": "Task",
+      "name": "Finalize Job",
+      "state": "completed",
+      "result": "succeeded",
+      "order": 5,
+      "percentComplete": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000009",
+      "parentId": null,
+      "type": "Stage",
+      "name": "apply",
+      "state": "inProgress",
+      "result": null,
+      "order": 2,
+      "percentComplete": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000010",
+      "parentId": "00000000-0000-0000-0000-000000000009",
+      "type": "Phase",
+      "name": "Apply",
+      "state": "inProgress",
+      "result": null,
+      "order": 1,
+      "percentComplete": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000011",
+      "parentId": "00000000-0000-0000-0000-000000000010",
+      "type": "Job",
+      "name": "Apply",
+      "state": "inProgress",
+      "result": null,
+      "order": 1,
+      "percentComplete": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000012",
+      "parentId": "00000000-0000-0000-0000-000000000011",
+      "type": "Task",
+      "name": "Initialize job",
+      "state": "completed",
+      "result": "succeeded",
+      "order": 1,
+      "percentComplete": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000013",
+      "parentId": "00000000-0000-0000-0000-000000000011",
+      "type": "Task",
+      "name": "Checkout repo-a@main",
+      "state": "completed",
+      "result": "succeeded",
+      "order": 2,
+      "percentComplete": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000014",
+      "parentId": "00000000-0000-0000-0000-000000000011",
+      "type": "Task",
+      "name": "terraform init",
+      "state": "completed",
+      "result": "succeeded",
+      "order": 3,
+      "percentComplete": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000015",
+      "parentId": "00000000-0000-0000-0000-000000000011",
+      "type": "Task",
+      "name": "terraform apply",
+      "state": "inProgress",
+      "result": null,
+      "order": 4,
+      "percentComplete": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000016",
+      "parentId": "00000000-0000-0000-0000-000000000011",
+      "type": "Task",
+      "name": "Finalize Job",
+      "state": "pending",
+      "result": null,
+      "order": 5,
+      "percentComplete": null
+    }
+  ]
+}

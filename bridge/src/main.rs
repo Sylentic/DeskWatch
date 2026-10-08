@@ -24,6 +24,7 @@ use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 use deskwatch_bridge::alerts::Alerts;
+use deskwatch_bridge::azure_devops::AzureDevops;
 use deskwatch_bridge::composer::Composer;
 use deskwatch_bridge::config::{Config, MQTT_PASSWORD_ENV, MqttConfig};
 use deskwatch_bridge::demo::{self, Demo};
@@ -101,6 +102,7 @@ async fn main() -> Result<()> {
     // bridge here, before it connects anywhere. The demo runs none of them.
     let mut gitea = Vec::new();
     let mut github = Vec::new();
+    let mut azure_devops = Vec::new();
     let mut prometheus = Vec::new();
     if !args.demo {
         let mut hooks = Hooks::default();
@@ -109,6 +111,9 @@ async fn main() -> Result<()> {
         }
         for github_config in &config.source.github {
             github.push(Github::new(github_config)?);
+        }
+        for azure_config in &config.source.azure_devops {
+            azure_devops.push(AzureDevops::new(azure_config)?);
         }
         for prometheus_config in &config.source.prometheus {
             prometheus.push(Prometheus::new(prometheus_config)?);
@@ -132,6 +137,9 @@ async fn main() -> Result<()> {
         source::spawn(source, source_tx.clone());
     }
     for source in github {
+        source::spawn(source, source_tx.clone());
+    }
+    for source in azure_devops {
         source::spawn(source, source_tx.clone());
     }
     for source in prometheus {

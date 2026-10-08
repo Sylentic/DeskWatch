@@ -1,0 +1,53 @@
+{
+  "count": 3,
+  "value": [
+    {
+      "pullRequestId": 42,
+      "title": "Add invoice export",
+      "status": "active",
+      "isDraft": false,
+      "creationDate": "2026-10-08T12:00:00.5Z",
+      "repository": {
+        "id": "00000000-0000-0000-0000-000000000001",
+        "name": "repo-a"
+      },
+      "createdBy": {
+        "displayName": "Test User"
+      },
+      "sourceRefName": "refs/heads/feature/x",
+      "targetRefName": "refs/heads/main"
+    },
+    {
+      "pullRequestId": 17,
+      "title": "Update provider versions",
+      "status": "active",
+      "isDraft": false,
+      "creationDate": "2026-10-07T09:30:00Z",
+      "repository": {
+        "id": "00000000-0000-0000-0000-000000000002",
+        "name": "repo-b"
+      },
+      "createdBy": {
+        "displayName": "Test User"
+      },
+      "sourceRefName": "refs/heads/feature/x",
+      "targetRefName": "refs/heads/main"
+    },
+    {
+      "pullRequestId": 43,
+      "title": "WIP: new module layout",
+      "status": "active",
+      "isDraft": true,
+      "creationDate": "2026-10-08T13:00:00Z",
+      "repository": {
+        "id": "00000000-0000-0000-0000-000000000001",
+        "name": "repo-a"
+      },
+      "createdBy": {
+        "displayName": "Test User"
+      },
+      "sourceRefName": "refs/heads/feature/x",
+      "targetRefName": "refs/heads/main"
+    }
+  ]
+}

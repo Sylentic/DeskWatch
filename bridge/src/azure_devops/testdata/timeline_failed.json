@@ -1,0 +1,84 @@
+{
+  "records": [
+    {
+      "id": "00000000-0000-0000-0000-000000000101",
+      "parentId": null,
+      "type": "Stage",
+      "name": "__default",
+      "state": "completed",
+      "result": "failed",
+      "order": 1,
+      "percentComplete": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000102",
+      "parentId": "00000000-0000-0000-0000-000000000101",
+      "type": "Phase",
+      "name": "Build",
+      "state": "completed",
+      "result": "failed",
+      "order": 1,
+      "percentComplete": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000103",
+      "parentId": "00000000-0000-0000-0000-000000000102",
+      "type": "Job",
+      "name": "Build",
+      "state": "completed",
+      "result": "failed",
+      "order": 1,
+      "percentComplete": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000104",
+      "parentId": "00000000-0000-0000-0000-000000000103",
+      "type": "Task",
+      "name": "Initialize job",
+      "state": "completed",
+      "result": "succeeded",
+      "order": 1,
+      "percentComplete": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000105",
+      "parentId": "00000000-0000-0000-0000-000000000103",
+      "type": "Task",
+      "name": "Restore packages",
+      "state": "completed",
+      "result": "succeeded",
+      "order": 2,
+      "percentComplete": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000106",
+      "parentId": "00000000-0000-0000-0000-000000000103",
+      "type": "Task",
+      "name": "Run unit tests",
+      "state": "completed",
+      "result": "failed",
+      "order": 3,
+      "percentComplete": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000107",
+      "parentId": "00000000-0000-0000-0000-000000000103",
+      "type": "Task",
+      "name": "Publish artifacts",
+      "state": "completed",
+      "result": "skipped",
+      "order": 4,
+      "percentComplete": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000108",
+      "parentId": "00000000-0000-0000-0000-000000000103",
+      "type": "Task",
+      "name": "Finalize Job",
+      "state": "completed",
+      "result": "succeeded",
+      "order": 5,
+      "percentComplete": null
+    }
+  ]
+}

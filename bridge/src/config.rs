@@ -172,6 +172,7 @@ impl AlertsConfig {
 pub struct Sources {
     pub gitea: Vec<GiteaConfig>,
     pub github: Vec<GithubConfig>,
+    pub azure_devops: Vec<AzureDevopsConfig>,
     pub prometheus: Vec<PrometheusConfig>,
 }
 
@@ -239,6 +240,50 @@ pub struct GithubConfig {
     #[serde(default = "yes")]
     pub notify_new_prs: bool,
     /// Short panel labels for repositories, such as `{ "team/service-a" = "work A" }`.
+    #[serde(default)]
+    pub alias: BTreeMap<String, String>,
+}
+
+/// One `[[source.azure_devops]]` block: pipeline runs and open PRs from Azure
+/// DevOps Services, by polling.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AzureDevopsConfig {
+    /// Instance name, unique among Azure DevOps sources. Used in logs and fact keys.
+    pub name: String,
+    /// The organisation: the first part of `https://dev.azure.com/<organization>`.
+    pub organization: String,
+    /// Service address. Only changes for tests.
+    #[serde(default = "default_azure_devops_base_url")]
+    pub base_url: String,
+    /// Projects of the organisation to watch.
+    pub projects: Vec<String>,
+    /// Credential with a read-only personal access token (Build: Read,
+    /// Code: Read).
+    pub token_file: String,
+    /// Seconds between polls of builds and open PRs.
+    #[serde(default = "default_github_poll_s")]
+    pub poll_s: u64,
+    /// Seconds between step progress polls while a build is in progress.
+    #[serde(default = "default_github_job_poll_s")]
+    pub job_poll_s: u64,
+    /// May running builds and finished runs take over the screen? `true`,
+    /// `false`, or a list of projects that may. Off by default: work
+    /// pipelines then show in the pipelines page and the badges only.
+    #[serde(default = "interrupt_none")]
+    pub interrupt: Interrupt,
+    /// Count open PRs. Needs the Code (Read) scope.
+    #[serde(default = "yes")]
+    pub pull_requests: bool,
+    /// Flash "New PR" when a poll finds a new, non-draft PR.
+    #[serde(default = "yes")]
+    pub notify_new_prs: bool,
+    /// Pipelines whose name contains one of these words (any case) are
+    /// deploys; the rest are builds.
+    #[serde(default = "default_deploy_words")]
+    pub deploy_words: Vec<String>,
+    /// Short panel labels: for a project by its name, for the PRs of a
+    /// repository by `project/repository`.
     #[serde(default)]
     pub alias: BTreeMap<String, String>,
 }
@@ -352,6 +397,18 @@ fn default_github_base_url() -> String {
     crate::github::api::GITHUB_COM.into()
 }
 
+fn default_azure_devops_base_url() -> String {
+    crate::azure_devops::api::AZURE_DEVOPS_COM.into()
+}
+
+fn interrupt_none() -> Interrupt {
+    Interrupt::All(false)
+}
+
+fn default_deploy_words() -> Vec<String> {
+    vec!["deploy".into(), "terraform".into()]
+}
+
 fn default_github_poll_s() -> u64 {
     60
 }
@@ -386,6 +443,12 @@ fn default_rotation() -> Vec<RotationEntry> {
 }
 
 /// `owner/name` with no empty part. The name goes into API URLs.
+/// Organisation and project names: not empty, no slash, no control characters.
+/// Project names may contain spaces.
+fn valid_azure_name(name: &str) -> bool {
+    !name.trim().is_empty() && !name.contains('/') && !name.chars().any(char::is_control)
+}
+
 fn valid_repo(repo: &str) -> bool {
     let mut parts = repo.split('/');
     let ok = |p: Option<&str>| {
@@ -465,6 +528,34 @@ impl Config {
             anyhow::ensure!(
                 github.repos.iter().all(|r| valid_repo(r)),
                 "source.github {name}: repos entries must look like owner/name"
+            );
+        }
+        let mut names = HashSet::new();
+        for azure in &config.source.azure_devops {
+            let name = &azure.name;
+            anyhow::ensure!(
+                valid_name(name),
+                "source.azure_devops name {name:?} may only use letters, digits, - and _"
+            );
+            anyhow::ensure!(
+                names.insert(name),
+                "two source.azure_devops blocks are named {name:?}"
+            );
+            anyhow::ensure!(
+                azure.base_url.starts_with("https://") || azure.base_url.starts_with("http://"),
+                "source.azure_devops {name}: base_url must start with https://"
+            );
+            anyhow::ensure!(
+                valid_azure_name(&azure.organization),
+                "source.azure_devops {name}: organization must be the name from dev.azure.com/<organization>"
+            );
+            anyhow::ensure!(
+                !azure.projects.is_empty() && azure.projects.iter().all(|p| valid_azure_name(p)),
+                "source.azure_devops {name}: projects needs at least one project name"
+            );
+            anyhow::ensure!(
+                azure.poll_s > 0 && azure.job_poll_s > 0,
+                "source.azure_devops {name}: poll_s and job_poll_s must be above 0"
             );
         }
         let mut names = HashSet::new();
@@ -605,7 +696,7 @@ mod tests {
     fn example_github_blocks_parse_when_uncommented() {
         let text = include_str!("../config.example.toml");
         let start = text.find("# [[source.github]]").unwrap();
-        let end = text.find("# Idle pages").unwrap();
+        let end = text.find("# Azure DevOps Services").unwrap();
         let github: String = text[start..end]
             .lines()
             .map(|l| l.strip_prefix("# ").unwrap_or(l.trim_start_matches('#')))
@@ -689,6 +780,73 @@ mod tests {
         );
         assert!(
             Config::from_toml(&block("token = \"ghp_x\"")).is_err(),
+            "no inline tokens"
+        );
+    }
+
+    #[test]
+    fn example_azure_devops_block_parses_when_uncommented() {
+        let text = include_str!("../config.example.toml");
+        assert!(
+            Config::from_toml(text)
+                .unwrap()
+                .source
+                .azure_devops
+                .is_empty(),
+            "Azure DevOps block is commented out"
+        );
+        let start = text.find("# [[source.azure_devops]]").unwrap();
+        let end = text.find("# Idle pages").unwrap();
+        let block: String = text[start..end]
+            .lines()
+            .map(|l| l.strip_prefix("# ").unwrap_or(l.trim_start_matches('#')))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let config = Config::from_toml(&block).unwrap();
+        let azure = &config.source.azure_devops[0];
+        assert_eq!(azure.organization, "your-org");
+        assert_eq!(azure.projects, ["project-a"]);
+        assert_eq!(azure.alias["project-a/repo-a"], "A");
+    }
+
+    #[test]
+    fn azure_devops_defaults_and_checks() {
+        let block = |extra: &str| {
+            format!(
+                "[[source.azure_devops]]\nname = \"work\"\norganization = \"your-org\"\n\
+                 projects = [\"project-a\"]\ntoken_file = \"azdo-token\"\n{extra}"
+            )
+        };
+        let config = Config::from_toml(&block("")).unwrap();
+        let azure = &config.source.azure_devops[0];
+        assert_eq!(azure.base_url, "https://dev.azure.com");
+        assert_eq!((azure.poll_s, azure.job_poll_s), (60, 5));
+        assert_eq!(azure.interrupt, Interrupt::All(false), "quiet by default");
+        assert!(azure.pull_requests && azure.notify_new_prs);
+        assert_eq!(azure.deploy_words, ["deploy", "terraform"]);
+
+        let some = Config::from_toml(&block("interrupt = [\"project-a\"]")).unwrap();
+        assert!(some.source.azure_devops[0].interrupt.allows("project-a"));
+        // Project names may contain spaces.
+        let spaced = block("").replace("project-a", "My Project");
+        assert!(Config::from_toml(&spaced).is_ok());
+
+        let twice = format!("{}{}", block(""), block(""));
+        assert!(Config::from_toml(&twice).is_err(), "duplicate names");
+        let no_projects = block("").replace("projects = [\"project-a\"]", "projects = []");
+        assert!(Config::from_toml(&no_projects).is_err());
+        let bad_project = block("").replace("project-a", "a/b");
+        assert!(Config::from_toml(&bad_project).is_err());
+        let bad_org = block("").replace("your-org", "");
+        assert!(Config::from_toml(&bad_org).is_err());
+        assert!(Config::from_toml(&block("base_url = \"dev.azure.com\"")).is_err());
+        let no_token = block("").replace("token_file = \"azdo-token\"\n", "");
+        assert!(
+            Config::from_toml(&no_token).is_err(),
+            "token_file is required"
+        );
+        assert!(
+            Config::from_toml(&block("token = \"abc\"")).is_err(),
             "no inline tokens"
         );
     }
