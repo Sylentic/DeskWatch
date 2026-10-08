@@ -14,8 +14,9 @@ use serde::Serialize;
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
-use crate::config::{MQTT_PASSWORD_ENV, MqttConfig};
+use crate::config::MqttConfig;
 use crate::model::{Badges, PanelEvent, Screen};
+use crate::source::Secret;
 
 /// Payloads for the two status topics.
 const ONLINE: &str = "online";
@@ -67,8 +68,9 @@ pub struct Publisher {
 }
 
 /// Build the client and its event loop. Nothing connects until the event loop
-/// is polled, which `run_event_loop` does.
-pub fn connect(config: &MqttConfig) -> (Publisher, EventLoop) {
+/// is polled, which `run_event_loop` does. `password` is used with
+/// `config.username`.
+pub fn connect(config: &MqttConfig, password: Option<Secret>) -> (Publisher, EventLoop) {
     let topics = Topics::new(&config.topic_prefix);
 
     let mut options = MqttOptions::new(&config.client_id, &config.host, config.port);
@@ -80,10 +82,10 @@ pub fn connect(config: &MqttConfig) -> (Publisher, EventLoop) {
         true,
     ));
     if let Some(username) = &config.username {
-        let password = std::env::var(MQTT_PASSWORD_ENV).unwrap_or_default();
-        if password.is_empty() {
-            warn!("mqtt.username is set but {MQTT_PASSWORD_ENV} is empty");
+        if password.is_none() {
+            warn!("mqtt.username is set but there is no password");
         }
+        let password = password.as_ref().map(Secret::expose).unwrap_or_default();
         options.set_credentials(username, password);
     }
 

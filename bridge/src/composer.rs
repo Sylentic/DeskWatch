@@ -1,14 +1,16 @@
 //! The composer: decides which page is on the panel right now.
 //!
-//! It owns the idle rotation, the latest server stats and the CI facts. Every
-//! tick the main loop asks it for the current screen and badges and publishes
-//! them when they change. Button presses from the panel come in here too.
+//! It owns the idle rotation, the latest server stats, the CI facts and the
+//! health of every source. Every tick the main loop asks it for the current
+//! screen and badges and publishes them when they change. Messages from
+//! sources and button presses from the panel come in here too.
 
 use crate::ci::CiFacts;
 use crate::model::{
-    AlertStatus, Badges, ButtonAction, Level, ListData, Rotation, RotationEntry, Screen,
-    ScreenData, StatsData, pick,
+    AlertStatus, Badge, BadgeIcon, Badges, ButtonAction, Level, ListData, Rotation, RotationEntry,
+    RowStatus, Screen, ScreenData, StatsData, pick,
 };
+use crate::source::{HealthBoard, SourceBody, SourceMsg};
 
 pub struct Composer {
     rotation: Rotation,
@@ -18,6 +20,7 @@ pub struct Composer {
     shown: Level,
     stats: Option<StatsData>,
     pub ci: CiFacts,
+    pub health: HealthBoard,
 }
 
 impl Composer {
@@ -28,6 +31,19 @@ impl Composer {
             shown: Level::Rotation,
             stats: None,
             ci: CiFacts::default(),
+            health: HealthBoard::default(),
+        }
+    }
+
+    /// Apply a message from a source.
+    pub fn apply(&mut self, msg: SourceMsg, now: u64) {
+        match msg.body {
+            SourceBody::Facts(updates) => {
+                for update in updates {
+                    self.ci.apply(update, now);
+                }
+            }
+            SourceBody::Health(health) => self.health.set(&msg.source, health),
         }
     }
 
@@ -66,9 +82,16 @@ impl Composer {
         screen
     }
 
-    /// Header badges for the current facts.
+    /// Header badges for the current facts, in the plan's order: failed
+    /// runs, open PRs, then sources with a problem.
     pub fn badges(&self) -> Badges {
-        Badges::new(self.ci.badges())
+        let warn = Badge {
+            id: "warn".into(),
+            icon: BadgeIcon::Warn,
+            count: self.health.problems(),
+            status: RowStatus::Failed,
+        };
+        Badges::new(self.ci.badges().into_iter().chain([warn]))
     }
 
     /// React to a button press on whatever was shown last.
@@ -77,8 +100,7 @@ impl Composer {
     ///   once, so one press acknowledges a bad afternoon).
     /// - Short press in rotation shows the next page now.
     /// - Long press in rotation pins or unpins the current page.
-    ///
-    /// Long press during a job (cycle through running jobs) is not done yet.
+    /// - Long press on a running job shows the next running job.
     pub fn on_button(&mut self, action: ButtonAction, now: u64) {
         match (self.shown, action) {
             (Level::AlertFailed, ButtonAction::Short) => {
@@ -90,6 +112,7 @@ impl Composer {
             (Level::Notice, ButtonAction::Short) => self.ci.dismiss_notices(),
             (Level::Rotation, ButtonAction::Short) => self.next_page(now),
             (Level::Rotation, ButtonAction::Long) => self.rotation.toggle_pin(),
+            (Level::Job, ButtonAction::Long) => self.ci.cycle_jobs(),
             _ => {}
         }
     }
@@ -106,20 +129,17 @@ impl Composer {
         self.rotated_at = now;
     }
 
-    /// Data for a rotation page, and whether it is stale.
+    /// Data for a rotation page, and whether it is stale. CI pages are stale
+    /// while any source has a problem, since their data may be out of date.
     fn page_data(&self, page: &str) -> (ScreenData, bool) {
+        let ci_stale = !self.health.all_ok();
         match page {
             "stats" => match &self.stats {
                 Some(stats) => (ScreenData::Stats(stats.clone()), false),
                 None => (ScreenData::Stats(StatsData::default()), true),
             },
-            "prs" => (ScreenData::List(self.ci.pulls_page()), self.ci.pulls_stale),
-            // Pipeline history arrives with a later change; until then the
-            // page is empty and skipped.
-            "pipelines" => (
-                ScreenData::List(ListData::new("Pipelines", 0, vec![])),
-                false,
-            ),
+            "prs" => (ScreenData::List(self.ci.pulls_page()), ci_stale),
+            "pipelines" => (ScreenData::List(self.ci.pipelines_page()), ci_stale),
             other => (ScreenData::List(ListData::new(other, 0, vec![])), false),
         }
     }
@@ -133,8 +153,9 @@ fn known_page(page: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ci::{OpenPull, RunningJob};
-    use crate::model::{AlertData, JobData, JobKind, Template};
+    use crate::ci::{OpenPull, Run, RunStatus, RunningJob, Update};
+    use crate::model::{JobData, JobKind, Template};
+    use crate::source::{Health, SourceId};
 
     fn rotation() -> Vec<RotationEntry> {
         let entry = |page: &str, dwell_s, skip_when_empty| RotationEntry {
@@ -149,37 +170,66 @@ mod tests {
         ]
     }
 
-    fn running_job(started: u64) -> RunningJob {
-        RunningJob {
-            data: JobData {
-                source: "gitea".into(),
-                project: "demo".into(),
-                pipeline: "deploy.yml".into(),
-                kind: JobKind::Deploy,
-                git_ref: "main".into(),
-                commit: "a1b2c3d".into(),
-                step: None,
-                step_no: None,
-                step_count: None,
-                progress: None,
-                started,
-                others: 0,
+    fn send(composer: &mut Composer, update: Update, now: u64) {
+        let msg = SourceMsg {
+            source: SourceId::new("gitea", "home"),
+            body: SourceBody::Facts(vec![update]),
+        };
+        composer.apply(msg, now);
+    }
+
+    fn running_job(key: &str, started: u64) -> Update {
+        Update::JobRunning {
+            key: key.into(),
+            job: RunningJob {
+                data: JobData {
+                    source: "gitea".into(),
+                    project: "demo".into(),
+                    pipeline: format!("{key}.yml"),
+                    kind: JobKind::Deploy,
+                    git_ref: "main".into(),
+                    commit: "a1b2c3d".into(),
+                    step: None,
+                    step_no: None,
+                    step_count: None,
+                    progress: None,
+                    started,
+                    others: 0,
+                },
+                interrupt: true,
+                updated: started,
             },
-            interrupt: true,
-            updated: started,
         }
     }
 
-    fn failed() -> AlertData {
-        AlertData {
-            status: AlertStatus::Failed,
-            source: "gitea".into(),
+    fn run(status: RunStatus) -> Update {
+        Update::Run {
+            key: "p".into(),
+            run: Run {
+                source: "gitea".into(),
+                project: "demo".into(),
+                pipeline: "ci.yml".into(),
+                git_ref: "main".into(),
+                status,
+                step: Some("cargo test".into()),
+                started: 0,
+                finished: Some(10),
+                interrupt: true,
+            },
+        }
+    }
+
+    fn pr_opened() -> Update {
+        Update::PullOpened {
+            key: "r".into(),
             project: "demo".into(),
-            pipeline: "ci.yml".into(),
-            step: Some("cargo test".into()),
-            started: 0,
-            finished: 10,
-            others: 0,
+            source: "gitea".into(),
+            pull: OpenPull {
+                number: 7,
+                title: "fix login".into(),
+                created: 1,
+            },
+            notify: false,
         }
     }
 
@@ -197,49 +247,64 @@ mod tests {
     #[test]
     fn prs_page_joins_rotation_when_there_are_prs() {
         let mut composer = Composer::new(rotation(), 0);
-        let pull = OpenPull {
-            number: 7,
-            title: "fix login".into(),
-            created: 1,
-        };
-        composer.ci.pull_opened("r", "demo", "gitea", pull);
+        send(&mut composer, pr_opened(), 0);
         assert_eq!(composer.screen(0).position, Some([1, 2]));
         let screen = composer.screen(20);
         assert_eq!(screen.page, "prs");
         assert_eq!(screen.position, Some([2, 2]));
-        assert_eq!(composer.badges().items[0].count, 1);
+        assert_eq!(composer.badges().items[0].id, "prs");
+    }
+
+    #[test]
+    fn pipelines_page_joins_rotation_after_a_run() {
+        let mut composer = Composer::new(rotation(), 0);
+        send(&mut composer, run(RunStatus::Running), 0);
+        assert_eq!(composer.screen(0).position, Some([1, 2]));
+        let screen = composer.screen(20);
+        assert_eq!(screen.page, "pipelines");
+        let ScreenData::List(list) = &screen.data else {
+            panic!("expected a list");
+        };
+        assert_eq!(list.rows[0].text, "ci.yml");
     }
 
     #[test]
     fn job_interrupts_then_rotation_restarts_at_stats() {
         let mut composer = Composer::new(rotation(), 0);
-        composer.ci.pull_opened(
-            "r",
-            "demo",
-            "gitea",
-            OpenPull {
-                number: 1,
-                title: "t".into(),
-                created: 1,
-            },
-        );
+        send(&mut composer, pr_opened(), 0);
         assert_eq!(composer.screen(20).page, "prs");
 
-        composer.ci.job_running("j", running_job(21));
+        send(&mut composer, running_job("j", 21), 21);
         let screen = composer.screen(21);
         assert_eq!(screen.template, Template::Job);
         assert_eq!(screen.position, None);
 
-        composer.ci.job_done("j");
+        send(&mut composer, Update::JobDone { key: "j".into() }, 22);
         assert_eq!(composer.screen(22).page, "stats");
+    }
+
+    #[test]
+    fn long_press_on_a_job_shows_the_next_one() {
+        let mut composer = Composer::new(rotation(), 0);
+        send(&mut composer, running_job("old", 10), 10);
+        send(&mut composer, running_job("new", 20), 20);
+        let pipeline = |screen: Screen| match screen.data {
+            ScreenData::Job(job) => job.pipeline,
+            other => panic!("expected a job, got {other:?}"),
+        };
+        assert_eq!(pipeline(composer.screen(21)), "new.yml");
+        composer.on_button(ButtonAction::Long, 22);
+        assert_eq!(pipeline(composer.screen(22)), "old.yml");
+        composer.on_button(ButtonAction::Long, 23);
+        assert_eq!(pipeline(composer.screen(23)), "new.yml");
     }
 
     #[test]
     fn button_dismisses_failed_alert_and_clears_badge() {
         let mut composer = Composer::new(rotation(), 0);
-        composer.ci.run_finished("p", failed(), 0);
+        send(&mut composer, run(RunStatus::Failed), 0);
         assert_eq!(composer.screen(1).template, Template::Alert);
-        assert_eq!(composer.badges().items[0].id, "ci-failed");
+        assert_eq!(composer.badges().items[0].id, "failed");
 
         composer.on_button(ButtonAction::Short, 2);
         assert_eq!(composer.screen(2).template, Template::Stats);
@@ -249,9 +314,28 @@ mod tests {
     #[test]
     fn failed_alert_drops_to_badge_after_ten_minutes() {
         let mut composer = Composer::new(rotation(), 0);
-        composer.ci.run_finished("p", failed(), 0);
+        send(&mut composer, run(RunStatus::Failed), 0);
         assert_eq!(composer.screen(599).template, Template::Alert);
         assert_eq!(composer.screen(600).template, Template::Stats);
+        assert_eq!(composer.badges().items.len(), 1);
+    }
+
+    #[test]
+    fn source_problem_shows_warn_badge_and_greys_ci_pages() {
+        let mut composer = Composer::new(rotation(), 0);
+        send(&mut composer, pr_opened(), 0);
+        let health = |health| SourceMsg {
+            source: SourceId::new("gitea", "home"),
+            body: SourceBody::Health(health),
+        };
+        composer.apply(health(Health::AuthFailed), 0);
+        let ids: Vec<String> = composer.badges().items.into_iter().map(|b| b.id).collect();
+        assert_eq!(ids, ["prs", "warn"]);
+        let screen = composer.screen(20);
+        assert_eq!(screen.page, "prs");
+        assert!(screen.stale);
+
+        composer.apply(health(Health::Ok), 21);
         assert_eq!(composer.badges().items.len(), 1);
     }
 

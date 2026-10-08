@@ -13,6 +13,7 @@ use tracing::{debug, warn};
 
 use super::payload::{Job, PullRequest};
 use super::{GiteaEvent, JobRef};
+use crate::source::{Health, Secret};
 
 /// Most PRs fetched per repository. The total count comes from a header, so
 /// only the page listing is capped.
@@ -44,11 +45,11 @@ pub struct HttpApi {
     client: reqwest::Client,
     /// Base URL without trailing slash, such as `https://gitea.example.com`.
     base_url: String,
-    token: Option<String>,
+    token: Option<Secret>,
 }
 
 impl HttpApi {
-    pub fn new(base_url: &str, token: Option<String>) -> Result<Self> {
+    pub fn new(base_url: &str, token: Option<Secret>) -> Result<Self> {
         let client = reqwest::Client::builder()
             .timeout(REQUEST_TIMEOUT)
             .user_agent(concat!("deskwatch-bridge/", env!("CARGO_PKG_VERSION")))
@@ -64,7 +65,7 @@ impl HttpApi {
     fn get(&self, path: &str) -> reqwest::RequestBuilder {
         let request = self.client.get(format!("{}/api/v1{path}", self.base_url));
         match &self.token {
-            Some(token) => request.header("Authorization", format!("token {token}")),
+            Some(token) => request.header("Authorization", format!("token {}", token.expose())),
             None => request,
         }
     }
@@ -156,11 +157,11 @@ async fn poll_pulls(api: &impl GiteaApi, repos: &[String]) -> Vec<GiteaEvent> {
         let pulls = match api.open_pulls(repo).await {
             Ok(pulls) => {
                 debug!(%repo, total = pulls.total, "polled open PRs");
-                Some(pulls)
+                Ok(pulls)
             }
             Err(err) => {
                 warn!(%repo, "cannot poll open PRs: {err:#}");
-                None
+                Err(Health::from_error(&err))
             }
         };
         out.push(GiteaEvent::PullsPolled {
@@ -237,8 +238,8 @@ mod tests {
         assert_eq!(
             pull_results,
             [
-                ("me/demo".to_string(), Some(4)),
-                ("me/broken".to_string(), None)
+                ("me/demo".to_string(), Ok(4)),
+                ("me/broken".to_string(), Err(Health::Unreachable))
             ]
         );
     }
