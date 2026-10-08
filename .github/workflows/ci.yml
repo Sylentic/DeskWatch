@@ -1,0 +1,64 @@
+# Checks every pull request and every push to main:
+# formatting, clippy (warnings are errors) and the test suite,
+# on current stable and on the minimum supported Rust version.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or PR cancels the older run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  check:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: stable
+            toolchain: stable
+            lint: true
+          # Keep in sync with rust-version in Cargo.toml.
+          - name: msrv (1.88)
+            toolchain: "1.88"
+            lint: false
+    steps:
+      - uses: actions/checkout@v5
+
+      # The desktop simulator (embedded-graphics-simulator) links SDL2.
+      # Installing it up front lets that crate build headless on the runner.
+      - name: Install SDL2
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libsdl2-dev
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: ${{ matrix.lint && 'rustfmt, clippy' || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.toolchain }}
+
+      - name: cargo fmt
+        if: matrix.lint
+        run: cargo fmt --all --check
+
+      - name: cargo clippy
+        if: matrix.lint
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: cargo test
+        run: cargo test --workspace --locked
