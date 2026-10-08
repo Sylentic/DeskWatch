@@ -1,9 +1,14 @@
 //! Bridge configuration, loaded from a TOML file.
 //!
 //! Every field has a sensible default, so a minimal config only needs the MQTT
-//! host. Secrets never live in this file: the MQTT password, Gitea webhook
-//! secret and Gitea token come from environment variables (see the systemd unit).
+//! host. Secrets never live in this file: it only names credential files
+//! (`token_file`, `webhook_secret_file`, `password_file`), which systemd
+//! loads with `LoadCredential=` (see the sample unit).
+//!
+//! Data sources are arrays, so there can be several of each:
+//! `[[source.gitea]]` blocks, later `[[source.github]]` and so on.
 
+use std::collections::{BTreeMap, HashSet};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
@@ -11,15 +16,11 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use crate::model::RotationEntry;
+use crate::source::{Interrupt, valid_name};
 
-/// Environment variable that holds the MQTT password.
+/// Environment variable that holds the MQTT password, when `mqtt.password_file`
+/// is not set.
 pub const MQTT_PASSWORD_ENV: &str = "DESKWATCH_MQTT_PASSWORD";
-
-/// Environment variable that holds the Gitea webhook secret (required for Gitea).
-pub const GITEA_SECRET_ENV: &str = "DESKWATCH_GITEA_WEBHOOK_SECRET";
-
-/// Environment variable that holds an optional read-only Gitea API token.
-pub const GITEA_TOKEN_ENV: &str = "DESKWATCH_GITEA_TOKEN";
 
 /// Config path used when none is given on the command line or in `DESKWATCH_CONFIG`.
 pub const DEFAULT_CONFIG_PATH: &str = "/etc/deskwatch/bridge.toml";
@@ -32,8 +33,11 @@ pub struct Config {
     pub mqtt: MqttConfig,
     #[serde(default)]
     pub server: ServerConfig,
-    /// Gitea source. Leave the `[gitea]` block out to switch it off.
-    pub gitea: Option<GiteaConfig>,
+    #[serde(default)]
+    pub http: HttpConfig,
+    /// Data sources, one array per adapter type.
+    #[serde(default)]
+    pub source: Sources,
     /// Idle pages in the order they rotate. See `[[rotation]]` in the example config.
     #[serde(default = "default_rotation")]
     pub rotation: Vec<RotationEntry>,
@@ -46,8 +50,11 @@ pub struct MqttConfig {
     pub host: String,
     pub port: u16,
     pub client_id: String,
-    /// Optional broker username. The password is read from `DESKWATCH_MQTT_PASSWORD`.
+    /// Optional broker username.
     pub username: Option<String>,
+    /// Credential holding the broker password. Without it the password comes
+    /// from `DESKWATCH_MQTT_PASSWORD`.
+    pub password_file: Option<String>,
     /// First part of every topic, `deskpanel` in the schema.
     pub topic_prefix: String,
     /// Seconds between MQTT keep-alive pings.
@@ -61,6 +68,7 @@ impl Default for MqttConfig {
             port: 1883,
             client_id: "deskwatch-bridge".into(),
             username: None,
+            password_file: None,
             topic_prefix: "deskpanel".into(),
             keep_alive_s: 30,
         }
@@ -92,15 +100,44 @@ impl Default for ServerConfig {
     }
 }
 
-/// The `gitea` source: Actions webhooks, job step polling and open PRs.
+/// The shared HTTP listener for webhooks.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct HttpConfig {
+    /// Address webhook routes listen on. Only opened when a source needs it.
+    pub listen: SocketAddr,
+}
+
+impl Default for HttpConfig {
+    fn default() -> Self {
+        Self {
+            listen: SocketAddr::from(([0, 0, 0, 0], 8787)),
+        }
+    }
+}
+
+/// All configured sources, by adapter type.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Sources {
+    pub gitea: Vec<GiteaConfig>,
+}
+
+/// One `[[source.gitea]]` block: Actions webhooks, job step polling and open PRs.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GiteaConfig {
+    /// Instance name, unique among Gitea sources. Used in the webhook URL
+    /// (`/webhook/gitea/<name>`) and in logs.
+    pub name: String,
     /// Gitea web address, used for API polling, such as `https://gitea.example.com`.
     pub base_url: String,
-    /// Address the webhook endpoint listens on.
-    #[serde(default = "default_gitea_listen")]
-    pub listen: SocketAddr,
+    /// Credential with the webhook secret, the same value as in Gitea's
+    /// webhook settings.
+    pub webhook_secret_file: String,
+    /// Credential with a read-only API token (`read:repository`). Without it
+    /// the bridge polls anonymously, which only sees public repositories.
+    pub token_file: Option<String>,
     /// Repositories (`owner/name`) whose open PRs are counted by polling.
     /// PR webhooks from other repositories still count until the bridge restarts.
     #[serde(default)]
@@ -111,13 +148,17 @@ pub struct GiteaConfig {
     /// Seconds between step progress polls while a job runs.
     #[serde(default = "default_gitea_job_poll_s")]
     pub job_poll_s: u64,
-    /// May running Gitea jobs take over the screen?
-    #[serde(default = "default_true")]
-    pub interrupt: bool,
+    /// May running jobs and finished runs take over the screen? `true`,
+    /// `false`, or a list of repositories that may.
+    #[serde(default = "interrupt_all")]
+    pub interrupt: Interrupt,
+    /// Short panel labels for repositories, such as `{ "team/service-a" = "work A" }`.
+    #[serde(default)]
+    pub alias: BTreeMap<String, String>,
 }
 
-fn default_gitea_listen() -> SocketAddr {
-    SocketAddr::from(([0, 0, 0, 0], 8787))
+fn interrupt_all() -> Interrupt {
+    Interrupt::All(true)
 }
 
 fn default_gitea_poll_s() -> u64 {
@@ -126,10 +167,6 @@ fn default_gitea_poll_s() -> u64 {
 
 fn default_gitea_job_poll_s() -> u64 {
     5
-}
-
-fn default_true() -> bool {
-    true
 }
 
 /// Rotation used when the config has no `[[rotation]]` blocks: the stats page only.
@@ -153,14 +190,24 @@ impl Config {
             !config.rotation.is_empty(),
             "rotation needs at least one page"
         );
-        if let Some(gitea) = &config.gitea {
+        let mut names = HashSet::new();
+        for gitea in &config.source.gitea {
+            let name = &gitea.name;
+            anyhow::ensure!(
+                valid_name(name),
+                "source.gitea name {name:?} may only use letters, digits, - and _"
+            );
+            anyhow::ensure!(
+                names.insert(name),
+                "two source.gitea blocks are named {name:?}"
+            );
             anyhow::ensure!(
                 gitea.poll_s > 0 && gitea.job_poll_s > 0,
-                "gitea.poll_s and gitea.job_poll_s must be above 0"
+                "source.gitea {name}: poll_s and job_poll_s must be above 0"
             );
             anyhow::ensure!(
                 gitea.repos.iter().all(|r| r.split('/').count() == 2),
-                "gitea.repos entries must look like owner/name"
+                "source.gitea {name}: repos entries must look like owner/name"
             );
         }
         Ok(config)
@@ -195,7 +242,8 @@ mod tests {
         assert_eq!(config.server.interval_s, 5);
         assert_eq!(config.rotation.len(), 1);
         assert_eq!(config.rotation[0].page, "stats");
-        assert!(config.gitea.is_none());
+        assert!(config.source.gitea.is_empty());
+        assert_eq!(config.http.listen.port(), 8787);
     }
 
     #[test]
@@ -204,21 +252,40 @@ mod tests {
         let config = Config::from_toml(text).unwrap();
         assert_eq!(config.rotation.len(), 3);
         assert!(config.rotation[1].skip_when_empty);
-        let gitea = config.gitea.unwrap();
+        let gitea = &config.source.gitea[0];
+        assert_eq!(gitea.name, "home");
         assert_eq!(gitea.job_poll_s, 5);
-        assert!(gitea.interrupt);
+        assert_eq!(gitea.interrupt, Interrupt::All(true));
     }
 
     #[test]
-    fn gitea_defaults_and_repo_check() {
-        let config = Config::from_toml("[gitea]\nbase_url = \"http://gitea.local\"\n").unwrap();
-        let gitea = config.gitea.unwrap();
-        assert_eq!(gitea.listen.port(), 8787);
+    fn gitea_defaults_and_checks() {
+        let block = |extra: &str| {
+            format!(
+                "[[source.gitea]]\nname = \"home\"\nbase_url = \"http://gitea.local\"\n\
+                 webhook_secret_file = \"gitea-webhook-secret\"\n{extra}"
+            )
+        };
+        let config = Config::from_toml(&block("")).unwrap();
+        let gitea = &config.source.gitea[0];
         assert_eq!(gitea.poll_s, 60);
         assert!(gitea.repos.is_empty());
+        assert!(gitea.token_file.is_none());
 
-        let bad = "[gitea]\nbase_url = \"x\"\nrepos = [\"just-a-name\"]\n";
-        assert!(Config::from_toml(bad).is_err());
+        let list = Config::from_toml(&block(
+            "interrupt = [\"me/a\"]\nalias = { \"me/a\" = \"A\" }",
+        ))
+        .unwrap();
+        assert!(list.source.gitea[0].interrupt.allows("me/a"));
+        assert_eq!(list.source.gitea[0].alias["me/a"], "A");
+
+        assert!(Config::from_toml(&block("repos = [\"just-a-name\"]")).is_err());
+        let twice = format!("{}{}", block(""), block(""));
+        assert!(Config::from_toml(&twice).is_err(), "duplicate names");
+        let bad_name = block("").replace("\"home\"", "\"a/b\"");
+        assert!(Config::from_toml(&bad_name).is_err());
+        // The pre-1.0 `[gitea]` table is gone; it must not be silently ignored.
+        assert!(Config::from_toml("[gitea]\nbase_url = \"x\"\n").is_err());
     }
 
     #[test]

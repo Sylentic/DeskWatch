@@ -4,10 +4,9 @@
 //! of the raw body with the shared webhook secret. Anything else is rejected
 //! before the body is parsed, so only Gitea can change what the panel shows.
 
-use std::net::SocketAddr;
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use axum::Router;
 use axum::body::Bytes;
 use axum::extract::State;
@@ -15,46 +14,28 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::routing::post;
 use hmac::{KeyInit, Mac};
 use sha2::Sha256;
-use tokio::net::TcpListener;
 use tokio::sync::mpsc;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 use super::GiteaEvent;
+use crate::source::Secret;
 
-/// URL path Gitea posts to, as in `http://<bridge-host>:<port>/webhook/gitea`.
-pub const PATH: &str = "/webhook/gitea";
+/// URL path one Gitea source listens on, as in
+/// `http://<bridge-host>:8787/webhook/gitea/home` for `name = "home"`.
+pub fn path(name: &str) -> String {
+    format!("/webhook/gitea/{name}")
+}
 
 /// Shared state of the HTTP handler.
 struct Hook {
-    secret: Vec<u8>,
+    secret: Secret,
     events: mpsc::Sender<GiteaEvent>,
 }
 
-/// Build the router. Split from `serve` so tests can call it without a socket.
-pub fn router(secret: Vec<u8>, events: mpsc::Sender<GiteaEvent>) -> Router {
+/// The route for one Gitea source, to merge into the shared listener.
+pub fn router(path: &str, secret: Secret, events: mpsc::Sender<GiteaEvent>) -> Router {
     let state = Arc::new(Hook { secret, events });
-    Router::new().route(PATH, post(handle)).with_state(state)
-}
-
-/// Open the listening socket. Done before `serve` so a port that is already
-/// taken stops the bridge at startup instead of failing quietly later.
-pub async fn bind(listen: SocketAddr) -> Result<TcpListener> {
-    let listener = TcpListener::bind(listen)
-        .await
-        .with_context(|| format!("cannot listen on {listen} for Gitea webhooks"))?;
-    info!("Gitea webhooks on http://{listen}{PATH}");
-    Ok(listener)
-}
-
-/// Forward verified events until the process stops.
-pub async fn serve(
-    listener: TcpListener,
-    secret: Vec<u8>,
-    events: mpsc::Sender<GiteaEvent>,
-) -> Result<()> {
-    axum::serve(listener, router(secret, events))
-        .await
-        .context("webhook server stopped")
+    Router::new().route(path, post(handle)).with_state(state)
 }
 
 async fn handle(State(hook): State<Arc<Hook>>, headers: HeaderMap, body: Bytes) -> StatusCode {
@@ -64,7 +45,7 @@ async fn handle(State(hook): State<Arc<Hook>>, headers: HeaderMap, body: Bytes) 
         warn!("webhook without signature rejected");
         return StatusCode::UNAUTHORIZED;
     };
-    if !signature_is_valid(&hook.secret, &body, signature) {
+    if !signature_is_valid(hook.secret.expose().as_bytes(), &body, signature) {
         warn!("webhook with bad signature rejected");
         return StatusCode::UNAUTHORIZED;
     }
@@ -136,12 +117,14 @@ mod tests {
         signature: Option<String>,
     ) -> (StatusCode, Option<GiteaEvent>) {
         let (tx, mut rx) = mpsc::channel(4);
-        let mut request = Request::post(PATH).header("x-gitea-event", kind);
+        let path = path("home");
+        let mut request = Request::post(&path).header("x-gitea-event", kind);
         if let Some(signature) = signature {
             request = request.header("x-gitea-signature", signature);
         }
         let request = request.body(Body::from(body.to_string())).unwrap();
-        let response = router(SECRET.to_vec(), tx).oneshot(request).await.unwrap();
+        let secret = Secret::new(String::from_utf8(SECRET.to_vec()).unwrap());
+        let response = router(&path, secret, tx).oneshot(request).await.unwrap();
         (response.status(), rx.try_recv().ok())
     }
 

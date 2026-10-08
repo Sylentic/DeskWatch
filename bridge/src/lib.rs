@@ -5,6 +5,8 @@ pub mod ci;
 pub mod composer;
 pub mod config;
 pub mod gitea;
+pub mod hooks;
 pub mod model;
 pub mod mqtt;
+pub mod source;
 pub mod stats;
