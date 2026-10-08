@@ -19,9 +19,11 @@ The design lives in the project's shared files for now:
 
 ## Status
 
-The bridge skeleton is in `bridge/`: it publishes the server stats page every 5 seconds, with retained
-state and online/offline status topics. CI sources (Gitea first, then GitHub and Azure DevOps) come next,
-followed by a firmware spike once the screen arrives.
+The bridge is in `bridge/`. It publishes the server stats page and rotates through idle pages, with retained
+state and online/offline status topics. The Gitea source is in: a running Actions job takes over the screen
+with step progress, a failed run shows a red alert until the button is pressed, a successful run flashes
+green, and open PRs show as a header badge and a rotation page. GitHub and Azure DevOps come next, followed
+by a firmware spike once the screen arrives.
 
 ## Running the bridge
 
@@ -35,6 +37,30 @@ mosquitto_sub -t 'deskpanel/#' -v   # in another terminal
 The config path can also come from `DESKWATCH_CONFIG`; the default is `/etc/deskwatch/bridge.toml`. The MQTT
 password, if any, is read from `DESKWATCH_MQTT_PASSWORD`. A sample systemd unit is in
 [deploy/deskwatch-bridge.service](deploy/deskwatch-bridge.service).
+
+## Gitea setup
+
+1. Add a `[gitea]` block to the bridge config (see `bridge/config.example.toml`).
+2. Pick a random webhook secret and put it in the bridge's env file as
+   `DESKWATCH_GITEA_WEBHOOK_SECRET`. For private repos, also create a read-only token
+   (scopes `read:repository`) and set `DESKWATCH_GITEA_TOKEN`.
+3. In Gitea, add a webhook (per repo, per organisation, or system-wide in the site admin):
+   - Target URL: `http://<bridge-host>:8787/webhook/gitea`, method POST, content type `application/json`
+   - Secret: the same value as `DESKWATCH_GITEA_WEBHOOK_SECRET`
+   - Trigger on custom events: **Workflow Run**, **Workflow Job** and **Pull Request**
+4. Gitea refuses webhooks to private addresses by default. Allow the bridge host in `app.ini`:
+
+   ```ini
+   [webhook]
+   ALLOWED_HOST_LIST = private
+   ```
+
+The bridge rejects any request without a valid `X-Gitea-Signature`. Webhooks give instant job start and
+end; step progress comes from polling the Actions jobs API every 5 seconds while a job runs, and the open PR
+count is re-polled every 60 seconds as a safety net. Cancelled runs show no alert.
+
+Button: a short press dismisses an alert or notice, or shows the next page during rotation. A long press
+pins the current rotation page.
 
 ## License
 

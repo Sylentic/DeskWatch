@@ -2,8 +2,8 @@
 #
 # Copy to /etc/deskwatch/bridge.toml and adjust. Every key is optional; the
 # values below are the defaults unless noted. Do not put passwords or tokens
-# in this file: the MQTT password comes from DESKWATCH_MQTT_PASSWORD (see
-# deploy/deskwatch-bridge.service).
+# in this file: the MQTT password, Gitea webhook secret and Gitea token come
+# from environment variables (see deploy/deskwatch-bridge.service).
 
 [mqtt]
 host = "localhost"              # Mosquitto broker, usually on the same server
@@ -19,9 +19,21 @@ interval_s = 5                  # stats sample and publish interval
 # net_iface = "eth0"            # defaults to the busiest non-loopback interface
 disk_path = "/"                 # filesystem for disk_pct
 
+# Gitea Actions and pull requests. Remove this block to switch Gitea off.
+# Needs DESKWATCH_GITEA_WEBHOOK_SECRET (same value as the webhook secret in
+# Gitea) and optionally DESKWATCH_GITEA_TOKEN (read-only token for private
+# repos). Webhook setup is in the README.
+[gitea]
+base_url = "https://gitea.example.com"  # required: your Gitea address
+listen = "0.0.0.0:8787"         # webhook endpoint is http://<this host>:8787/webhook/gitea
+repos = ["owner/repo"]          # repos whose open PRs are polled for the header badge
+poll_s = 60                     # open PR poll, a safety net behind PR webhooks
+job_poll_s = 5                  # step progress poll while a job runs
+interrupt = true                # running jobs take over the screen
+
 # Idle pages, in order. Pages with nothing to show are skipped when
-# skip_when_empty is set. Only "stats" has a data source so far; "prs" and
-# "pipelines" will fill in once the CI sources land.
+# skip_when_empty is set. "prs" lists open PRs from the CI sources;
+# "pipelines" fills in with a later change.
 [[rotation]]
 page = "stats"
 dwell_s = 20

@@ -11,6 +11,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use rumqttc::{AsyncClient, Event, EventLoop, LastWill, MqttOptions, Packet, QoS};
 use serde::Serialize;
+use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
 use crate::config::{MQTT_PASSWORD_ENV, MqttConfig};
@@ -136,8 +137,13 @@ impl Publisher {
 }
 
 /// Drive the MQTT connection forever: reconnects on errors, announces
-/// `online` after every (re)connect, and logs panel status and button events.
-pub async fn run_event_loop(mut eventloop: EventLoop, publisher: Publisher) {
+/// `online` after every (re)connect, logs panel status, and forwards button
+/// events to `panel_events` for the composer.
+pub async fn run_event_loop(
+    mut eventloop: EventLoop,
+    publisher: Publisher,
+    panel_events: mpsc::Sender<PanelEvent>,
+) {
     let topics = publisher.topics.clone();
     loop {
         match eventloop.poll().await {
@@ -157,7 +163,12 @@ pub async fn run_event_loop(mut eventloop: EventLoop, publisher: Publisher) {
                 }
             }
             Ok(Event::Incoming(Packet::Publish(message))) => {
-                handle_incoming(&topics, &message.topic, &message.payload);
+                if let Some(event) = handle_incoming(&topics, &message.topic, &message.payload) {
+                    // try_send: never block the MQTT connection on the main loop.
+                    if let Err(err) = panel_events.try_send(event) {
+                        warn!("dropping panel event: {err}");
+                    }
+                }
             }
             Ok(event) => debug!(?event, "mqtt"),
             Err(err) => {
@@ -168,9 +179,9 @@ pub async fn run_event_loop(mut eventloop: EventLoop, publisher: Publisher) {
     }
 }
 
-/// Handle a message from the panel. For now this only logs; acting on button
-/// presses (dismiss, next page, pin) comes with the composer loop.
-fn handle_incoming(topics: &Topics, topic: &str, payload: &[u8]) {
+/// Handle a message from the panel: log status changes and return button
+/// events, which the composer acts on.
+fn handle_incoming(topics: &Topics, topic: &str, payload: &[u8]) -> Option<PanelEvent> {
     if topic == topics.panel_status() {
         info!(
             "panel is {}",
@@ -178,10 +189,14 @@ fn handle_incoming(topics: &Topics, topic: &str, payload: &[u8]) {
         );
     } else if topic == topics.panel_event() {
         match serde_json::from_slice::<PanelEvent>(payload) {
-            Ok(event) => info!(?event, "panel event"),
+            Ok(event) => {
+                info!(?event, "panel event");
+                return Some(event);
+            }
             Err(err) => warn!("ignoring malformed panel event: {err}"),
         }
     }
+    None
 }
 
 #[cfg(test)]
