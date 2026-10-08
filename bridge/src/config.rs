@@ -1,9 +1,10 @@
 //! Bridge configuration, loaded from a TOML file.
 //!
 //! Every field has a sensible default, so a minimal config only needs the MQTT
-//! host. Secrets never live in this file: the MQTT password comes from the
-//! `DESKWATCH_MQTT_PASSWORD` environment variable (see the systemd unit).
+//! host. Secrets never live in this file: the MQTT password, Gitea webhook
+//! secret and Gitea token come from environment variables (see the systemd unit).
 
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -13,6 +14,12 @@ use crate::model::RotationEntry;
 
 /// Environment variable that holds the MQTT password.
 pub const MQTT_PASSWORD_ENV: &str = "DESKWATCH_MQTT_PASSWORD";
+
+/// Environment variable that holds the Gitea webhook secret (required for Gitea).
+pub const GITEA_SECRET_ENV: &str = "DESKWATCH_GITEA_WEBHOOK_SECRET";
+
+/// Environment variable that holds an optional read-only Gitea API token.
+pub const GITEA_TOKEN_ENV: &str = "DESKWATCH_GITEA_TOKEN";
 
 /// Config path used when none is given on the command line or in `DESKWATCH_CONFIG`.
 pub const DEFAULT_CONFIG_PATH: &str = "/etc/deskwatch/bridge.toml";
@@ -25,6 +32,8 @@ pub struct Config {
     pub mqtt: MqttConfig,
     #[serde(default)]
     pub server: ServerConfig,
+    /// Gitea source. Leave the `[gitea]` block out to switch it off.
+    pub gitea: Option<GiteaConfig>,
     /// Idle pages in the order they rotate. See `[[rotation]]` in the example config.
     #[serde(default = "default_rotation")]
     pub rotation: Vec<RotationEntry>,
@@ -83,6 +92,46 @@ impl Default for ServerConfig {
     }
 }
 
+/// The `gitea` source: Actions webhooks, job step polling and open PRs.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GiteaConfig {
+    /// Gitea web address, used for API polling, such as `https://gitea.example.com`.
+    pub base_url: String,
+    /// Address the webhook endpoint listens on.
+    #[serde(default = "default_gitea_listen")]
+    pub listen: SocketAddr,
+    /// Repositories (`owner/name`) whose open PRs are counted by polling.
+    /// PR webhooks from other repositories still count until the bridge restarts.
+    #[serde(default)]
+    pub repos: Vec<String>,
+    /// Seconds between open PR polls (the safety net behind PR webhooks).
+    #[serde(default = "default_gitea_poll_s")]
+    pub poll_s: u64,
+    /// Seconds between step progress polls while a job runs.
+    #[serde(default = "default_gitea_job_poll_s")]
+    pub job_poll_s: u64,
+    /// May running Gitea jobs take over the screen?
+    #[serde(default = "default_true")]
+    pub interrupt: bool,
+}
+
+fn default_gitea_listen() -> SocketAddr {
+    SocketAddr::from(([0, 0, 0, 0], 8787))
+}
+
+fn default_gitea_poll_s() -> u64 {
+    60
+}
+
+fn default_gitea_job_poll_s() -> u64 {
+    5
+}
+
+fn default_true() -> bool {
+    true
+}
+
 /// Rotation used when the config has no `[[rotation]]` blocks: the stats page only.
 fn default_rotation() -> Vec<RotationEntry> {
     vec![RotationEntry {
@@ -104,6 +153,16 @@ impl Config {
             !config.rotation.is_empty(),
             "rotation needs at least one page"
         );
+        if let Some(gitea) = &config.gitea {
+            anyhow::ensure!(
+                gitea.poll_s > 0 && gitea.job_poll_s > 0,
+                "gitea.poll_s and gitea.job_poll_s must be above 0"
+            );
+            anyhow::ensure!(
+                gitea.repos.iter().all(|r| r.split('/').count() == 2),
+                "gitea.repos entries must look like owner/name"
+            );
+        }
         Ok(config)
     }
 
@@ -136,6 +195,7 @@ mod tests {
         assert_eq!(config.server.interval_s, 5);
         assert_eq!(config.rotation.len(), 1);
         assert_eq!(config.rotation[0].page, "stats");
+        assert!(config.gitea.is_none());
     }
 
     #[test]
@@ -144,6 +204,21 @@ mod tests {
         let config = Config::from_toml(text).unwrap();
         assert_eq!(config.rotation.len(), 3);
         assert!(config.rotation[1].skip_when_empty);
+        let gitea = config.gitea.unwrap();
+        assert_eq!(gitea.job_poll_s, 5);
+        assert!(gitea.interrupt);
+    }
+
+    #[test]
+    fn gitea_defaults_and_repo_check() {
+        let config = Config::from_toml("[gitea]\nbase_url = \"http://gitea.local\"\n").unwrap();
+        let gitea = config.gitea.unwrap();
+        assert_eq!(gitea.listen.port(), 8787);
+        assert_eq!(gitea.poll_s, 60);
+        assert!(gitea.repos.is_empty());
+
+        let bad = "[gitea]\nbase_url = \"x\"\nrepos = [\"just-a-name\"]\n";
+        assert!(Config::from_toml(bad).is_err());
     }
 
     #[test]

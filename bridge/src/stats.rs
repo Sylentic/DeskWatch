@@ -251,13 +251,12 @@ fn read_cpu_temp_c() -> Option<f32> {
         dirs.sort();
         for dir in dirs {
             let name = read(dir.join("name")).unwrap_or_default();
-            if HWMON_NAMES.contains(&name.trim()) {
-                if let Some(temp) = read(dir.join("temp1_input"))
+            if HWMON_NAMES.contains(&name.trim())
+                && let Some(temp) = read(dir.join("temp1_input"))
                     .as_deref()
                     .and_then(parse_millidegrees)
-                {
-                    return Some(temp);
-                }
+            {
+                return Some(temp);
             }
         }
     }

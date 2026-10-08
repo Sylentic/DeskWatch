@@ -1,0 +1,245 @@
+//! Gitea REST API: the two reads the bridge polls, behind a small trait.
+//!
+//! `GiteaApi` keeps the polling loop independent of HTTP details, so tests
+//! can use a fake and a Gitea upgrade (1.27 to 28) that changes an endpoint
+//! only touches `HttpApi`.
+
+use std::future::Future;
+use std::time::Duration;
+
+use anyhow::{Context, Result};
+use tokio::sync::{mpsc, watch};
+use tracing::{debug, warn};
+
+use super::payload::{Job, PullRequest};
+use super::{GiteaEvent, JobRef};
+
+/// Most PRs fetched per repository. The total count comes from a header, so
+/// only the page listing is capped.
+const PULLS_PAGE_SIZE: u32 = 50;
+
+/// Give up on a request after this long, so a hung Gitea cannot stall polling.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Open pull requests of one repository.
+#[derive(Debug, Clone, Default)]
+pub struct OpenPulls {
+    /// First page of open PRs.
+    pub pulls: Vec<PullRequest>,
+    /// Total open PRs, which can be more than `pulls.len()`.
+    pub total: u32,
+}
+
+/// What the bridge reads from Gitea.
+pub trait GiteaApi: Send + Sync + 'static {
+    /// One Actions job with its steps.
+    fn job(&self, repo: &str, id: u64) -> impl Future<Output = Result<Job>> + Send;
+
+    /// Open pull requests of `owner/name`.
+    fn open_pulls(&self, repo: &str) -> impl Future<Output = Result<OpenPulls>> + Send;
+}
+
+/// `GiteaApi` over HTTP with an optional read-only token.
+pub struct HttpApi {
+    client: reqwest::Client,
+    /// Base URL without trailing slash, such as `https://gitea.example.com`.
+    base_url: String,
+    token: Option<String>,
+}
+
+impl HttpApi {
+    pub fn new(base_url: &str, token: Option<String>) -> Result<Self> {
+        let client = reqwest::Client::builder()
+            .timeout(REQUEST_TIMEOUT)
+            .user_agent(concat!("deskwatch-bridge/", env!("CARGO_PKG_VERSION")))
+            .build()
+            .context("cannot build HTTP client")?;
+        Ok(Self {
+            client,
+            base_url: base_url.trim_end_matches('/').to_string(),
+            token,
+        })
+    }
+
+    fn get(&self, path: &str) -> reqwest::RequestBuilder {
+        let request = self.client.get(format!("{}/api/v1{path}", self.base_url));
+        match &self.token {
+            Some(token) => request.header("Authorization", format!("token {token}")),
+            None => request,
+        }
+    }
+}
+
+impl GiteaApi for HttpApi {
+    async fn job(&self, repo: &str, id: u64) -> Result<Job> {
+        let path = format!("/repos/{repo}/actions/jobs/{id}");
+        let response = self.get(&path).send().await?.error_for_status()?;
+        response.json().await.context("invalid job JSON")
+    }
+
+    async fn open_pulls(&self, repo: &str) -> Result<OpenPulls> {
+        let path = format!("/repos/{repo}/pulls");
+        let response = self
+            .get(&path)
+            .query(&[("state", "open"), ("limit", &PULLS_PAGE_SIZE.to_string())])
+            .send()
+            .await?
+            .error_for_status()?;
+        // Gitea puts the full count in X-Total-Count; fall back to the page size.
+        let total = response
+            .headers()
+            .get("x-total-count")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse().ok());
+        let pulls: Vec<PullRequest> = response.json().await.context("invalid pulls JSON")?;
+        let total = total.unwrap_or(pulls.len() as u32);
+        Ok(OpenPulls { pulls, total })
+    }
+}
+
+/// Poll forever and send results to the main loop.
+///
+/// - Every `job_poll` it fetches each job in `jobs` (kept up to date by the
+///   main loop) for step progress. Nothing is fetched while no job runs.
+/// - Every `pulls_poll` it fetches the open PRs of each repo in `repos`.
+///
+/// Requests run one after another, so a slow Gitea never piles them up.
+pub async fn poll_loop(
+    api: impl GiteaApi,
+    repos: Vec<String>,
+    job_poll: Duration,
+    pulls_poll: Duration,
+    jobs: watch::Receiver<Vec<JobRef>>,
+    events: mpsc::Sender<GiteaEvent>,
+) {
+    let mut job_ticker = tokio::time::interval(job_poll);
+    let mut pulls_ticker = tokio::time::interval(pulls_poll);
+    for ticker in [&mut job_ticker, &mut pulls_ticker] {
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    }
+
+    loop {
+        let event_batch = tokio::select! {
+            _ = job_ticker.tick() => {
+                // Copy the list so the watch lock is not held across awaits.
+                let running = jobs.borrow().clone();
+                poll_jobs(&api, &running).await
+            }
+            _ = pulls_ticker.tick() => poll_pulls(&api, &repos).await,
+        };
+        for event in event_batch {
+            if events.send(event).await.is_err() {
+                return; // main loop has stopped
+            }
+        }
+    }
+}
+
+async fn poll_jobs(api: &impl GiteaApi, jobs: &[JobRef]) -> Vec<GiteaEvent> {
+    let mut out = Vec::new();
+    for job_ref in jobs {
+        match api.job(&job_ref.repo, job_ref.id).await {
+            Ok(job) => out.push(GiteaEvent::JobPolled {
+                repo: job_ref.repo.clone(),
+                job,
+            }),
+            // Keep the last known progress; the next tick tries again.
+            Err(err) => warn!(repo = %job_ref.repo, id = job_ref.id, "cannot poll job: {err:#}"),
+        }
+    }
+    out
+}
+
+async fn poll_pulls(api: &impl GiteaApi, repos: &[String]) -> Vec<GiteaEvent> {
+    let mut out = Vec::new();
+    for repo in repos {
+        let pulls = match api.open_pulls(repo).await {
+            Ok(pulls) => {
+                debug!(%repo, total = pulls.total, "polled open PRs");
+                Some(pulls)
+            }
+            Err(err) => {
+                warn!(%repo, "cannot poll open PRs: {err:#}");
+                None
+            }
+        };
+        out.push(GiteaEvent::PullsPolled {
+            repo: repo.clone(),
+            pulls,
+        });
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Fake Gitea: jobs are always on step 2 of 3; one repo fails.
+    struct FakeApi;
+
+    impl GiteaApi for FakeApi {
+        async fn job(&self, _repo: &str, id: u64) -> Result<Job> {
+            let steps = serde_json::json!([
+                { "name": "a", "status": "completed" },
+                { "name": "b", "status": "in_progress" },
+                { "name": "c", "status": "queued" }
+            ]);
+            Ok(Job {
+                id,
+                status: "in_progress".into(),
+                steps: serde_json::from_value(steps)?,
+                ..Default::default()
+            })
+        }
+
+        async fn open_pulls(&self, repo: &str) -> Result<OpenPulls> {
+            anyhow::ensure!(repo != "me/broken", "HTTP 500");
+            Ok(OpenPulls {
+                pulls: vec![],
+                total: 4,
+            })
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn poll_loop_sends_jobs_and_pulls() {
+        let job = JobRef {
+            repo: "me/demo".into(),
+            id: 7,
+        };
+        let (_jobs_tx, jobs_rx) = watch::channel(vec![job]);
+        let (tx, mut rx) = mpsc::channel(16);
+        let repos = vec!["me/demo".to_string(), "me/broken".to_string()];
+        tokio::spawn(poll_loop(
+            FakeApi,
+            repos,
+            Duration::from_secs(5),
+            Duration::from_secs(60),
+            jobs_rx,
+            tx,
+        ));
+
+        let mut polled_job = false;
+        let mut pull_results = Vec::new();
+        while !(polled_job && pull_results.len() == 2) {
+            match rx.recv().await.unwrap() {
+                GiteaEvent::JobPolled { job, .. } => {
+                    assert_eq!(job.id, 7);
+                    polled_job = true;
+                }
+                GiteaEvent::PullsPolled { repo, pulls } => {
+                    pull_results.push((repo, pulls.map(|p| p.total)));
+                }
+                other => panic!("unexpected {other:?}"),
+            }
+        }
+        assert_eq!(
+            pull_results,
+            [
+                ("me/demo".to_string(), Some(4)),
+                ("me/broken".to_string(), None)
+            ]
+        );
+    }
+}
