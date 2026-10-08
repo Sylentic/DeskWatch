@@ -12,7 +12,7 @@
 //!   source's health: a refused token or an unreachable Gitea shows as the
 //!   `warn` badge.
 //!
-//! The webhook settings needed in Gitea are in the README.
+//! The webhook settings needed in Gitea are in docs/install.md.
 
 pub mod api;
 pub mod payload;

@@ -35,13 +35,13 @@ listen = "0.0.0.0:8787"
 # Data sources. Each type is an array, so there can be several of each; the
 # name must be unique per type. Remove a block to switch that source off.
 
-# Gitea Actions and pull requests. Webhook setup is in the README; the
+# Gitea Actions and pull requests. Webhook setup is in docs/install.md; the
 # webhook URL is http://<this host>:8787/webhook/gitea/<name>.
 [[source.gitea]]
 name = "home"                   # required: used in the webhook URL and logs
 base_url = "https://gitea.example.com"  # required: your Gitea address
 webhook_secret_file = "gitea-webhook-secret"  # required: same value as in Gitea
-token_file = "gitea-token"      # optional read-only token, for private repos
+# token_file = "gitea-token"    # optional read-only token, for private repos
 repos = ["owner/repo"]          # repos whose open PRs are polled for the header badge
 poll_s = 60                     # open PR poll, a safety net behind PR webhooks
 job_poll_s = 5                  # step progress poll while a job runs
@@ -83,7 +83,7 @@ max_active = 10                 # least urgent, oldest alert is dropped first
 
 # GitHub, GitHub Enterprise Server or GHE.com: open PRs and Actions runs, by
 # polling (GitHub cannot reach your server, so no webhook). Setup is in the
-# README. Uncomment and adjust; add one block per account or instance.
+# docs/install.md. Uncomment and adjust; add one block per account or instance.
 # [[source.github]]
 # name = "personal"             # required: used in logs
 # base_url = "https://api.github.com"  # default; GHES: https://ghe.example.com/api/v3

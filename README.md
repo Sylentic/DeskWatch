@@ -1,83 +1,114 @@
 # DeskWatch
 
-DeskWatch is an ESP32-S3 desk status panel. When idle it rotates through server stats, open pull requests and pipeline status. When a CI job runs it switches to live progress, shows a red alert on failure (cleared with a button) and a short green flash on success.
+DeskWatch is a desk status panel built around an ESP32-S3. When idle it rotates through server stats, open pull
+requests and pipeline status. When a CI job runs it switches to live progress, shows a red alert on failure
+(cleared with a button) and a short green flash on success. Home Assistant or any script can raise alerts on it.
+
+![The panel UI in the simulator](docs/panel-example.png)
 
 ## How it fits together
 
-- **Bridge** (Rust, runs on a Debian home server): collects server stats, receives Gitea webhooks, polls GitHub and (later) Azure DevOps, decides what the panel should show and publishes it over MQTT.
-- **Firmware** (Rust, esp-hal + embassy): a deliberately dumb MQTT client on an ESP32-S3 SuperMini with a 4" ST7796S touch screen. It draws whatever page the bridge sends.
-- **MQTT** (Mosquitto) sits between the two.
+- **Bridge** (Rust, runs on a Debian home server): collects server stats, receives Gitea webhooks, polls GitHub,
+  GitHub Enterprise and Prometheus, takes alerts from Home Assistant, decides what the panel should show and
+  publishes it over MQTT.
+- **Panel**: a deliberately dumb MQTT client with a touch screen (planned: an ESP32-S3 SuperMini with a 4" ST7796S
+  display) that draws whatever page the bridge sends. Its drawing code, the `ui/` crate, is done and runs today in
+  a desktop simulator; the firmware is not part of 1.0.
+- **MQTT** (Mosquitto) sits between the two. The contract is [docs/mqtt-schema.md](docs/mqtt-schema.md), with JSON
+  samples in [docs/schema/](docs/schema/) that both sides are tested against.
 
-## Design docs
+## What is in 1.0
 
-- [docs/mqtt-schema.md](docs/mqtt-schema.md): the MQTT contract between bridge and panel, with JSON samples in
-  [docs/schema/](docs/schema/) that both sides are tested against
+| Part | State |
+|---|---|
+| Bridge with idle rotation, screen priority, button handling | Done |
+| Sources: Gitea, GitHub and GitHub Enterprise, Prometheus (node_exporter, cAdvisor), local `/proc` stats | Done |
+| Alerts from Home Assistant and scripts, with blueprints | Done |
+| Mosquitto logins, ACL example, TLS | Done |
+| Panel UI (`ui/`) and desktop simulator (`sim/`) | Done |
+| Linux x86_64 release binary, systemd unit, install guide | Done |
 
-The rest of the design lives in the project's shared files for now:
+## What is not in 1.0
 
-- `schema-and-wiring.md`: hardware and pin wiring
-- `firmware-stack.md`: firmware crate choices
-- `display-options.md`: display research
+- **The firmware.** The real panel waits for the display to arrive. Until then the simulator draws exactly what
+  the panel will, and the schema is the contract the firmware will implement. Over-the-air updates come last.
+- **Azure DevOps and CI runner status** are planned for 1.1.
+- **TLS on the webhook listener.** Gitea talks plain HTTP to the bridge; put a reverse proxy in front if the path
+  crosses an untrusted network.
+- **Release binaries for other CPUs.** Build from source on a Raspberry Pi or similar.
 
-## Status
+## Install
 
-The bridge is in `bridge/`. It publishes the server stats page and rotates through idle pages, with retained
-state and online/offline status topics. Data sources share one framework: each `[[source.<type>]]` block
-in the config runs as its own task, reads its secrets from credential files, and reports facts and its
-health. The Gitea source is in: a running Actions job takes over the screen with step progress, a failed run
-shows a red alert until the button is pressed, a successful run flashes green, open PRs show as a header
-badge and a rotation page, and the latest run of every pipeline shows on the pipelines page. A source that
-cannot log in or connect shows as a `warn` badge. The GitHub source does the same for github.com, GitHub
-Enterprise Server and GHE.com by polling. The Prometheus source adds a stats page per machine (from
-node_exporter) and a list of stopped containers (from cAdvisor), with the built-in `/proc` stats page as the
-fallback. Home Assistant or any script can raise alerts on `deskpanel/alert` (info, warning, critical; see
-below). The panel UI and a desktop simulator are in `ui/` and `sim/`. A firmware spike follows once the screen
-arrives.
+[docs/install.md](docs/install.md) walks through the whole setup on a Debian server: download or build the
+binary, config, systemd unit with credentials, Mosquitto logins, then each source and Home Assistant. A short
+overview of the sources is below.
 
-## Running the bridge
+## Running the bridge by hand
 
-Needs a stable Rust toolchain and a Mosquitto broker.
+Needs a stable Rust toolchain (1.88 or newer) and a Mosquitto broker.
 
 ```sh
 cargo run -p deskwatch-bridge -- bridge/config.example.toml
 mosquitto_sub -t 'deskpanel/#' -v   # in another terminal
 ```
 
-The config path can also come from `DESKWATCH_CONFIG`; the default is `/etc/deskwatch/bridge.toml`. A sample
-systemd unit is in [deploy/deskwatch-bridge.service](deploy/deskwatch-bridge.service).
+The config path can also come from `DESKWATCH_CONFIG`; the default is `/etc/deskwatch/bridge.toml`. On a server
+run it as a service, see [deploy/deskwatch-bridge.service](deploy/deskwatch-bridge.service). The example config
+has a Gitea block switched on; remove it if you have no Gitea.
 
 Secrets never go in the config. Keys ending in `_file` name a credential: a plain name such as `gitea-token`
 is read from `$CREDENTIALS_DIRECTORY`, which systemd fills from the unit's `LoadCredential=` lines; an
 absolute path is read directly, which is handy when running by hand. The MQTT password can also come from
 `DESKWATCH_MQTT_PASSWORD`.
 
-## Host stats from Prometheus
+## Sources
 
-The built-in `stats` page shows the machine the bridge runs on, read from `/proc`. If you run Prometheus with
-node_exporter (and cAdvisor for containers), a `[[source.prometheus]]` block adds one `stats:<name>` page per
-machine, and a `containers` page that lists expected containers that stopped and hosts that stopped answering.
-Both pages only join the rotation when you list them in `[[rotation]]`; set `skip_when_empty` on `containers`
-so a quiet day never shows it. The `server` badge counts what is down. The bridge only reads, over the HTTP API;
-a bearer token (`token_file`) is optional and only needed behind a proxy.
+Each source is a `[[source.<type>]]` block in the config and runs as its own task; a source that cannot log in or
+connect shows as a `warn` badge on the panel. Setup for each is in [docs/install.md](docs/install.md#5-sources).
 
-```toml
-[[source.prometheus]]
-name = "home"
-url = "http://prometheus.example.lan:9090"
-hosts = [
-  { instance = "node-exporter:9100", name = "home", cadvisor = "cadvisor:8080", expect_containers = ["db", "web"] },
-]
+| Source | How it gets data | What it adds |
+|---|---|---|
+| `gitea` | Webhooks for instant job start and end, polling for step progress and open PRs | Running job takes over the screen, red alert on failure, green flash on success, PR badge, pipelines page |
+| `github` | Polling with ETags (github.com, GitHub Enterprise Server, GHE.com) | The same as Gitea |
+| `prometheus` | HTTP API (node_exporter, cAdvisor) | A `stats:<host>` page per machine, a `containers` page of what stopped, a `server` badge |
+| built-in `stats` | `/proc` and `/sys` of the bridge machine | The home page, always available |
 
-[[rotation]]
-page = "stats:home"
-dwell_s = 15
-skip_when_empty = true
+`interrupt` decides which repositories may take over the screen. Runs from other repositories still show on the
+pipelines page, and their failures still count in the red header badge until a green run of the same pipeline
+replaces them. `alias` gives repositories short labels on the panel.
+
+**Button:** a short press dismisses an alert or notice, or shows the next page during rotation. A long press
+pins the current rotation page, or shows the next running job when several run at once.
+
+## Alerts from Home Assistant and scripts
+
+Anything that can publish MQTT can raise an alert on `deskpanel/alert`:
+
+```sh
+mosquitto_pub -t deskpanel/alert -m '{"v":2,"id":"freezer","severity":"warning","title":"Freezer door","message":"Open for 5 min","source":"homeassistant"}'
+mosquitto_pub -t deskpanel/alert -m '{"v":2,"id":"freezer","clear":true}'
 ```
 
-`instance` is the label Prometheus gives the node_exporter target. A stopped container disappears from cAdvisor,
-so only the names in `expect_containers` can be reported; they must match the container name exactly. When
-Prometheus cannot be reached or refuses the token, the host pages are greyed out and the `warn` badge appears.
-The PromQL for each field is in `bridge/src/prometheus/mod.rs` and can be replaced per field with `queries`.
+- `info` flashes a notice for 5 seconds and is listed on the `alerts` page for 30 minutes (or `ttl_s`).
+- `warning` shows an amber screen until the button is pressed or for 10 minutes.
+- `critical` shows a red screen above running jobs until the button is pressed.
+
+After the button, warnings and criticals stay in the `home` header badge and on the `alerts` page until they
+are cleared with the same `id` or their `ttl_s` runs out. Add `page = "alerts"` to `[[rotation]]` to show the
+list. The `[alerts]` config table can turn the topic off, cap the number of alerts, and limit which ids may be
+critical. Full field list in [docs/mqtt-schema.md](docs/mqtt-schema.md).
+
+The broker should not let alert publishers write any other `deskpanel` topic. For Home Assistant, import the
+script blueprints in [`homeassistant/blueprints/script`](homeassistant/blueprints/script) and follow
+[docs/home-assistant.md](docs/home-assistant.md): people then build alerts in the HA UI with a title, message and
+severity, and clear them by id.
+
+## Broker logins
+
+Give the bridge, the panel and Home Assistant each their own Mosquitto login limited to their own topics:
+[docs/mosquitto.md](docs/mosquitto.md) explains how to find the clients using your broker before turning
+anonymous access off, and [deploy/mosquitto](deploy/mosquitto) has an example config and ACL. The bridge takes
+`username`, `password_file` and optional `tls` settings in `[mqtt]`, see `bridge/config.example.toml`.
 
 ## Demo mode
 
@@ -122,96 +153,6 @@ mosquitto_pub -r -t deskpanel/screen -f ui/testdata/screens/alert_failed.json
 `ui/testdata/screens/` has one example payload per template and edge case. `cargo test -p deskwatch-ui`
 renders each one and compares it with the approved image in `ui/tests/snapshots/`; after an intended layout
 change, re-approve with `UPDATE_SNAPSHOTS=1 cargo test -p deskwatch-ui` and review the PNG diff in the PR.
-
-## Gitea setup
-
-1. Add a `[[source.gitea]]` block to the bridge config (see `bridge/config.example.toml`), for example
-   with `name = "home"`.
-2. Pick a random webhook secret and store it as the credential named by `webhook_secret_file`. For
-   private repos, also create a read-only token (scope `read:repository`) and store it as the credential
-   named by `token_file`. Add a `LoadCredential=` line for each to the systemd unit.
-3. In Gitea, add a webhook (per repo, per organisation, or system-wide in the site admin):
-   - Target URL: `http://<bridge-host>:8787/webhook/gitea/home` (the source's `name`), method POST,
-     content type `application/json`
-   - Secret: the same value as the webhook secret credential
-   - Trigger on custom events: **Workflow Run**, **Workflow Job** and **Pull Request**
-4. Gitea (1.27 or 28.x) refuses webhooks to private addresses by default. Allow the bridge host in `app.ini`:
-
-   ```ini
-   [webhook]
-   ALLOWED_HOST_LIST = private
-   ```
-
-The bridge rejects any request without a valid `X-Gitea-Signature`. Webhooks give instant job start and
-end; step progress comes from polling the Actions jobs API every 5 seconds while a job runs, and the open PR
-count is re-polled every 60 seconds as a safety net. Cancelled runs show no alert.
-
-`interrupt` decides which repositories may take over the screen: `true` (default), `false`, or a list of
-`owner/repo` names. Runs from other repositories still show on the pipelines page, and their failures still
-count in the red header badge until a green run of the same pipeline replaces them. `alias` gives
-repositories short labels on the panel.
-
-Several Gitea instances work too: add one `[[source.gitea]]` block per instance, each with its own name and
-webhook URL.
-
-## GitHub and GitHub Enterprise setup
-
-GitHub cannot reach a server at home, so the bridge polls it: open PRs and the latest run of each workflow
-every 60 seconds, and the jobs of a run every 5 seconds while it is in progress. Each request sends the last
-`ETag`, so an unchanged answer does not count against the rate limit on github.com. One adapter covers
-github.com, GitHub Enterprise Server and GHE.com; only `base_url` differs:
-
-| Host | `base_url` |
-|---|---|
-| github.com, including Enterprise Cloud | leave out (`https://api.github.com`) |
-| GitHub Enterprise Server | `https://ghe.example.com/api/v3` |
-| GHE.com (data residency) | `https://api.your-subdomain.ghe.com` |
-
-1. Create a fine-grained personal access token limited to the repositories you want on the panel, with
-   read-only permissions **Metadata**, **Pull requests** and **Actions**. Nothing else is needed.
-2. Store it as a credential, for example `/etc/deskwatch/credentials/github-personal` (root, mode 600), and
-   add `LoadCredential=github-personal:/etc/deskwatch/credentials/github-personal` to the systemd unit.
-3. Add a `[[source.github]]` block with `token_file = "github-personal"` and the `repos` to watch (see
-   `bridge/config.example.toml`). Use one block per account or Enterprise instance.
-
-A refused token or an unreachable server shows as the `warn` badge; polling then backs off (1, 2, 5 minutes)
-and slows down when less than 10 % of the rate limit is left. Runs that finished before the bridge started
-show on the pipelines page and count in the red badge, but do not take over the screen. `interrupt`,
-`alias` and the pipelines page work as for Gitea; a new non-draft PR flashes "New PR" unless
-`notify_new_prs = false`. Only the first 100 open PRs per repository are counted.
-
-Button: a short press dismisses an alert or notice, or shows the next page during rotation. A long press
-pins the current rotation page, or shows the next running job when several run at once.
-
-## Alerts from Home Assistant and scripts
-
-Anything that can publish MQTT can raise an alert on `deskpanel/alert`:
-
-```sh
-mosquitto_pub -t deskpanel/alert -m '{"v":2,"id":"freezer","severity":"warning","title":"Freezer door","message":"Open for 5 min","source":"homeassistant"}'
-mosquitto_pub -t deskpanel/alert -m '{"v":2,"id":"freezer","clear":true}'
-```
-
-- `info` flashes a notice for 5 seconds and is listed on the `alerts` page for 30 minutes (or `ttl_s`).
-- `warning` shows an amber screen until the button is pressed or for 10 minutes.
-- `critical` shows a red screen above running jobs until the button is pressed.
-
-After the button, warnings and criticals stay in the `home` header badge and on the `alerts` page until they
-are cleared with the same `id` or their `ttl_s` runs out. Add `page = "alerts"` to `[[rotation]]` to show the
-list. The `[alerts]` config table can turn the topic off, cap the number of alerts, and limit which ids may be
-critical. Full field list in [docs/mqtt-schema.md](docs/mqtt-schema.md).
-
-The broker should not let alert publishers write any other `deskpanel` topic. For Home Assistant, import the
-script blueprints in [`homeassistant/blueprints/script`](homeassistant/blueprints/script) and follow
-[docs/home-assistant.md](docs/home-assistant.md): people then build alerts in the HA UI with a title, message and
-severity, and clear them by id.
-
-## Broker logins
-
-Give the bridge, the panel and Home Assistant each their own Mosquitto login limited to their own topics:
-[docs/mosquitto.md](docs/mosquitto.md) explains how to find the clients using your broker before turning
-anonymous access off, and [deploy/mosquitto](deploy/mosquitto) has an example config and ACL. The bridge takes
-`username`, `password_file` and optional `tls` settings in `[mqtt]`, see `bridge/config.example.toml`.
 
 ## License
 
