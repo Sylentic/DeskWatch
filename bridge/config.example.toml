@@ -10,8 +10,15 @@
 host = "localhost"              # Mosquitto broker, usually on the same server
 port = 1883
 client_id = "deskwatch-bridge"
-# username = "deskwatch"        # optional
+# Broker login. Needed once the broker turns anonymous access off; see
+# docs/mosquitto.md. The username is the one in the broker's password file.
+# username = "deskwatch-bridge"
 # password_file = "mqtt-password" # else the DESKWATCH_MQTT_PASSWORD env var
+# TLS (usually port 8883). Without ca_file the system's trusted roots are used.
+# tls = true
+# ca_file = "/etc/deskwatch/mqtt-ca.pem"        # only for a private CA
+# client_cert_file = "/etc/deskwatch/client.pem" # only if the broker demands one
+# client_key_file = "mqtt-client-key"           # credential holding the key
 topic_prefix = "deskpanel"      # matches the schema, change only for testing
 keep_alive_s = 30
 

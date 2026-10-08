@@ -1,0 +1,96 @@
+# DeskWatch alert: show a message on the DeskWatch desk panel.
+#
+# Import this blueprint once (Settings, Automations & scenes, Blueprints,
+# Import blueprint), then create a script from it (name it "DeskWatch alert",
+# which gives script.deskwatch_alert). After that, any automation can use the
+# action "Run script: DeskWatch alert" and fill in the fields below.
+# Guide: docs/home-assistant.md
+blueprint:
+  name: DeskWatch alert
+  description: >-
+    Raise an alert on the DeskWatch desk panel. Give it a title, an optional
+    message and a severity. Use the same id again to replace the alert, and
+    the "DeskWatch clear" script with that id to remove it.
+  domain: script
+  input:
+    topic:
+      name: Alert topic
+      description: >-
+        MQTT topic the DeskWatch bridge listens on. Leave the default unless
+        you changed topic_prefix in the bridge config.
+      default: deskpanel/alert
+      selector:
+        text:
+
+fields:
+  title:
+    name: Title
+    description: Short heading, cut to 40 characters on the panel.
+    required: true
+    example: Washing machine
+    selector:
+      text:
+  message:
+    name: Message
+    description: One line of detail, cut to 40 characters on the panel.
+    required: false
+    example: Done, 58 min
+    selector:
+      text:
+  severity:
+    name: Severity
+    description: >-
+      info flashes a notice, warning shows an amber screen, critical shows a
+      red screen above everything else.
+    required: false
+    default: info
+    selector:
+      select:
+        options:
+          - info
+          - warning
+          - critical
+  id:
+    name: Id
+    description: >-
+      Names the alert. Raising the same id again replaces the alert instead
+      of adding a second one, and the clear script needs it. Leave empty for a
+      one-off alert.
+    required: false
+    example: washer
+    selector:
+      text:
+  duration:
+    name: Duration (minutes)
+    description: >-
+      How long the alert stays. Empty uses the default for the severity
+      (info 30 min, warning and critical until cleared).
+    required: false
+    selector:
+      number:
+        min: 1
+        max: 1440
+        unit_of_measurement: min
+
+sequence:
+  - action: mqtt.publish
+    data:
+      topic: !input topic
+      qos: 1
+      retain: false
+      payload: >-
+        {% set p = {
+          'v': 2,
+          'severity': severity | default('info'),
+          'title': title,
+          'message': message | default(''),
+          'source': 'homeassistant'
+        } %}
+        {% set p = dict(p, id=id | string) if (id | default('') | string | length) > 0 else p %}
+        {% set minutes = duration | default(0) | float(0) %}
+        {% set p = dict(p, ttl_s=(minutes * 60) | int) if minutes > 0 else p %}
+        {{ p | to_json }}
+
+mode: queued
+max: 10
+icon: mdi:desk

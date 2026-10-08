@@ -1,0 +1,30 @@
+# Example Mosquitto 2.x settings for DeskWatch: logins and per-user topic
+# limits. Merge these lines into your own mosquitto.conf (or drop the file in
+# conf.d/). Paths are placeholders, adjust them to your install. Containers
+# usually mount a config folder such as /mosquitto/config.
+#
+# Read docs/mosquitto.md before turning anonymous access off: any client that
+# connects without a login stops working.
+
+listener 1883
+allow_anonymous false
+password_file /etc/mosquitto/passwd
+acl_file /etc/mosquitto/acl
+
+# Log connections so you can see which clients (and which logins) are in use.
+connection_messages true
+log_type error
+log_type warning
+log_type notice
+
+# Optional TLS on its own port. Point the bridge at it with `tls = true` and
+# `port = 8883` in bridge.toml (see docs/mosquitto.md, "TLS").
+# listener 8883
+# allow_anonymous false
+# password_file /etc/mosquitto/passwd
+# acl_file /etc/mosquitto/acl
+# cafile /etc/mosquitto/certs/ca.pem
+# certfile /etc/mosquitto/certs/broker.pem
+# keyfile /etc/mosquitto/certs/broker.key
+# With more than one listener, add `per_listener_settings true` at the top
+# (outside any listener) so each listener keeps its own login rules.

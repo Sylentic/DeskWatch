@@ -201,8 +201,17 @@ are cleared with the same `id` or their `ttl_s` runs out. Add `page = "alerts"` 
 list. The `[alerts]` config table can turn the topic off, cap the number of alerts, and limit which ids may be
 critical. Full field list in [docs/mqtt-schema.md](docs/mqtt-schema.md).
 
-The broker should not let alert publishers write any other `deskpanel` topic. A Home Assistant script
-blueprint and Mosquitto users and ACLs come in a later change.
+The broker should not let alert publishers write any other `deskpanel` topic. For Home Assistant, import the
+script blueprints in [`homeassistant/blueprints/script`](homeassistant/blueprints/script) and follow
+[docs/home-assistant.md](docs/home-assistant.md): people then build alerts in the HA UI with a title, message and
+severity, and clear them by id.
+
+## Broker logins
+
+Give the bridge, the panel and Home Assistant each their own Mosquitto login limited to their own topics:
+[docs/mosquitto.md](docs/mosquitto.md) explains how to find the clients using your broker before turning
+anonymous access off, and [deploy/mosquitto](deploy/mosquitto) has an example config and ACL. The bridge takes
+`username`, `password_file` and optional `tls` settings in `[mqtt]`, see `bridge/config.example.toml`.
 
 ## License
 

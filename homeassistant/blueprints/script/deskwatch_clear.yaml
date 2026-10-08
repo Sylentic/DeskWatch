@@ -1,0 +1,41 @@
+# DeskWatch clear: remove an alert from the DeskWatch desk panel by its id.
+#
+# Import and create a script from it (name it "DeskWatch clear"), then call it
+# from an automation when the condition ends (door closed, leak dry), with the
+# same id you gave the "DeskWatch alert" script.
+# Guide: docs/home-assistant.md
+blueprint:
+  name: DeskWatch clear
+  description: Remove an alert from the DeskWatch desk panel by its id.
+  domain: script
+  input:
+    topic:
+      name: Alert topic
+      description: >-
+        MQTT topic the DeskWatch bridge listens on. Leave the default unless
+        you changed topic_prefix in the bridge config.
+      default: deskpanel/alert
+      selector:
+        text:
+
+fields:
+  id:
+    name: Id
+    description: The id the alert was raised with.
+    required: true
+    example: washer
+    selector:
+      text:
+
+sequence:
+  - action: mqtt.publish
+    data:
+      topic: !input topic
+      qos: 1
+      retain: false
+      payload: >-
+        {{ {'v': 2, 'id': id | string, 'clear': true} | to_json }}
+
+mode: queued
+max: 10
+icon: mdi:desk
