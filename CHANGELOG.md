@@ -8,6 +8,8 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+## [0.9.1]
+
 ### Added
 
 - **Azure DevOps source** (`[[source.azure_devops]]`) for Azure DevOps Services, by polling with a read-only
@@ -62,5 +64,6 @@ not (see the README, "What is not in 0.9").
   source for other CPUs.
 - Gitea webhooks are plain HTTP unless you put a reverse proxy in front of the bridge.
 
-[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/Sylentic/DeskWatch/releases/tag/v0.9.1
 [0.9.0]: https://github.com/Sylentic/DeskWatch/releases/tag/v0.9.0
