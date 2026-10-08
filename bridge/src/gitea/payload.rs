@@ -3,8 +3,10 @@
 //! the rest. Everything has a default so a field Gitea leaves out (or renames
 //! in a later release) degrades to "unknown" instead of rejecting the event.
 //!
-//! Checked against Gitea 1.27 (`workflow_run`, `workflow_job`, `pull_request`
-//! webhooks and `/actions/jobs/{id}`), which 28.0 keeps.
+//! Checked against Gitea 1.27 and 28.x (`workflow_run`, `workflow_job`,
+//! `pull_request` webhooks and `/actions/jobs/{id}`). 28.0 added a `pending`
+//! job status and aligned statuses with GitHub; the bridge only acts on
+//! `in_progress` and `completed`, so the extra statuses are simply ignored.
 
 use serde::Deserialize;
 use time::OffsetDateTime;
@@ -65,7 +67,7 @@ pub struct Job {
     pub name: String,
     pub head_sha: String,
     pub head_branch: String,
-    /// `queued`, `waiting`, `in_progress` or `completed`.
+    /// `queued`, `waiting`, `pending` (28+), `in_progress` or `completed`.
     pub status: String,
     /// `success`, `failure`, `cancelled`, `skipped` once completed.
     pub conclusion: Option<String>,

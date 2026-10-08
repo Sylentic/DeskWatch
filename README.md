@@ -48,7 +48,7 @@ password, if any, is read from `DESKWATCH_MQTT_PASSWORD`. A sample systemd unit 
    - Target URL: `http://<bridge-host>:8787/webhook/gitea`, method POST, content type `application/json`
    - Secret: the same value as `DESKWATCH_GITEA_WEBHOOK_SECRET`
    - Trigger on custom events: **Workflow Run**, **Workflow Job** and **Pull Request**
-4. Gitea refuses webhooks to private addresses by default. Allow the bridge host in `app.ini`:
+4. Gitea (1.27 or 28.x) refuses webhooks to private addresses by default. Allow the bridge host in `app.ini`:
 
    ```ini
    [webhook]
