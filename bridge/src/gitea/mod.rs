@@ -501,6 +501,18 @@ mod tests {
     }
 
     #[test]
+    fn pending_and_queued_jobs_wait_for_a_runner() {
+        // Gitea 28 adds `pending`; like `queued` it is not on screen yet.
+        let mut source = GiteaSource::new(true);
+        let mut facts = CiFacts::default();
+        for status in ["queued", "waiting", "pending"] {
+            source.apply(job_event(status, None, json!(null)), &mut facts, 100);
+        }
+        assert!(facts.candidates().is_empty());
+        assert!(source.running_jobs().is_empty());
+    }
+
+    #[test]
     fn no_interrupt_keeps_jobs_off_screen() {
         let mut source = GiteaSource::new(false);
         let mut facts = CiFacts::default();
