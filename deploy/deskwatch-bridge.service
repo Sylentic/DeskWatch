@@ -6,11 +6,14 @@
 #   sudo install -m 644 deploy/deskwatch-bridge.service /etc/systemd/system/
 #   sudo systemctl daemon-reload && sudo systemctl enable --now deskwatch-bridge
 #
-# Secrets go in /etc/deskwatch/bridge.env (owned by root, mode 600), never in
-# the TOML config or git. Example content:
-#   DESKWATCH_MQTT_PASSWORD=change-me
-#   DESKWATCH_GITEA_WEBHOOK_SECRET=change-me
-#   DESKWATCH_GITEA_TOKEN=change-me        # optional, read-only, for private repos
+# Secrets live in /etc/deskwatch/credentials/ (owned by root, mode 600), one
+# file per secret, never in the TOML config or git. The config names them
+# (`webhook_secret_file = "gitea-webhook-secret"`), and the LoadCredential=
+# lines below hand them to the bridge only. Add one line per credential the
+# config names, for example:
+#   sudo install -d -m 700 /etc/deskwatch/credentials
+#   openssl rand -hex 32 | sudo tee /etc/deskwatch/credentials/gitea-webhook-secret
+#   sudo chmod 600 /etc/deskwatch/credentials/*
 
 [Unit]
 Description=DeskWatch bridge (desk panel MQTT publisher)
@@ -20,14 +23,16 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/deskwatch-bridge /etc/deskwatch/bridge.toml
-EnvironmentFile=-/etc/deskwatch/bridge.env
+LoadCredential=gitea-webhook-secret:/etc/deskwatch/credentials/gitea-webhook-secret
+# LoadCredential=gitea-token:/etc/deskwatch/credentials/gitea-token
+# LoadCredential=mqtt-password:/etc/deskwatch/credentials/mqtt-password
 Environment=RUST_LOG=info
 Restart=on-failure
 RestartSec=5
 
 # Run as a throwaway user with a read-only view of the system. The bridge only
-# reads /proc and /sys, talks to the broker and Gitea, and listens for Gitea
-# webhooks (port set by gitea.listen, 8787 by default).
+# reads /proc and /sys, talks to the broker and its sources, and listens for
+# webhooks (port set by http.listen, 8787 by default).
 DynamicUser=yes
 ProtectSystem=strict
 ProtectHome=yes

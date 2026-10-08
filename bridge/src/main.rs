@@ -6,23 +6,26 @@
 //!
 //! - every second, and after every event, the composer picks the screen and
 //!   badges; they are published only when they change;
-//! - every `server.interval_s` the stats are sampled;
-//! - Gitea webhooks and polls arrive as `GiteaEvent`s;
+//! - every `server.interval_s` the local stats are sampled;
+//! - each `[[source.*]]` block runs as its own task and sends fact updates
+//!   and its health as `SourceMsg`s;
 //! - button presses arrive from the MQTT task as `PanelEvent`s.
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use tokio::signal::unix::{SignalKind, signal};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 use deskwatch_bridge::composer::Composer;
-use deskwatch_bridge::config::{Config, GITEA_SECRET_ENV, GITEA_TOKEN_ENV, GiteaConfig};
-use deskwatch_bridge::gitea::{self, GiteaEvent, GiteaSource, JobRef};
+use deskwatch_bridge::config::{Config, MQTT_PASSWORD_ENV, MqttConfig};
+use deskwatch_bridge::gitea::Gitea;
+use deskwatch_bridge::hooks::Hooks;
 use deskwatch_bridge::model::{Badges, Screen};
 use deskwatch_bridge::mqtt::{self, Publisher};
+use deskwatch_bridge::source::{self, Secret, unix_now};
 use deskwatch_bridge::stats::StatsCollector;
 
 /// How often the composer re-checks timers (alert expiry, rotation dwell).
@@ -45,17 +48,24 @@ async fn main() -> Result<()> {
     let config = Config::load(&path)?;
     info!("loaded config from {}", path.display());
 
+    // Build every source first: missing credentials or a taken port stop the
+    // bridge here, before it connects anywhere.
+    let mut hooks = Hooks::default();
+    let mut gitea = Vec::new();
+    for gitea_config in &config.source.gitea {
+        gitea.push(Gitea::new(gitea_config, &mut hooks)?);
+    }
+    hooks.start(config.http.listen).await?;
+
     let (panel_tx, mut panel_rx) = mpsc::channel(16);
-    let (publisher, eventloop) = mqtt::connect(&config.mqtt);
+    let (publisher, eventloop) = mqtt::connect(&config.mqtt, mqtt_password(&config.mqtt)?);
     tokio::spawn(mqtt::run_event_loop(eventloop, publisher.clone(), panel_tx));
 
-    // Gitea events from the webhook server and the poller. The sender stays
-    // alive here, so `recv` simply waits forever when Gitea is switched off.
-    let (gitea_tx, mut gitea_rx) = mpsc::channel(64);
-    let (jobs_tx, jobs_rx) = watch::channel(Vec::new());
-    let mut gitea = GiteaSource::new(config.gitea.as_ref().is_some_and(|g| g.interrupt));
-    if let Some(gitea_config) = &config.gitea {
-        start_gitea(gitea_config, gitea_tx.clone(), jobs_rx).await?;
+    // Sources report here. The sender stays alive in this function, so `recv`
+    // simply waits forever when no source is configured.
+    let (source_tx, mut source_rx) = mpsc::channel(64);
+    for source in gitea {
+        source::spawn(source, source_tx.clone());
     }
 
     let mut collector = StatsCollector::new(&config.server);
@@ -69,16 +79,7 @@ async fn main() -> Result<()> {
         tokio::select! {
             _ = stats_ticker.tick() => composer.set_stats(collector.collect()),
             _ = compose_ticker.tick() => {}
-            Some(event) = gitea_rx.recv() => {
-                gitea.apply(event, &mut composer.ci, unix_now());
-                // Tell the poller which jobs to follow, only when that changed.
-                let running = gitea.running_jobs();
-                jobs_tx.send_if_modified(|jobs: &mut Vec<JobRef>| {
-                    let changed = *jobs != running;
-                    *jobs = running;
-                    changed
-                });
-            }
+            Some(msg) = source_rx.recv() => composer.apply(msg, unix_now()),
             Some(event) = panel_rx.recv() => composer.on_button(event.action, unix_now()),
             _ = tokio::signal::ctrl_c() => break,
             _ = sigterm.recv() => break,
@@ -95,42 +96,17 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Start the webhook server and the poller for the Gitea source.
-async fn start_gitea(
-    config: &GiteaConfig,
-    events: mpsc::Sender<GiteaEvent>,
-    jobs: watch::Receiver<Vec<JobRef>>,
-) -> Result<()> {
-    let secret = std::env::var(GITEA_SECRET_ENV).unwrap_or_default();
-    anyhow::ensure!(
-        !secret.is_empty(),
-        "[gitea] is configured but {GITEA_SECRET_ENV} is empty; set it to the webhook secret"
-    );
-    let token = std::env::var(GITEA_TOKEN_ENV)
-        .ok()
-        .filter(|t| !t.is_empty());
-    if token.is_none() {
-        info!("{GITEA_TOKEN_ENV} not set, polling Gitea anonymously (public repos only)");
+/// The broker password: `mqtt.password_file` if set, else the environment.
+fn mqtt_password(config: &MqttConfig) -> Result<Option<Secret>> {
+    if let Some(file) = &config.password_file {
+        return source::load_secret(file)
+            .context("mqtt.password_file")
+            .map(Some);
     }
-
-    let listener = gitea::webhook::bind(config.listen).await?;
-    let hook_events = events.clone();
-    tokio::spawn(async move {
-        if let Err(err) = gitea::webhook::serve(listener, secret.into_bytes(), hook_events).await {
-            warn!("{err:#}");
-        }
-    });
-
-    let api = gitea::api::HttpApi::new(&config.base_url, token).context("Gitea API")?;
-    tokio::spawn(gitea::api::poll_loop(
-        api,
-        config.repos.clone(),
-        Duration::from_secs(config.job_poll_s),
-        Duration::from_secs(config.poll_s),
-        jobs,
-        events,
-    ));
-    Ok(())
+    Ok(std::env::var(MQTT_PASSWORD_ENV)
+        .ok()
+        .filter(|p| !p.is_empty())
+        .map(Secret::new))
 }
 
 /// What was published last, so only changes go out.
@@ -164,11 +140,4 @@ impl Shown {
             }
         }
     }
-}
-
-fn unix_now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
 }

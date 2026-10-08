@@ -1,15 +1,17 @@
 # DeskWatch bridge config example.
 #
 # Copy to /etc/deskwatch/bridge.toml and adjust. Every key is optional; the
-# values below are the defaults unless noted. Do not put passwords or tokens
-# in this file: the MQTT password, Gitea webhook secret and Gitea token come
-# from environment variables (see deploy/deskwatch-bridge.service).
+# values below are the defaults unless noted. Never put passwords or tokens in
+# this file. Keys ending in `_file` name a credential: a plain name is read
+# from systemd's credentials folder (LoadCredential= in
+# deploy/deskwatch-bridge.service), an absolute path is read as is.
 
 [mqtt]
 host = "localhost"              # Mosquitto broker, usually on the same server
 port = 1883
 client_id = "deskwatch-bridge"
-# username = "deskwatch"        # optional; password via DESKWATCH_MQTT_PASSWORD
+# username = "deskwatch"        # optional
+# password_file = "mqtt-password" # else the DESKWATCH_MQTT_PASSWORD env var
 topic_prefix = "deskpanel"      # matches the schema, change only for testing
 keep_alive_s = 30
 
@@ -19,21 +21,29 @@ interval_s = 5                  # stats sample and publish interval
 # net_iface = "eth0"            # defaults to the busiest non-loopback interface
 disk_path = "/"                 # filesystem for disk_pct
 
-# Gitea Actions and pull requests. Remove this block to switch Gitea off.
-# Needs DESKWATCH_GITEA_WEBHOOK_SECRET (same value as the webhook secret in
-# Gitea) and optionally DESKWATCH_GITEA_TOKEN (read-only token for private
-# repos). Webhook setup is in the README.
-[gitea]
+# Shared listener for webhooks. Only opened when a source needs it.
+[http]
+listen = "0.0.0.0:8787"
+
+# Data sources. Each type is an array, so there can be several of each; the
+# name must be unique per type. Remove a block to switch that source off.
+
+# Gitea Actions and pull requests. Webhook setup is in the README; the
+# webhook URL is http://<this host>:8787/webhook/gitea/<name>.
+[[source.gitea]]
+name = "home"                   # required: used in the webhook URL and logs
 base_url = "https://gitea.example.com"  # required: your Gitea address
-listen = "0.0.0.0:8787"         # webhook endpoint is http://<this host>:8787/webhook/gitea
+webhook_secret_file = "gitea-webhook-secret"  # required: same value as in Gitea
+token_file = "gitea-token"      # optional read-only token, for private repos
 repos = ["owner/repo"]          # repos whose open PRs are polled for the header badge
 poll_s = 60                     # open PR poll, a safety net behind PR webhooks
 job_poll_s = 5                  # step progress poll while a job runs
-interrupt = true                # running jobs take over the screen
+interrupt = true                # true, false, or a list such as ["owner/repo"]
+# alias = { "owner/repo" = "shop" }  # short labels on the panel
 
 # Idle pages, in order. Pages with nothing to show are skipped when
-# skip_when_empty is set. "prs" lists open PRs from the CI sources;
-# "pipelines" fills in with a later change.
+# skip_when_empty is set. "prs" lists open PRs and "pipelines" the latest run
+# of each pipeline, from every CI source.
 [[rotation]]
 page = "stats"
 dwell_s = 20
