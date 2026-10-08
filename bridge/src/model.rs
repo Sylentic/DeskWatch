@@ -30,9 +30,12 @@ pub const MAX_LIST_ROWS: usize = 5;
 /// and the "best" screen is simply the minimum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Level {
+    /// 0: a critical alert (Home Assistant and other alert sources), red full
+    /// screen above running jobs.
+    Critical,
     /// 1: a running job, shown with live progress.
     Job,
-    /// 2: a failed job, red full screen.
+    /// 2: a failed job (red) or a warning alert (amber), full screen.
     AlertFailed,
     /// 3: a successful job, short green flash.
     AlertSuccess,
@@ -46,6 +49,7 @@ impl Level {
     /// The number sent in the `level` field.
     pub fn number(self) -> u8 {
         match self {
+            Level::Critical => 0,
             Level::Job => 1,
             Level::AlertFailed => 2,
             Level::AlertSuccess => 3,
@@ -57,11 +61,12 @@ impl Level {
     /// How long a screen at this level stays up on its own, or `None` if it
     /// stays until something else ends it (job finishes, rotation loops).
     ///
-    /// A failed alert is also cleared by a button press; after this time it
-    /// drops to a badge instead of holding the screen.
+    /// Alerts are also cleared by a button press. A failed or warning alert
+    /// drops to a badge after this time instead of holding the screen; a
+    /// critical one stays until it is acknowledged or cleared.
     pub fn max_duration(self) -> Option<Duration> {
         match self {
-            Level::Job | Level::Rotation => None,
+            Level::Critical | Level::Job | Level::Rotation => None,
             Level::AlertFailed => Some(Duration::from_secs(10 * 60)),
             Level::AlertSuccess => Some(Duration::from_secs(10)),
             Level::Notice => Some(Duration::from_secs(5)),
@@ -213,20 +218,33 @@ pub struct JobData {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AlertStatus {
+    /// Red: a failed job or a critical alert.
     Failed,
+    /// Amber: a warning alert.
+    Warn,
+    /// Green: a successful job.
     Success,
 }
 
-/// `alert` template data: a finished job.
+/// `alert` template data. A finished job fills `project`, `pipeline` and
+/// `step`; any other alert (Home Assistant, scripts) fills `title` and
+/// `message` instead and leaves the CI fields `null`. The panel draws
+/// whichever pair is present.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AlertData {
     pub status: AlertStatus,
     pub source: String,
-    pub project: String,
-    pub pipeline: String,
+    pub project: Option<String>,
+    pub pipeline: Option<String>,
     pub step: Option<String>,
+    /// Left out of the JSON for CI alerts, which have no title.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
     pub started: u64,
-    pub finished: u64,
+    /// `None` while the alert is still active, such as an open door.
+    pub finished: Option<u64>,
     pub others: u32,
 }
 
@@ -305,6 +323,8 @@ pub enum BadgeIcon {
     Pipeline,
     Server,
     Warn,
+    /// Active alerts from Home Assistant and other alert sources.
+    Home,
 }
 
 /// One counter in the header strip.
@@ -520,11 +540,13 @@ mod tests {
 
     #[test]
     fn levels_order_and_numbers() {
+        assert!(Level::Critical < Level::Job);
         assert!(Level::Job < Level::AlertFailed);
         assert!(Level::AlertFailed < Level::AlertSuccess);
         assert!(Level::AlertSuccess < Level::Notice);
         assert!(Level::Notice < Level::Rotation);
         let numbers: Vec<u8> = [
+            Level::Critical,
             Level::Job,
             Level::AlertFailed,
             Level::AlertSuccess,
@@ -534,7 +556,7 @@ mod tests {
         .iter()
         .map(|l| l.number())
         .collect();
-        assert_eq!(numbers, [1, 2, 3, 4, 5]);
+        assert_eq!(numbers, [0, 1, 2, 3, 4, 5]);
     }
 
     #[test]

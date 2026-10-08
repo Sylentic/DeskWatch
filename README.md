@@ -10,9 +10,11 @@ DeskWatch is an ESP32-S3 desk status panel. When idle it rotates through server 
 
 ## Design docs
 
-The design lives in the project's shared files for now:
+- [docs/mqtt-schema.md](docs/mqtt-schema.md): the MQTT contract between bridge and panel, with JSON samples in
+  [docs/schema/](docs/schema/) that both sides are tested against
 
-- `mqtt-schema.md`: the MQTT contract between bridge and panel
+The rest of the design lives in the project's shared files for now:
+
 - `schema-and-wiring.md`: hardware and pin wiring
 - `firmware-stack.md`: firmware crate choices
 - `display-options.md`: display research
@@ -26,9 +28,11 @@ health. The Gitea source is in: a running Actions job takes over the screen with
 shows a red alert until the button is pressed, a successful run flashes green, open PRs show as a header
 badge and a rotation page, and the latest run of every pipeline shows on the pipelines page. A source that
 cannot log in or connect shows as a `warn` badge. The GitHub source does the same for github.com, GitHub
-Enterprise Server and GHE.com by polling. The Prometheus source adds a stats page per machine (from node_exporter) and a list of stopped
-containers (from cAdvisor), with the built-in `/proc` stats page as the fallback. The panel UI and a desktop simulator are in `ui/` and `sim/`. A
-firmware spike follows once the screen arrives.
+Enterprise Server and GHE.com by polling. The Prometheus source adds a stats page per machine (from
+node_exporter) and a list of stopped containers (from cAdvisor), with the built-in `/proc` stats page as the
+fallback. Home Assistant or any script can raise alerts on `deskpanel/alert` (info, warning, critical; see
+below). The panel UI and a desktop simulator are in `ui/` and `sim/`. A firmware spike follows once the screen
+arrives.
 
 ## Running the bridge
 
@@ -74,6 +78,20 @@ skip_when_empty = true
 so only the names in `expect_containers` can be reported; they must match the container name exactly. When
 Prometheus cannot be reached or refuses the token, the host pages are greyed out and the `warn` badge appears.
 The PromQL for each field is in `bridge/src/prometheus/mod.rs` and can be replaced per field with `queries`.
+
+## Demo mode
+
+`--demo` plays a loop of fake data of a little over two minutes, so you can watch every page in the simulator
+without Gitea or Home Assistant: stats, open PRs, pipelines and alerts pages, notices, a running deploy with a
+second job, a failure cleared by the button, a green success flash, and an amber and a red home alert. No
+sources run; only `[mqtt]` and `[alerts]` from the config are used, and the config file is optional.
+
+```sh
+cargo run -p deskwatch-bridge -- --demo    # broker on localhost, or pass a config file
+cargo run -p deskwatch-sim -- --host localhost
+```
+
+Pressing the simulator's button during the demo works as on the real panel.
 
 ## Panel UI and simulator
 
@@ -164,6 +182,27 @@ show on the pipelines page and count in the red badge, but do not take over the 
 
 Button: a short press dismisses an alert or notice, or shows the next page during rotation. A long press
 pins the current rotation page, or shows the next running job when several run at once.
+
+## Alerts from Home Assistant and scripts
+
+Anything that can publish MQTT can raise an alert on `deskpanel/alert`:
+
+```sh
+mosquitto_pub -t deskpanel/alert -m '{"v":2,"id":"freezer","severity":"warning","title":"Freezer door","message":"Open for 5 min","source":"homeassistant"}'
+mosquitto_pub -t deskpanel/alert -m '{"v":2,"id":"freezer","clear":true}'
+```
+
+- `info` flashes a notice for 5 seconds and is listed on the `alerts` page for 30 minutes (or `ttl_s`).
+- `warning` shows an amber screen until the button is pressed or for 10 minutes.
+- `critical` shows a red screen above running jobs until the button is pressed.
+
+After the button, warnings and criticals stay in the `home` header badge and on the `alerts` page until they
+are cleared with the same `id` or their `ttl_s` runs out. Add `page = "alerts"` to `[[rotation]]` to show the
+list. The `[alerts]` config table can turn the topic off, cap the number of alerts, and limit which ids may be
+critical. Full field list in [docs/mqtt-schema.md](docs/mqtt-schema.md).
+
+The broker should not let alert publishers write any other `deskpanel` topic. A Home Assistant script
+blueprint and Mosquitto users and ACLs come in a later change.
 
 ## License
 

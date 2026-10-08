@@ -1,0 +1,6 @@
+{ "v": 2, "seq": 1030, "template": "list", "level": 5, "page": "prs", "pinned": false,
+  "position": [2, 3], "stale": false,
+  "data": { "title": "Open PRs", "count": 3, "rows": [
+    { "text": "fix login redirect", "sub": "webshop #42", "status": "open", "source": "gitea" },
+    { "text": "bump deps", "sub": "bridge #7", "status": "review", "source": "github" }
+  ] } }

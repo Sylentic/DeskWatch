@@ -41,6 +41,15 @@ job_poll_s = 5                  # step progress poll while a job runs
 interrupt = true                # true, false, or a list such as ["owner/repo"]
 # alias = { "owner/repo" = "shop" }  # short labels on the panel
 
+# Alerts that Home Assistant or any script publishes on <topic_prefix>/alert.
+# Severity info flashes a notice, warning shows an amber screen, critical a
+# red screen above running jobs. The button takes an alert off the screen; it
+# stays in the header badge and on the alerts page until cleared.
+[alerts]
+enabled = true
+max_active = 10                 # least urgent, oldest alert is dropped first
+# critical_ids = ["leak", "smoke"]  # only these ids may be critical, others become warnings
+
 # Host stats and container health from a Prometheus server that scrapes
 # node_exporter (and cAdvisor). Each host gets its own page: add
 # `stats:<name>` to the rotation below. The built-in `stats` page (the
@@ -89,9 +98,9 @@ interrupt = true                # true, false, or a list such as ["owner/repo"]
 
 # Idle pages, in order. Pages with nothing to show are skipped when
 # skip_when_empty is set. "prs" lists open PRs and "pipelines" the latest run
-# of each pipeline, from every CI source. With a Prometheus source, add
-# "stats:<host>" for each host and "containers" for what is down (both are
-# shown only when there is something to show, if skip_when_empty is set).
+# of each pipeline, from every CI source. "alerts" lists active alerts. With a
+# Prometheus source, add "stats:<host>" for each host and "containers" for what
+# is down. Pages with nothing to show are skipped when skip_when_empty is set.
 [[rotation]]
 page = "stats"
 dwell_s = 20
@@ -104,6 +113,11 @@ skip_when_empty = true
 [[rotation]]
 page = "pipelines"
 dwell_s = 10
+skip_when_empty = true
+
+[[rotation]]
+page = "alerts"
+dwell_s = 8
 skip_when_empty = true
 
 # [[rotation]]

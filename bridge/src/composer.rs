@@ -1,10 +1,11 @@
 //! The composer: decides which page is on the panel right now.
 //!
-//! It owns the idle rotation, the latest server stats, the CI facts and the
-//! health of every source. Every tick the main loop asks it for the current
+//! It owns the idle rotation, the latest server stats, the CI facts, the
+//! active alerts and the health of every source. Every tick the main loop asks it for the current
 //! screen and badges and publishes them when they change. Messages from
 //! sources and button presses from the panel come in here too.
 
+use crate::alerts::{AlertMessage, Alerts};
 use crate::ci::CiFacts;
 use crate::fleet::Fleet;
 use crate::model::{
@@ -22,6 +23,7 @@ pub struct Composer {
     stats: Option<StatsData>,
     pub ci: CiFacts,
     pub fleet: Fleet,
+    pub alerts: Alerts,
     pub health: HealthBoard,
 }
 
@@ -34,6 +36,7 @@ impl Composer {
             stats: None,
             ci: CiFacts::default(),
             fleet: Fleet::default(),
+            alerts: Alerts::default(),
             health: HealthBoard::default(),
         }
     }
@@ -54,6 +57,11 @@ impl Composer {
         }
     }
 
+    /// Apply an alert from `deskpanel/alert`.
+    pub fn alert(&mut self, msg: AlertMessage, now: u64) {
+        self.alerts.apply(msg, now);
+    }
+
     pub fn set_stats(&mut self, stats: StatsData) {
         self.stats = Some(stats);
     }
@@ -62,9 +70,11 @@ impl Composer {
     /// current page has had its dwell time.
     pub fn screen(&mut self, now: u64) -> Screen {
         self.ci.expire(now);
+        self.alerts.expire(now);
 
-        // Interrupts first: running job, then alerts, then notices.
-        let candidates = self.ci.candidates();
+        // Interrupts first: critical alert, running job, then alerts, then notices.
+        let mut candidates = self.ci.candidates();
+        candidates.extend(self.alerts.candidates(now));
         if let Some(top) = pick(&candidates, now) {
             self.shown = top.level;
             return Screen::new(top.level, top.page.clone(), top.data.clone());
@@ -89,9 +99,9 @@ impl Composer {
         screen
     }
 
-    /// Header badges for the current facts, in the plan's order: failed
-    /// runs, open PRs, hosts and containers that are down, then sources with
-    /// a problem.
+    /// Header badges for the current facts, in the plan's order: active
+    /// alerts, failed runs, open PRs, hosts and containers that are down,
+    /// then sources with a problem.
     pub fn badges(&self) -> Badges {
         let warn = Badge {
             id: "warn".into(),
@@ -105,25 +115,36 @@ impl Composer {
             count: self.fleet.down_count(),
             status: RowStatus::Failed,
         };
-        Badges::new(self.ci.badges().into_iter().chain([server, warn]))
+        Badges::new(
+            [self.alerts.badge()]
+                .into_iter()
+                .chain(self.ci.badges())
+                .chain([server, warn]),
+        )
     }
 
     /// React to a button press on whatever was shown last.
     ///
     /// - Short press on an alert or notice dismisses it (all failed alerts at
-    ///   once, so one press acknowledges a bad afternoon).
+    ///   once, so one press acknowledges a bad afternoon). Alerts from
+    ///   `deskpanel/alert` leave the screen but keep their badge until cleared.
     /// - Short press in rotation shows the next page now.
     /// - Long press in rotation pins or unpins the current page.
     /// - Long press on a running job shows the next running job.
     pub fn on_button(&mut self, action: ButtonAction, now: u64) {
         match (self.shown, action) {
+            (Level::Critical, ButtonAction::Short) => self.alerts.acknowledge(Level::Critical),
             (Level::AlertFailed, ButtonAction::Short) => {
-                self.ci.dismiss_alerts(AlertStatus::Failed)
+                self.ci.dismiss_alerts(AlertStatus::Failed);
+                self.alerts.acknowledge(Level::AlertFailed);
             }
             (Level::AlertSuccess, ButtonAction::Short) => {
                 self.ci.dismiss_alerts(AlertStatus::Success)
             }
-            (Level::Notice, ButtonAction::Short) => self.ci.dismiss_notices(),
+            (Level::Notice, ButtonAction::Short) => {
+                self.ci.dismiss_notices();
+                self.alerts.acknowledge(Level::Notice);
+            }
             (Level::Rotation, ButtonAction::Short) => self.next_page(now),
             (Level::Rotation, ButtonAction::Long) => self.rotation.toggle_pin(),
             (Level::Job, ButtonAction::Long) => self.ci.cycle_jobs(),
@@ -164,6 +185,7 @@ impl Composer {
             },
             "prs" => (ScreenData::List(self.ci.pulls_page()), ci_stale),
             "pipelines" => (ScreenData::List(self.ci.pipelines_page()), ci_stale),
+            "alerts" => (ScreenData::List(self.alerts.page()), false),
             "containers" => (ScreenData::List(self.fleet.down_page()), false),
             host if host.starts_with("stats:") => match self.fleet.host(&host["stats:".len()..]) {
                 Some((stats, stale)) => (ScreenData::Stats(stats.clone()), stale),
@@ -176,7 +198,10 @@ impl Composer {
 
 /// Pages the composer can fill. Unknown names in the config show as empty lists.
 fn known_page(page: &str) -> bool {
-    matches!(page, "stats" | "prs" | "pipelines" | "containers") || page.starts_with("stats:")
+    matches!(
+        page,
+        "stats" | "prs" | "pipelines" | "alerts" | "containers"
+    ) || page.starts_with("stats:")
 }
 
 #[cfg(test)]
@@ -366,6 +391,87 @@ mod tests {
 
         composer.apply(health(Health::Ok), 21);
         assert_eq!(composer.badges().items.len(), 1);
+    }
+
+    fn alert(json: &str) -> AlertMessage {
+        AlertMessage::parse(json.as_bytes()).unwrap()
+    }
+
+    #[test]
+    fn critical_alert_beats_a_running_job_and_button_clears_it() {
+        let mut composer = Composer::new(rotation(), 0);
+        send(&mut composer, running_job("j", 0), 0);
+        composer.alert(
+            alert(r#"{"v":2,"id":"leak","severity":"critical","title":"Water leak"}"#),
+            1,
+        );
+        let screen = composer.screen(1);
+        assert_eq!(screen.level, Level::Critical);
+        let value = serde_json::to_value(&screen).unwrap();
+        assert_eq!(value["level"], 0);
+        assert_eq!(value["data"]["status"], "failed");
+        assert_eq!(value["data"]["title"], "Water leak");
+        assert_eq!(value["data"]["project"], serde_json::Value::Null);
+        assert_eq!(composer.badges().items[0].id, "alerts");
+
+        composer.on_button(ButtonAction::Short, 2);
+        assert_eq!(composer.screen(2).template, Template::Job);
+        assert_eq!(composer.badges().items[0].id, "alerts", "badge stays");
+
+        composer.alert(alert(r#"{"v":2,"id":"leak","clear":true}"#), 3);
+        assert!(composer.badges().items.is_empty());
+    }
+
+    #[test]
+    fn warning_alert_is_amber_and_one_press_clears_red_and_amber() {
+        let mut composer = Composer::new(rotation(), 0);
+        send(&mut composer, run(RunStatus::Failed), 0);
+        composer.alert(
+            alert(r#"{"v":2,"id":"door","severity":"warning","title":"Freezer door"}"#),
+            1,
+        );
+        let screen = composer.screen(1);
+        assert_eq!(screen.level, Level::AlertFailed);
+        let ScreenData::Alert(data) = &screen.data else {
+            panic!("expected an alert");
+        };
+        assert_eq!(data.status, AlertStatus::Warn);
+
+        composer.on_button(ButtonAction::Short, 2);
+        assert_eq!(composer.screen(2).template, Template::Stats);
+        let ids: Vec<String> = composer.badges().items.into_iter().map(|b| b.id).collect();
+        assert_eq!(
+            ids,
+            ["alerts"],
+            "failed run dismissed, warning kept as badge"
+        );
+    }
+
+    #[test]
+    fn alerts_page_joins_rotation() {
+        let mut composer = Composer::new(
+            vec![
+                RotationEntry {
+                    page: "stats".into(),
+                    dwell_s: 20,
+                    skip_when_empty: false,
+                },
+                RotationEntry {
+                    page: "alerts".into(),
+                    dwell_s: 8,
+                    skip_when_empty: true,
+                },
+            ],
+            0,
+        );
+        assert_eq!(composer.screen(0).position, Some([1, 1]));
+        composer.alert(alert(r#"{"v":2,"id":"washer","title":"Washer done"}"#), 1);
+        assert_eq!(composer.screen(1).template, Template::Notice);
+        // After the 5 s flash rotation restarts at stats, then shows the alert list.
+        assert_eq!(composer.screen(6).page, "stats");
+        let screen = composer.screen(26);
+        assert_eq!(screen.page, "alerts");
+        assert_eq!(screen.position, Some([2, 2]));
     }
 
     #[test]

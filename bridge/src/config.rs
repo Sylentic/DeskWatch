@@ -38,6 +38,9 @@ pub struct Config {
     /// Data sources, one array per adapter type.
     #[serde(default)]
     pub source: Sources,
+    /// Alerts raised on `<topic_prefix>/alert` by Home Assistant or scripts.
+    #[serde(default)]
+    pub alerts: AlertsConfig,
     /// Idle pages in the order they rotate. See `[[rotation]]` in the example config.
     #[serde(default = "default_rotation")]
     pub rotation: Vec<RotationEntry>,
@@ -113,6 +116,38 @@ impl Default for HttpConfig {
         Self {
             listen: SocketAddr::from(([0, 0, 0, 0], 8787)),
         }
+    }
+}
+
+/// The `[alerts]` table: alerts that arrive on `<topic_prefix>/alert`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct AlertsConfig {
+    /// Subscribe to the alert topic at all.
+    pub enabled: bool,
+    /// Most alerts kept at once; the least urgent, oldest one is dropped first.
+    pub max_active: usize,
+    /// When set, only these alert ids may be `critical` (level 0, above
+    /// running jobs); any other critical alert is shown as a warning.
+    pub critical_ids: Option<Vec<String>>,
+}
+
+impl Default for AlertsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_active: 10,
+            critical_ids: None,
+        }
+    }
+}
+
+impl AlertsConfig {
+    /// May the alert with this id be critical?
+    pub fn allows_critical(&self, id: &str) -> bool {
+        self.critical_ids
+            .as_ref()
+            .is_none_or(|ids| ids.iter().any(|allowed| allowed == id))
     }
 }
 
@@ -479,13 +514,15 @@ impl Config {
         Self::from_toml(&text).with_context(|| format!("in config file {}", path.display()))
     }
 
-    /// Pick the config path: first CLI argument, then `DESKWATCH_CONFIG`, then the default.
-    pub fn path_from_env() -> PathBuf {
-        std::env::args_os()
-            .nth(1)
-            .or_else(|| std::env::var_os("DESKWATCH_CONFIG"))
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(DEFAULT_CONFIG_PATH))
+    /// The config path given on the command line or in `DESKWATCH_CONFIG`,
+    /// if any.
+    pub fn path_given(arg: Option<PathBuf>) -> Option<PathBuf> {
+        arg.or_else(|| std::env::var_os("DESKWATCH_CONFIG").map(PathBuf::from))
+    }
+
+    /// Pick the config path: the CLI argument, then `DESKWATCH_CONFIG`, then the default.
+    pub fn path(arg: Option<PathBuf>) -> PathBuf {
+        Self::path_given(arg).unwrap_or_else(|| PathBuf::from(DEFAULT_CONFIG_PATH))
     }
 }
 
@@ -503,13 +540,23 @@ mod tests {
         assert_eq!(config.rotation[0].page, "stats");
         assert!(config.source.gitea.is_empty());
         assert_eq!(config.http.listen.port(), 8787);
+        assert!(config.alerts.enabled);
+        assert_eq!(config.alerts.max_active, 10);
+        assert!(config.alerts.allows_critical("anything"));
+    }
+
+    #[test]
+    fn critical_ids_limit_critical_alerts() {
+        let config = Config::from_toml("[alerts]\ncritical_ids = [\"leak\"]\n").unwrap();
+        assert!(config.alerts.allows_critical("leak"));
+        assert!(!config.alerts.allows_critical("door"));
     }
 
     #[test]
     fn example_config_parses() {
         let text = include_str!("../config.example.toml");
         let config = Config::from_toml(text).unwrap();
-        assert_eq!(config.rotation.len(), 3);
+        assert_eq!(config.rotation.len(), 4);
         assert!(config.rotation[1].skip_when_empty);
         let gitea = &config.source.gitea[0];
         assert_eq!(gitea.name, "home");

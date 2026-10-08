@@ -1,0 +1,2 @@
+{ "v": 2, "id": "washer", "severity": "info", "title": "Washing machine", "message": "Done, 58 min",
+  "ttl_s": 600, "source": "homeassistant" }

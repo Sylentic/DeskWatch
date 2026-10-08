@@ -176,10 +176,10 @@ fn fresh_failure_names_the_step() {
             _ => None,
         })
         .expect("red alert");
-    assert_eq!(alert.pipeline, "deploy.yml");
+    assert_eq!(alert.pipeline.as_deref(), Some("deploy.yml"));
     assert_eq!(alert.step.as_deref(), Some("terraform apply"));
     assert_eq!(alert.source, "github");
-    assert_eq!(alert.finished - alert.started, 238);
+    assert_eq!(alert.finished, Some(alert.started + 238));
 }
 
 #[test]
