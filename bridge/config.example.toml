@@ -1,0 +1,37 @@
+# DeskWatch bridge config example.
+#
+# Copy to /etc/deskwatch/bridge.toml and adjust. Every key is optional; the
+# values below are the defaults unless noted. Do not put passwords or tokens
+# in this file: the MQTT password comes from DESKWATCH_MQTT_PASSWORD (see
+# deploy/deskwatch-bridge.service).
+
+[mqtt]
+host = "localhost"              # Mosquitto broker, usually on the same server
+port = 1883
+client_id = "deskwatch-bridge"
+# username = "deskwatch"        # optional; password via DESKWATCH_MQTT_PASSWORD
+topic_prefix = "deskpanel"      # matches the schema, change only for testing
+keep_alive_s = 30
+
+[server]
+# display_name = "homeserver"   # name on the stats page, defaults to the hostname
+interval_s = 5                  # stats sample and publish interval
+# net_iface = "eth0"            # defaults to the busiest non-loopback interface
+disk_path = "/"                 # filesystem for disk_pct
+
+# Idle pages, in order. Pages with nothing to show are skipped when
+# skip_when_empty is set. Only "stats" has a data source so far; "prs" and
+# "pipelines" will fill in once the CI sources land.
+[[rotation]]
+page = "stats"
+dwell_s = 20
+
+[[rotation]]
+page = "prs"
+dwell_s = 8
+skip_when_empty = true
+
+[[rotation]]
+page = "pipelines"
+dwell_s = 10
+skip_when_empty = true

@@ -1,0 +1,38 @@
+# Sample systemd unit for the DeskWatch bridge.
+#
+# Install:
+#   sudo install -m 755 target/release/deskwatch-bridge /usr/local/bin/
+#   sudo install -D -m 644 bridge/config.example.toml /etc/deskwatch/bridge.toml
+#   sudo install -m 644 deploy/deskwatch-bridge.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now deskwatch-bridge
+#
+# Secrets go in /etc/deskwatch/bridge.env (owned by root, mode 600), never in
+# the TOML config or git. Example content:
+#   DESKWATCH_MQTT_PASSWORD=change-me
+
+[Unit]
+Description=DeskWatch bridge (desk panel MQTT publisher)
+After=network-online.target mosquitto.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/deskwatch-bridge /etc/deskwatch/bridge.toml
+EnvironmentFile=-/etc/deskwatch/bridge.env
+Environment=RUST_LOG=info
+Restart=on-failure
+RestartSec=5
+
+# Run as a throwaway user with a read-only view of the system. The bridge only
+# reads /proc and /sys and talks to the broker over the network.
+DynamicUser=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
