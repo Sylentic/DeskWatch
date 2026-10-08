@@ -1,0 +1,21 @@
+[package]
+name = "deskwatch-sim"
+version = "0.1.0"
+description = "Desktop simulator for the DeskWatch panel: draws the real panel UI in a window, fed from MQTT"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[features]
+# The SDL2 window. Without it only `render` (headless PNG output) works, which
+# is enough for CI or a server without a display.
+default = ["sdl"]
+sdl = ["embedded-graphics-simulator/with-sdl"]
+
+[dependencies]
+anyhow = "1.0.104"
+deskwatch-ui = { path = "../ui" }
+embedded-graphics = "0.8.2"
+embedded-graphics-simulator = { version = "0.8.0", default-features = false }
+rumqttc = { version = "0.25.1", default-features = false }

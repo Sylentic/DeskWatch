@@ -1,0 +1,3 @@
+{ "v": 2, "seq": 1050, "template": "notice", "level": 4, "page": "notice", "pinned": false,
+  "position": null, "stale": false,
+  "data": { "text": "New PR", "sub": "repo-a #43: add invoice export", "source": "gitea" } }

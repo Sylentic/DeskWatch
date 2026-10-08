@@ -1,0 +1,5 @@
+{ "v": 2, "seq": 1022, "template": "alert", "level": 0, "page": "critical", "pinned": false,
+  "position": null, "stale": false,
+  "data": { "status": "failed", "source": "alertmanager", "project": null, "pipeline": null, "step": null,
+    "title": "Disk almost full", "message": "/srv at 98%", "started": 1791410100, "finished": null,
+    "others": 0 } }

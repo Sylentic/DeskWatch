@@ -22,8 +22,8 @@ The design lives in the project's shared files for now:
 The bridge is in `bridge/`. It publishes the server stats page and rotates through idle pages, with retained
 state and online/offline status topics. The Gitea source is in: a running Actions job takes over the screen
 with step progress, a failed run shows a red alert until the button is pressed, a successful run flashes
-green, and open PRs show as a header badge and a rotation page. GitHub and Azure DevOps come next, followed
-by a firmware spike once the screen arrives.
+green, and open PRs show as a header badge and a rotation page. The panel UI and a desktop simulator are in `ui/` and
+`sim/`. GitHub and Azure DevOps come next, followed by a firmware spike once the screen arrives.
 
 ## Running the bridge
 
@@ -37,6 +37,36 @@ mosquitto_sub -t 'deskpanel/#' -v   # in another terminal
 The config path can also come from `DESKWATCH_CONFIG`; the default is `/etc/deskwatch/bridge.toml`. The MQTT
 password, if any, is read from `DESKWATCH_MQTT_PASSWORD`. A sample systemd unit is in
 [deploy/deskwatch-bridge.service](deploy/deskwatch-bridge.service).
+
+## Panel UI and simulator
+
+The panel's drawing code lives in `ui/` (`deskwatch-ui`), a `no_std` crate that parses the MQTT payloads and
+draws the six page templates (stats, job, alert, list, number, notice) plus the header badges and footer on a
+480x320 landscape screen. The firmware will use it unchanged; until the screen arrives, `sim/`
+(`deskwatch-sim`) draws the same pixels in a desktop window.
+
+The simulator needs SDL2 (`sudo apt install libsdl2-dev` on Debian or Ubuntu).
+
+```sh
+# Live: subscribe to the bridge's topics; click is the button (hold for a long press)
+cargo run -p deskwatch-sim -- --host localhost
+
+# Flip through the example payloads, no broker needed
+cargo run -p deskwatch-sim -- preview ui/testdata/screens --badges ui/testdata/badges/default.json
+
+# Headless PNG of one payload (also builds without SDL: --no-default-features)
+cargo run -p deskwatch-sim -- render ui/testdata/screens/job_deploy.json -o job.png
+```
+
+You can also drive the live window by hand, before the bridge produces a page:
+
+```sh
+mosquitto_pub -r -t deskpanel/screen -f ui/testdata/screens/alert_failed.json
+```
+
+`ui/testdata/screens/` has one example payload per template and edge case. `cargo test -p deskwatch-ui`
+renders each one and compares it with the approved image in `ui/tests/snapshots/`; after an intended layout
+change, re-approve with `UPDATE_SNAPSHOTS=1 cargo test -p deskwatch-ui` and review the PNG diff in the PR.
 
 ## Gitea setup
 

@@ -1,0 +1,9 @@
+{ "v": 2, "seq": 1030, "template": "list", "level": 5, "page": "prs", "pinned": false,
+  "position": [2, 3], "stale": false,
+  "data": { "title": "Open PRs", "count": 12, "rows": [
+    { "text": "fix login redirect", "sub": "repo-a #42", "status": "open", "source": "gitea" },
+    { "text": "bump deps", "sub": "repo-b #7", "status": "review", "source": "github" },
+    { "text": "Add invoice export with a title that is far too long to fit", "sub": "repo-a #43", "status": "open", "source": "gitea" },
+    { "text": "Übersetzung: café menü", "sub": "repo-c #3", "status": "failed", "source": "github" },
+    { "text": "docs: wiring diagram", "sub": "repo-d #11", "status": "ok", "source": "azure_devops" }
+  ] } }

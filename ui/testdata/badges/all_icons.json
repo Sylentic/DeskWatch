@@ -1,0 +1,7 @@
+{ "v": 2, "items": [
+  { "id": "prs", "icon": "pr", "count": 12, "status": "open" },
+  { "id": "pipelines", "icon": "pipeline", "count": 2, "status": "running" },
+  { "id": "servers", "icon": "server", "count": 1, "status": "failed" },
+  { "id": "warn", "icon": "warn", "count": 4, "status": "review" },
+  { "id": "extra", "icon": "rocket", "count": 9, "status": "ok" }
+] }

@@ -1,0 +1,5 @@
+{ "v": 2, "seq": 1021, "template": "alert", "level": 2, "page": "ha-alert", "pinned": false,
+  "position": null, "stale": false,
+  "data": { "status": "warn", "source": "homeassistant", "project": null, "pipeline": null, "step": null,
+    "title": "Freezer door", "message": "Open for 5 min", "started": 1791410400, "finished": null,
+    "others": 2 } }
