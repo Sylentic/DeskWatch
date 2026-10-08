@@ -2,15 +2,16 @@
 
 All notable changes to DeskWatch are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
-[Semantic Versioning](https://semver.org/). In 1.x the MQTT schema (v2) and the bridge config file only change
-in compatible ways: new optional keys and new pages, no renamed or removed ones.
+[Semantic Versioning](https://semver.org/). Version 1.0 is reserved for the first release with working firmware on the real
+screen. Until then (0.x) the MQTT schema (v2) and the bridge config file aim to change only in compatible ways, but
+may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
-## [1.0.0]
+## [0.9.0]
 
-First release. The bridge, the panel UI and the desktop simulator are done; the firmware for the real panel is
-not (see the README, "What is not in 1.0").
+First release, a pre-1.0 one. The bridge, the panel UI and the desktop simulator are done; the firmware for the real panel is
+not (see the README, "What is not in 0.9").
 
 ### Added
 
@@ -50,5 +51,5 @@ not (see the README, "What is not in 1.0").
   source for other CPUs.
 - Gitea webhooks are plain HTTP unless you put a reverse proxy in front of the bridge.
 
-[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/Sylentic/DeskWatch/releases/tag/v1.0.0
+[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/Sylentic/DeskWatch/releases/tag/v0.9.0
