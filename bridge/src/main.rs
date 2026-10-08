@@ -22,6 +22,7 @@ use tracing_subscriber::EnvFilter;
 use deskwatch_bridge::composer::Composer;
 use deskwatch_bridge::config::{Config, MQTT_PASSWORD_ENV, MqttConfig};
 use deskwatch_bridge::gitea::Gitea;
+use deskwatch_bridge::github::Github;
 use deskwatch_bridge::hooks::Hooks;
 use deskwatch_bridge::model::{Badges, Screen};
 use deskwatch_bridge::mqtt::{self, Publisher};
@@ -55,6 +56,10 @@ async fn main() -> Result<()> {
     for gitea_config in &config.source.gitea {
         gitea.push(Gitea::new(gitea_config, &mut hooks)?);
     }
+    let mut github = Vec::new();
+    for github_config in &config.source.github {
+        github.push(Github::new(github_config)?);
+    }
     hooks.start(config.http.listen).await?;
 
     let (panel_tx, mut panel_rx) = mpsc::channel(16);
@@ -65,6 +70,9 @@ async fn main() -> Result<()> {
     // simply waits forever when no source is configured.
     let (source_tx, mut source_rx) = mpsc::channel(64);
     for source in gitea {
+        source::spawn(source, source_tx.clone());
+    }
+    for source in github {
         source::spawn(source, source_tx.clone());
     }
 
