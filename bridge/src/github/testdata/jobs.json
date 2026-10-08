@@ -1,0 +1,23 @@
+{
+  "total_count": 1,
+  "jobs": [
+    {
+      "id": 2001,
+      "run_id": 1003,
+      "name": "test",
+      "head_branch": "main",
+      "head_sha": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+      "status": "in_progress",
+      "conclusion": null,
+      "started_at": "2026-10-08T18:00:10Z",
+      "completed_at": null,
+      "runner_name": "runner-1",
+      "steps": [
+        { "name": "Set up job", "status": "completed", "conclusion": "success", "number": 1 },
+        { "name": "Run actions/checkout@v5", "status": "completed", "conclusion": "success", "number": 2 },
+        { "name": "cargo test", "status": "in_progress", "conclusion": null, "number": 3 },
+        { "name": "Complete job", "status": "queued", "conclusion": null, "number": 4 }
+      ]
+    }
+  ]
+}

@@ -422,7 +422,8 @@ fn run_status(status: &str, conclusion: Option<&str>) -> RunStatus {
 }
 
 /// Deploy if the workflow file or job name mentions "deploy", otherwise build.
-fn job_kind(pipeline: &str, job_name: &str) -> JobKind {
+/// Shared with the GitHub source.
+pub(crate) fn job_kind(pipeline: &str, job_name: &str) -> JobKind {
     let mentions = |s: &str| s.to_lowercase().contains("deploy");
     if mentions(pipeline) || mentions(job_name) {
         JobKind::Deploy
@@ -441,17 +442,18 @@ fn failing_step(job: &Job) -> Option<String> {
 
 /// Step progress of a running job.
 #[derive(Debug, Default, PartialEq)]
-struct StepProgress {
-    step: Option<String>,
-    step_no: Option<u32>,
-    step_count: Option<u32>,
-    fraction: Option<f32>,
+pub(crate) struct StepProgress {
+    pub step: Option<String>,
+    pub step_no: Option<u32>,
+    pub step_count: Option<u32>,
+    pub fraction: Option<f32>,
 }
 
 /// Work out the current step and progress from the step list. With no steps
 /// (job just picked up, or webhook without steps) everything is `None` and
-/// the panel shows a spinner.
-fn step_progress(steps: &[payload::Step]) -> StepProgress {
+/// the panel shows a spinner. GitHub jobs list steps the same way, so the
+/// GitHub source uses this too.
+pub(crate) fn step_progress(steps: &[payload::Step]) -> StepProgress {
     if steps.is_empty() {
         return StepProgress::default();
     }

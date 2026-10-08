@@ -6,7 +6,7 @@
 //! loads with `LoadCredential=` (see the sample unit).
 //!
 //! Data sources are arrays, so there can be several of each:
-//! `[[source.gitea]]` blocks, later `[[source.github]]` and so on.
+//! `[[source.gitea]]` blocks, `[[source.github]]` blocks and so on.
 
 use std::collections::{BTreeMap, HashSet};
 use std::net::SocketAddr;
@@ -121,6 +121,7 @@ impl Default for HttpConfig {
 #[serde(default, deny_unknown_fields)]
 pub struct Sources {
     pub gitea: Vec<GiteaConfig>,
+    pub github: Vec<GithubConfig>,
 }
 
 /// One `[[source.gitea]]` block: Actions webhooks, job step polling and open PRs.
@@ -157,6 +158,56 @@ pub struct GiteaConfig {
     pub alias: BTreeMap<String, String>,
 }
 
+/// One `[[source.github]]` block: open PRs and Actions runs from github.com,
+/// GitHub Enterprise Server or GHE.com, by polling.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GithubConfig {
+    /// Instance name, unique among GitHub sources. Used in logs and fact keys.
+    pub name: String,
+    /// API root: `https://api.github.com` (default), `https://<host>/api/v3`
+    /// for Enterprise Server, or `https://api.<subdomain>.ghe.com`.
+    #[serde(default = "default_github_base_url")]
+    pub base_url: String,
+    /// Credential with a read-only fine-grained token (Metadata, Pull
+    /// requests and Actions: read).
+    pub token_file: String,
+    /// Repositories (`owner/name`) to watch.
+    pub repos: Vec<String>,
+    /// Seconds between polls of open PRs and recent runs.
+    #[serde(default = "default_github_poll_s")]
+    pub poll_s: u64,
+    /// Seconds between step progress polls while a run is in progress.
+    #[serde(default = "default_github_job_poll_s")]
+    pub job_poll_s: u64,
+    /// May running jobs and finished runs take over the screen? `true`,
+    /// `false`, or a list of repositories that may.
+    #[serde(default = "interrupt_all")]
+    pub interrupt: Interrupt,
+    /// Flash "New PR" when a poll finds a new, non-draft PR.
+    #[serde(default = "yes")]
+    pub notify_new_prs: bool,
+    /// Short panel labels for repositories, such as `{ "team/service-a" = "work A" }`.
+    #[serde(default)]
+    pub alias: BTreeMap<String, String>,
+}
+
+fn default_github_base_url() -> String {
+    crate::github::api::GITHUB_COM.into()
+}
+
+fn default_github_poll_s() -> u64 {
+    60
+}
+
+fn default_github_job_poll_s() -> u64 {
+    5
+}
+
+fn yes() -> bool {
+    true
+}
+
 fn interrupt_all() -> Interrupt {
     Interrupt::All(true)
 }
@@ -176,6 +227,19 @@ fn default_rotation() -> Vec<RotationEntry> {
         dwell_s: 20,
         skip_when_empty: false,
     }]
+}
+
+/// `owner/name` with no empty part. The name goes into API URLs.
+fn valid_repo(repo: &str) -> bool {
+    let mut parts = repo.split('/');
+    let ok = |p: Option<&str>| {
+        p.is_some_and(|p| {
+            !p.is_empty()
+                && p.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        })
+    };
+    ok(parts.next()) && ok(parts.next()) && parts.next().is_none()
 }
 
 impl Config {
@@ -208,6 +272,34 @@ impl Config {
             anyhow::ensure!(
                 gitea.repos.iter().all(|r| r.split('/').count() == 2),
                 "source.gitea {name}: repos entries must look like owner/name"
+            );
+        }
+        let mut names = HashSet::new();
+        for github in &config.source.github {
+            let name = &github.name;
+            anyhow::ensure!(
+                valid_name(name),
+                "source.github name {name:?} may only use letters, digits, - and _"
+            );
+            anyhow::ensure!(
+                names.insert(name),
+                "two source.github blocks are named {name:?}"
+            );
+            anyhow::ensure!(
+                github.base_url.starts_with("https://") || github.base_url.starts_with("http://"),
+                "source.github {name}: base_url must start with https://"
+            );
+            anyhow::ensure!(
+                github.poll_s > 0 && github.job_poll_s > 0,
+                "source.github {name}: poll_s and job_poll_s must be above 0"
+            );
+            anyhow::ensure!(
+                !github.repos.is_empty(),
+                "source.github {name}: repos needs at least one owner/name"
+            );
+            anyhow::ensure!(
+                github.repos.iter().all(|r| valid_repo(r)),
+                "source.github {name}: repos entries must look like owner/name"
             );
         }
         Ok(config)
@@ -256,6 +348,25 @@ mod tests {
         assert_eq!(gitea.name, "home");
         assert_eq!(gitea.job_poll_s, 5);
         assert_eq!(gitea.interrupt, Interrupt::All(true));
+        assert!(
+            config.source.github.is_empty(),
+            "GitHub blocks are commented out"
+        );
+    }
+
+    #[test]
+    fn example_github_blocks_parse_when_uncommented() {
+        let text = include_str!("../config.example.toml");
+        let start = text.find("# [[source.github]]").unwrap();
+        let end = text.find("# Idle pages").unwrap();
+        let github: String = text[start..end]
+            .lines()
+            .map(|l| l.strip_prefix("# ").unwrap_or(l.trim_start_matches('#')))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let config = Config::from_toml(&github).unwrap();
+        assert_eq!(config.source.github.len(), 2);
+        assert_eq!(config.source.github[1].interrupt, Interrupt::All(false));
     }
 
     #[test]
@@ -286,6 +397,53 @@ mod tests {
         assert!(Config::from_toml(&bad_name).is_err());
         // The pre-1.0 `[gitea]` table is gone; it must not be silently ignored.
         assert!(Config::from_toml("[gitea]\nbase_url = \"x\"\n").is_err());
+    }
+
+    #[test]
+    fn github_defaults_and_checks() {
+        let block = |extra: &str| {
+            format!(
+                "[[source.github]]\nname = \"personal\"\ntoken_file = \"github-token\"\n\
+                 repos = [\"me/a\"]\n{extra}"
+            )
+        };
+        let config = Config::from_toml(&block("")).unwrap();
+        let github = &config.source.github[0];
+        assert_eq!(github.base_url, "https://api.github.com");
+        assert_eq!((github.poll_s, github.job_poll_s), (60, 5));
+        assert!(github.notify_new_prs);
+        assert_eq!(github.interrupt, Interrupt::All(true));
+
+        let ghes = Config::from_toml(&block(
+            "base_url = \"https://ghe.example.com/api/v3\"\ninterrupt = false",
+        ))
+        .unwrap();
+        assert_eq!(
+            ghes.source.github[0].base_url,
+            "https://ghe.example.com/api/v3"
+        );
+
+        // The same name may be used once per adapter type.
+        let gitea = "[[source.gitea]]\nname = \"personal\"\nbase_url = \"http://g\"\n\
+                     webhook_secret_file = \"s\"\n";
+        assert!(Config::from_toml(&format!("{gitea}{}", block(""))).is_ok());
+
+        let twice = format!("{}{}", block(""), block(""));
+        assert!(Config::from_toml(&twice).is_err(), "duplicate names");
+        let no_repos = block("").replace("repos = [\"me/a\"]", "repos = []");
+        assert!(Config::from_toml(&no_repos).is_err());
+        let bad_repo = block("").replace("me/a", "me/a/../b");
+        assert!(Config::from_toml(&bad_repo).is_err());
+        assert!(Config::from_toml(&block("base_url = \"ghe.example.com\"")).is_err());
+        let no_token = block("").replace("token_file = \"github-token\"\n", "");
+        assert!(
+            Config::from_toml(&no_token).is_err(),
+            "token_file is required"
+        );
+        assert!(
+            Config::from_toml(&block("token = \"ghp_x\"")).is_err(),
+            "no inline tokens"
+        );
     }
 
     #[test]

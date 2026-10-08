@@ -4,7 +4,7 @@ DeskWatch is an ESP32-S3 desk status panel. When idle it rotates through server 
 
 ## How it fits together
 
-- **Bridge** (Rust, runs on a Debian home server): collects server stats, receives Gitea and GitHub webhooks, polls Azure DevOps, decides what the panel should show and publishes it over MQTT.
+- **Bridge** (Rust, runs on a Debian home server): collects server stats, receives Gitea webhooks, polls GitHub and (later) Azure DevOps, decides what the panel should show and publishes it over MQTT.
 - **Firmware** (Rust, esp-hal + embassy): a deliberately dumb MQTT client on an ESP32-S3 SuperMini with a 4" ST7796S touch screen. It draws whatever page the bridge sends.
 - **MQTT** (Mosquitto) sits between the two.
 
@@ -25,8 +25,9 @@ in the config runs as its own task, reads its secrets from credential files, and
 health. The Gitea source is in: a running Actions job takes over the screen with step progress, a failed run
 shows a red alert until the button is pressed, a successful run flashes green, open PRs show as a header
 badge and a rotation page, and the latest run of every pipeline shows on the pipelines page. A source that
-cannot log in or connect shows as a `warn` badge. The panel UI and a desktop simulator are in `ui/` and
-`sim/`. GitHub and Azure DevOps come next, followed by a firmware spike once the screen arrives.
+cannot log in or connect shows as a `warn` badge. The GitHub source does the same for github.com, GitHub
+Enterprise Server and GHE.com by polling. The panel UI and a desktop simulator are in `ui/` and `sim/`. A
+firmware spike follows once the screen arrives.
 
 ## Running the bridge
 
@@ -105,6 +106,32 @@ repositories short labels on the panel.
 
 Several Gitea instances work too: add one `[[source.gitea]]` block per instance, each with its own name and
 webhook URL.
+
+## GitHub and GitHub Enterprise setup
+
+GitHub cannot reach a server at home, so the bridge polls it: open PRs and the latest run of each workflow
+every 60 seconds, and the jobs of a run every 5 seconds while it is in progress. Each request sends the last
+`ETag`, so an unchanged answer does not count against the rate limit on github.com. One adapter covers
+github.com, GitHub Enterprise Server and GHE.com; only `base_url` differs:
+
+| Host | `base_url` |
+|---|---|
+| github.com, including Enterprise Cloud | leave out (`https://api.github.com`) |
+| GitHub Enterprise Server | `https://ghe.example.com/api/v3` |
+| GHE.com (data residency) | `https://api.your-subdomain.ghe.com` |
+
+1. Create a fine-grained personal access token limited to the repositories you want on the panel, with
+   read-only permissions **Metadata**, **Pull requests** and **Actions**. Nothing else is needed.
+2. Store it as a credential, for example `/etc/deskwatch/credentials/github-personal` (root, mode 600), and
+   add `LoadCredential=github-personal:/etc/deskwatch/credentials/github-personal` to the systemd unit.
+3. Add a `[[source.github]]` block with `token_file = "github-personal"` and the `repos` to watch (see
+   `bridge/config.example.toml`). Use one block per account or Enterprise instance.
+
+A refused token or an unreachable server shows as the `warn` badge; polling then backs off (1, 2, 5 minutes)
+and slows down when less than 10 % of the rate limit is left. Runs that finished before the bridge started
+show on the pipelines page and count in the red badge, but do not take over the screen. `interrupt`,
+`alias` and the pipelines page work as for Gitea; a new non-draft PR flashes "New PR" unless
+`notify_new_prs = false`. Only the first 100 open PRs per repository are counted.
 
 Button: a short press dismisses an alert or notice, or shows the next page during rotation. A long press
 pins the current rotation page, or shows the next running job when several run at once.
