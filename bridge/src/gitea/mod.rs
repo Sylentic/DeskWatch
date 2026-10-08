@@ -607,8 +607,8 @@ mod tests {
         };
         assert_eq!(level, Level::AlertFailed);
         assert_eq!(alert.step.as_deref(), Some("cargo test"));
-        assert_eq!(alert.pipeline, "deploy.yml");
-        assert_eq!(alert.finished - alert.started, 300);
+        assert_eq!(alert.pipeline.as_deref(), Some("deploy.yml"));
+        assert_eq!(alert.finished, Some(alert.started + 300));
     }
 
     #[test]

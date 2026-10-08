@@ -9,8 +9,12 @@
 //! - every `server.interval_s` the local stats are sampled;
 //! - each `[[source.*]]` block runs as its own task and sends fact updates
 //!   and its health as `SourceMsg`s;
-//! - button presses arrive from the MQTT task as `PanelEvent`s.
+//! - button presses and alerts arrive from the MQTT task as `Inbound`s.
+//!
+//! With `--demo` no sources run: a scripted loop of fake data feeds the
+//! composer instead, for watching the panel in the desktop simulator.
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -19,12 +23,14 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
+use deskwatch_bridge::alerts::Alerts;
 use deskwatch_bridge::composer::Composer;
 use deskwatch_bridge::config::{Config, MQTT_PASSWORD_ENV, MqttConfig};
+use deskwatch_bridge::demo::{self, Demo};
 use deskwatch_bridge::gitea::Gitea;
 use deskwatch_bridge::hooks::Hooks;
 use deskwatch_bridge::model::{Badges, Screen};
-use deskwatch_bridge::mqtt::{self, Publisher};
+use deskwatch_bridge::mqtt::{self, Inbound, Publisher};
 use deskwatch_bridge::source::{self, Secret, unix_now};
 use deskwatch_bridge::stats::StatsCollector;
 
@@ -36,6 +42,39 @@ const COMPOSE_INTERVAL: Duration = Duration::from_secs(1);
 /// refresh: stats change every few seconds.
 const BADGES_REFRESH_S: u64 = 60;
 
+const USAGE: &str = "\
+usage: deskwatch-bridge [--demo] [CONFIG]
+
+CONFIG defaults to $DESKWATCH_CONFIG, then /etc/deskwatch/bridge.toml.
+--demo  play a loop of fake data instead of running the sources; only the
+        [mqtt] and [alerts] settings are used, and CONFIG is optional";
+
+/// Command line: `[--demo] [CONFIG]`.
+struct Args {
+    demo: bool,
+    config: Option<PathBuf>,
+}
+
+fn parse_args() -> Result<Args> {
+    let mut args = Args {
+        demo: false,
+        config: None,
+    };
+    for arg in std::env::args_os().skip(1) {
+        match arg.to_str() {
+            Some("--demo") => args.demo = true,
+            Some("-h" | "--help") => {
+                println!("{USAGE}");
+                std::process::exit(0);
+            }
+            Some(flag) if flag.starts_with('-') => anyhow::bail!("unknown option {flag}\n{USAGE}"),
+            _ if args.config.is_none() => args.config = Some(arg.into()),
+            _ => anyhow::bail!("only one config path is allowed\n{USAGE}"),
+        }
+    }
+    Ok(args)
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -44,22 +83,37 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let path = Config::path_from_env();
-    let config = Config::load(&path)?;
-    info!("loaded config from {}", path.display());
+    let args = parse_args()?;
+    let config = match Config::path_given(args.config.clone()) {
+        // The demo runs without a config file, against a broker on localhost.
+        None if args.demo => Config::from_toml("")?,
+        given => {
+            let path = Config::path(given);
+            let config = Config::load(&path)?;
+            info!("loaded config from {}", path.display());
+            config
+        }
+    };
 
     // Build every source first: missing credentials or a taken port stop the
-    // bridge here, before it connects anywhere.
-    let mut hooks = Hooks::default();
+    // bridge here, before it connects anywhere. The demo runs none of them.
     let mut gitea = Vec::new();
-    for gitea_config in &config.source.gitea {
-        gitea.push(Gitea::new(gitea_config, &mut hooks)?);
+    if !args.demo {
+        let mut hooks = Hooks::default();
+        for gitea_config in &config.source.gitea {
+            gitea.push(Gitea::new(gitea_config, &mut hooks)?);
+        }
+        hooks.start(config.http.listen).await?;
     }
-    hooks.start(config.http.listen).await?;
 
-    let (panel_tx, mut panel_rx) = mpsc::channel(16);
+    let (inbound_tx, mut inbound_rx) = mpsc::channel(16);
     let (publisher, eventloop) = mqtt::connect(&config.mqtt, mqtt_password(&config.mqtt)?);
-    tokio::spawn(mqtt::run_event_loop(eventloop, publisher.clone(), panel_tx));
+    tokio::spawn(mqtt::run_event_loop(
+        eventloop,
+        publisher.clone(),
+        inbound_tx,
+        config.alerts.enabled,
+    ));
 
     // Sources report here. The sender stays alive in this function, so `recv`
     // simply waits forever when no source is configured.
@@ -69,7 +123,16 @@ async fn main() -> Result<()> {
     }
 
     let mut collector = StatsCollector::new(&config.server);
-    let mut composer = Composer::new(config.rotation.clone(), unix_now());
+    let mut composer;
+    let mut demo = None;
+    if args.demo {
+        info!("demo mode: playing fake data, sources are not started");
+        composer = Composer::new(demo::rotation(), unix_now());
+        demo = Some(Demo::new(unix_now()));
+    } else {
+        composer = Composer::new(config.rotation.clone(), unix_now());
+        composer.alerts = Alerts::new(config.alerts.clone());
+    }
     let mut shown = Shown::default();
 
     let mut stats_ticker = tokio::time::interval(Duration::from_secs(config.server.interval_s));
@@ -77,12 +140,18 @@ async fn main() -> Result<()> {
     let mut sigterm = signal(SignalKind::terminate())?;
     loop {
         tokio::select! {
-            _ = stats_ticker.tick() => composer.set_stats(collector.collect()),
+            _ = stats_ticker.tick(), if demo.is_none() => composer.set_stats(collector.collect()),
             _ = compose_ticker.tick() => {}
             Some(msg) = source_rx.recv() => composer.apply(msg, unix_now()),
-            Some(event) = panel_rx.recv() => composer.on_button(event.action, unix_now()),
+            Some(msg) = inbound_rx.recv() => match msg {
+                Inbound::Button(event) => composer.on_button(event.action, unix_now()),
+                Inbound::Alert(alert) => composer.alert(alert, unix_now()),
+            },
             _ = tokio::signal::ctrl_c() => break,
             _ = sigterm.recv() => break,
+        }
+        if let Some(demo) = &mut demo {
+            demo.tick(&mut composer, unix_now());
         }
         shown.publish(&publisher, &mut composer, unix_now()).await;
     }

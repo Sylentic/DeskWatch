@@ -4,6 +4,9 @@
 //! `online`, and registers a retained `offline` Last Will so the panel learns
 //! when the bridge dies. Screens and badges are published retained, so a panel
 //! that (re)connects immediately gets the current page.
+//!
+//! Incoming: button presses from the panel on `<prefix>/panel/event`, and
+//! alerts from Home Assistant or scripts on `<prefix>/alert`.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -14,6 +17,7 @@ use serde::Serialize;
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
+use crate::alerts::AlertMessage;
 use crate::config::MqttConfig;
 use crate::model::{Badges, PanelEvent, Screen};
 use crate::source::Secret;
@@ -57,6 +61,17 @@ impl Topics {
     pub fn panel_event(&self) -> String {
         format!("{}/panel/event", self.prefix)
     }
+
+    pub fn alert(&self) -> String {
+        format!("{}/alert", self.prefix)
+    }
+}
+
+/// A message for the main loop, from the panel or from an alert publisher.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Inbound {
+    Button(PanelEvent),
+    Alert(AlertMessage),
 }
 
 /// Publishes bridge payloads. Cheap to clone; all clones share `seq`.
@@ -140,13 +155,18 @@ impl Publisher {
 
 /// Drive the MQTT connection forever: reconnects on errors, announces
 /// `online` after every (re)connect, logs panel status, and forwards button
-/// events to `panel_events` for the composer.
+/// events (and alerts, when `alerts` is true) to `inbound` for the composer.
 pub async fn run_event_loop(
     mut eventloop: EventLoop,
     publisher: Publisher,
-    panel_events: mpsc::Sender<PanelEvent>,
+    inbound: mpsc::Sender<Inbound>,
+    alerts: bool,
 ) {
     let topics = publisher.topics.clone();
+    let mut subscriptions = vec![topics.panel_status(), topics.panel_event()];
+    if alerts {
+        subscriptions.push(topics.alert());
+    }
     loop {
         match eventloop.poll().await {
             Ok(Event::Incoming(Packet::ConnAck(_))) => {
@@ -158,17 +178,17 @@ pub async fn run_event_loop(
                 {
                     warn!("cannot announce online: {err}");
                 }
-                for topic in [topics.panel_status(), topics.panel_event()] {
-                    if let Err(err) = client.try_subscribe(&topic, QoS::AtLeastOnce) {
+                for topic in &subscriptions {
+                    if let Err(err) = client.try_subscribe(topic, QoS::AtLeastOnce) {
                         warn!("cannot subscribe to {topic}: {err}");
                     }
                 }
             }
             Ok(Event::Incoming(Packet::Publish(message))) => {
-                if let Some(event) = handle_incoming(&topics, &message.topic, &message.payload) {
+                if let Some(msg) = handle_incoming(&topics, &message.topic, &message.payload) {
                     // try_send: never block the MQTT connection on the main loop.
-                    if let Err(err) = panel_events.try_send(event) {
-                        warn!("dropping panel event: {err}");
+                    if let Err(err) = inbound.try_send(msg) {
+                        warn!("dropping incoming message: {err}");
                     }
                 }
             }
@@ -181,9 +201,9 @@ pub async fn run_event_loop(
     }
 }
 
-/// Handle a message from the panel: log status changes and return button
-/// events, which the composer acts on.
-fn handle_incoming(topics: &Topics, topic: &str, payload: &[u8]) -> Option<PanelEvent> {
+/// Handle an incoming message: log panel status changes and return button
+/// events and alerts, which the composer acts on.
+fn handle_incoming(topics: &Topics, topic: &str, payload: &[u8]) -> Option<Inbound> {
     if topic == topics.panel_status() {
         info!(
             "panel is {}",
@@ -193,9 +213,14 @@ fn handle_incoming(topics: &Topics, topic: &str, payload: &[u8]) -> Option<Panel
         match serde_json::from_slice::<PanelEvent>(payload) {
             Ok(event) => {
                 info!(?event, "panel event");
-                return Some(event);
+                return Some(Inbound::Button(event));
             }
             Err(err) => warn!("ignoring malformed panel event: {err}"),
+        }
+    } else if topic == topics.alert() {
+        match AlertMessage::parse(payload) {
+            Ok(alert) => return Some(Inbound::Alert(alert)),
+            Err(err) => warn!("ignoring alert: {err:#}"),
         }
     }
     None
@@ -213,5 +238,29 @@ mod tests {
         assert_eq!(topics.bridge_status(), "deskpanel/bridge/status");
         assert_eq!(topics.panel_status(), "deskpanel/panel/status");
         assert_eq!(topics.panel_event(), "deskpanel/panel/event");
+        assert_eq!(topics.alert(), "deskpanel/alert");
+    }
+
+    #[test]
+    fn incoming_messages_are_routed_by_topic() {
+        let topics = Topics::new("deskpanel");
+        let button = br#"{"v":2,"event":"button","action":"short"}"#;
+        assert!(matches!(
+            handle_incoming(&topics, "deskpanel/panel/event", button),
+            Some(Inbound::Button(_))
+        ));
+        let alert = br#"{"v":2,"id":"washer","severity":"info","title":"Washer"}"#;
+        assert!(matches!(
+            handle_incoming(&topics, "deskpanel/alert", alert),
+            Some(Inbound::Alert(_))
+        ));
+        assert_eq!(
+            handle_incoming(&topics, "deskpanel/alert", b"not json"),
+            None
+        );
+        assert_eq!(
+            handle_incoming(&topics, "deskpanel/panel/status", b"online"),
+            None
+        );
     }
 }
