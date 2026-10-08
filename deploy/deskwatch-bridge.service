@@ -25,6 +25,7 @@ Type=simple
 ExecStart=/usr/local/bin/deskwatch-bridge /etc/deskwatch/bridge.toml
 LoadCredential=gitea-webhook-secret:/etc/deskwatch/credentials/gitea-webhook-secret
 # LoadCredential=gitea-token:/etc/deskwatch/credentials/gitea-token
+# LoadCredential=github-personal:/etc/deskwatch/credentials/github-personal
 # LoadCredential=mqtt-password:/etc/deskwatch/credentials/mqtt-password
 Environment=RUST_LOG=info
 Restart=on-failure

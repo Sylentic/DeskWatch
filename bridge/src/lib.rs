@@ -7,6 +7,7 @@ pub mod composer;
 pub mod config;
 pub mod demo;
 pub mod gitea;
+pub mod github;
 pub mod hooks;
 pub mod model;
 pub mod mqtt;

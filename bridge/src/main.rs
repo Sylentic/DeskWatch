@@ -28,6 +28,7 @@ use deskwatch_bridge::composer::Composer;
 use deskwatch_bridge::config::{Config, MQTT_PASSWORD_ENV, MqttConfig};
 use deskwatch_bridge::demo::{self, Demo};
 use deskwatch_bridge::gitea::Gitea;
+use deskwatch_bridge::github::Github;
 use deskwatch_bridge::hooks::Hooks;
 use deskwatch_bridge::model::{Badges, Screen};
 use deskwatch_bridge::mqtt::{self, Inbound, Publisher};
@@ -98,10 +99,14 @@ async fn main() -> Result<()> {
     // Build every source first: missing credentials or a taken port stop the
     // bridge here, before it connects anywhere. The demo runs none of them.
     let mut gitea = Vec::new();
+    let mut github = Vec::new();
     if !args.demo {
         let mut hooks = Hooks::default();
         for gitea_config in &config.source.gitea {
             gitea.push(Gitea::new(gitea_config, &mut hooks)?);
+        }
+        for github_config in &config.source.github {
+            github.push(Github::new(github_config)?);
         }
         hooks.start(config.http.listen).await?;
     }
@@ -119,6 +124,9 @@ async fn main() -> Result<()> {
     // simply waits forever when no source is configured.
     let (source_tx, mut source_rx) = mpsc::channel(64);
     for source in gitea {
+        source::spawn(source, source_tx.clone());
+    }
+    for source in github {
         source::spawn(source, source_tx.clone());
     }
 

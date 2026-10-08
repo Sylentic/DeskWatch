@@ -50,6 +50,28 @@ enabled = true
 max_active = 10                 # least urgent, oldest alert is dropped first
 # critical_ids = ["leak", "smoke"]  # only these ids may be critical, others become warnings
 
+# GitHub, GitHub Enterprise Server or GHE.com: open PRs and Actions runs, by
+# polling (GitHub cannot reach your server, so no webhook). Setup is in the
+# README. Uncomment and adjust; add one block per account or instance.
+# [[source.github]]
+# name = "personal"             # required: used in logs
+# base_url = "https://api.github.com"  # default; GHES: https://ghe.example.com/api/v3
+# token_file = "github-personal" # required: read-only fine-grained token
+# repos = ["your-user/repo-a"]  # required: repos to watch
+# poll_s = 60                   # open PRs and recent runs, with ETags
+# job_poll_s = 5                # step progress while a run is in progress
+# interrupt = true              # true, false, or a list such as ["your-user/repo-a"]
+# notify_new_prs = true         # flash "New PR" for new non-draft PRs
+# alias = { "your-user/repo-a" = "A" }  # short labels on the panel
+#
+# [[source.github]]
+# name = "work"
+# base_url = "https://ghe.example.com/api/v3"
+# token_file = "github-work"
+# repos = ["team/service-a"]
+# interrupt = false             # work runs only in the badge and pipelines page
+# alias = { "team/service-a" = "service A" }
+
 # Idle pages, in order. Pages with nothing to show are skipped when
 # skip_when_empty is set. "prs" lists open PRs and "pipelines" the latest run
 # of each pipeline, from every CI source. "alerts" lists active alerts.
