@@ -200,15 +200,17 @@ impl CiFacts {
             let data = AlertData {
                 status,
                 source: run.source.clone(),
-                project: truncate(&run.project, MAX_TITLE_CHARS),
-                pipeline: truncate(&run.pipeline, MAX_TITLE_CHARS),
+                project: Some(truncate(&run.project, MAX_TITLE_CHARS)),
+                pipeline: Some(truncate(&run.pipeline, MAX_TITLE_CHARS)),
                 step: run
                     .step
                     .as_deref()
                     .filter(|_| status == AlertStatus::Failed)
                     .map(|s| truncate(s, MAX_TITLE_CHARS)),
+                title: None,
+                message: None,
                 started: run.started,
-                finished: run.finished.unwrap_or(now),
+                finished: Some(run.finished.unwrap_or(now)),
                 others: 0,
             };
             let alert = RunAlert {
@@ -371,7 +373,8 @@ impl CiFacts {
         for alert in shown() {
             let status = alert.data.status;
             let level = match status {
-                AlertStatus::Failed => Level::AlertFailed,
+                // CI runs never raise `Warn`; it shares level 2 with failures.
+                AlertStatus::Failed | AlertStatus::Warn => Level::AlertFailed,
                 AlertStatus::Success => Level::AlertSuccess,
             };
             let mut data = alert.data.clone();

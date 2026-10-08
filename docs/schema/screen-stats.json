@@ -1,0 +1,5 @@
+{ "v": 2, "seq": 1001, "template": "stats", "level": 5, "page": "stats", "pinned": false,
+  "position": [1, 3], "stale": false,
+  "data": { "host": "homeserver", "cpu_pct": 12.5, "cpu_temp_c": 48.5, "load": [0.42, 0.38, 0.3],
+    "cpu_count": 4, "ram_pct": 41.0, "disk_pct": 63.0, "uptime_s": 1234567,
+    "net": { "iface": "eth0", "rx_bps": 125000, "tx_bps": 23000 } } }

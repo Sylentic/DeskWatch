@@ -1,0 +1,6 @@
+{ "v": 2, "items": [
+  { "id": "alerts", "icon": "home", "count": 2, "status": "failed" },
+  { "id": "failed", "icon": "pipeline", "count": 1, "status": "failed" },
+  { "id": "prs", "icon": "pr", "count": 3, "status": "open" },
+  { "id": "warn", "icon": "warn", "count": 1, "status": "failed" }
+] }
