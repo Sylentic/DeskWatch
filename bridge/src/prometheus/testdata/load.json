@@ -1,0 +1,41 @@
+{
+  "status": "success",
+  "data": {
+    "resultType": "vector",
+    "result": [
+      {
+        "metric": {
+          "__name__": "node_load1",
+          "instance": "node-a:9100",
+          "job": "node"
+        },
+        "value": [
+          1791482520.0,
+          "0.42"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "node_load5",
+          "instance": "node-a:9100",
+          "job": "node"
+        },
+        "value": [
+          1791482520.0,
+          "0.381"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "node_load15",
+          "instance": "node-a:9100",
+          "job": "node"
+        },
+        "value": [
+          1791482520.0,
+          "0.3"
+        ]
+      }
+    ]
+  }
+}

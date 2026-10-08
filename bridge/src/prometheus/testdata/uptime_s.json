@@ -1,0 +1,17 @@
+{
+  "status": "success",
+  "data": {
+    "resultType": "vector",
+    "result": [
+      {
+        "metric": {
+          "instance": "node-a:9100"
+        },
+        "value": [
+          1791482520.0,
+          "1234567.8"
+        ]
+      }
+    ]
+  }
+}

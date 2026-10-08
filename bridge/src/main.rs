@@ -26,6 +26,7 @@ use deskwatch_bridge::github::Github;
 use deskwatch_bridge::hooks::Hooks;
 use deskwatch_bridge::model::{Badges, Screen};
 use deskwatch_bridge::mqtt::{self, Publisher};
+use deskwatch_bridge::prometheus::Prometheus;
 use deskwatch_bridge::source::{self, Secret, unix_now};
 use deskwatch_bridge::stats::StatsCollector;
 
@@ -60,6 +61,10 @@ async fn main() -> Result<()> {
     for github_config in &config.source.github {
         github.push(Github::new(github_config)?);
     }
+    let mut prometheus = Vec::new();
+    for prometheus_config in &config.source.prometheus {
+        prometheus.push(Prometheus::new(prometheus_config)?);
+    }
     hooks.start(config.http.listen).await?;
 
     let (panel_tx, mut panel_rx) = mpsc::channel(16);
@@ -73,6 +78,9 @@ async fn main() -> Result<()> {
         source::spawn(source, source_tx.clone());
     }
     for source in github {
+        source::spawn(source, source_tx.clone());
+    }
+    for source in prometheus {
         source::spawn(source, source_tx.clone());
     }
 

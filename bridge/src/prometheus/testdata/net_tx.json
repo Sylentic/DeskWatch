@@ -1,0 +1,28 @@
+{
+  "status": "success",
+  "data": {
+    "resultType": "vector",
+    "result": [
+      {
+        "metric": {
+          "instance": "node-a:9100",
+          "device": "eth0"
+        },
+        "value": [
+          1791482520.0,
+          "1200.2"
+        ]
+      },
+      {
+        "metric": {
+          "instance": "node-a:9100",
+          "device": "wlan0"
+        },
+        "value": [
+          1791482520.0,
+          "5"
+        ]
+      }
+    ]
+  }
+}

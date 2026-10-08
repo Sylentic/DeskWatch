@@ -295,7 +295,7 @@ fn disk_used_pct(path: &Path) -> Option<f32> {
 }
 
 /// Round to one decimal, plenty for a small screen and keeps payloads short.
-fn round1(value: f64) -> f32 {
+pub(crate) fn round1(value: f64) -> f32 {
     ((value * 10.0).round() / 10.0) as f32
 }
 

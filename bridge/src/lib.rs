@@ -4,10 +4,12 @@
 pub mod ci;
 pub mod composer;
 pub mod config;
+pub mod fleet;
 pub mod gitea;
 pub mod github;
 pub mod hooks;
 pub mod model;
 pub mod mqtt;
+pub mod prometheus;
 pub mod source;
 pub mod stats;
