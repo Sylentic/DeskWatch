@@ -1,0 +1,4 @@
+{ "v": 2, "seq": 1023, "template": "alert", "level": 3, "page": "gitea-alert", "pinned": false,
+  "position": null, "stale": false,
+  "data": { "status": "success", "source": "gitea", "project": "repo-a", "pipeline": "deploy.yml",
+    "step": null, "started": 1791410400, "finished": 1791410682, "others": 0 } }

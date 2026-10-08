@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["bridge"]
+members = ["bridge", "sim", "ui"]
 
 [workspace.package]
 edition = "2024"

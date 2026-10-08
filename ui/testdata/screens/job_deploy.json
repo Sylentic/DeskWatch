@@ -1,0 +1,5 @@
+{ "v": 2, "seq": 1010, "template": "job", "level": 1, "page": "gitea-job", "pinned": false,
+  "position": null, "stale": false,
+  "data": { "source": "gitea", "project": "repo-a", "pipeline": "deploy.yml", "kind": "deploy", "ref": "main",
+    "commit": "a1b2c3d", "step": "Run migrations", "step_no": 3, "step_count": 5, "progress": 0.6,
+    "started": 1791410400, "others": 1 } }

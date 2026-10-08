@@ -1,0 +1,6 @@
+{ "v": 2, "seq": 1011, "template": "job", "level": 1, "page": "gitea-job", "pinned": false,
+  "position": null, "stale": false,
+  "data": { "source": "gitea", "project": "a-repository-with-a-really-long-name-here", "pipeline": "ci.yml",
+    "kind": "build", "ref": "feature/some-long-branch-name", "commit": "0f9e8d7",
+    "step": "cargo test --workspace --all-features --locked", "step_no": 2, "step_count": null,
+    "progress": null, "started": 1791410650, "others": 0 } }

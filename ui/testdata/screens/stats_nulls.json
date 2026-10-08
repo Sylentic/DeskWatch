@@ -1,0 +1,4 @@
+{ "v": 2, "seq": 1003, "template": "stats", "level": 5, "page": "stats", "pinned": false,
+  "position": null, "stale": false,
+  "data": { "host": "", "cpu_pct": null, "cpu_temp_c": null, "load": null, "cpu_count": null,
+    "ram_pct": null, "disk_pct": null, "uptime_s": null, "net": null } }

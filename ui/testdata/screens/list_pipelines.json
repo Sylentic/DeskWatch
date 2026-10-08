@@ -1,0 +1,7 @@
+{ "v": 2, "seq": 1031, "template": "list", "level": 5, "page": "pipelines", "pinned": false,
+  "position": [3, 3], "stale": false,
+  "data": { "title": "Pipelines", "count": 3, "rows": [
+    { "text": "infra-deploy", "sub": "main, 4 min ago", "status": "running", "source": "azure_devops" },
+    { "text": "repo-a ci.yml", "sub": "main, 1 h ago", "status": "ok", "source": "gitea" },
+    { "text": "repo-b release", "sub": "v1.2.0, yesterday", "status": "failed", "source": "github" }
+  ] } }

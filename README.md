@@ -25,8 +25,8 @@ in the config runs as its own task, reads its secrets from credential files, and
 health. The Gitea source is in: a running Actions job takes over the screen with step progress, a failed run
 shows a red alert until the button is pressed, a successful run flashes green, open PRs show as a header
 badge and a rotation page, and the latest run of every pipeline shows on the pipelines page. A source that
-cannot log in or connect shows as a `warn` badge. GitHub and Azure DevOps come next, followed by a firmware
-spike once the screen arrives.
+cannot log in or connect shows as a `warn` badge. The panel UI and a desktop simulator are in `ui/` and
+`sim/`. GitHub and Azure DevOps come next, followed by a firmware spike once the screen arrives.
 
 ## Running the bridge
 
@@ -44,6 +44,36 @@ Secrets never go in the config. Keys ending in `_file` name a credential: a plai
 is read from `$CREDENTIALS_DIRECTORY`, which systemd fills from the unit's `LoadCredential=` lines; an
 absolute path is read directly, which is handy when running by hand. The MQTT password can also come from
 `DESKWATCH_MQTT_PASSWORD`.
+
+## Panel UI and simulator
+
+The panel's drawing code lives in `ui/` (`deskwatch-ui`), a `no_std` crate that parses the MQTT payloads and
+draws the six page templates (stats, job, alert, list, number, notice) plus the header badges and footer on a
+480x320 landscape screen. The firmware will use it unchanged; until the screen arrives, `sim/`
+(`deskwatch-sim`) draws the same pixels in a desktop window.
+
+The simulator needs SDL2 (`sudo apt install libsdl2-dev` on Debian or Ubuntu).
+
+```sh
+# Live: subscribe to the bridge's topics; click is the button (hold for a long press)
+cargo run -p deskwatch-sim -- --host localhost
+
+# Flip through the example payloads, no broker needed
+cargo run -p deskwatch-sim -- preview ui/testdata/screens --badges ui/testdata/badges/default.json
+
+# Headless PNG of one payload (also builds without SDL: --no-default-features)
+cargo run -p deskwatch-sim -- render ui/testdata/screens/job_deploy.json -o job.png
+```
+
+You can also drive the live window by hand, before the bridge produces a page:
+
+```sh
+mosquitto_pub -r -t deskpanel/screen -f ui/testdata/screens/alert_failed.json
+```
+
+`ui/testdata/screens/` has one example payload per template and edge case. `cargo test -p deskwatch-ui`
+renders each one and compares it with the approved image in `ui/tests/snapshots/`; after an intended layout
+change, re-approve with `UPDATE_SNAPSHOTS=1 cargo test -p deskwatch-ui` and review the PNG diff in the PR.
 
 ## Gitea setup
 

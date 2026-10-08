@@ -1,0 +1,3 @@
+{ "v": 2, "seq": 1032, "template": "list", "level": 5, "page": "prs", "pinned": false,
+  "position": [2, 2], "stale": false,
+  "data": { "title": "Open PRs", "count": 0, "rows": [] } }
