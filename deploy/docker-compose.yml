@@ -1,0 +1,71 @@
+# Example Docker Compose file for the DeskWatch bridge. Guide: docs/docker.md
+#
+#   mkdir -p deskwatch/credentials && cd deskwatch
+#   cp <repo>/deploy/docker-compose.yml compose.yaml
+#   cp <repo>/bridge/config.example.toml bridge.toml      # then edit it
+#   # one file per secret, named as in bridge.toml (`password_file = "mqtt-password"`):
+#   (umask 077; printf %s 'THE-BRIDGE-PASSWORD' > credentials/mqtt-password)
+#   docker compose up -d --build
+#   docker compose logs -f
+#
+# Every host name below is a placeholder.
+
+services:
+  deskwatch-bridge:
+    # Builds the image from the repository. Pin a tag or commit for repeatable
+    # builds; `main` is the newest, untagged code. To build from a local
+    # checkout instead, use `context: /path/to/DeskWatch`. Once you publish an
+    # image (docs/docker.md), replace this block with
+    # `image: <your registry>/deskwatch-bridge:<version>`.
+    build:
+      context: https://github.com/Sylentic/DeskWatch.git#main
+    image: deskwatch-bridge:local
+    container_name: deskwatch-bridge
+    restart: unless-stopped
+
+    volumes:
+      # The config file and the secrets, both read-only. The container reads the
+      # config from /etc/deskwatch/bridge.toml and each plain `*_file = "name"`
+      # key from /run/credentials/name.
+      - ./bridge.toml:/etc/deskwatch/bridge.toml:ro
+      - ./credentials:/run/credentials:ro
+
+    # Hardening: the bridge writes nothing to disk, needs no privileges.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+    environment:
+      RUST_LOG: info
+
+    # Reaching the MQTT broker (set [mqtt] host in bridge.toml to match):
+    #
+    # 1. Broker on another machine: use its name or address in bridge.toml,
+    #    nothing else is needed.
+    # 2. Broker on this Docker host (Mosquitto installed on the host): add the
+    #    line below and set `host = "host.docker.internal"` in bridge.toml.
+    #    Mosquitto must listen on more than localhost (see docs/mosquitto.md).
+    # 3. Broker in the same compose file: see the commented service below and
+    #    set `host = "mosquitto"`.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    # Webhooks (Gitea source only): publish the listener. Without a Gitea source
+    # the bridge opens no port and this can stay out.
+    # ports:
+    #   - "8787:8787"
+
+  # mosquitto:
+  #   image: eclipse-mosquitto:2
+  #   restart: unless-stopped
+  #   ports:
+  #     - "1883:1883"           # the panel connects here
+  #   volumes:
+  #     - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+  #     - ./mosquitto/passwd:/mosquitto/config/passwd:ro
+  #     - ./mosquitto/acl:/mosquitto/config/acl:ro
+  #     - mosquitto-data:/mosquitto/data
+  #   # Config, password file and ACL examples: deploy/mosquitto/ and docs/mosquitto.md
+
+# volumes:
+#   mosquitto-data:

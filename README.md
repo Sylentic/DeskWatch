@@ -47,6 +47,8 @@ DeskWatch supports **Linux and Windows**.
 - **Linux:** [docs/install.md](docs/install.md) walks through the whole setup on a systemd server (written for
   Debian 12 or newer): download or build the binary, config, systemd unit with credentials, Mosquitto logins, then
   each source and Home Assistant.
+- **Docker:** [docs/docker.md](docs/docker.md) builds a small non-root image of the bridge and has a Compose
+  example with config and secrets mounted read-only. Also the way to run it on a Raspberry Pi.
 - **Windows:** [docs/windows.md](docs/windows.md) covers the release zip, Mosquitto, trying the demo and the
   simulator, a config and secrets, running the bridge as a service, and what differs (the local stats page needs
   Linux's `/proc` for now). The source, Mosquitto and Home Assistant steps in the Linux guide apply on Windows too.

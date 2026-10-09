@@ -91,3 +91,26 @@ jobs:
 
       - name: cargo test
         run: cargo test --workspace --locked
+
+  # Builds the bridge image and starts it in demo mode. Nothing is pushed
+  # anywhere; see docs/docker.md for how to publish an image.
+  docker:
+    name: docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build the image
+        run: docker build -t deskwatch-bridge:ci .
+
+      - name: Runs as a non-root user
+        run: test "$(docker run --rm --entrypoint id deskwatch-bridge:ci -u)" != 0
+
+      # With no broker the bridge keeps retrying, so stop it after a few seconds
+      # and check that it started in demo mode.
+      - name: Start in demo mode
+        run: |
+          docker run -d --name dw deskwatch-bridge:ci --demo
+          sleep 5
+          docker logs dw 2>&1 | grep -q "demo mode"
+          docker rm -f dw

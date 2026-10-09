@@ -1,0 +1,10 @@
+# Keep the build context small and free of local files.
+target/
+**/target/
+.git/
+.github/
+.env
+*.swp
+docs/
+homeassistant/
+previews/

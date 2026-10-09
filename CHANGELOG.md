@@ -8,6 +8,12 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Added
+
+- **Docker support** for the bridge: a small multi-stage `Dockerfile` (release binary, non-root user, config and secrets
+  mounted read-only), a Compose example in `deploy/docker-compose.yml`, a guide in
+  [docs/docker.md](docs/docker.md), and a CI job that checks the image builds and starts. No image is published.
+
 ## [0.9.2]
 
 ### Added

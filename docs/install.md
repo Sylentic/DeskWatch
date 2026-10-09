@@ -6,6 +6,7 @@ DeskWatch supports **Linux and Windows** (x86_64 release binaries for both). Pic
 |---|---|
 | Linux with systemd (written for Debian 12 or newer; other systemd distributions work the same, with their own package commands) | This page |
 | Windows 10 and 11, Windows Server 2019 or newer | [windows.md](windows.md) covers the programs, Mosquitto, a config, running the bridge as a service and what differs from Linux |
+| Any Linux or Windows machine with Docker, or a Raspberry Pi | [docker.md](docker.md) covers building the image, a Compose file, secrets as files and reaching the broker; sources, Mosquitto and Home Assistant stay as on this page |
 | macOS | Not covered yet; contributions are welcome |
 
 The source setup in [section 5](#5-sources) (Gitea, GitHub, Azure DevOps, Prometheus), the Mosquitto logins and
