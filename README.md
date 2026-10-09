@@ -9,7 +9,7 @@ requests and pipeline status. When a CI job runs it switches to live progress, s
 ## How it fits together
 
 - **Bridge** (Rust, runs on a Debian home server): collects server stats, receives Gitea webhooks, polls GitHub,
-  GitHub Enterprise and Prometheus, takes alerts from Home Assistant, decides what the panel should show and
+  GitHub Enterprise, Azure DevOps and Prometheus, takes alerts from Home Assistant, decides what the panel should show and
   publishes it over MQTT.
 - **Panel**: a deliberately dumb MQTT client with a touch screen (planned: an ESP32-S3 SuperMini with a 4" ST7796S
   display) that draws whatever page the bridge sends. Its drawing code, the `ui/` crate, is done and runs today in
@@ -70,6 +70,7 @@ connect shows as a `warn` badge on the panel. Setup for each is in [docs/install
 |---|---|---|
 | `gitea` | Webhooks for instant job start and end, polling for step progress and open PRs | Running job takes over the screen, red alert on failure, green flash on success, PR badge, pipelines page |
 | `github` | Polling with ETags (github.com, GitHub Enterprise Server, GHE.com) | The same as Gitea |
+| `azure_devops` | Polling with a read-only token (Azure DevOps Services); setup in [docs/azure-devops.md](docs/azure-devops.md) | Pipeline runs with stage and task (Terraform plan and apply), a notice when a deploy waits for an approval, PR count; quiet unless you set `interrupt` |
 | `prometheus` | HTTP API (node_exporter, cAdvisor) | A `stats:<host>` page per machine, a `containers` page of what stopped, a `server` badge |
 | built-in `stats` | `/proc` and `/sys` of the bridge machine | The home page, always available |
 

@@ -2,6 +2,7 @@
 //! The `deskwatch-bridge` binary in `main.rs` wires these together.
 
 pub mod alerts;
+pub mod azure_devops;
 pub mod ci;
 pub mod composer;
 pub mod config;

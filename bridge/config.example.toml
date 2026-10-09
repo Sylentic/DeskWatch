@@ -103,6 +103,24 @@ max_active = 10                 # least urgent, oldest alert is dropped first
 # interrupt = false             # work runs only in the badge and pipelines page
 # alias = { "team/service-a" = "service A" }
 
+# Azure DevOps Services: pipeline runs and open PRs, by polling with a read-only
+# personal access token. Terraform pipelines show their stage and task
+# ("apply: terraform apply"), and a stage waiting for an approval raises an
+# "Approval needed" notice. Setup and the scopes to grant are in
+# docs/azure-devops.md. Uncomment and adjust; add one block per organisation.
+# [[source.azure_devops]]
+# name = "work"                 # required: used in logs
+# organization = "your-org"     # required: dev.azure.com/<organization>
+# projects = ["project-a"]      # required: projects to watch
+# token_file = "azdo-work"      # required: read-only PAT (Build: Read, Code: Read)
+# poll_s = 60                   # builds, approvals and open PRs
+# job_poll_s = 5                # step progress while a build may take over the screen
+# interrupt = false             # default; true, or a list such as ["project-a"]
+# pull_requests = true          # count open PRs (needs Code: Read)
+# notify_new_prs = true         # flash "New PR" for new non-draft PRs
+# deploy_words = ["deploy", "terraform"]  # pipeline names with these are deploys
+# alias = { "project-a" = "infra", "project-a/repo-a" = "A" }  # short labels
+
 # Idle pages, in order. Pages with nothing to show are skipped when
 # skip_when_empty is set. "prs" lists open PRs and "pipelines" the latest run
 # of each pipeline, from every CI source. "alerts" lists active alerts. With a

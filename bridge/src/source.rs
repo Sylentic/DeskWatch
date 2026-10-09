@@ -72,10 +72,28 @@ pub enum Health {
     Unreachable,
 }
 
+/// A service answered with its sign-in page instead of data (Azure DevOps
+/// does this for a missing, expired or unauthorised token). Counts as a
+/// refused token.
+#[derive(Debug)]
+pub struct AuthRefused;
+
+impl fmt::Display for AuthRefused {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("the service answered with its sign-in page, so the token was not accepted")
+    }
+}
+
+impl std::error::Error for AuthRefused {}
+
 impl Health {
     /// Classify a failed request. Works for any error chain that contains a
-    /// `reqwest::Error`; everything else counts as unreachable.
+    /// `reqwest::Error` or an `AuthRefused`; everything else counts as
+    /// unreachable.
     pub fn from_error(err: &anyhow::Error) -> Self {
+        if err.chain().any(|e| e.is::<AuthRefused>()) {
+            return Health::AuthFailed;
+        }
         let status = err
             .chain()
             .find_map(|e| e.downcast_ref::<reqwest::Error>())

@@ -11,7 +11,7 @@ What you need:
 
 - A Debian server that stays on, with `systemd`.
 - A Mosquitto broker the bridge can reach (often the same server).
-- At least one source: Gitea, GitHub or GitHub Enterprise, Prometheus, or only Home Assistant alerts. With no
+- At least one source: Gitea, GitHub or GitHub Enterprise, Azure DevOps, Prometheus, or only Home Assistant alerts. With no
   source at all the bridge still shows the server's own stats.
 
 Contents: [1. Get the binary](#1-get-the-binary) · [2. Install it](#2-install-the-bridge) ·
@@ -94,7 +94,7 @@ ignored. The parts you will touch:
 - `[http]`: the address webhooks arrive on (default `0.0.0.0:8787`). It only opens when a Gitea source exists.
   If the server has a firewall, allow this port from the Gitea host only. Behind a reverse proxy, set
   `listen = "127.0.0.1:8787"`.
-- `[[source.gitea]]`, `[[source.github]]`, `[[source.prometheus]]`: one block per instance (step 5).
+- `[[source.gitea]]`, `[[source.github]]`, `[[source.azure_devops]]`, `[[source.prometheus]]`: one block per instance (step 5).
 - `[alerts]` and `[[rotation]]`: which pages rotate and for how long.
 
 **The example config ships with a Gitea block switched on.** Without a Gitea server, delete that
@@ -211,6 +211,22 @@ down when less than 10 % of the rate limit is left. Runs that finished before th
 pipelines page and count in the red badge but do not take over the screen. `interrupt` and `alias` work as for
 Gitea; a new non-draft PR flashes "New PR" unless `notify_new_prs = false`. Only the first 100 open PRs per
 repository are counted.
+
+### Azure DevOps
+
+For Azure DevOps Services (`dev.azure.com`) the bridge polls builds and open PRs with a read-only personal access
+token and shows YAML pipeline runs (such as Terraform deploys) with their stage and task, plus a notice when a
+deploy waits for an approval. A work pipeline stays out of the way unless you set `interrupt`. Creating the token
+with the minimal scopes (**Build: Read**, **Code: Read**), the credential file and the options are in
+[azure-devops.md](azure-devops.md).
+
+```toml
+[[source.azure_devops]]
+name = "work"
+organization = "your-org"
+projects = ["project-a"]
+token_file = "azdo-work"
+```
 
 ### Prometheus (host stats and containers)
 

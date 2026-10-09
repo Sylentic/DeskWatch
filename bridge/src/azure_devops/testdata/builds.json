@@ -1,0 +1,115 @@
+{
+  "count": 5,
+  "value": [
+    {
+      "id": 3005,
+      "buildNumber": "20261008.5",
+      "status": "notStarted",
+      "result": null,
+      "queueTime": "2026-10-08T18:01:30.1234567Z",
+      "startTime": null,
+      "finishTime": null,
+      "sourceBranch": "refs/heads/main",
+      "sourceVersion": "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "definition": {
+        "id": 13,
+        "name": "nightly-checks"
+      },
+      "project": {
+        "name": "project-a"
+      },
+      "repository": {
+        "name": "repo-a",
+        "type": "TfsGit"
+      }
+    },
+    {
+      "id": 3004,
+      "buildNumber": "20261008.4",
+      "status": "inProgress",
+      "result": null,
+      "queueTime": "2026-10-08T17:59:50.5Z",
+      "startTime": "2026-10-08T18:00:00.1234567Z",
+      "finishTime": null,
+      "sourceBranch": "refs/heads/main",
+      "sourceVersion": "abcdef1234567890abcdef1234567890abcdef12",
+      "definition": {
+        "id": 11,
+        "name": "deploy-infra"
+      },
+      "project": {
+        "name": "project-a"
+      },
+      "repository": {
+        "name": "repo-a",
+        "type": "TfsGit"
+      }
+    },
+    {
+      "id": 3003,
+      "buildNumber": "20261008.3",
+      "status": "completed",
+      "result": "failed",
+      "queueTime": "2026-10-08T17:39:50Z",
+      "startTime": "2026-10-08T17:40:00Z",
+      "finishTime": "2026-10-08T17:44:30.25Z",
+      "sourceBranch": "refs/heads/feature/login",
+      "sourceVersion": "2222222bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "definition": {
+        "id": 12,
+        "name": "build-app"
+      },
+      "project": {
+        "name": "project-a"
+      },
+      "repository": {
+        "name": "repo-a",
+        "type": "TfsGit"
+      }
+    },
+    {
+      "id": 3002,
+      "buildNumber": "20261008.2",
+      "status": "completed",
+      "result": "succeeded",
+      "queueTime": "2026-10-08T15:59:50Z",
+      "startTime": "2026-10-08T16:00:00Z",
+      "finishTime": "2026-10-08T16:10:00Z",
+      "sourceBranch": "refs/heads/main",
+      "sourceVersion": "3333333ccccccccccccccccccccccccccccccccc",
+      "definition": {
+        "id": 11,
+        "name": "deploy-infra"
+      },
+      "project": {
+        "name": "project-a"
+      },
+      "repository": {
+        "name": "repo-a",
+        "type": "TfsGit"
+      }
+    },
+    {
+      "id": 3001,
+      "buildNumber": "20261008.1",
+      "status": "completed",
+      "result": "canceled",
+      "queueTime": "2026-10-08T15:00:00Z",
+      "startTime": "2026-10-08T15:00:05Z",
+      "finishTime": "2026-10-08T15:00:30Z",
+      "sourceBranch": "refs/pull/12/merge",
+      "sourceVersion": "4444444ddddddddddddddddddddddddddddddddd",
+      "definition": {
+        "id": 14,
+        "name": "docs"
+      },
+      "project": {
+        "name": "project-a"
+      },
+      "repository": {
+        "name": "repo-a",
+        "type": "TfsGit"
+      }
+    }
+  ]
+}

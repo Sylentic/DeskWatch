@@ -1,7 +1,7 @@
 //! CI facts shared by every CI source: running jobs, runs per pipeline, open
 //! PRs and short notices.
 //!
-//! Sources (Gitea today, GitHub and Azure DevOps later) send `Update`s; the
+//! Sources (Gitea, GitHub, Azure DevOps) send `Update`s; the
 //! main loop applies them here. Sources never decide what is on screen. The
 //! composer turns these facts into screen candidates, header badges and the
 //! `prs` and `pipelines` rotation pages.
@@ -50,6 +50,9 @@ pub enum Update {
     },
     /// A PR was closed or merged.
     PullClosed { key: String, number: u64 },
+    /// A short flash that is not about a PR, such as a deploy waiting for
+    /// approval.
+    Notice { notice: NoticeData },
 }
 
 /// A job that is running right now.
@@ -70,6 +73,9 @@ pub enum RunStatus {
     // Declared in pipelines page order: what needs attention first.
     Running,
     Failed,
+    /// Started but waiting for someone to approve it (Azure DevOps
+    /// environment approvals). Shown as a `review` row.
+    Waiting,
     Queued,
     Success,
     /// Cancelled, skipped or lost. Never raises an alert.
@@ -82,6 +88,7 @@ impl RunStatus {
             RunStatus::Running => RowStatus::Running,
             RunStatus::Failed => RowStatus::Failed,
             RunStatus::Success => RowStatus::Ok,
+            RunStatus::Waiting => RowStatus::Review,
             RunStatus::Queued | RunStatus::Neutral => RowStatus::Neutral,
         }
     }
@@ -188,6 +195,7 @@ impl CiFacts {
                 notify,
             } => self.pull_opened(key, project, source, pull, notify, now),
             Update::PullClosed { key, number } => self.pull_closed(&key, number),
+            Update::Notice { notice } => self.notices.push((notice, now)),
         }
     }
 
@@ -330,6 +338,8 @@ impl CiFacts {
             self.focus = None;
         }
         for (run, updated) in self.runs.values_mut() {
+            // A run waiting for approval can wait for days, and a polled
+            // source resends it when anything changes, so it never expires.
             let active = matches!(run.status, RunStatus::Running | RunStatus::Queued);
             if active && now.saturating_sub(*updated) >= JOB_MAX_AGE_S {
                 run.status = RunStatus::Neutral;

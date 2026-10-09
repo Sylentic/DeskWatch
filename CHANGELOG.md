@@ -8,6 +8,19 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+## [0.9.1]
+
+### Added
+
+- **Azure DevOps source** (`[[source.azure_devops]]`) for Azure DevOps Services, by polling with a read-only
+  personal access token ([docs/azure-devops.md](docs/azure-devops.md)).
+  - YAML pipeline runs on the pipelines page, with a running run's stage and task (`apply: terraform apply`) and
+    progress on the job screen, and the failed task in the red alert.
+  - A stage waiting for an approval raises an "Approval needed" notice and shows as a `review` row.
+  - Open PRs per repository in the PR badge and `prs` page.
+  - Work pipelines stay quiet by default (`interrupt = false`). A refused token or an unreachable service lights
+    the `warn` badge.
+
 ## [0.9.0]
 
 First release, a pre-1.0 one. The bridge, the panel UI and the desktop simulator are done; the firmware for the real panel is
@@ -51,5 +64,6 @@ not (see the README, "What is not in 0.9").
   source for other CPUs.
 - Gitea webhooks are plain HTTP unless you put a reverse proxy in front of the bridge.
 
-[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/Sylentic/DeskWatch/releases/tag/v0.9.1
 [0.9.0]: https://github.com/Sylentic/DeskWatch/releases/tag/v0.9.0
