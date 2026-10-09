@@ -481,6 +481,17 @@
     if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; connect(); }
   }
 
+  // Hide the mouse pointer after 3 s without movement; any movement brings it back.
+  var idleTimer = null;
+  function wake() {
+    document.body.classList.remove('idle');
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function () { document.body.classList.add('idle'); }, 3000);
+  }
+  document.addEventListener('mousemove', wake);
+  document.addEventListener('mousedown', wake);
+  wake();
+
   window.DeskWatchKiosk = { render: render, tick: tick, seed: function (name, values) { history[name] = values.slice(-HISTORY); } };
   setInterval(tick, 1000);
   tick();

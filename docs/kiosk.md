@@ -36,7 +36,7 @@ the header follows it. The header also has the same counters as the panel badges
 things down), a connection chip, and a clock.
 
 The size follows the screen width, so the same layout is readable on 1080p and 4K and on a small 1280x720 screen.
-Under 900 px wide (a phone) it becomes a single scrolling column. The pointer is hidden on big screens.
+Under 900 px wide (a phone) it becomes a single scrolling column. The pointer hides after 3 seconds without mouse movement.
 
 ## 2. Turn it on
 
@@ -135,8 +135,8 @@ Things that make a kiosk last:
 
 - **Screen blanking.** Turn it off in `sudo raspi-config` > Display Options > Screen Blanking (the menu name varies
   between releases), then check after an hour that the screen is still on. The LXDE file above covers X11.
-- **Mouse pointer.** The page hides it over the page; `sudo apt install unclutter` is only needed if it shows up
-  at the edges.
+- **Mouse pointer.** The page hides it after 3 seconds without mouse movement and shows it again on the next
+  movement; `sudo apt install unclutter` is only needed if it shows up at the edges.
 - **Chromium crash restore.** `--noerrdialogs --disable-session-crashed-bubble` keep the "restore pages" bubble
   away. A dedicated `--user-data-dir` keeps the kiosk's profile apart from yours.
 - **Bridge restarts and upgrades need no action.** The page reconnects by itself, and after an upgrade it reloads

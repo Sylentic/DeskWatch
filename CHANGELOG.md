@@ -22,6 +22,11 @@ may change if the firmware work needs it; any such change is listed here.
   version by surprise. Building from the source stays documented as a commented alternative. `docs/docker.md`
   (sections 5, 10 and 11) describes pulling and bumping the version. (Fixes #23)
 
+### Fixed
+
+- **The mouse pointer no longer disappears for good on the dashboard.** It is visible as normal and only hides
+  after 3 seconds without movement (handy on a kiosk screen), then returns on the next movement.
+
 ### Security
 
 - **A stalled dashboard client can no longer hold a WebSocket for ever.** The bridge drops a client that has not
