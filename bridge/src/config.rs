@@ -22,8 +22,29 @@ use crate::source::{Interrupt, valid_name};
 /// is not set.
 pub const MQTT_PASSWORD_ENV: &str = "DESKWATCH_MQTT_PASSWORD";
 
-/// Config path used when none is given on the command line or in `DESKWATCH_CONFIG`.
+/// Config path used when none is given on the command line or in `DESKWATCH_CONFIG`
+/// (Linux and other Unix systems).
 pub const DEFAULT_CONFIG_PATH: &str = "/etc/deskwatch/bridge.toml";
+
+/// The folder Windows installs keep their files in: `%ProgramData%\DeskWatch`
+/// (normally `C:\ProgramData\DeskWatch`).
+pub fn windows_data_dir() -> PathBuf {
+    std::env::var_os("ProgramData")
+        .filter(|d| !d.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\ProgramData"))
+        .join("DeskWatch")
+}
+
+/// The config path when none is given: `/etc/deskwatch/bridge.toml`, or
+/// `%ProgramData%\DeskWatch\bridge.toml` on Windows.
+pub fn default_config_path() -> PathBuf {
+    if cfg!(windows) {
+        windows_data_dir().join("bridge.toml")
+    } else {
+        PathBuf::from(DEFAULT_CONFIG_PATH)
+    }
+}
 
 /// Top-level config file layout.
 #[derive(Debug, Clone, Deserialize)]
@@ -637,7 +658,7 @@ impl Config {
 
     /// Pick the config path: the CLI argument, then `DESKWATCH_CONFIG`, then the default.
     pub fn path(arg: Option<PathBuf>) -> PathBuf {
-        Self::path_given(arg).unwrap_or_else(|| PathBuf::from(DEFAULT_CONFIG_PATH))
+        Self::path_given(arg).unwrap_or_else(default_config_path)
     }
 }
 

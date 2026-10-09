@@ -1,6 +1,9 @@
 //! The `server` source: stats about the machine the bridge runs on.
 //!
-//! Everything comes from `/proc` and `/sys`, so this only works on Linux. CPU
+//! Everything comes from `/proc` and `/sys`, so the numbers only exist on Linux.
+//! On Windows the bridge still runs, but only the host name is known here; the
+//! rest stays unknown and the server page shows dashes (for Windows machine
+//! stats use a Prometheus source with windows_exporter). CPU
 //! usage and network rates are deltas between two samples, which means the
 //! very first sample reports them as unknown (`null` on the panel).
 //!
@@ -126,6 +129,8 @@ fn read_hostname() -> String {
     read("/proc/sys/kernel/hostname")
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+        // Windows has no /proc; it sets COMPUTERNAME for every process.
+        .or_else(|| std::env::var("COMPUTERNAME").ok().filter(|s| !s.is_empty()))
         .unwrap_or_else(|| "server".into())
 }
 
@@ -272,7 +277,14 @@ pub fn parse_millidegrees(text: &str) -> Option<f32> {
     Some(round1(milli as f64 / 1000.0))
 }
 
+/// Windows has no `statvfs`; the disk figure stays unknown there.
+#[cfg(not(unix))]
+fn disk_used_pct(_path: &Path) -> Option<f32> {
+    None
+}
+
 /// Used percentage of the filesystem at `path`, as `df` shows it.
+#[cfg(unix)]
 fn disk_used_pct(path: &Path) -> Option<f32> {
     let stat = match nix::sys::statvfs::statvfs(path) {
         Ok(stat) => stat,

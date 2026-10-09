@@ -259,17 +259,18 @@ impl fmt::Debug for Secret {
 
 /// Read a secret named in the config, such as `token_file = "gitea-token"`.
 ///
-/// A plain name is a systemd credential: `$CREDENTIALS_DIRECTORY/<name>`, put
-/// there by `LoadCredential=` in the unit. An absolute path is read as is,
-/// which is handy when running the bridge by hand during development.
+/// A plain name is a credential file in a folder: `$CREDENTIALS_DIRECTORY/<name>`,
+/// which systemd sets up with `LoadCredential=` in the unit. On Windows, where
+/// there is no systemd, the folder is `%ProgramData%\DeskWatch\credentials`
+/// unless `CREDENTIALS_DIRECTORY` points elsewhere. An absolute path is read
+/// as is, which is handy when running the bridge by hand during development.
 /// Surrounding whitespace (the trailing newline of `echo > file`) is removed.
 pub fn load_secret(name: &str) -> Result<Secret> {
-    let path = credential_path(
-        name,
-        std::env::var_os(CREDENTIALS_DIR_ENV)
-            .filter(|d| !d.is_empty())
-            .map(PathBuf::from),
-    )?;
+    let dir = std::env::var_os(CREDENTIALS_DIR_ENV)
+        .filter(|d| !d.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| cfg!(windows).then(|| crate::config::windows_data_dir().join("credentials")));
+    let path = credential_path(name, dir)?;
     let text = std::fs::read_to_string(&path)
         .with_context(|| format!("cannot read credential {name} at {}", path.display()))?;
     let value = text.trim();
@@ -283,7 +284,7 @@ fn credential_path(name: &str, credentials_dir: Option<PathBuf>) -> Result<PathB
         return Ok(path.to_path_buf());
     }
     anyhow::ensure!(
-        !name.is_empty() && !name.contains('/'),
+        !name.is_empty() && !name.contains(['/', '\\']),
         "credential name {name:?} must be a plain name or an absolute path"
     );
     let dir = credentials_dir.with_context(|| {
@@ -348,17 +349,20 @@ mod tests {
 
     #[test]
     fn credential_paths() {
-        let dir = Some(PathBuf::from("/run/credentials/x"));
+        // Built from the temp dir so the paths are absolute on Windows too.
+        let base = std::env::temp_dir();
+        let dir = Some(base.join("credentials"));
         assert_eq!(
             credential_path("gitea-token", dir.clone()).unwrap(),
-            PathBuf::from("/run/credentials/x/gitea-token")
+            base.join("credentials").join("gitea-token")
         );
         assert_eq!(
-            credential_path("/etc/deskwatch/t", None).unwrap(),
-            PathBuf::from("/etc/deskwatch/t")
+            credential_path(base.join("t").to_str().unwrap(), None).unwrap(),
+            base.join("t")
         );
         assert!(credential_path("gitea-token", None).is_err());
         assert!(credential_path("../escape", dir.clone()).is_err());
+        assert!(credential_path("..\\escape", dir.clone()).is_err());
         assert!(credential_path("", dir).is_err());
     }
 

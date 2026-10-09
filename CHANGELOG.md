@@ -8,6 +8,22 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+## [0.9.2]
+
+### Added
+
+- **Windows support** for the bridge and the simulator (x86_64). Linux and Windows are the supported systems;
+  macOS is left to a contributor.
+  - The bridge builds and runs on Windows: the default config is `%ProgramData%\DeskWatch\bridge.toml`, a plain
+    credential name is read from `%ProgramData%\DeskWatch\credentials` (or `CREDENTIALS_DIRECTORY`), and Ctrl+C,
+    closing the console, logoff and shutdown stop it cleanly. The local server stats page needs `/proc`, so on
+    Windows it shows only the machine name.
+  - The simulator links a bundled SDL2 on Windows, so `deskwatch-sim.exe` needs no DLL.
+  - A Windows install and test guide, [docs/windows.md](docs/windows.md): Mosquitto, the demo with the
+    simulator, running the bridge as a service with NSSM or a scheduled task.
+  - CI runs clippy and the tests on `windows-latest`.
+  - Releases add a Windows zip with `deskwatch-bridge.exe` and `deskwatch-sim.exe`, with a checksum file.
+
 ## [0.9.1]
 
 ### Added

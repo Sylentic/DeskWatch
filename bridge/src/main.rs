@@ -18,7 +18,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
@@ -48,7 +47,8 @@ const BADGES_REFRESH_S: u64 = 60;
 const USAGE: &str = "\
 usage: deskwatch-bridge [--demo] [CONFIG]
 
-CONFIG defaults to $DESKWATCH_CONFIG, then /etc/deskwatch/bridge.toml.
+CONFIG defaults to $DESKWATCH_CONFIG, then /etc/deskwatch/bridge.toml
+(on Windows %ProgramData%\\DeskWatch\\bridge.toml).
 --demo  play a loop of fake data instead of running the sources; only the
         [mqtt] and [alerts] settings are used, and CONFIG is optional";
 
@@ -161,7 +161,7 @@ async fn main() -> Result<()> {
 
     let mut stats_ticker = tokio::time::interval(Duration::from_secs(config.server.interval_s));
     let mut compose_ticker = tokio::time::interval(COMPOSE_INTERVAL);
-    let mut sigterm = signal(SignalKind::terminate())?;
+    let mut shutdown = Shutdown::new()?;
     loop {
         tokio::select! {
             _ = stats_ticker.tick(), if demo.is_none() => composer.set_stats(collector.collect()),
@@ -171,8 +171,7 @@ async fn main() -> Result<()> {
                 Inbound::Button(event) => composer.on_button(event.action, unix_now()),
                 Inbound::Alert(alert) => composer.alert(alert, unix_now()),
             },
-            _ = tokio::signal::ctrl_c() => break,
-            _ = sigterm.recv() => break,
+            _ = shutdown.wait() => break,
         }
         if let Some(demo) = &mut demo {
             demo.tick(&mut composer, unix_now());
@@ -187,6 +186,55 @@ async fn main() -> Result<()> {
     // Give the event loop a moment to flush the offline message and disconnect.
     tokio::time::sleep(Duration::from_millis(500)).await;
     Ok(())
+}
+
+/// Resolves when the process is asked to stop, so the bridge can say goodbye
+/// to the broker. Ctrl+C everywhere; SIGTERM (systemd) on Unix; closing the
+/// console window, logoff and system shutdown on Windows.
+#[cfg(unix)]
+struct Shutdown(tokio::signal::unix::Signal);
+
+#[cfg(unix)]
+impl Shutdown {
+    fn new() -> Result<Self> {
+        use tokio::signal::unix::{SignalKind, signal};
+        Ok(Self(signal(SignalKind::terminate())?))
+    }
+
+    async fn wait(&mut self) {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = self.0.recv() => {}
+        }
+    }
+}
+
+#[cfg(windows)]
+struct Shutdown {
+    close: tokio::signal::windows::CtrlClose,
+    logoff: tokio::signal::windows::CtrlLogoff,
+    shutdown: tokio::signal::windows::CtrlShutdown,
+}
+
+#[cfg(windows)]
+impl Shutdown {
+    fn new() -> Result<Self> {
+        use tokio::signal::windows;
+        Ok(Self {
+            close: windows::ctrl_close()?,
+            logoff: windows::ctrl_logoff()?,
+            shutdown: windows::ctrl_shutdown()?,
+        })
+    }
+
+    async fn wait(&mut self) {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = self.close.recv() => {}
+            _ = self.logoff.recv() => {}
+            _ = self.shutdown.recv() => {}
+        }
+    }
 }
 
 /// The broker password: `mqtt.password_file` if set, else the environment.

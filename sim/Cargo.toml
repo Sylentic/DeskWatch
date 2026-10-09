@@ -19,3 +19,9 @@ deskwatch-ui = { path = "../ui" }
 embedded-graphics = "0.8.2"
 embedded-graphics-simulator = { version = "0.8.0", default-features = false }
 rumqttc = { version = "0.25.1", default-features = false }
+
+# Windows has no system SDL2 to link, so build it from source and link it
+# statically: the finished deskwatch-sim.exe needs no SDL2.dll next to it. Cargo
+# merges these features into the SDL2 crate the simulator library already uses.
+[target.'cfg(windows)'.dependencies]
+sdl2 = { version = "0.38.0", features = ["bundled", "static-link"] }
