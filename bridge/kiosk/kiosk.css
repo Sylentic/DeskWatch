@@ -216,9 +216,9 @@ body.lost .grid { opacity: .45; filter: grayscale(.7); }
 .job:first-child { border-top: 0; padding-top: 0; }
 .job .l1 { display: flex; align-items: baseline; gap: .8rem; font-size: 1.35rem; font-weight: 600; }
 .job .l1 .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.job .l1 .el { margin-left: auto; color: var(--dim); font-weight: 400; font-size: 1.15rem; }
-.job .l2 { color: var(--dim); font-size: 1.05rem; margin: .1rem 0 .4rem; display: flex; gap: .8rem; }
-.job .l2 .step { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job .l1 .el { margin-left: auto; color: var(--text); font-weight: 600; font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.job .l2 { color: var(--dim); font-size: 1.25rem; margin: .1rem 0 .4rem; display: flex; gap: .8rem; }
+.job .l2 .step { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kind { font-size: .8rem; font-weight: 800; letter-spacing: .1em; padding: .1rem .5rem; border-radius: .3rem; background: var(--track); color: var(--text); text-transform: uppercase; }
 .kind.deploy { background: #4a2f80; }
 .kind.build { background: #1d4a7a; }
