@@ -8,6 +8,15 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The dashboard no longer sits silently on `connecting`.** When the kiosk token is set and the page is opened without
+  it, the data request answered 401 and the page showed an empty body forever. The page now asks for the token in a
+  box (kept for that tab only) and says `token required` or `token rejected` in the header chip. It also names the
+  other failures: `bridge unreachable`, `bridge error <status>`, `polling, no live socket` (WebSocket blocked, data
+  still arrives by polling) and "Waiting for the first data". It fetches a snapshot once at start, so the reason is
+  known even before the WebSocket gives up. Troubleshooting table in `docs/kiosk.md`.
+
 ## [0.9.6]
 
 The homelab release: the bridge image is published to `ghcr.io`, and the Docker setup is hardened.
