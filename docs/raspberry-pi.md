@@ -39,7 +39,7 @@ x86_64 one, named `deskwatch-bridge-<version>-aarch64-linux.tar.gz`, with a `.sh
 Ubuntu 22.04 (glibc 2.35), so it runs on Raspberry Pi OS Bookworm and newer and needs nothing installed.
 
 ```sh
-VERSION=v0.9.3      # the release you want; the aarch64 tarball first ships with 0.9.3
+VERSION=v0.9.5      # the release you want; the aarch64 tarball ships since 0.9.3
 cd "$(mktemp -d)"
 curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-aarch64-linux.tar.gz"
 curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-aarch64-linux.tar.gz.sha256"

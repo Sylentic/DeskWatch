@@ -625,7 +625,7 @@ checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
 
 [[package]]
 name = "deskwatch-firmware"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "deskwatch-ui",
  "embassy-executor",
@@ -656,7 +656,7 @@ dependencies = [
 
 [[package]]
 name = "deskwatch-ui"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "embedded-graphics",
  "heapless 0.9.3",
