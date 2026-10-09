@@ -167,6 +167,18 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --release --locked -- -D warnings
 
+      # The TLS spike is a second binary behind a cargo feature (see
+      # firmware/README.md). Linting it needs the TLS stack, which is only
+      # compiled with the feature on.
+      - name: cargo clippy (tls-spike)
+        run: cargo clippy --release --locked --features tls-spike -- -D warnings
+
       # Falls back to config.example.toml, since config.toml is gitignored.
       - name: cargo build
         run: cargo build --release --locked
+
+      # MbedTLS is compiled from source here (the certificate date checks change
+      # its configuration), with the Xtensa GCC from the toolchain step. The
+      # runner already has cmake and ninja.
+      - name: cargo build (tls-spike)
+        run: cargo build --release --locked --features tls-spike --bin tls-spike

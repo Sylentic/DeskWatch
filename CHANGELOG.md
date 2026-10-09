@@ -8,6 +8,13 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Added
+
+- **TLS spike for the firmware.** A separate `tls-spike` binary in `firmware/` (cargo feature `tls-spike`, so the
+  panel firmware is unchanged) that joins Wi-Fi, sets the clock over SNTP and makes HTTPS requests with full
+  certificate verification using mbedtls-rs, logging handshake time, response size and heap use over serial. Needs no
+  screen or broker. CI builds and lints it. **Not yet run on hardware.** See "TLS spike" in `firmware/README.md`.
+
 ## [0.9.4]
 
 ### Added
