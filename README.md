@@ -37,18 +37,20 @@ requests and pipeline status. When a CI job runs it switches to live progress, s
 - **CI runner and agent pool status** (Gitea runners, Azure DevOps agent pools) are planned after 1.0.
 - **TLS on the webhook listener.** Gitea talks plain HTTP to the bridge; put a reverse proxy in front if the path
   crosses an untrusted network.
-- **Release binaries for other CPUs, and macOS.** Release binaries are x86_64 for Linux and Windows. Build from
-  source on a Raspberry Pi or similar; macOS is not covered, contributions are welcome.
+- **Release binaries for macOS and 32-bit ARM.** Release binaries are x86_64 for Linux and Windows, and aarch64 for
+  Linux (64-bit Raspberry Pi OS). Build from source for anything else; macOS is not covered, contributions are welcome.
 
 ## Install
 
-DeskWatch supports **Linux and Windows**.
+DeskWatch supports **Linux and Windows**, plus the Raspberry Pi (64-bit Linux).
 
 - **Linux:** [docs/install.md](docs/install.md) walks through the whole setup on a systemd server (written for
   Debian 12 or newer): download or build the binary, config, systemd unit with credentials, Mosquitto logins, then
   each source and Home Assistant.
 - **Docker:** [docs/docker.md](docs/docker.md) builds a small non-root image of the bridge and has a Compose
-  example with config and secrets mounted read-only. Also the way to run it on a Raspberry Pi.
+  example with config and secrets mounted read-only. Multi-arch (amd64 and arm64) in CI; nothing is published to a registry.
+- **Raspberry Pi:** [docs/raspberry-pi.md](docs/raspberry-pi.md) covers 64-bit Raspberry Pi OS with the aarch64 release
+  binary and systemd, or Docker. A Pi is also a fine always-on machine for the demo.
 - **Windows:** [docs/windows.md](docs/windows.md) covers the release zip, Mosquitto, trying the demo and the
   simulator, a config and secrets, running the bridge as a service, and what differs (the local stats page needs
   Linux's `/proc` for now). The source, Mosquitto and Home Assistant steps in the Linux guide apply on Windows too.

@@ -6,7 +6,8 @@ DeskWatch supports **Linux and Windows** (x86_64 release binaries for both). Pic
 |---|---|
 | Linux with systemd (written for Debian 12 or newer; other systemd distributions work the same, with their own package commands) | This page |
 | Windows 10 and 11, Windows Server 2019 or newer | [windows.md](windows.md) covers the programs, Mosquitto, a config, running the bridge as a service and what differs from Linux |
-| Any Linux or Windows machine with Docker, or a Raspberry Pi | [docker.md](docker.md) covers building the image, a Compose file, secrets as files and reaching the broker; sources, Mosquitto and Home Assistant stay as on this page |
+| Raspberry Pi (64-bit Raspberry Pi OS) | [raspberry-pi.md](raspberry-pi.md) covers the aarch64 release binary with systemd, and the Docker route |
+| Any Linux or Windows machine with Docker | [docker.md](docker.md) covers building the image, a Compose file, secrets as files and reaching the broker; sources, Mosquitto and Home Assistant stay as on this page |
 | macOS | Not covered yet; contributions are welcome |
 
 The source setup in [section 5](#5-sources) (Gitea, GitHub, Azure DevOps, Prometheus), the Mosquitto logins and
@@ -37,11 +38,12 @@ Contents: [1. Get the binary](#1-get-the-binary) · [2. Install it](#2-install-t
 
 ### Option A: download a release
 
-Each release at <https://github.com/Sylentic/DeskWatch/releases> has a tarball for Linux x86_64 and a checksum
+Each release at <https://github.com/Sylentic/DeskWatch/releases> has a tarball for Linux x86_64 (and one for
+aarch64, the Raspberry Pi, see [raspberry-pi.md](raspberry-pi.md)) and a checksum
 file (the Windows zip is covered in [windows.md](windows.md)). It is built on Ubuntu 22.04, so it runs on Debian 12 and newer. It needs nothing but the system C library.
 
 ```sh
-VERSION=v0.9.2      # the release you want
+VERSION=v0.9.3      # the release you want
 cd "$(mktemp -d)"
 curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-x86_64-linux.tar.gz"
 curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-x86_64-linux.tar.gz.sha256"
@@ -55,7 +57,7 @@ examples), `homeassistant/` (blueprints), `docs/` and the licenses. The steps be
 
 ### Option B: build from source
 
-Needed on other CPUs (for example a Raspberry Pi), or if you want to read the code first. The bridge needs Rust
+Needed on other CPUs (a Raspberry Pi has its own tarball, see [raspberry-pi.md](raspberry-pi.md)), or if you want to read the code first. The bridge needs Rust
 1.88 or newer, which is newer than Debian's packaged compiler, so use [rustup](https://rustup.rs):
 
 ```sh
@@ -65,7 +67,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 git clone https://github.com/Sylentic/DeskWatch.git
 cd DeskWatch
-git checkout v0.9.2            # or stay on main for the newest, untagged code
+git checkout v0.9.3            # or stay on main for the newest, untagged code
 cargo build --release --locked -p deskwatch-bridge
 ```
 
