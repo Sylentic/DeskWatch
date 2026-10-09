@@ -186,7 +186,7 @@ secrets:
 
 ## 5. Compose for the ESP bridge
 
-[`deploy/docker-compose.yml`](../deploy/docker-compose.yml) is a ready example: it builds the image, mounts the
+[`deploy/docker-compose.yml`](../deploy/docker-compose.yml) is a ready example: it pulls the published image (pinned to a release, section 10), mounts the
 config and the `credentials/` folder read-only, runs with a read-only root filesystem, drops all capabilities, and
 restarts unless stopped. Copy it next to your config:
 
@@ -195,7 +195,7 @@ mkdir -p deskwatch/credentials && cd deskwatch
 cp /path/to/DeskWatch/deploy/docker-compose.yml compose.yaml
 cp /path/to/DeskWatch/bridge/config.example.toml bridge.toml       # edit it, see install.md step 3
 (umask 077; printf %s 'THE-BRIDGE-PASSWORD' > credentials/mqtt-password)
-docker compose up -d --build
+docker compose up -d
 docker compose logs -f
 ```
 
@@ -296,20 +296,31 @@ docker run --rm -p 8787:8787 ghcr.io/sylentic/deskwatch-bridge:<version> --demo 
 ```
 
 Tags are the version without the `v` and, for tags without a suffix such as `-rc.1`, `latest`. Pin the version in
-production (`latest` moves). In the Compose files, replace the `build:` block with
-`image: ghcr.io/sylentic/deskwatch-bridge:<version>`; an updater such as Renovate or Watchtower can then bump it.
+production (`latest` moves). [`deploy/docker-compose.yml`](../deploy/docker-compose.yml) already uses the image,
+pinned to a release. The dashboard and demo Compose files build from the checkout they sit in, which is
+repeatable as long as you stay on one commit; to use the image there, replace their `build:` block with
+`image: ghcr.io/sylentic/deskwatch-bridge:<version>`. An updater such as Renovate or Watchtower can bump the tag.
 A new package on `ghcr.io` starts private: make it public once in the package settings (Package settings, Change
 visibility) so servers can pull it without a login. CI (the `docker` job in [`ci.yml`](../.github/workflows/ci.yml))
 only checks that the image builds and starts; nothing is pushed from pull requests or branches.
 
-Until a release with an image exists, section 1 builds it from the source.
+If the image does not suit you (your own changes, another CPU), section 1 builds it from the source.
 
 ## 11. Update and remove
+
+With the published image (the default in `deploy/docker-compose.yml`): read [CHANGELOG.md](../CHANGELOG.md) first, a
+new release may add config keys, then change the version in the `image:` line and run:
+
+```sh
+docker compose pull && docker compose up -d
+```
+
+When you build from the source instead:
 
 ```sh
 cd DeskWatch && git pull                    # or check out the tag you want
 docker compose build --pull && docker compose up -d
 ```
 
-Read [CHANGELOG.md](../CHANGELOG.md) first; a new release may add config keys. Remove with
+Remove with
 `docker compose down --rmi local`, then delete the `credentials/` folder and the broker users you created.

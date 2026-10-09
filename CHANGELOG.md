@@ -8,6 +8,13 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Changed
+
+- **`deploy/docker-compose.yml` uses the published image instead of building from `#main`.** It pulls
+  `ghcr.io/sylentic/deskwatch-bridge` pinned to a release, so a restart or rebuild can no longer change the running
+  version by surprise. Building from the source stays documented as a commented alternative. `docs/docker.md`
+  (sections 5, 10 and 11) describes pulling and bumping the version. (Fixes #23)
+
 ## [0.9.7]
 
 The dashboard fixes release: clearer connection states, running pipelines in Running now, and orange for running builds.
