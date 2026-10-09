@@ -31,7 +31,7 @@ A grid of cards, 4 columns by 3 rows by default:
 Interrupts do not take over the whole screen as they do on the ESP panel, because the other widgets are still
 useful. The bridge's normal priority decides (critical alert, running job, failed, warning, success, notice), and
 the page shows the winner as a coloured **banner** under the header: red for a failure, deep red for a critical
-alert, amber for a warning, green for a success, blue for a notice. While a job runs, a thin progress line under
+alert, amber for a warning, green for a success, blue for a notice. While a job runs, a thin orange progress line under
 the header follows it. The header also has the same counters as the panel badges (failed runs, open PRs, alerts,
 things down), a connection chip, and a clock.
 
@@ -223,6 +223,11 @@ and at least every 5 seconds (a heartbeat, so the page can tell quiet from gone)
 screen payload, or `null` when idle), `badges`, `hosts`, `down`, `jobs`, `runs`, `pulls`, `alerts` and `sources`.
 Lists are not capped to the ESP panel's five rows. The structure is in `bridge/src/kiosk.rs` (`snapshot`) and
 covered by the tests next to it. Treat it as unstable until 1.0.
+
+Status colours (the dots in Pipelines, the Running now bars and the header counters use the same ones): orange and
+pulsing for running, red for failed, green for success, amber and still for waiting for approval, grey for queued,
+cancelled and anything unknown. Orange is deliberately darker than amber so a running build and one waiting for
+approval stay apart, and only the running dot pulses.
 
 `?static` on the page address stops all network use; the page then waits for `DeskWatchKiosk.render(snapshot)`
 to be called, which is how the screenshots and tests drive it.
