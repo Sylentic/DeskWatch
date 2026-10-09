@@ -8,6 +8,11 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+## [0.9.5]
+
+The big-screen release: a browser dashboard for a Raspberry Pi or a homelab container, and a TLS spike for the
+firmware. Pre-release; the ESP panel firmware still has not run on a board.
+
 ### Added
 
 - **Docker dashboard.** The kiosk page is now a first-class way to run DeskWatch in a container on a homelab, with
@@ -145,7 +150,8 @@ not (see the README, "What is not in 0.9").
   are Linux x86_64; build from source for other CPUs.
 - Gitea webhooks are plain HTTP unless you put a reverse proxy in front of the bridge.
 
-[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.4...HEAD
+[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.5...HEAD
+[0.9.5]: https://github.com/Sylentic/DeskWatch/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/Sylentic/DeskWatch/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/Sylentic/DeskWatch/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/Sylentic/DeskWatch/releases/tag/v0.9.2

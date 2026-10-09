@@ -55,8 +55,8 @@ The mini display's UI in the desktop simulator:
 | Linux x86_64 release binary, systemd unit, install guide ([docs/install.md](docs/install.md)) | Done |
 | Source: Azure DevOps Services (pipeline runs, approvals, PRs; [docs/azure-devops.md](docs/azure-devops.md)) | Done |
 | Windows x86_64 release zip (bridge and simulator), install and test guide | Done, see [docs/windows.md](docs/windows.md) |
-| Kiosk dashboard for big screens (browser page served by the bridge, autostart example for a Raspberry Pi) | Unreleased, not yet run on a Pi: [docs/kiosk.md](docs/kiosk.md) |
-| Docker dashboard (no broker needed: `[mqtt] enabled = false`, Compose files, health check) | Unreleased, run in a container with demo data: [docs/docker.md](docs/docker.md) |
+| Kiosk dashboard for big screens (browser page served by the bridge, autostart example for a Raspberry Pi) | Done in 0.9.5, not yet run on a Pi: [docs/kiosk.md](docs/kiosk.md) |
+| Docker dashboard (no broker needed: `[mqtt] enabled = false`, Compose files, health check) | Done in 0.9.5, run in a container with demo data: [docs/docker.md](docs/docker.md) |
 
 ## What is not in 0.9
 
