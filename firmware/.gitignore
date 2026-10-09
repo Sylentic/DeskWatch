@@ -1,0 +1,3 @@
+# Wi-Fi password and MQTT login, see config.example.toml
+/config.toml
+/target/

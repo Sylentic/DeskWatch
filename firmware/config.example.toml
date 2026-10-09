@@ -1,0 +1,35 @@
+# DeskWatch panel settings, compiled into the firmware (stage 1).
+#
+# Copy this file to `config.toml` (same folder, git ignores it) and fill it in,
+# then build and flash. Nothing in this file may be committed: it holds the
+# Wi-Fi password and the panel's MQTT login. Without a `config.toml` the build
+# falls back to this example and the panel logs "not configured" at boot.
+#
+# The panel needs no CI tokens. Those stay in the bridge. The MQTT login is the
+# ACL-limited `deskwatch-panel` user from docs/mosquitto.md.
+
+[wifi]
+ssid = "your-network"
+password = "your-wifi-password"
+
+[mqtt]
+# Broker address: an IPv4 address or a name your router's DNS can resolve.
+host = "192.0.2.10"
+# The plain listener. TLS (8883) is not supported by the panel yet.
+port = 1883
+# The ACL-limited panel login. Leave both empty while the broker still allows
+# anonymous clients.
+username = "deskwatch-panel"
+password = "your-panel-mqtt-password"
+client_id = "deskwatch-panel"
+# Must match `topic_prefix` in the bridge config.
+topic_prefix = "deskpanel"
+keep_alive_s = 30
+
+[display]
+# Panel quirks that can only be settled on the real screen. If colours look
+# wrong (red and blue swapped, or everything inverted), change these first.
+bgr = true
+invert_colors = false
+# SPI clock in MHz. 40 is safe; 80 is untested on this module.
+spi_mhz = 40

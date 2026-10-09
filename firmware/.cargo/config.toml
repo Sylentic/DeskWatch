@@ -1,0 +1,13 @@
+[build]
+target = "xtensa-esp32s3-none-elf"
+
+[target.xtensa-esp32s3-none-elf]
+# `cargo run` flashes over the SuperMini's native USB port and opens the log.
+runner = "espflash flash --monitor --chip esp32s3"
+
+[env]
+# Log level compiled into the firmware (error, warn, info, debug, trace).
+ESP_LOG = "info"
+
+[unstable]
+build-std = ["alloc", "core"]

@@ -1,10 +1,12 @@
 [workspace]
 resolver = "2"
 members = ["bridge", "sim", "ui"]
+# The firmware needs the Xtensa toolchain, so it builds on its own (see firmware/README.md).
+exclude = ["firmware"]
 
 [workspace.package]
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Sylentic/DeskWatch"
 rust-version = "1.88"
-version = "0.9.3"
+version = "0.9.4"

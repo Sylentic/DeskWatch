@@ -1,0 +1,72 @@
+# The DeskWatch panel firmware (ESP32-S3 SuperMini, ST7796S display).
+#
+# This crate is NOT part of the root workspace: it needs the Xtensa Rust
+# toolchain (see README.md), which the normal `cargo test --workspace` run
+# does not have. The empty [workspace] table below makes it its own root, and
+# the root Cargo.toml lists the directory under `exclude`.
+[workspace]
+
+[package]
+name = "deskwatch-firmware"
+version = "0.9.4"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Sylentic/DeskWatch"
+# Set by the esp-hal 1.1 family (rust-version 1.88). The Xtensa toolchain is installed at
+# a matching version, see README.md.
+rust-version = "1.88"
+publish = false
+
+[[bin]]
+name = "deskwatch-firmware"
+path = "src/main.rs"
+test = false
+bench = false
+
+[dependencies]
+# The panel drawing code and the payload parser, shared with the simulator.
+deskwatch-ui = { path = "../ui" }
+
+esp-hal = { version = "~1.1", features = ["esp32s3", "unstable", "log-04"] }
+esp-rtos = { version = "0.3", features = ["esp32s3", "embassy", "esp-radio", "esp-alloc", "log-04"] }
+esp-radio = { version = "0.18", features = ["esp32s3", "wifi", "unstable", "log-04"] }
+esp-alloc = { version = "0.10", features = ["esp32s3"] }
+esp-bootloader-esp-idf = { version = "0.5", features = ["esp32s3", "log-04"] }
+esp-println = { version = "0.17", features = ["esp32s3", "log-04"] }
+esp-backtrace = { version = "0.19", features = ["esp32s3", "panic-handler", "println"] }
+
+embassy-executor = "0.10"
+embassy-time = "0.5"
+embassy-sync = "0.8"
+embassy-futures = "0.1"
+embassy-net = { version = "0.9", features = ["tcp", "dns", "dhcpv4", "medium-ethernet", "proto-ipv4"] }
+embedded-io-async = "0.7"
+
+rust-mqtt = { version = "0.6", default-features = false, features = ["v5", "alloc"] }
+
+mipidsi = "0.10"
+embedded-hal = "1"
+embedded-hal-bus = "0.3"
+embedded-graphics = "0.8.2"
+
+heapless = "0.9"
+log = "0.4"
+static_cell = "2"
+
+[build-dependencies]
+toml = { version = "1", default-features = false, features = ["parse", "display", "serde"] }
+
+# Wi-Fi does not even connect at the default dev optimisation level, so optimise
+# everything. esp-radio asks for level 3 on its own package as well.
+[profile.dev]
+opt-level = "s"
+
+[profile.dev.package.esp-radio]
+opt-level = 3
+
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+debug = 2
+overflow-checks = false
