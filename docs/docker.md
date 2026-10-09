@@ -13,7 +13,7 @@ placeholders.
 
 ## Quick start: the dashboard with fake data
 
-No image is published yet, so Docker builds it from the source once (a few minutes, the Rust compile). Then:
+Releases publish an image to `ghcr.io` (section 10). Without one, Docker builds it from the source once (a few minutes, the Rust compile). Then:
 
 ```sh
 git clone https://github.com/Sylentic/DeskWatch.git && cd DeskWatch
@@ -36,11 +36,11 @@ Contents: [1. Build the image](#1-build-the-image) · [2. Try the demo](#2-try-t
 [4. Config and secrets](#4-config-and-secrets) · [5. Compose for the ESP bridge](#5-compose-for-the-esp-bridge) ·
 [6. Reaching the broker](#6-reaching-the-broker) · [7. Webhooks](#7-webhooks-gitea) ·
 [8. The stats page](#8-the-stats-page-in-a-container) · [9. Health and restarts](#9-health-and-restarts) ·
-[10. Publishing an image](#10-publishing-an-image-optional) · [11. Update and remove](#11-update-and-remove)
+[10. The published image](#10-the-published-image) · [11. Update and remove](#11-update-and-remove)
 
 ## 1. Build the image
 
-No image is published yet, so you build it from the source. The [`Dockerfile`](../Dockerfile) at the repository root
+If no published image fits (section 10), build it from the source. The [`Dockerfile`](../Dockerfile) at the repository root
 has two stages: the official Rust image compiles the release binary (`cargo build --release --locked`, Rust 1.88
 like the rest of the project), and only that binary is copied into a `debian:bookworm-slim` image together with the CA
 certificates. The result is about 130 MB, runs as user `deskwatch` (uid 10001, not root).
@@ -265,46 +265,24 @@ over loopback every 30 seconds. That opens nothing new (the page file carries no
 The check does not restart a container by itself (plain Docker only reports it); an autoheal container or a
 monitor such as Uptime Kuma pointed at the page can act on it.
 
-## 10. Publishing an image (optional)
+## 10. The published image
 
-Nothing is published and no workflow pushes an image, so the quick start builds from the source (a few minutes the
-first time). CI only checks that the Docker image builds and starts (the
-`docker` job in [`ci.yml`](../.github/workflows/ci.yml)). If you want a published image so people can skip the
-build, a job like this in a release workflow does it for GitHub's registry (`ghcr.io`); it needs no secret beyond
-the built-in token:
+Every version tag (from the first release after 0.9.5) is built for amd64 and arm64 by the `docker` job in
+[`release.yml`](../.github/workflows/release.yml) and pushed to GitHub's registry:
 
-```yaml
-  docker:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v5
-      - uses: docker/setup-qemu-action@v3        # only for the arm64 build below
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          platforms: linux/amd64,linux/arm64       # arm64 covers a Raspberry Pi
-          tags: |
-            ghcr.io/sylentic/deskwatch-bridge:${{ github.ref_name }}
-            ghcr.io/sylentic/deskwatch-bridge:latest
+```sh
+docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 0.9.6; no "v"
+docker run --rm -p 8787:8787 ghcr.io/sylentic/deskwatch-bridge:<version> --demo --kiosk --no-mqtt
 ```
 
-Things to decide first: the tag scheme (only version tags, `latest` too?), whether the image should be public
-(a package inherits the repository's visibility only after you set it in the package settings), and whether to
-build arm64 (a cross build under QEMU is several times slower than the amd64 one). Add the job to
-`release.yml` so it only runs on version tags. Later, `docker pull` replaces `docker build` in step 1, the quick start shrinks to
-`docker run --rm -p 8787:8787 ghcr.io/sylentic/deskwatch-bridge:latest --demo --kiosk --no-mqtt`, and the Compose
-files swap their `build:` block for `image: ghcr.io/sylentic/deskwatch-bridge:<version>`. This is the one change
-that turns "a few minutes of compiling" into "under a minute", so it is worth deciding before 1.0.
+Tags are the version without the `v` and, for tags without a suffix such as `-rc.1`, `latest`. Pin the version in
+production (`latest` moves). In the Compose files, replace the `build:` block with
+`image: ghcr.io/sylentic/deskwatch-bridge:<version>`; an updater such as Renovate or Watchtower can then bump it.
+A new package on `ghcr.io` starts private: make it public once in the package settings (Package settings, Change
+visibility) so servers can pull it without a login. CI (the `docker` job in [`ci.yml`](../.github/workflows/ci.yml))
+only checks that the image builds and starts; nothing is pushed from pull requests or branches.
+
+Until a release with an image exists, section 1 builds it from the source.
 
 ## 11. Update and remove
 
