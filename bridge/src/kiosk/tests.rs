@@ -336,6 +336,28 @@ fn page_script_takes_the_token_out_of_the_address_bar() {
     assert!(!INDEX_HTML.contains("token="));
 }
 
+#[test]
+fn page_explains_why_it_has_no_data() {
+    // Guard for the failure states: the page must ask for a token on a 401
+    // (the HTTP fetch is what sees the status, a WebSocket error has none),
+    // and the notice box and its field must exist in the page.
+    assert!(INDEX_HTML.contains("id=\"notice\""));
+    assert!(KIOSK_JS.contains("r.status === 401"));
+    for pill in [
+        "token required",
+        "token rejected",
+        "bridge unreachable",
+        "polling, no live socket",
+    ] {
+        assert!(KIOSK_JS.contains(pill), "page never says '{pill}'");
+    }
+    assert!(KIOSK_JS.contains("Waiting for the first data"));
+    // The page fetches once at start instead of only after the socket fails.
+    assert!(KIOSK_JS.contains("{ poll(); connect(); }"));
+    // The token field must not need a form, the CSP has form-action 'none'.
+    assert!(!INDEX_HTML.contains("<form"));
+}
+
 #[tokio::test]
 async fn snapshot_endpoint_returns_the_latest_json() {
     let mut kiosk = kiosk_with(None);

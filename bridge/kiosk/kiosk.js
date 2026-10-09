@@ -6,6 +6,11 @@
 // arrives for a while (bridge restarting, network down) the page keeps the
 // last data on screen, dims it and says how old it is, then recovers on its own.
 //
+// When the page cannot get data it says why, in the header chip and in a box
+// in the page body: a token is needed or was refused (with a field to enter
+// it), the bridge cannot be reached, the bridge answered with an error, the
+// WebSocket is blocked (the page then polls), or the bridge has no data yet.
+//
 // `?static` stops all network use; the screenshots and tests call
 // `DeskWatchKiosk.render(snapshot)` themselves.
 (function () {
@@ -24,6 +29,9 @@
   var history = {};            // host name -> recent CPU readings
   var historyAt = {};          // host name -> client time of the last reading
   var cards = {};              // card key -> { el, html }
+  var problem = null;          // why no data arrives, see describe(); null when all is well
+  var wsFailed = false;        // the WebSocket is down, the page polls instead
+  var noticeKey = null;        // which notice is on screen, to redraw it only on a change
 
   // The token arrives as ?token=... on the page address. Take it out of the
   // address bar right away, so it stays out of the browser history, the Referer
@@ -327,6 +335,74 @@
     tick();
   }
 
+  // ---- why there is no data ----------------------------------------------
+
+  // Turn a failed request into something a person can act on.
+  function describe(e) {
+    if (e && e.auth) {
+      return token ? {
+        code: 'rejected', pill: 'token rejected', needsToken: true,
+        title: 'The bridge did not accept the token',
+        detail: 'The token this tab uses is wrong, or it changed after the bridge was restarted. Enter the current one.'
+      } : {
+        code: 'required', pill: 'token required', needsToken: true,
+        title: 'This dashboard needs a token',
+        detail: 'The bridge has a kiosk token set. Enter it below, or open the page once as ?token=... on the address.'
+      };
+    }
+    if (e && e.status) {
+      return {
+        code: 'http', pill: 'bridge error ' + e.status,
+        title: 'The bridge answered with an error (HTTP ' + e.status + ')',
+        detail: 'A proxy in front of the bridge may be failing, or the bridge has a problem. Its log has details.'
+      };
+    }
+    return {
+      code: 'unreachable', pill: 'bridge unreachable',
+      title: 'The page cannot reach the bridge',
+      detail: 'Check that the bridge is running and that the address and port are right. A firewall or proxy can also block it.'
+    };
+  }
+
+  // The box in the page body. Rebuilt only when the message changes, so
+  // text typed into the token field is not lost on the next tick.
+  function renderNotice() {
+    var el = $('notice'), p = null;
+    if (problem && (!snap || problem.needsToken)) p = problem;
+    else if (snap && !snap.now) {
+      p = {
+        code: 'starting', title: 'Waiting for the first data',
+        detail: 'The bridge is running but has not collected anything yet. This page fills in by itself.'
+      };
+    } else if (!snap && lastTry && Date.now() - lastTry > 8000) {
+      p = { code: 'slow', title: 'Still connecting', detail: 'The bridge has not answered yet. This page keeps trying.' };
+    }
+    var key = p ? p.code : '';
+    if (key === noticeKey) return;
+    noticeKey = key;
+    el.hidden = !p;
+    if (!p) { el.innerHTML = ''; return; }
+    el.innerHTML = '<h2>' + esc(p.title) + '</h2><p>' + esc(p.detail) + '</p>' +
+      (p.needsToken ? '<div class="tokenbox"><input id="token-input" type="password" autocomplete="off" spellcheck="false" placeholder="token" aria-label="token">' +
+        '<button id="token-go" type="button">Connect</button></div>' : '');
+    var input = $('token-input');
+    if (input) input.focus();
+  }
+
+  // Use a token typed into the notice: keep it for this tab and try again now.
+  function submitToken() {
+    var input = $('token-input');
+    var given = input && input.value.trim();
+    if (!given) return;
+    token = given;
+    try { sessionStorage.setItem('deskwatch-token', given); } catch (e) {}
+    problem = null;
+    poll();
+    reconnect();
+  }
+  document.addEventListener('click', function (ev) { if (ev.target && ev.target.id === 'token-go') submitToken(); });
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' && ev.target && ev.target.id === 'token-input') submitToken(); });
+
   // ---- once-a-second work: clock, elapsed times, connection state --------
 
   function tick() {
@@ -341,48 +417,72 @@
     var lost = !snap || age > STALE_AFTER_S;
     document.body.classList.toggle('lost', !!snap && lost);
     var off = $('offline');
-    off.hidden = !(snap && lost);
-    if (snap && lost) off.textContent = 'No data from the bridge for ' + clock(age) + '. Showing the last known state, reconnecting.';
+    off.hidden = !(snap && (lost || (problem && problem.needsToken)));
+    if (snap && problem && problem.needsToken) off.textContent = problem.title + '. Showing the last known state.';
+    else if (snap && lost) off.textContent = 'No data from the bridge for ' + clock(age) + '. Showing the last known state, reconnecting' + (problem ? ' (' + problem.pill + ').' : '.');
     var conn = $('conn');
-    var ok = snap && !lost;
-    conn.className = 'chip ' + (ok ? 'ok' : snap ? 'bad' : '');
+    var ok = snap && !lost && !(problem && problem.needsToken);
     var problems = ok && (snap.sources || []).filter(function (s) { return s.health !== 'ok'; }).length;
-    conn.textContent = !snap ? 'connecting' : lost ? 'offline' : problems ? problems + (problems === 1 ? ' source has' : ' sources have') + ' a problem' : 'all sources ok';
-    if (problems) conn.className = 'chip bad';
+    var text, cls;
+    if (problem && !ok) { text = problem.pill; cls = 'bad'; }
+    else if (!snap) { text = 'connecting'; cls = ''; }
+    else if (lost) { text = 'offline'; cls = 'bad'; }
+    else if (wsFailed) { text = 'polling, no live socket'; cls = 'review'; }
+    else if (problems) { text = problems + (problems === 1 ? ' source has' : ' sources have') + ' a problem'; cls = 'bad'; }
+    else { text = 'all sources ok'; cls = 'ok'; }
+    conn.className = 'chip ' + cls;
+    conn.textContent = text;
+    renderNotice();
   }
 
   // ---- network ------------------------------------------------------------
 
   function withToken(url) { return token ? url + (url.indexOf('?') < 0 ? '?' : '&') + 'token=' + encodeURIComponent(token) : url; }
 
-  var ws = null, retry = 1000, pollTimer = null;
+  var ws = null, retry = 1000, pollTimer = null, retryTimer = null, lastTry = 0;
 
   function poll() {
+    lastTry = lastTry || Date.now();
     fetch(withToken('api/kiosk'), { cache: 'no-store' })
-      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(render)
-      .catch(function () {});
+      .then(function (r) {
+        if (r.status === 401) throw { auth: true };
+        if (!r.ok) throw { status: r.status };
+        return r.json();
+      })
+      .then(function (data) { problem = null; render(data); })
+      .catch(function (e) {
+        problem = describe(e);
+        // A refused token must not be tried again; the wrong one is dropped.
+        if (e && e.auth && token) { try { sessionStorage.removeItem('deskwatch-token'); } catch (x) {} }
+        tick();
+      });
   }
 
   function connect() {
+    retryTimer = null;
     var url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + location.pathname.replace(/[^/]*$/, '') + withToken('api/kiosk/ws');
     try { ws = new WebSocket(url); } catch (e) { ws = null; }
-    if (!ws) { later(); return; }
-    ws.onopen = function () { retry = 1000; if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } };
-    ws.onmessage = function (ev) { try { render(JSON.parse(ev.data)); } catch (e) {} };
+    if (!ws) { wsFailed = true; later(); return; }
+    ws.onopen = function () { retry = 1000; wsFailed = false; if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } };
+    ws.onmessage = function (ev) { try { var data = JSON.parse(ev.data); problem = null; render(data); } catch (e) {} };
     ws.onclose = ws.onerror = function () {
       if (!ws) return;
       ws = null;
+      wsFailed = true;
       // While the socket is down, keep fetching snapshots so a proxy that
-      // blocks WebSockets still works.
+      // blocks WebSockets still works. The fetch also tells why (401, error).
       if (!pollTimer) { poll(); pollTimer = setInterval(poll, POLL_MS); }
       later();
     };
   }
-  function later() { setTimeout(connect, retry); retry = Math.min(retry * 2, 10000); }
+  function later() { retryTimer = setTimeout(connect, retry); retry = Math.min(retry * 2, 10000); }
+  // Try the socket again right away, after a new token was entered.
+  function reconnect() {
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; connect(); }
+  }
 
   window.DeskWatchKiosk = { render: render, tick: tick, seed: function (name, values) { history[name] = values.slice(-HISTORY); } };
   setInterval(tick, 1000);
   tick();
-  if (!params.has('static')) connect();
+  if (!params.has('static')) { poll(); connect(); }
 })();

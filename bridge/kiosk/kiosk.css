@@ -85,7 +85,7 @@ body {
   padding: .7rem 1.4rem; font-size: 1.7rem; font-weight: 600;
   background: var(--alert-red);
 }
-.banner[hidden], .offline[hidden], .topbar[hidden] { display: none; }
+.banner[hidden], .offline[hidden], .notice[hidden], .topbar[hidden] { display: none; }
 .banner.critical { background: var(--alert-critical); }
 .banner.warn { background: var(--alert-amber); }
 .banner.success { background: var(--alert-green); }
@@ -94,6 +94,23 @@ body {
 .banner .msg { font-weight: 400; opacity: .95; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .banner .meta { font-size: 1.05rem; font-weight: 400; opacity: .85; }
 .offline { flex: none; padding: .45rem 1.4rem; background: #3b2a12; color: var(--amber); font-size: 1.15rem; }
+
+/* A message that replaces the empty page: why there is no data. */
+.notice {
+  flex: none; margin: 2rem auto 0; width: min(46rem, calc(100% - 2rem));
+  padding: 1.4rem 1.8rem; border-radius: .8rem; background: var(--card); border: 1px solid var(--card-edge);
+}
+.notice h2 { margin: 0 0 .5rem; font-size: 1.6rem; }
+.notice p { margin: 0; color: var(--dim); font-size: 1.2rem; line-height: 1.4; }
+.tokenbox { display: flex; gap: .6rem; margin-top: 1rem; }
+.tokenbox input {
+  flex: 1; min-width: 0; padding: .6rem .8rem; font: inherit; font-size: 1.2rem;
+  color: var(--text); background: var(--bg); border: 1px solid var(--track); border-radius: .4rem;
+}
+.tokenbox button {
+  padding: .6rem 1.2rem; font: inherit; font-size: 1.2rem; font-weight: 600; cursor: pointer;
+  color: var(--text); background: var(--blue); border: 0; border-radius: .4rem;
+}
 
 /* ---- grid -------------------------------------------------------------- */
 

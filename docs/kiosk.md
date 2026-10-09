@@ -198,9 +198,21 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
   look. Hosts that Prometheus reports as down get a red dot and a dimmed card.
 - **The bridge host's clock and the screen's clock differ.** Times such as "3 min ago" use the bridge's clock, so a
   Pi with a wrong clock still shows correct ages. The clock in the header is the screen's own.
-- **A blank page or "connecting".** Open `http://<host>:8787/api/kiosk` in a browser: JSON means the bridge is fine
-  and the problem is in the page or the browser; 401 means a token is needed; nothing means the bridge is not
-  reachable (address, firewall, `[http] listen`). The bridge log shows `serving http://...` at startup.
+- **The page says why it has no data.** An empty page with `connecting` used to be all you saw. Now the header chip
+  and a box in the page body name the cause:
+
+  | Header chip | Meaning | What to do |
+  | --- | --- | --- |
+  | `token required` | The bridge has `kiosk.token_file` set and this tab has no token (401). | Type the token into the box, or open the page once as `/?token=<token>`. |
+  | `token rejected` | The token is wrong, or it changed when the bridge restarted. | Enter the current token. The page forgets the refused one. |
+  | `bridge unreachable` | The request did not get an answer. | Check the container or service is running, the address and port, the firewall, the proxy. |
+  | `bridge error 502` (any HTTP status) | Something answered, but with an error. | Usually a reverse proxy that cannot reach the bridge; see its log and the bridge log. |
+  | `polling, no live socket` | The WebSocket is blocked (a proxy without WebSocket support) but the page still gets data by polling every 5 s. | Works as is. To get instant updates, let the proxy forward `Upgrade` headers on `/api/kiosk/ws`. |
+  | box "Waiting for the first data" | The bridge is up but has not collected anything yet. | Wait a few seconds; the page fills in by itself. |
+
+  If nothing helps, open `http://<host>:8787/api/kiosk` in a browser: JSON means the bridge is fine and the problem
+  is in the page or the browser; 401 means a token is needed; nothing means the bridge is not reachable (address,
+  firewall, `[http] listen`). The bridge log shows `serving http://...` at startup.
 
 ## 7. The data the page reads
 
@@ -218,7 +230,7 @@ to be called, which is how the screenshots and tests drive it.
 ## 8. What was and was not tested
 
 Tested: the endpoints, the WebSocket (a real handshake and pushed changes), the token check, the config parsing and
-the snapshot contents are covered by automated tests (`cargo test -p deskwatch-bridge`). The page was run in
+the snapshot contents are covered by automated tests (`cargo test -p deskwatch-bridge`). The token and failure states were run in Chromium against the live `--demo --kiosk` bridge (token missing, wrong and right, WebSocket blocked, bridge unreachable). The page was run in
 Chromium against the live `--demo --kiosk` bridge and rendered at 1280x720, 1920x1080, 3840x2160 and a 420 px wide
 phone, and was checked while the bridge was killed and started again: the page dimmed and said it was offline within 25 seconds, and recovered by itself within 14 seconds of the bridge returning. The reload on a new bridge version (`build` changing) is written but was not exercised.
 
