@@ -2,6 +2,7 @@
 # formatting, clippy (warnings are errors) and the test suite,
 # on current stable and on the minimum supported Rust version (Linux), plus
 # clippy and the tests on Windows. Linux and Windows are the supported systems.
+# The panel firmware (firmware/) builds in its own job with the Xtensa toolchain.
 name: CI
 
 on:
@@ -134,3 +135,38 @@ jobs:
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # The panel firmware targets the ESP32-S3 and needs the Xtensa fork of Rust,
+  # so it is outside the workspace and gets its own job. It only checks that the
+  # code compiles and lints clean; nothing here runs on a board.
+  firmware:
+    name: firmware (esp32s3)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: firmware
+    steps:
+      - uses: actions/checkout@v5
+
+      # Installs the "esp" toolchain (rust-toolchain.toml in firmware/ selects
+      # it) and the Xtensa GCC the linker needs.
+      - uses: esp-rs/xtensa-toolchain@v1.6
+        with:
+          buildtargets: esp32s3
+          ldproxy: false
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: firmware
+          key: firmware
+
+      # Formatting does not need the Xtensa compiler, stable rustfmt is enough.
+      - name: cargo fmt
+        run: cargo +stable fmt --check
+
+      - name: cargo clippy
+        run: cargo clippy --release --locked -- -D warnings
+
+      # Falls back to config.example.toml, since config.toml is gitignored.
+      - name: cargo build
+        run: cargo build --release --locked

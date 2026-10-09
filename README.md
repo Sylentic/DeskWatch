@@ -13,7 +13,7 @@ requests and pipeline status. When a CI job runs it switches to live progress, s
   publishes it over MQTT.
 - **Panel**: a deliberately dumb MQTT client with a touch screen (planned: an ESP32-S3 SuperMini with a 4" ST7796S
   display) that draws whatever page the bridge sends. Its drawing code, the `ui/` crate, is done and runs today in
-  a desktop simulator; the firmware is not part of 0.9.
+  a desktop simulator. The firmware is started in [`firmware/`](firmware/README.md) but not yet run on a board, and is not part of 0.9.
 - **MQTT** (Mosquitto) sits between the two. The contract is [docs/mqtt-schema.md](docs/mqtt-schema.md), with JSON
   samples in [docs/schema/](docs/schema/) that both sides are tested against.
 
@@ -32,7 +32,7 @@ requests and pipeline status. When a CI job runs it switches to live progress, s
 
 ## What is not in 0.9
 
-- **The firmware.** The real panel waits for the display to arrive. 1.0 is reserved for the first release with working firmware on the real screen. Until then the simulator draws exactly what
+- **Working firmware.** A first firmware crate exists in [`firmware/`](firmware/README.md) (Wi-Fi, MQTT, display code, all untested on hardware); the real panel waits for the display to arrive. 1.0 is reserved for the first release with working firmware on the real screen. Until then the simulator draws exactly what
   the panel will, and the schema is the contract the firmware will implement. Over-the-air updates come last.
 - **CI runner and agent pool status** (Gitea runners, Azure DevOps agent pools) are planned after 1.0.
 - **TLS on the webhook listener.** Gitea talks plain HTTP to the bridge; put a reverse proxy in front if the path

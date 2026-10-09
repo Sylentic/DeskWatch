@@ -107,7 +107,7 @@ falls back to the `DESKWATCH_MQTT_PASSWORD` environment variable, which is handy
 `connected to MQTT broker` confirms the login worked; a wrong login shows `MQTT connection error` and retries
 every 5 seconds.
 
-The panel's login goes into the firmware settings when the firmware lands. The Home Assistant login goes into its
+The panel's login goes into the firmware settings, see [firmware/README.md](../firmware/README.md). The Home Assistant login goes into its
 MQTT integration, see [home-assistant.md](home-assistant.md).
 
 ## 5. TLS (optional)
