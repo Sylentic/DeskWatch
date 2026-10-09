@@ -10,7 +10,7 @@ Enterprise, Azure DevOps, Prometheus, Home Assistant, the machine's own stats) a
 |---|---|---|
 | **1. Mini display** (ESP32-S3) | A 4" touch screen on your desk that rotates through stats, PRs and pipelines, switches to live progress when a job runs, goes red on a failure and clears with a button | Drawing code done and checked in a desktop simulator. The firmware exists but has **never run on a board**; waiting on the screen. 1.0 is reserved for the first release that works on the real display. [firmware/](firmware/README.md) |
 | **2. Raspberry Pi with a full-size screen** | A dashboard page in a full-screen browser on a monitor or TV, up to 4K, everything at once, no rotation | Page built and tested in Chromium on a PC. **Not yet run on a Pi.** [docs/kiosk.md](docs/kiosk.md), [docs/raspberry-pi.md](docs/raspberry-pi.md) |
-| **3. Docker dashboard** | The same dashboard page, served by a container on your homelab; open it from any browser | Works: builds and serves the page with demo data, the token, and a health check were run in a container. Not yet run against real sources on a homelab, and no image is published (you build it once). [docs/docker.md](docs/docker.md) |
+| **3. Docker dashboard** | The same dashboard page, served by a container on your homelab; open it from any browser | Works: builds and serves the page with demo data, the token, and a health check were run in a container. Not yet run against real sources on a homelab. The image is published to ghcr.io with each release. [docs/docker.md](docs/docker.md) |
 
 Ways 2 and 3 are the same page served by the same bridge and need **no MQTT broker**; only the ESP panel does.
 

@@ -5,21 +5,24 @@
 #   cp <repo>/bridge/config.example.toml bridge.toml      # then edit it
 #   # one file per secret, named as in bridge.toml (`password_file = "mqtt-password"`):
 #   (umask 077; printf %s 'THE-BRIDGE-PASSWORD' > credentials/mqtt-password)
-#   docker compose up -d --build
+#   docker compose up -d
 #   docker compose logs -f
 #
 # Every host name below is a placeholder.
 
 services:
   deskwatch-bridge:
-    # Builds the image from the repository. Pin a tag or commit for repeatable
-    # builds; `main` is the newest, untagged code. To build from a local
-    # checkout instead, use `context: /path/to/DeskWatch`. Once you publish an
-    # image (docs/docker.md), replace this block with
-    # `image: <your registry>/deskwatch-bridge:<version>`.
-    build:
-      context: https://github.com/Sylentic/DeskWatch.git#main
-    image: deskwatch-bridge:local
+    # The published image, pinned to a release so a restart or a pull never
+    # changes the version by surprise. Bump the number to update (read the
+    # CHANGELOG first). `latest` also exists but moves; see docs/docker.md,
+    # section 10.
+    image: ghcr.io/sylentic/deskwatch-bridge:0.9.7
+    #
+    # To build from the source instead (for your own changes), replace the
+    # line above with these two, run from a checkout of the version you want:
+    #   build:
+    #     context: /path/to/DeskWatch
+    #   image: deskwatch-bridge:local
     container_name: deskwatch-bridge
     restart: unless-stopped
 
