@@ -1,4 +1,5 @@
-# Sample systemd unit for the DeskWatch bridge.
+# Sample systemd unit for the DeskWatch bridge (Linux; Windows uses a service
+# wrapper, see docs/windows.md).
 #
 # Full guide: docs/install.md. Short version:
 #   sudo install -m 755 target/release/deskwatch-bridge /usr/local/bin/

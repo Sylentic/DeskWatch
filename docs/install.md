@@ -1,17 +1,27 @@
-# Installing DeskWatch on a Debian server
+# Installing DeskWatch
 
-> Using Windows? See [windows.md](windows.md). DeskWatch supports Linux and Windows; macOS is not covered yet.
+DeskWatch supports **Linux and Windows** (x86_64 release binaries for both). Pick your system:
 
-This guide takes a Debian 12 (or newer) server from nothing to a bridge that publishes pages to your
-Mosquitto broker. Every host name, address, port and name below is a placeholder: replace `gitea.example.com`,
-`broker.example.lan` and friends with your own.
+| System | Guide |
+|---|---|
+| Linux with systemd (written for Debian 12 or newer; other systemd distributions work the same, with their own package commands) | This page |
+| Windows 10 and 11, Windows Server 2019 or newer | [windows.md](windows.md) covers the programs, Mosquitto, a config, running the bridge as a service and what differs from Linux |
+| macOS | Not covered yet; contributions are welcome |
+
+The source setup in [section 5](#5-sources) (Gitea, GitHub, Azure DevOps, Prometheus), the Mosquitto logins and
+Home Assistant steps are the same on both systems apart from how secrets are stored; [windows.md](windows.md)
+points back here for them.
+
+This guide takes a Linux server from nothing to a bridge that publishes pages to your Mosquitto broker. Every
+host name, address, port and name below is a placeholder: replace `gitea.example.com`, `broker.example.lan` and
+friends with your own.
 
 The panel itself (the ESP32-S3 firmware) is not part of 0.9, see [What is not in 0.9](../README.md#what-is-not-in-09).
 Until it exists you can watch everything in the desktop simulator, see [Try it without hardware](#8-try-it-without-hardware).
 
 What you need:
 
-- A Debian server that stays on, with `systemd`.
+- A Linux server that stays on, with `systemd` (Debian 12 or newer is what the steps are written for).
 - A Mosquitto broker the bridge can reach (often the same server).
 - At least one source: Gitea, GitHub or GitHub Enterprise, Azure DevOps, Prometheus, or only Home Assistant alerts. With no
   source at all the bridge still shows the server's own stats.
@@ -27,10 +37,10 @@ Contents: [1. Get the binary](#1-get-the-binary) · [2. Install it](#2-install-t
 ### Option A: download a release
 
 Each release at <https://github.com/Sylentic/DeskWatch/releases> has a tarball for Linux x86_64 and a checksum
-file. It is built on Ubuntu 22.04, so it runs on Debian 12 and newer. It needs nothing but the system C library.
+file (the Windows zip is covered in [windows.md](windows.md)). It is built on Ubuntu 22.04, so it runs on Debian 12 and newer. It needs nothing but the system C library.
 
 ```sh
-VERSION=v0.9.0
+VERSION=v0.9.2      # the release you want
 cd "$(mktemp -d)"
 curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-x86_64-linux.tar.gz"
 curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-x86_64-linux.tar.gz.sha256"
@@ -54,7 +64,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 git clone https://github.com/Sylentic/DeskWatch.git
 cd DeskWatch
-git checkout v0.9.0            # or stay on main for the newest, untagged code
+git checkout v0.9.2            # or stay on main for the newest, untagged code
 cargo build --release --locked -p deskwatch-bridge
 ```
 
@@ -294,8 +304,9 @@ Gitea and look for a 2xx answer there; run a workflow to see a job page appear.
 
 ## 8. Try it without hardware
 
-Until the firmware exists, the desktop simulator draws the exact pixels the panel will. On a desktop or laptop
-(not the server) with Rust and SDL2 (`sudo apt install libsdl2-dev`):
+Until the firmware exists, the desktop simulator draws the exact pixels the panel will. On a Linux desktop or
+laptop (not the server) with Rust and SDL2 (`sudo apt install libsdl2-dev`); on Windows the release zip has
+`deskwatch-sim.exe` with SDL2 built in, see [windows.md](windows.md#3-quick-test-the-demo-and-the-simulator):
 
 ```sh
 export DESKWATCH_MQTT_PASSWORD='...'    # the panel login's password
@@ -304,7 +315,7 @@ cargo run -p deskwatch-sim -- --host broker.example.lan --user deskwatch-panel
 
 Or play the built-in demo: `deskwatch-bridge --demo` publishes a loop of fake data to a broker on localhost
 (`[mqtt]` from a config file if you pass one), `cargo run -p deskwatch-sim -- --host localhost` shows it. The
-README has the details of both.
+[README](../README.md#demo-mode) has the details of both.
 
 ## 9. Update, roll back, remove
 

@@ -44,7 +44,7 @@ not (see the README, "What is not in 0.9").
 
 ### Added
 
-- **Bridge** (`deskwatch-bridge`), a service for a Debian home server that collects data, decides what the panel
+- **Bridge** (`deskwatch-bridge`), a service for a Linux home server that collects data, decides what the panel
   shows and publishes it over MQTT using schema v2 ([docs/mqtt-schema.md](docs/mqtt-schema.md)).
   - Screen priority (critical alert, running job, failed run, success flash, notice, idle rotation), retained
     screen and badge topics, online/offline status with a Last Will, and the button (short and long press).
@@ -76,10 +76,11 @@ not (see the README, "What is not in 0.9").
 ### Known limits
 
 - Only the first 100 open pull requests per GitHub repository are counted.
-- The bridge is Linux only (server stats come from `/proc`). Release binaries are Linux x86_64; build from
-  source for other CPUs.
+- The bridge is Linux only (server stats come from `/proc`; Windows support arrived in 0.9.2). Release binaries
+  are Linux x86_64; build from source for other CPUs.
 - Gitea webhooks are plain HTTP unless you put a reverse proxy in front of the bridge.
 
-[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/Sylentic/DeskWatch/releases/tag/v0.9.2
 [0.9.1]: https://github.com/Sylentic/DeskWatch/releases/tag/v0.9.1
 [0.9.0]: https://github.com/Sylentic/DeskWatch/releases/tag/v0.9.0
