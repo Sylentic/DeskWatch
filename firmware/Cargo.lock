@@ -283,7 +283,7 @@ dependencies = [
 
 [[package]]
 name = "deskwatch-firmware"
-version = "0.9.2"
+version = "0.9.4"
 dependencies = [
  "deskwatch-ui",
  "embassy-executor",
@@ -312,7 +312,7 @@ dependencies = [
 
 [[package]]
 name = "deskwatch-ui"
-version = "0.9.2"
+version = "0.9.4"
 dependencies = [
  "embedded-graphics",
  "heapless 0.9.3",

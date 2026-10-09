@@ -8,6 +8,18 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+## [0.9.4]
+
+### Added
+
+- **Firmware crate (`firmware/`), stage 1.** Rust firmware for the ESP32-S3 SuperMini and the ST7796S display
+  (esp-hal, embassy, esp-radio, rust-mqtt, mipidsi, reusing the `ui/` crate). It joins Wi-Fi, connects to the broker
+  with the panel login and a Last Will, subscribes to `screen`, `badges` and `bridge/status`, logs what arrives over
+  serial and draws it. Settings come from a gitignored `firmware/config.toml` compiled in; flash storage and a setup
+  mode are designed in `firmware/README.md` for a later PR. The crate is outside the workspace (it needs the Xtensa
+  toolchain) and has its own CI job that builds and lints it. **Not yet run on hardware**: Wi-Fi, MQTT and the
+  display code are untested on a board and against a live broker.
+
 ## [0.9.3]
 
 ### Added
@@ -19,14 +31,6 @@ may change if the firmware work needs it; any such change is listed here.
 - **Docker support** for the bridge: a small multi-stage `Dockerfile` (release binary, non-root user, config and secrets
   mounted read-only), a Compose example in `deploy/docker-compose.yml`, a guide in
   [docs/docker.md](docs/docker.md), and a CI job that checks the image builds and starts. No image is published.
-- **Firmware crate (`firmware/`), stage 1.** Rust firmware for the ESP32-S3 SuperMini and the ST7796S display
-  (esp-hal, embassy, esp-radio, rust-mqtt, mipidsi, reusing the `ui/` crate). It joins Wi-Fi, connects to the broker
-  with the panel login and a Last Will, subscribes to `screen`, `badges` and `bridge/status`, logs what arrives over
-  serial and draws it. Settings come from a gitignored `firmware/config.toml` compiled in; flash storage and a setup
-  mode are designed in `firmware/README.md` for a later PR. The crate is outside the workspace (it needs the Xtensa
-  toolchain) and has its own CI job that builds and lints it. **Not yet run on hardware**: Wi-Fi, MQTT and the
-  display code are untested on a board and against a live broker.
-
 ### Changed
 
 - Docs cleanup: the install guide and README now cover Linux and Windows and no longer carry stale 0.9 statements.
@@ -103,7 +107,8 @@ not (see the README, "What is not in 0.9").
   are Linux x86_64; build from source for other CPUs.
 - Gitea webhooks are plain HTTP unless you put a reverse proxy in front of the bridge.
 
-[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.3...HEAD
+[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.4...HEAD
+[0.9.4]: https://github.com/Sylentic/DeskWatch/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/Sylentic/DeskWatch/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/Sylentic/DeskWatch/releases/tag/v0.9.2
 [0.9.1]: https://github.com/Sylentic/DeskWatch/releases/tag/v0.9.1
