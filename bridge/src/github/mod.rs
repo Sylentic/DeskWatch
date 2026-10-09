@@ -8,8 +8,9 @@
 //!   Requests carry the last `ETag`, so an idle repository costs nothing
 //!   against the rate limit on github.com. The result is also the source's
 //!   health: a refused token or an unreachable server shows as the `warn` badge.
-//! - every `job_poll_s` (5 s), only while a run is in progress in a repository
-//!   that may interrupt: that run's jobs, for the step progress bar.
+//! - every `job_poll_s` (5 s), only while a run is in progress: that run's
+//!   jobs, for the step progress bar. Repositories that may not interrupt are
+//!   polled too; their jobs show on the kiosk page only.
 //!
 //! Failures back off (60 s, 2 min, 5 min), and polling slows down when less
 //! than 10 % of the rate limit is left.
@@ -387,15 +388,15 @@ impl GithubState {
             .filter(|r| status_of(r) == RunStatus::Running)
             .map(|r| (r.id, r))
             .collect();
-        if self.interrupt.allows(repo) {
-            for (id, run) in &in_progress {
-                self.watched
-                    .entry((repo.to_string(), *id))
-                    .or_insert_with(|| WatchedRun {
-                        pipeline: pipeline_name(run),
-                        jobs: HashSet::new(),
-                    });
-            }
+        // Quiet repositories are watched too, for the kiosk's "Running now"
+        // list; `interrupt` only decides about the ESP screen.
+        for (id, run) in &in_progress {
+            self.watched
+                .entry((repo.to_string(), *id))
+                .or_insert_with(|| WatchedRun {
+                    pipeline: pipeline_name(run),
+                    jobs: HashSet::new(),
+                });
         }
         let over: Vec<(String, u64)> = self
             .watched

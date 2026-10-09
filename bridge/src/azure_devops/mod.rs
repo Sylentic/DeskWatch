@@ -9,8 +9,9 @@
 //!   the open PRs of all repositories. The result is also the source's
 //!   health: a refused token or an unreachable service shows as the `warn`
 //!   badge.
-//! - every `job_poll_s` (5 s), only while a build is in progress in a project
-//!   that may interrupt: that build's timeline, for the step progress bar.
+//! - every `job_poll_s` (5 s), only while a build is in progress: that
+//!   build's timeline, for the step progress bar. Projects that may not
+//!   interrupt are polled too; their job shows on the kiosk page only.
 //!
 //! Failures back off (60 s, 2 min, 5 min).
 //!
@@ -303,14 +304,11 @@ impl AzdoState {
             .collect()
     }
 
-    /// Builds whose timeline to poll every few seconds: the ones in progress
-    /// in projects that may take over the screen.
+    /// Builds whose timeline to poll every few seconds: every one in progress.
+    /// Quiet projects are polled too, so the kiosk's "Running now" list sees
+    /// them; only `interrupt` decides whether they take over the ESP screen.
     pub fn watched_builds(&self) -> Vec<(String, u64)> {
-        self.live
-            .iter()
-            .filter(|(_, live)| live.interrupt)
-            .map(|(key, _)| key.clone())
-            .collect()
+        self.live.keys().cloned().collect()
     }
 
     /// Open PRs of one project from a poll, grouped by repository.
@@ -550,26 +548,26 @@ impl AzdoState {
             }
         }
 
-        if live.interrupt {
-            if live.waiting {
-                // A deploy that waits for a person must not hold the screen.
-                if live.job_shown {
-                    live.job_shown = false;
-                    out.push(Update::JobDone { key: job_key });
-                }
-            } else {
-                let data = job_data(live, &project_label, &view);
-                debug!(key = %job_key, step = ?data.step, progress = ?data.progress, "build running");
-                live.job_shown = true;
-                out.push(Update::JobRunning {
-                    key: job_key,
-                    job: RunningJob {
-                        data,
-                        interrupt: true,
-                        updated: now,
-                    },
-                });
+        if live.waiting {
+            // A deploy that waits for a person must not hold the screen.
+            if live.job_shown {
+                live.job_shown = false;
+                out.push(Update::JobDone { key: job_key });
             }
+        } else {
+            // Quiet projects get a job too (for the kiosk list); the flag
+            // keeps it off the ESP screen.
+            let data = job_data(live, &project_label, &view);
+            debug!(key = %job_key, step = ?data.step, progress = ?data.progress, "build running");
+            live.job_shown = true;
+            out.push(Update::JobRunning {
+                key: job_key,
+                job: RunningJob {
+                    data,
+                    interrupt: live.interrupt,
+                    updated: now,
+                },
+            });
         }
         (out, view.finished)
     }

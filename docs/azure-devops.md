@@ -7,8 +7,8 @@ nothing at home is exposed to the internet.
 What you get:
 
 - The latest run of every YAML pipeline on the `pipelines` page, next to Gitea and GitHub.
-- A running pipeline (opt in with `interrupt`) takes over the screen with its current stage and task, such as
-  `apply: terraform apply`, and a bar that moves with the stages. Pipelines whose name contains `deploy` or
+- A running pipeline shows on the kiosk dashboard with its current stage and task, such as
+  `apply: terraform apply`, and a bar that moves with the stages. With `interrupt` on it also takes over the ESP screen. Pipelines whose name contains `deploy` or
   `terraform` show as deploys.
 - A failed run raises the usual red alert naming the failed task; a good run flashes green. Both leave a count in
   the header badge until you press the button.
@@ -83,8 +83,8 @@ Optional keys:
 | Key | Default | Meaning |
 |---|---|---|
 | `poll_s` | `60` | Seconds between polls of builds, approvals and open PRs |
-| `job_poll_s` | `5` | Seconds between step progress polls, only for builds that may take over the screen |
-| `interrupt` | `false` | `true`, or a list of projects that may take over the screen. Off means work pipelines show only on the pipelines page and in the badges |
+| `job_poll_s` | `5` | Seconds between step progress polls, only for builds in progress |
+| `interrupt` | `false` | `true`, or a list of projects that may take over the screen. Off means work pipelines never take over the ESP screen: they show on the pipelines page, in the badges and on the kiosk dashboard |
 | `pull_requests` | `true` | Count open PRs (needs **Code: Read**) |
 | `notify_new_prs` | `true` | Flash "New PR" for a new non-draft PR |
 | `deploy_words` | `["deploy", "terraform"]` | Pipelines whose name contains one of these words (any case) are deploys |
@@ -105,7 +105,8 @@ All requests are `GET` with API version 7.1, authenticated as the token's user. 
 | `{project}/_apis/git/pullrequests` (active, newest 100) | Open PRs |
 
 That is two requests per project when nothing runs. While a build runs it adds one timeline request per poll, or
-one every `job_poll_s` when the build may take over the screen.
+one every `job_poll_s` for every build in progress (the kiosk's Running now widget lists them, whether or not the
+project may take over the ESP screen).
 
 ## Limits
 

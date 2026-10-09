@@ -175,12 +175,12 @@ fn work_pipelines_do_not_interrupt_by_default() {
         facts.candidates().is_empty(),
         "but nothing takes the screen"
     );
-    assert!(source.watched_builds().is_empty(), "and no fast polling");
     assert_eq!(
-        source.live_builds(PROJECT),
-        [3004],
-        "approvals are still polled"
+        source.watched_builds(),
+        [(PROJECT.to_string(), 3004)],
+        "the running build is still polled, for the kiosk list"
     );
+    assert_eq!(source.live_builds(PROJECT), [3004]);
 }
 
 #[test]
@@ -344,15 +344,28 @@ fn approval_is_seen_even_when_the_pipeline_may_not_interrupt() {
     );
     let approval = records(include_str!("testdata/timeline_approval.json"));
     let (updates, _) = source.on_timeline(PROJECT, 3004, &approval, NOW + 5);
-    assert!(
-        !updates
-            .iter()
-            .any(|u| matches!(u, Update::JobRunning { .. })),
-        "no job screen for a quiet pipeline"
-    );
     apply(&mut facts, updates, NOW + 5);
     assert_eq!(row_status(&facts, "deploy-infra"), RowStatus::Review);
     assert_eq!(top(&facts, NOW + 5).unwrap().0, Level::Notice);
+}
+
+#[test]
+fn quiet_pipeline_job_reaches_the_kiosk_list_not_the_screen() {
+    let mut source = state("", 0);
+    let mut facts = CiFacts::default();
+    apply(
+        &mut facts,
+        source.on_builds(PROJECT, fixture_builds(), NOW),
+        NOW,
+    );
+    let running = records(include_str!("testdata/timeline_running.json"));
+    let (updates, _) = source.on_timeline(PROJECT, 3004, &running, NOW + 5);
+    apply(&mut facts, updates, NOW + 5);
+    assert_eq!(facts.jobs().len(), 1, "listed on the kiosk page");
+    assert!(
+        facts.candidates().is_empty(),
+        "but nothing takes the screen"
+    );
 }
 
 #[test]
