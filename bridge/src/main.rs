@@ -123,7 +123,9 @@ async fn main() -> Result<()> {
         None if args.demo => Config::from_toml("")?,
         // The health probe also runs against a container started without a
         // config file (the demo); it then has nothing to probe unless told.
-        given if args.healthcheck && !Config::path(given.clone()).exists() => {
+        // The same goes for the demo when the image's default config path
+        // (its CMD) points at a file that is not mounted.
+        given if (args.healthcheck || args.demo) && !Config::path(given.clone()).exists() => {
             Config::from_toml("")?
         }
         given => {
