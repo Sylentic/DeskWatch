@@ -1,0 +1,24 @@
+# Try the DeskWatch dashboard with fake data: no config, no broker, no secrets.
+# Guide: docs/docker.md (section 2)
+#
+#   git clone https://github.com/Sylentic/DeskWatch.git && cd DeskWatch
+#   docker compose -f deploy/docker-compose.demo.yml up --build
+#   # then open http://localhost:8787/ (the first build takes a few minutes)
+
+services:
+  deskwatch-demo:
+    build:
+      context: ..               # the repository root, relative to this file
+    image: deskwatch-bridge:local
+    command: ["--demo", "--kiosk", "--no-mqtt"]
+    ports:
+      - "127.0.0.1:8787:8787"   # this machine only; the demo needs no token
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # The image's health check cannot see the flags above, so repeat them.
+    healthcheck:
+      test: ["CMD", "deskwatch-bridge", "--healthcheck", "--demo", "--kiosk"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s

@@ -29,6 +29,7 @@ use deskwatch_bridge::config::{Config, MQTT_PASSWORD_ENV, MqttConfig};
 use deskwatch_bridge::demo::{self, Demo};
 use deskwatch_bridge::gitea::Gitea;
 use deskwatch_bridge::github::Github;
+use deskwatch_bridge::health;
 use deskwatch_bridge::hooks::Hooks;
 use deskwatch_bridge::kiosk::Kiosk;
 use deskwatch_bridge::model::{Badges, Screen};
@@ -46,19 +47,25 @@ const COMPOSE_INTERVAL: Duration = Duration::from_secs(1);
 const BADGES_REFRESH_S: u64 = 60;
 
 const USAGE: &str = "\
-usage: deskwatch-bridge [--demo] [--kiosk] [CONFIG]
+usage: deskwatch-bridge [--demo] [--kiosk] [--no-mqtt] [--healthcheck] [CONFIG]
 
 CONFIG defaults to $DESKWATCH_CONFIG, then /etc/deskwatch/bridge.toml
 (on Windows %ProgramData%\\DeskWatch\\bridge.toml).
 --demo  play a loop of fake data instead of running the sources; only the
         [mqtt] and [alerts] settings are used, and CONFIG is optional
 --kiosk serve the browser dashboard even if [kiosk] enabled is not set
-        (see docs/kiosk.md)";
+        (see docs/kiosk.md)
+--no-mqtt  do not connect to a broker (same as [mqtt] enabled = false), for a
+        bridge that only serves the dashboard page
+--healthcheck  check that the bridge's HTTP listener answers on this machine,
+        then exit 0 (healthy) or 1; used by the Docker HEALTHCHECK";
 
-/// Command line: `[--demo] [CONFIG]`.
+/// Command line: `[--demo] [--kiosk] [--no-mqtt] [--healthcheck] [CONFIG]`.
 struct Args {
     demo: bool,
     kiosk: bool,
+    no_mqtt: bool,
+    healthcheck: bool,
     config: Option<PathBuf>,
 }
 
@@ -66,12 +73,16 @@ fn parse_args() -> Result<Args> {
     let mut args = Args {
         demo: false,
         kiosk: false,
+        no_mqtt: false,
+        healthcheck: false,
         config: None,
     };
     for arg in std::env::args_os().skip(1) {
         match arg.to_str() {
             Some("--demo") => args.demo = true,
             Some("--kiosk") => args.kiosk = true,
+            Some("--no-mqtt") => args.no_mqtt = true,
+            Some("--healthcheck") => args.healthcheck = true,
             Some("-h" | "--help") => {
                 println!("{USAGE}");
                 std::process::exit(0);
@@ -96,6 +107,11 @@ async fn main() -> Result<()> {
     let mut config = match Config::path_given(args.config.clone()) {
         // The demo runs without a config file, against a broker on localhost.
         None if args.demo => Config::from_toml("")?,
+        // The health probe also runs against a container started without a
+        // config file (the demo); it then has nothing to probe unless told.
+        given if args.healthcheck && !Config::path(given.clone()).exists() => {
+            Config::from_toml("")?
+        }
         given => {
             let path = Config::path(given);
             let config = Config::load(&path)?;
@@ -105,6 +121,18 @@ async fn main() -> Result<()> {
     };
 
     config.kiosk.enabled |= args.kiosk;
+    config.mqtt.enabled &= !args.no_mqtt;
+
+    if args.healthcheck {
+        // The Docker HEALTHCHECK: no logging, just the exit code.
+        match health::check(&config).await {
+            Ok(_) => return Ok(()),
+            Err(err) => {
+                eprintln!("unhealthy: {err:#}");
+                std::process::exit(1);
+            }
+        }
+    }
 
     // Build every source first: missing credentials or a taken port stop the
     // bridge here, before it connects anywhere. The demo runs none of them.
@@ -146,14 +174,22 @@ async fn main() -> Result<()> {
     }
     hooks.start(config.http.listen).await?;
 
+    // The channel's sender stays alive here either way, so with MQTT off the
+    // receiver just waits forever.
     let (inbound_tx, mut inbound_rx) = mpsc::channel(16);
-    let (publisher, eventloop) = mqtt::connect(&config.mqtt, mqtt_password(&config.mqtt)?)?;
-    tokio::spawn(mqtt::run_event_loop(
-        eventloop,
-        publisher.clone(),
-        inbound_tx,
-        config.alerts.enabled,
-    ));
+    let publisher = if config.mqtt.enabled {
+        let (publisher, eventloop) = mqtt::connect(&config.mqtt, mqtt_password(&config.mqtt)?)?;
+        tokio::spawn(mqtt::run_event_loop(
+            eventloop,
+            publisher.clone(),
+            inbound_tx.clone(),
+            config.alerts.enabled,
+        ));
+        Some(publisher)
+    } else {
+        info!("MQTT is off: serving the dashboard page only, no panel, button or MQTT alerts");
+        None
+    };
 
     // Sources report here. The sender stays alive in this function, so `recv`
     // simply waits forever when no source is configured.
@@ -204,18 +240,22 @@ async fn main() -> Result<()> {
         if let Some(kiosk) = &mut kiosk {
             kiosk.update(&mut composer, unix_now());
         }
-        shown.publish(&publisher, &mut composer, unix_now()).await;
+        if let Some(publisher) = &publisher {
+            shown.publish(publisher, &mut composer, unix_now()).await;
+        }
     }
 
     info!("shutting down");
-    // Not forever: with the broker down the goodbye cannot be queued.
-    match tokio::time::timeout(Duration::from_secs(2), publisher.shutdown()).await {
-        Ok(Ok(())) => {}
-        Ok(Err(err)) => warn!("clean shutdown failed: {err:#}"),
-        Err(_) => warn!("clean shutdown timed out"),
+    if let Some(publisher) = &publisher {
+        // Not forever: with the broker down the goodbye cannot be queued.
+        match tokio::time::timeout(Duration::from_secs(2), publisher.shutdown()).await {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => warn!("clean shutdown failed: {err:#}"),
+            Err(_) => warn!("clean shutdown timed out"),
+        }
+        // Give the event loop a moment to flush the offline message and disconnect.
+        tokio::time::sleep(Duration::from_millis(500)).await;
     }
-    // Give the event loop a moment to flush the offline message and disconnect.
-    tokio::time::sleep(Duration::from_millis(500)).await;
     Ok(())
 }
 

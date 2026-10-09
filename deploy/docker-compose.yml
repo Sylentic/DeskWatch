@@ -50,8 +50,9 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-    # Webhooks (Gitea source only): publish the listener. Without a Gitea source
-    # the bridge opens no port and this can stay out.
+    # Webhooks (Gitea source) and the dashboard page ([kiosk] enabled): publish
+    # the listener. Without either the bridge opens no port and this can stay
+    # out. For a dashboard without a broker use docker-compose.dashboard.yml.
     # ports:
     #   - "8787:8787"
 

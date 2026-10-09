@@ -1,0 +1,38 @@
+# DeskWatch dashboard-only config, for the Docker setup in docs/docker.md
+# (section 3): the full-size status page in a browser, with no MQTT broker and
+# no ESP panel. Copy it next to docker-compose.dashboard.yml as bridge.toml.
+# Every host name and repository below is a placeholder.
+
+# No broker: the bridge makes no MQTT connection and logs no broker warnings.
+# (Alerts from Home Assistant arrive over MQTT, so they need a broker.)
+[mqtt]
+enabled = false
+
+[server]
+display_name = "homeserver"     # name on the stats page; in a container the default is the container id
+
+# Inside a container 0.0.0.0 is right: it is the port you publish in the
+# Compose file that decides who can reach the page.
+[http]
+listen = "0.0.0.0:8787"
+
+[kiosk]
+enabled = true
+# A token keeps casual visitors out. Create the file first (docs/docker.md):
+#   openssl rand -hex 24 > credentials/kiosk-token
+# then open http://<docker host>:8787/?token=<the token>
+token_file = "kiosk-token"
+
+# Add one source block per service you want on the page; more examples are in
+# bridge/config.example.toml. The GitHub block needs a read-only fine-grained
+# token in credentials/github-personal.
+#
+# [[source.github]]
+# name = "personal"
+# token_file = "github-personal"
+# repos = ["your-user/repo-a"]
+#
+# [[source.prometheus]]
+# name = "home"
+# url = "http://prometheus.example.lan:9090"
+# hosts = ["node-exporter:9100"]

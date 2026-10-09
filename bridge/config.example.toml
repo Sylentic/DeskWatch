@@ -10,6 +10,7 @@
 # On Windows write paths in single quotes or with forward slashes.
 
 [mqtt]
+# enabled = false              # no broker at all: a bridge that only serves the kiosk page (docs/docker.md)
 host = "localhost"              # Mosquitto broker, usually on the same server
 port = 1883
 client_id = "deskwatch-bridge"

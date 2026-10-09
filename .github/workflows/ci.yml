@@ -116,6 +116,20 @@ jobs:
           docker logs dw 2>&1 | grep -q "demo mode"
           docker rm -f dw
 
+      # The dashboard-only setup: no broker, page on a published port, and the
+      # image's own health check.
+      - name: Dashboard demo serves the page
+        run: |
+          docker run -d --name dash -p 8787:8787 \
+            --health-interval 2s --health-start-period 1s \
+            deskwatch-bridge:ci --demo --kiosk --no-mqtt
+          for i in $(seq 1 15); do curl -fs localhost:8787/ >/dev/null && break; sleep 1; done
+          curl -fs localhost:8787/ | grep -qi "<html"
+          curl -fs localhost:8787/api/kiosk | grep -q '"hosts"'
+          docker exec dash deskwatch-bridge --healthcheck --demo --kiosk
+          docker logs dash 2>&1 | grep -q "MQTT is off"
+          docker rm -f dash
+
   # Builds the bridge image for amd64 and arm64 (the Raspberry Pi) in one go.
   # The Dockerfile cross-compiles the Rust code on the runner's own CPU instead
   # of emulating arm64, so this stays fast. Nothing is pushed.

@@ -1,8 +1,30 @@
 # DeskWatch
 
-DeskWatch is a desk status panel built around an ESP32-S3. When idle it rotates through server stats, open pull
-requests and pipeline status. When a CI job runs it switches to live progress, shows a red alert on failure
-(cleared with a button) and a short green flash on success. Home Assistant or any script can raise alerts on it.
+DeskWatch shows what your servers and pipelines are doing: host stats, running CI jobs with live progress, open pull
+requests, failed runs and alerts. One small program, the **bridge**, collects the data (Gitea, GitHub, GitHub
+Enterprise, Azure DevOps, Prometheus, Home Assistant, the machine's own stats) and you choose where to look at it.
+
+## Three ways to use it
+
+| | Where you see it | Status |
+|---|---|---|
+| **1. Mini display** (ESP32-S3) | A 4" touch screen on your desk that rotates through stats, PRs and pipelines, switches to live progress when a job runs, goes red on a failure and clears with a button | Drawing code done and checked in a desktop simulator. The firmware exists but has **never run on a board**; waiting on the screen. 1.0 is reserved for the first release that works on the real display. [firmware/](firmware/README.md) |
+| **2. Raspberry Pi with a full-size screen** | A dashboard page in a full-screen browser on a monitor or TV, up to 4K, everything at once, no rotation | Page built and tested in Chromium on a PC. **Not yet run on a Pi.** [docs/kiosk.md](docs/kiosk.md), [docs/raspberry-pi.md](docs/raspberry-pi.md) |
+| **3. Docker dashboard** | The same dashboard page, served by a container on your homelab; open it from any browser | Works: builds and serves the page with demo data, the token, and a health check were run in a container. Not yet run against real sources on a homelab, and no image is published (you build it once). [docs/docker.md](docs/docker.md) |
+
+Ways 2 and 3 are the same page served by the same bridge and need **no MQTT broker**; only the ESP panel does.
+
+### Try the dashboard in a minute
+
+```sh
+git clone https://github.com/Sylentic/DeskWatch.git && cd DeskWatch
+docker compose -f deploy/docker-compose.demo.yml up --build     # first build takes a few minutes
+```
+
+Open <http://localhost:8787/> for a dashboard with fake data. For your own data, put it on a homelab with a token and
+real sources: [docs/docker.md](docs/docker.md#3-the-dashboard-on-your-homelab).
+
+The mini display's UI in the desktop simulator:
 
 ![The panel UI in the simulator](docs/panel-example.png)
 
@@ -15,8 +37,9 @@ requests and pipeline status. When a CI job runs it switches to live progress, s
   display) that draws whatever page the bridge sends. Its drawing code, the `ui/` crate, is done and runs today in
   a desktop simulator. The firmware is started in [`firmware/`](firmware/README.md) but not yet run on a board, and is not part of 0.9. A TLS test binary for the bare board is described [below](#firmware-and-the-tls-spike).
 - **Kiosk dashboard** (optional, built into the bridge): a web page for a big screen, such as a Raspberry Pi with a
-  monitor or TV, that shows host stats, running jobs, pull requests, pipelines, alerts and source health all at once,
-  with no rotation. It needs no broker and no extra software, see [docs/kiosk.md](docs/kiosk.md).
+  monitor or TV, or a browser tab on any machine, that shows host stats, running jobs, pull requests, pipelines,
+  alerts and source health all at once, with no rotation. It needs no broker (`[mqtt] enabled = false`) and no extra
+  software, see [docs/kiosk.md](docs/kiosk.md). In Docker it is the whole product, see [docs/docker.md](docs/docker.md).
 - **MQTT** (Mosquitto) sits between the bridge and the panel. The contract is [docs/mqtt-schema.md](docs/mqtt-schema.md), with JSON
   samples in [docs/schema/](docs/schema/) that both sides are tested against.
 
@@ -33,6 +56,7 @@ requests and pipeline status. When a CI job runs it switches to live progress, s
 | Source: Azure DevOps Services (pipeline runs, approvals, PRs; [docs/azure-devops.md](docs/azure-devops.md)) | Done |
 | Windows x86_64 release zip (bridge and simulator), install and test guide | Done, see [docs/windows.md](docs/windows.md) |
 | Kiosk dashboard for big screens (browser page served by the bridge, autostart example for a Raspberry Pi) | Unreleased, not yet run on a Pi: [docs/kiosk.md](docs/kiosk.md) |
+| Docker dashboard (no broker needed: `[mqtt] enabled = false`, Compose files, health check) | Unreleased, run in a container with demo data: [docs/docker.md](docs/docker.md) |
 
 ## What is not in 0.9
 
@@ -51,8 +75,9 @@ DeskWatch supports **Linux and Windows**, plus the Raspberry Pi (64-bit Linux).
 - **Linux:** [docs/install.md](docs/install.md) walks through the whole setup on a systemd server (written for
   Debian 12 or newer): download or build the binary, config, systemd unit with credentials, Mosquitto logins, then
   each source and Home Assistant.
-- **Docker:** [docs/docker.md](docs/docker.md) builds a small non-root image of the bridge and has a Compose
-  example with config and secrets mounted read-only. Multi-arch (amd64 and arm64) in CI; nothing is published to a registry.
+- **Docker:** [docs/docker.md](docs/docker.md) builds a small non-root image with a health check and has Compose
+  examples for the dashboard (no broker needed) and for the ESP bridge, with config and secrets mounted read-only.
+  Multi-arch (amd64 and arm64) in CI; nothing is published to a registry.
 - **Raspberry Pi:** [docs/raspberry-pi.md](docs/raspberry-pi.md) covers 64-bit Raspberry Pi OS with the aarch64 release
   binary and systemd, or Docker. A Pi is also a fine always-on machine for the demo.
 - **Windows:** [docs/windows.md](docs/windows.md) covers the release zip, Mosquitto, trying the demo and the
@@ -60,8 +85,8 @@ DeskWatch supports **Linux and Windows**, plus the Raspberry Pi (64-bit Linux).
   Linux's `/proc` for now). The source, Mosquitto and Home Assistant steps in the Linux guide apply on Windows too.
 - **macOS** is not covered; contributions are welcome.
 
-A big screen (a Pi with a monitor or TV, a wall tablet) can show the [kiosk dashboard](docs/kiosk.md), a web page the
-bridge serves itself; it is off until you set `[kiosk] enabled = true`.
+A big screen (a Pi with a monitor or TV, a wall tablet) or any browser can show the [kiosk dashboard](docs/kiosk.md), a
+web page the bridge serves itself; it is off until you set `[kiosk] enabled = true` (the Docker dashboard setup does).
 
 A short overview of the sources is below.
 
