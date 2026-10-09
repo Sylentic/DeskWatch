@@ -23,6 +23,24 @@ path = "src/main.rs"
 test = false
 bench = false
 
+# TLS spike (README: "TLS spike"). A separate binary that only builds with
+# `--features tls-spike`, so the panel firmware never carries the TLS stack or the
+# heap statistics (which cost CPU time on every allocation) until the spike has
+# shown that it fits.
+[[bin]]
+name = "tls-spike"
+path = "src/tls_spike/main.rs"
+test = false
+bench = false
+required-features = ["tls-spike"]
+
+[features]
+tls-spike = [
+    "dep:mbedtls-rs",
+    "dep:tinyrlibc",
+    "esp-alloc/internal-heap-stats",
+]
+
 [dependencies]
 # The panel drawing code and the payload parser, shared with the simulator.
 deskwatch-ui = { path = "../ui" }
@@ -39,7 +57,7 @@ embassy-executor = "0.10"
 embassy-time = "0.5"
 embassy-sync = "0.8"
 embassy-futures = "0.1"
-embassy-net = { version = "0.9", features = ["tcp", "dns", "dhcpv4", "medium-ethernet", "proto-ipv4"] }
+embassy-net = { version = "0.9", features = ["tcp", "udp", "dns", "dhcpv4", "medium-ethernet", "proto-ipv4"] }
 embedded-io-async = "0.7"
 
 rust-mqtt = { version = "0.6", default-features = false, features = ["v5", "alloc"] }
@@ -48,6 +66,14 @@ mipidsi = "0.10"
 embedded-hal = "1"
 embedded-hal-bus = "0.3"
 embedded-graphics = "0.8.2"
+
+# TLS spike only (feature `tls-spike`). mbedtls-rs 0.2 is the release built for the esp-hal 1.1
+# family used here; 0.3 needs esp-hal 1.2. "hook-wall-clock" turns on the certificate validity
+# date check (off by default in mbedtls-rs), "embassy-time" gives it a timer, "use-gcc" builds the
+# changed MbedTLS configuration with the Xtensa GCC that espup installs (system clang cannot).
+mbedtls-rs = { version = "0.2", optional = true, features = ["log", "hook-wall-clock", "esp32s3", "embassy-time", "use-gcc"] }
+# C library functions (memchr) that the precompiled MbedTLS expects to find at link time.
+tinyrlibc = { version = "0.5", optional = true, default-features = false, features = ["memchr"] }
 
 heapless = "0.9"
 log = "0.4"

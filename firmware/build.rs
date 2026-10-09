@@ -113,6 +113,41 @@ fn main() {
         Some(40),
     );
 
+    // TLS spike settings (only the tls-spike binary reads these).
+    string(
+        &mut out,
+        &doc,
+        "tls_spike",
+        "url",
+        "TLS_SPIKE_URL",
+        Some("https://example.com/"),
+    );
+    string(
+        &mut out,
+        &doc,
+        "tls_spike",
+        "ntp_host",
+        "TLS_SPIKE_NTP_HOST",
+        Some("pool.ntp.org"),
+    );
+    int(
+        &mut out,
+        &doc,
+        "tls_spike",
+        "runs",
+        "TLS_SPIKE_RUNS",
+        "u8",
+        Some(2),
+    );
+    boolean(
+        &mut out,
+        &doc,
+        "tls_spike",
+        "hw_accel",
+        "TLS_SPIKE_HW_ACCEL",
+        true,
+    );
+
     let dest = Path::new(&env::var("OUT_DIR").unwrap()).join("config_gen.rs");
     fs::write(dest, out).unwrap();
 }

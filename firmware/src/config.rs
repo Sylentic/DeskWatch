@@ -8,6 +8,7 @@
 
 use heapless::String;
 
+#[allow(dead_code)] // the TLS spike constants are only read by the tls-spike binary
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/config_gen.rs"));
 }
@@ -83,4 +84,32 @@ impl ConfigSource for CompiledConfig {
 
 fn fit<const N: usize>(s: &str, field: &'static str) -> Result<String<N>, ConfigError> {
     String::try_from(s).map_err(|_| ConfigError::TooLong(field))
+}
+
+/// Settings of the TLS spike binary (`[tls_spike]` in `config.toml`). The panel
+/// firmware does not use them.
+#[allow(dead_code)]
+pub struct SpikeConfig {
+    /// HTTPS address to fetch, `https://host[:port]/path`.
+    pub url: String<128>,
+    /// SNTP server name.
+    pub ntp_host: String<64>,
+    /// How many times to repeat the request in one boot.
+    pub runs: u8,
+    /// Use the ESP32-S3 AES, SHA and RSA units for the TLS maths.
+    pub hw_accel: bool,
+}
+
+#[allow(dead_code)]
+impl CompiledConfig {
+    pub fn load_spike(&self) -> Result<SpikeConfig, ConfigError> {
+        use generated::*;
+
+        Ok(SpikeConfig {
+            url: fit(TLS_SPIKE_URL, "tls_spike.url")?,
+            ntp_host: fit(TLS_SPIKE_NTP_HOST, "tls_spike.ntp_host")?,
+            runs: TLS_SPIKE_RUNS.clamp(1, 10),
+            hw_accel: TLS_SPIKE_HW_ACCEL,
+        })
+    }
 }

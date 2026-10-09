@@ -33,3 +33,16 @@ bgr = true
 invert_colors = false
 # SPI clock in MHz. 40 is safe; 80 is untested on this module.
 spi_mhz = 40
+
+# Only read by the tls-spike test binary (see README.md, "TLS spike"). All optional.
+[tls_spike]
+# The HTTPS address to fetch with full certificate verification. The default is a neutral,
+# stable page; point it at your own Gitea or GitHub API URL to test the real thing.
+url = "https://example.com/"
+# SNTP server used to set the clock before the certificate dates are checked.
+ntp_host = "pool.ntp.org"
+# How many requests to make in one boot (1 to 10). 2 or more shows repeatability and leaks.
+runs = 2
+# Use the chip's AES, SHA and RSA units. Set to false to compare against pure software,
+# or if the log stops right after "handshake: starting".
+hw_accel = true
