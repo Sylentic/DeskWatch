@@ -116,14 +116,13 @@ jobs:
           docker rm -f dw
 
   # Builds the bridge image for amd64 and arm64 (the Raspberry Pi) in one go.
-  # arm64 runs under QEMU emulation here, so this job is slow; nothing is pushed.
+  # The Dockerfile cross-compiles the Rust code on the runner's own CPU instead
+  # of emulating arm64, so this stays fast. Nothing is pushed.
   docker-multiarch:
     name: docker image (amd64 + arm64)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-
-      - uses: docker/setup-qemu-action@v3
 
       - uses: docker/setup-buildx-action@v3
 

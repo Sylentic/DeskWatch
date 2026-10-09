@@ -28,7 +28,8 @@ docker build -t deskwatch-bridge .
 
 The first build takes a few minutes (it compiles all dependencies). The image is for the CPU you build it on, so
 building on a Raspberry Pi gives an arm64 image with no extra steps; `docker buildx` can build for another CPU. CI
-builds the image for amd64 and arm64 on every change (nothing pushed). The Pi side is in
+builds the image for amd64 and arm64 on every change (nothing pushed). The build stage cross-compiles instead of
+emulating the other CPU, so a multi-arch build is not much slower than a single one. The Pi side is in
 [raspberry-pi.md](raspberry-pi.md).
 
 ## 2. Try the demo

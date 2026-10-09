@@ -90,7 +90,8 @@ docker buildx build --platform linux/arm64 -t deskwatch-bridge:arm64 --load .
 docker save deskwatch-bridge:arm64 | ssh pi@raspberrypi.local docker load
 ```
 
-(`--load` of a foreign-CPU image needs QEMU: `sudo apt install qemu-user-static binfmt-support` on Debian.)
+(The `Dockerfile` cross-compiles the Rust code on your PC, so no CPU emulation is needed to build; running the
+arm64 image on the PC would need QEMU, but you do not have to.)
 
 Then continue with [docker.md section 3 onwards](docker.md#3-config-and-secrets): config and secrets mounted
 read-only, the Compose example in [`deploy/docker-compose.yml`](../deploy/docker-compose.yml), reaching the broker.
