@@ -165,7 +165,7 @@ jobs:
           if-no-files-found: error
 
   # The bridge image for GitHub's registry: ghcr.io/sylentic/deskwatch-bridge.
-  # Tags: the version without the "v" (0.9.7) and, for tags without a suffix such
+  # Tags: the version without the "v" (0.9.8) and, for tags without a suffix such
   # as -rc.1, `latest`. amd64 and arm64 (Raspberry Pi) in one manifest; the
   # Dockerfile cross-compiles on the runner's own CPU instead of emulating.
   # A new package is private until it is made public in the package settings.

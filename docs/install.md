@@ -44,7 +44,7 @@ aarch64, the Raspberry Pi, see [raspberry-pi.md](raspberry-pi.md)) and a checksu
 file (the Windows zip is covered in [windows.md](windows.md)). It is built on Ubuntu 22.04, so it runs on Debian 12 and newer. It needs nothing but the system C library.
 
 ```sh
-VERSION=v0.9.7      # the release you want
+VERSION=v0.9.8      # the release you want
 cd "$(mktemp -d)"
 curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-x86_64-linux.tar.gz"
 curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-x86_64-linux.tar.gz.sha256"
@@ -68,7 +68,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 git clone https://github.com/Sylentic/DeskWatch.git
 cd DeskWatch
-git checkout v0.9.7            # or stay on main for the newest, untagged code
+git checkout v0.9.8            # or stay on main for the newest, untagged code
 cargo build --release --locked -p deskwatch-bridge
 ```
 
