@@ -164,6 +164,7 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
   [kiosk]
   enabled = true
   token_file = "kiosk-token"     # a credential, loaded with LoadCredential= like the others
+  max_ws_clients = 16            # live-update sockets at once (default 16); more tabs fall back to polling
   ```
 
   ```sh

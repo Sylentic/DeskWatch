@@ -178,6 +178,9 @@ pub struct KioskConfig {
     /// `?token=...` on the page address. Set it whenever `http.listen` is
     /// reachable from other machines.
     pub token_file: Option<String>,
+    /// Most live-update WebSockets open at once. More get `503` and the page
+    /// falls back to polling. A page needs one per open tab or screen.
+    pub max_ws_clients: u16,
     /// The widgets. Empty means the built-in layout.
     pub panel: Vec<PanelConfig>,
 }
@@ -189,6 +192,7 @@ impl Default for KioskConfig {
             columns: 4,
             rows: 3,
             token_file: None,
+            max_ws_clients: 16,
             panel: Vec::new(),
         }
     }
@@ -203,6 +207,10 @@ impl KioskConfig {
         anyhow::ensure!(
             (1..=max).contains(&self.columns) && (1..=max).contains(&self.rows),
             "kiosk.columns and kiosk.rows must be between 1 and {max}"
+        );
+        anyhow::ensure!(
+            self.max_ws_clients >= 1,
+            "kiosk.max_ws_clients must be at least 1"
         );
         for (i, panel) in self.panel.iter().enumerate() {
             let n = i + 1;
@@ -1166,6 +1174,7 @@ title = "Reviews"
         let bad = |toml: &str| format!("{:#}", Config::from_toml(toml).unwrap_err());
         assert!(bad("[kiosk]\ncolumns = 0").contains("between 1 and 12"));
         assert!(bad("[kiosk]\nrows = 13").contains("between 1 and 12"));
+        assert!(bad("[kiosk]\nmax_ws_clients = 0").contains("at least 1"));
         assert!(bad("[[kiosk.panel]]\nwidget = \"jobs\"\nspan = [5, 1]").contains("span must fit"));
         assert!(bad("[[kiosk.panel]]\nwidget = \"jobs\"\nspan = [1, 0]").contains("span must fit"));
         assert!(bad("[[kiosk.panel]]\nwidget = \"prs\"\nhost = \"x\"").contains("only applies"));

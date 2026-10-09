@@ -474,3 +474,58 @@ async fn websocket_sends_the_current_snapshot_and_then_changes() {
     let next: Value = serde_json::from_slice(&payload).unwrap();
     assert_eq!(next["runs"][0]["pipeline"], "ci.yml");
 }
+
+/// Open the WebSocket and return the stream (after the handshake) or the
+/// status line when the bridge refused it.
+async fn open_socket(addr: std::net::SocketAddr) -> Result<TcpStream, String> {
+    let mut stream = TcpStream::connect(addr).await.unwrap();
+    let request = "GET /api/kiosk/ws HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\n\
+                   Upgrade: websocket\r\nSec-WebSocket-Version: 13\r\n\
+                   Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n";
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let mut head = Vec::new();
+    while !head.ends_with(b"\r\n\r\n") {
+        head.push(stream.read_u8().await.unwrap());
+    }
+    let head = String::from_utf8_lossy(&head).to_string();
+    if head.starts_with("HTTP/1.1 101") {
+        Ok(stream)
+    } else {
+        Err(head.lines().next().unwrap_or("").to_string())
+    }
+}
+
+#[tokio::test]
+async fn websocket_count_is_capped_and_a_closed_client_frees_its_slot() {
+    let config = KioskConfig {
+        max_ws_clients: 2,
+        ..KioskConfig::default()
+    };
+    let kiosk = Kiosk::new(&config, None);
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(axum::serve(listener, kiosk.router()).into_future());
+
+    let first = open_socket(addr).await.unwrap();
+    let _second = open_socket(addr).await.unwrap();
+    let refused = open_socket(addr).await.unwrap_err();
+    assert!(refused.contains("503"), "{refused}");
+
+    // The page still works without the socket: polling is not limited.
+    assert_eq!(
+        get(&kiosk.router(), "/api/kiosk", None).await.0,
+        StatusCode::OK
+    );
+
+    // Closing a client gives its slot back (the bridge notices on its next read).
+    drop(first);
+    let mut reopened = Err(String::new());
+    for _ in 0..50 {
+        reopened = open_socket(addr).await;
+        if reopened.is_ok() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(reopened.is_ok(), "slot was not freed: {reopened:?}");
+}

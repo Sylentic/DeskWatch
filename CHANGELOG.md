@@ -8,6 +8,19 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Added
+
+- **Reverse proxy examples** for Caddy, nginx and Traefik (Docker labels) in `docs/docker.md`, each with TLS, basic
+  auth and the WebSocket route on `/api/kiosk/ws`.
+- **`[kiosk] max_ws_clients`** (default 16): the most live-update WebSockets open at once. A further client gets
+  `503` and its page polls instead.
+
+### Security
+
+- **A stalled dashboard client can no longer hold a WebSocket for ever.** The bridge drops a client that has not
+  accepted a frame for 10 seconds; the page reconnects by itself. Together with the connection cap this keeps one
+  broken or hostile client on the LAN from using up the bridge. There is still no request rate limiting.
+
 ### Changed
 
 - **Running builds are orange on the dashboard instead of blue.** The pulsing dot in Pipelines, the Running now
