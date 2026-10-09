@@ -10,6 +10,12 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Fixed
 
+- **"Running now" on the dashboard listed nothing for GitHub and Azure DevOps pipelines that may not interrupt.** The
+  Pipelines widget showed `running`, but the jobs behind it were only fetched for repositories and projects with
+  `interrupt` on (Azure DevOps has it off by default), so the Running now widget said "No jobs running". Those
+  sources now fetch the job progress of every running run or build; `interrupt` still only decides what takes over
+  the ESP screen. Cost: Azure DevOps and GitHub now poll the running build every `job_poll_s` also for quiet projects.
+  Gitea was not affected.
 - **The dashboard no longer sits silently on `connecting`.** When the kiosk token is set and the page is opened without
   it, the data request answered 401 and the page showed an empty body forever. The page now asks for the token in a
   box (kept for that tab only) and says `token required` or `token rejected` in the header chip. It also names the

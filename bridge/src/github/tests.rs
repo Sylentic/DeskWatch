@@ -246,12 +246,18 @@ fn run_finishing_between_polls_clears_its_jobs() {
 }
 
 #[test]
-fn quiet_repos_are_not_job_polled() {
+fn quiet_repos_are_job_polled_but_stay_off_the_esp_screen() {
     let mut source = state(false, 0);
     let mut facts = CiFacts::default();
     apply(&mut facts, source.on_runs(REPO, fixture_runs(), NOW), NOW);
-    assert!(source.watched_runs().is_empty(), "saves the rate limit");
     assert_eq!(facts.pipelines_page().count, 3);
+    assert_eq!(source.watched_runs(), [(REPO.to_string(), 1003)]);
+
+    let (updates, _) = source.on_jobs(REPO, 1003, fixture_jobs(), NOW + 5);
+    apply(&mut facts, updates, NOW + 5);
+    assert!(facts.has_job("github:personal:your-user/demo:job:2001"));
+    assert_eq!(facts.jobs().len(), 1, "the kiosk list sees it");
+    assert!(facts.candidates().is_empty(), "the ESP screen does not");
 }
 
 #[test]
