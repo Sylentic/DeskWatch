@@ -8,6 +8,10 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+## [0.9.8]
+
+The Docker and kiosk hardening release: Compose uses the published image, WebSocket limits, reverse proxy examples.
+
 ### Added
 
 - **Reverse proxy examples** for Caddy, nginx and Traefik (Docker labels) in `docs/docker.md`, each with TLS, basic
@@ -227,7 +231,8 @@ not (see the README, "What is not in 0.9").
   are Linux x86_64; build from source for other CPUs.
 - Gitea webhooks are plain HTTP unless you put a reverse proxy in front of the bridge.
 
-[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.7...HEAD
+[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.8...HEAD
+[0.9.8]: https://github.com/Sylentic/DeskWatch/compare/v0.9.7...v0.9.8
 [0.9.7]: https://github.com/Sylentic/DeskWatch/compare/v0.9.6...v0.9.7
 [0.9.6]: https://github.com/Sylentic/DeskWatch/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/Sylentic/DeskWatch/compare/v0.9.4...v0.9.5
