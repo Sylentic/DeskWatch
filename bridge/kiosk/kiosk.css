@@ -15,6 +15,7 @@
   --amber: #ffb020;
   --red: #ff4d4d;
   --blue: #4da3ff;
+  --orange: #ff6a00;   /* a build or deploy that is running; amber (waiting) stays lighter and does not pulse */
   --purple: #b07cff;
   --grey: #8a93a2;
   --alert-red: #9e1616;
@@ -64,7 +65,7 @@ body {
 }
 .chip::before { content: ""; width: .7rem; height: .7rem; border-radius: 50%; background: var(--c, var(--grey)); }
 .chip.ok { --c: var(--green); }
-.chip.running { --c: var(--blue); }
+.chip.running { --c: var(--orange); }
 .chip.failed { --c: var(--red); color: var(--text); }
 .chip.review { --c: var(--amber); color: var(--text); }
 .chip.open { --c: var(--purple); color: var(--text); }
@@ -74,7 +75,7 @@ body {
 #time { font-size: 2rem; font-weight: 600; }
 #date { font-size: .95rem; color: var(--dim); }
 .topbar { position: absolute; left: 0; right: 0; bottom: 0; height: .3rem; background: var(--track); }
-.topbar i { display: block; height: 100%; width: var(--p, 0%); background: var(--blue); transition: width .6s; }
+.topbar i { display: block; height: 100%; width: var(--p, 0%); background: var(--orange); transition: width .6s; }
 .topbar.spin i { width: 30%; animation: slide 1.6s ease-in-out infinite alternate; }
 @keyframes slide { from { margin-left: 0; } to { margin-left: 70%; } }
 
@@ -179,7 +180,7 @@ body.lost .grid { opacity: .45; filter: grayscale(.7); }
 }
 .row:first-child { border-top: 0; }
 .dot { width: .85rem; height: .85rem; border-radius: 50%; background: var(--c, var(--grey)); }
-.dot.running { background: var(--blue); animation: pulse 1.4s ease-in-out infinite; }
+.dot.running { background: var(--orange); animation: pulse 1.4s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .35; } }
 .row .main { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .row .sub { grid-column: 2 / 4; color: var(--dim); font-size: 1rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: -.15rem; }
@@ -191,7 +192,7 @@ body.lost .grid { opacity: .45; filter: grayscale(.7); }
 .pr .num { color: var(--purple); font-weight: 700; margin-right: .5rem; }
 
 .ok { --c: var(--green); }
-.running { --c: var(--blue); }
+.running { --c: var(--orange); }
 .failed { --c: var(--red); }
 .review, .waiting { --c: var(--amber); }
 .open { --c: var(--purple); }
@@ -223,7 +224,7 @@ body.lost .grid { opacity: .45; filter: grayscale(.7); }
 .kind.build { background: #1d4a7a; }
 .pbar { height: 1.1rem; border-radius: .6rem; background: var(--track); overflow: hidden; position: relative; }
 .pbar i { display: block; height: 100%; width: var(--p); border-radius: .6rem; transition: width .8s;
-  background: repeating-linear-gradient(135deg, var(--blue) 0 .8rem, #3b8ae0 .8rem 1.6rem); background-size: 2.3rem 100%; animation: stripes 1s linear infinite; }
+  background: repeating-linear-gradient(135deg, var(--orange) 0 .8rem, #e05a00 .8rem 1.6rem); background-size: 2.3rem 100%; animation: stripes 1s linear infinite; }
 .pbar.spin i { width: 28%; animation: stripes 1s linear infinite, sweep 1.8s ease-in-out infinite alternate; }
 @keyframes stripes { to { background-position: 2.3rem 0; } }
 @keyframes sweep { from { margin-left: 0; } to { margin-left: 72%; } }

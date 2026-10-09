@@ -8,6 +8,12 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Changed
+
+- **Running builds are orange on the dashboard instead of blue.** The pulsing dot in Pipelines, the Running now
+  progress bar, the header progress line and the header chip use orange. Failed stays red, success green, waiting for
+  approval amber (not pulsing), queued and cancelled grey. Status colours are listed in `docs/kiosk.md`.
+
 ### Fixed
 
 - **"Running now" on the dashboard listed nothing for GitHub and Azure DevOps pipelines that may not interrupt.** The
