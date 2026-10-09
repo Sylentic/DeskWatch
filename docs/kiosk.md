@@ -36,7 +36,7 @@ the header follows it. The header also has the same counters as the panel badges
 things down), a connection chip, and a clock.
 
 The size follows the screen width, so the same layout is readable on 1080p and 4K and on a small 1280x720 screen.
-Under 900 px wide (a phone) it becomes a single scrolling column. The pointer is hidden on big screens.
+Under 900 px wide (a phone) it becomes a single scrolling column. The pointer hides after 3 seconds without mouse movement.
 
 ## 2. Turn it on
 
@@ -164,6 +164,7 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
   [kiosk]
   enabled = true
   token_file = "kiosk-token"     # a credential, loaded with LoadCredential= like the others
+  max_ws_clients = 16            # live-update sockets at once (default 16); more tabs fall back to polling
   ```
 
   ```sh

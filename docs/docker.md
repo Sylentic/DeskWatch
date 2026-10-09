@@ -141,7 +141,96 @@ alert text. Choose one:
 3. **Local only.** Publish `"127.0.0.1:8787:8787"` and open the page on the Docker host itself (a Pi with a screen
    running the container).
 
-Do **not** publish the port on the internet. There is no login screen, no rate limiting and no TLS in the bridge.
+#### Reverse proxy examples
+
+All three examples terminate TLS for `dashboard.example.lan` (a placeholder), ask for a username and password, and
+pass the WebSocket on `/api/kiosk/ws`. The bridge listens on `127.0.0.1:8787` (published as in option 2) or, when
+the proxy runs in Docker too, on `deskwatch:8787` over a shared network. The browser sends the basic auth login on
+the WebSocket by itself, and the bridge ignores a `Basic` header, so keeping `token_file` set still works: open
+`https://dashboard.example.lan/?token=<the token>`. Create the login hash with `htpasswd -nbB desk 'a-password'`
+(package `apache2-utils`) or, for Caddy, `caddy hash-password`.
+
+**Caddy.** `reverse_proxy` upgrades WebSockets without extra lines, and Caddy gets the certificate by itself when the
+name is public. For a LAN-only name use `tls internal`:
+
+```caddyfile
+dashboard.example.lan {
+	tls internal
+	basicauth {
+		desk <hash from `caddy hash-password`>
+	}
+	reverse_proxy 127.0.0.1:8787
+}
+```
+
+**nginx.** Two things are needed for the WebSocket: HTTP/1.1 with the `Upgrade` headers, and a long `proxy_read_timeout`
+(the default 60 s closes a quiet socket; the bridge sends a frame every 5 s, but a long timeout also survives a
+stalled source):
+
+```nginx
+# in the http block
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 443 ssl;
+    server_name dashboard.example.lan;
+    ssl_certificate     /etc/nginx/tls/dashboard.crt;
+    ssl_certificate_key /etc/nginx/tls/dashboard.key;
+
+    auth_basic           "DeskWatch";
+    auth_basic_user_file /etc/nginx/deskwatch.htpasswd;   # from htpasswd -nbB
+
+    location / {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 1h;
+    }
+}
+```
+
+**Traefik (Docker labels).** Traefik handles WebSockets without a setting. Put the bridge on the network Traefik uses
+and publish no port; the entrypoint (`websecure`) and certificate resolver (`letsencrypt`) are the names from your
+Traefik configuration. In a Compose file every `$` in the hash must be written `$$`:
+`htpasswd -nbB desk 'a-password' | sed -e 's/\$/\$\$/g'`.
+
+```yaml
+services:
+  deskwatch:
+    image: ghcr.io/sylentic/deskwatch-bridge:<version>
+    # volumes, read_only, cap_drop: as in deploy/docker-compose.dashboard.yml; no `ports:`
+    networks: [proxy]
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
+      - traefik.http.routers.deskwatch.rule=Host(`dashboard.example.lan`)
+      - traefik.http.routers.deskwatch.entrypoints=websecure
+      - traefik.http.routers.deskwatch.tls.certresolver=letsencrypt
+      - traefik.http.routers.deskwatch.middlewares=deskwatch-auth
+      - traefik.http.middlewares.deskwatch-auth.basicauth.users=desk:$$2y$$05$$<rest of the hash>
+      - traefik.http.services.deskwatch.loadbalancer.server.port=8787
+
+networks:
+  proxy:
+    external: true
+```
+
+How these were checked: Caddy 2.8, nginx 1.24 and Traefik 3.1 each proxied a running bridge with these routes and
+this login: no login gave 401, the login gave the page data, and the WebSocket upgrade answered `101` and delivered
+a frame. Traefik was tested with its file provider using the same router, middleware and service values as the
+labels, not through the Docker provider, and TLS was not part of the check. Check the hostnames, the entrypoint and
+the resolver names against your own setup.
+
+The live-update WebSocket is capped: at most 16 at once (`[kiosk] max_ws_clients`, one per open tab or screen; a
+further one gets `503` and that page polls instead), and a client that has not taken a frame for 10 seconds is
+dropped, after which the page reconnects. This keeps one stuck browser from holding the bridge, it is not a login.
+
+Do **not** publish the port on the internet. There is no login screen, no request rate limiting and no TLS in the bridge.
 If you want the page away from home, put it behind a VPN (WireGuard, Tailscale) or a proxy that requires a real
 login. A source alias keeps work project names off a visible screen
 ([kiosk.md](kiosk.md#5-security)).
@@ -186,7 +275,7 @@ secrets:
 
 ## 5. Compose for the ESP bridge
 
-[`deploy/docker-compose.yml`](../deploy/docker-compose.yml) is a ready example: it builds the image, mounts the
+[`deploy/docker-compose.yml`](../deploy/docker-compose.yml) is a ready example: it pulls the published image (pinned to a release, section 10), mounts the
 config and the `credentials/` folder read-only, runs with a read-only root filesystem, drops all capabilities, and
 restarts unless stopped. Copy it next to your config:
 
@@ -195,7 +284,7 @@ mkdir -p deskwatch/credentials && cd deskwatch
 cp /path/to/DeskWatch/deploy/docker-compose.yml compose.yaml
 cp /path/to/DeskWatch/bridge/config.example.toml bridge.toml       # edit it, see install.md step 3
 (umask 077; printf %s 'THE-BRIDGE-PASSWORD' > credentials/mqtt-password)
-docker compose up -d --build
+docker compose up -d
 docker compose logs -f
 ```
 
@@ -296,20 +385,31 @@ docker run --rm -p 8787:8787 ghcr.io/sylentic/deskwatch-bridge:<version> --demo 
 ```
 
 Tags are the version without the `v` and, for tags without a suffix such as `-rc.1`, `latest`. Pin the version in
-production (`latest` moves). In the Compose files, replace the `build:` block with
-`image: ghcr.io/sylentic/deskwatch-bridge:<version>`; an updater such as Renovate or Watchtower can then bump it.
+production (`latest` moves). [`deploy/docker-compose.yml`](../deploy/docker-compose.yml) already uses the image,
+pinned to a release. The dashboard and demo Compose files build from the checkout they sit in, which is
+repeatable as long as you stay on one commit; to use the image there, replace their `build:` block with
+`image: ghcr.io/sylentic/deskwatch-bridge:<version>`. An updater such as Renovate or Watchtower can bump the tag.
 A new package on `ghcr.io` starts private: make it public once in the package settings (Package settings, Change
 visibility) so servers can pull it without a login. CI (the `docker` job in [`ci.yml`](../.github/workflows/ci.yml))
 only checks that the image builds and starts; nothing is pushed from pull requests or branches.
 
-Until a release with an image exists, section 1 builds it from the source.
+If the image does not suit you (your own changes, another CPU), section 1 builds it from the source.
 
 ## 11. Update and remove
+
+With the published image (the default in `deploy/docker-compose.yml`): read [CHANGELOG.md](../CHANGELOG.md) first, a
+new release may add config keys, then change the version in the `image:` line and run:
+
+```sh
+docker compose pull && docker compose up -d
+```
+
+When you build from the source instead:
 
 ```sh
 cd DeskWatch && git pull                    # or check out the tag you want
 docker compose build --pull && docker compose up -d
 ```
 
-Read [CHANGELOG.md](../CHANGELOG.md) first; a new release may add config keys. Remove with
+Remove with
 `docker compose down --rmi local`, then delete the `credentials/` folder and the broker users you created.
