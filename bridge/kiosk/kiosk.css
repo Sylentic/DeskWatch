@@ -224,9 +224,8 @@ body.lost .grid { opacity: .45; filter: grayscale(.7); }
 .kind.build { background: #1d4a7a; }
 .pbar { height: 1.1rem; border-radius: .6rem; background: var(--track); overflow: hidden; position: relative; }
 .pbar i { display: block; height: 100%; width: var(--p); border-radius: .6rem; transition: width .8s;
-  background: repeating-linear-gradient(135deg, var(--orange) 0 .8rem, #e05a00 .8rem 1.6rem); background-size: 2.3rem 100%; animation: stripes 1s linear infinite; }
-.pbar.spin i { width: 28%; animation: stripes 1s linear infinite, sweep 1.8s ease-in-out infinite alternate; }
-@keyframes stripes { to { background-position: 2.3rem 0; } }
+  background: var(--orange); }
+.pbar.spin i { width: 28%; animation: sweep 1.8s ease-in-out infinite alternate; }
 @keyframes sweep { from { margin-left: 0; } to { margin-left: 72%; } }
 .job .pct { font-size: 1.05rem; color: var(--dim); text-align: right; margin-top: .15rem; }
 
