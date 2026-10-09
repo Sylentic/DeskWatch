@@ -8,6 +8,12 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Added
+
+- **Docker image on release.** Pushing a version tag now also builds the bridge image for amd64 and arm64 and
+  pushes it to `ghcr.io/sylentic/deskwatch-bridge` (tags `<version>` and, for tags without a suffix, `latest`).
+  The Compose files and `docs/docker.md` can use it instead of building from the source.
+
 ## [0.9.5]
 
 The big-screen release: a browser dashboard for a Raspberry Pi or a homelab container, and a TLS spike for the

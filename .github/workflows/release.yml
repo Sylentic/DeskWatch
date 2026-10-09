@@ -164,6 +164,56 @@ jobs:
             dist/*.sha256
           if-no-files-found: error
 
+  # The bridge image for GitHub's registry: ghcr.io/sylentic/deskwatch-bridge.
+  # Tags: the version without the "v" (0.9.6) and, for tags without a suffix such
+  # as -rc.1, `latest`. amd64 and arm64 (Raspberry Pi) in one manifest; the
+  # Dockerfile cross-compiles on the runner's own CPU instead of emulating.
+  # A new package is private until it is made public in the package settings.
+  docker:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      # The tag must match the crate version, as for the binaries above.
+      - name: Check the tag against the crate version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          crate="$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "deskwatch-bridge") | .version')"
+          if [ "$tag" != "$crate" ]; then
+            echo "tag v$tag does not match deskwatch-bridge $crate" >&2
+            exit 1
+          fi
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/sylentic/deskwatch-bridge
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   publish:
     needs: [linux, linux-arm64, windows]
     runs-on: ubuntu-22.04
