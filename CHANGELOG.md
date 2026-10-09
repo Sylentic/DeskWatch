@@ -10,6 +10,10 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Added
 
+- **Raspberry Pi packaging.** The release workflow now also builds an `aarch64` Linux tarball (with sha256) for
+  64-bit Raspberry Pi OS, natively on GitHub's Ubuntu 22.04 arm64 runner. CI builds the Docker image for `linux/amd64`
+  and `linux/arm64` (build only, nothing pushed). New guide [docs/raspberry-pi.md](docs/raspberry-pi.md): systemd
+  install from the release binary, the Docker route, Mosquitto on the Pi, and the demo. Not yet run on real Pi hardware.
 - **Docker support** for the bridge: a small multi-stage `Dockerfile` (release binary, non-root user, config and secrets
   mounted read-only), a Compose example in `deploy/docker-compose.yml`, a guide in
   [docs/docker.md](docs/docker.md), and a CI job that checks the image builds and starts. No image is published.

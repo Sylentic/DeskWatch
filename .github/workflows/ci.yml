@@ -114,3 +114,24 @@ jobs:
           sleep 5
           docker logs dw 2>&1 | grep -q "demo mode"
           docker rm -f dw
+
+  # Builds the bridge image for amd64 and arm64 (the Raspberry Pi) in one go.
+  # arm64 runs under QEMU emulation here, so this job is slow; nothing is pushed.
+  docker-multiarch:
+    name: docker image (amd64 + arm64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build for both CPUs (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
