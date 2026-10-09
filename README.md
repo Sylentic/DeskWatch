@@ -13,11 +13,11 @@ requests and pipeline status. When a CI job runs it switches to live progress, s
   publishes it over MQTT.
 - **Panel**: a deliberately dumb MQTT client with a touch screen (planned: an ESP32-S3 SuperMini with a 4" ST7796S
   display) that draws whatever page the bridge sends. Its drawing code, the `ui/` crate, is done and runs today in
-  a desktop simulator; the firmware is not part of 1.0.
+  a desktop simulator; the firmware is not part of 0.9.
 - **MQTT** (Mosquitto) sits between the two. The contract is [docs/mqtt-schema.md](docs/mqtt-schema.md), with JSON
   samples in [docs/schema/](docs/schema/) that both sides are tested against.
 
-## What is in 1.0
+## What is in 0.9
 
 | Part | State |
 |---|---|
@@ -28,11 +28,11 @@ requests and pipeline status. When a CI job runs it switches to live progress, s
 | Panel UI (`ui/`) and desktop simulator (`sim/`) | Done |
 | Linux x86_64 release binary, systemd unit, install guide | Done |
 
-## What is not in 1.0
+## What is not in 0.9
 
-- **The firmware.** The real panel waits for the display to arrive. Until then the simulator draws exactly what
+- **The firmware.** The real panel waits for the display to arrive. 1.0 is reserved for the first release with working firmware on the real screen. Until then the simulator draws exactly what
   the panel will, and the schema is the contract the firmware will implement. Over-the-air updates come last.
-- **Azure DevOps and CI runner status** are planned for 1.1.
+- **Azure DevOps and CI runner status** are planned for 1.1, after 1.0.
 - **TLS on the webhook listener.** Gitea talks plain HTTP to the bridge; put a reverse proxy in front if the path
   crosses an untrusted network.
 - **Release binaries for other CPUs.** Build from source on a Raspberry Pi or similar.

@@ -4,7 +4,7 @@ This guide takes a Debian 12 (or newer) server from nothing to a bridge that pub
 Mosquitto broker. Every host name, address, port and name below is a placeholder: replace `gitea.example.com`,
 `broker.example.lan` and friends with your own.
 
-The panel itself (the ESP32-S3 firmware) is not part of 1.0, see [What is not in 1.0](../README.md#what-is-not-in-10).
+The panel itself (the ESP32-S3 firmware) is not part of 0.9, see [What is not in 0.9](../README.md#what-is-not-in-09).
 Until it exists you can watch everything in the desktop simulator, see [Try it without hardware](#8-try-it-without-hardware).
 
 What you need:
@@ -28,7 +28,7 @@ Each release at <https://github.com/Sylentic/DeskWatch/releases> has a tarball f
 file. It is built on Ubuntu 22.04, so it runs on Debian 12 and newer. It needs nothing but the system C library.
 
 ```sh
-VERSION=v1.0.0
+VERSION=v0.9.0
 cd "$(mktemp -d)"
 curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-x86_64-linux.tar.gz"
 curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-x86_64-linux.tar.gz.sha256"
@@ -52,7 +52,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 git clone https://github.com/Sylentic/DeskWatch.git
 cd DeskWatch
-git checkout v1.0.0            # or stay on main for the newest, untagged code
+git checkout v0.9.0            # or stay on main for the newest, untagged code
 cargo build --release --locked -p deskwatch-bridge
 ```
 

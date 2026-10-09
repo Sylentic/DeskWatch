@@ -1,5 +1,5 @@
 # Builds the bridge for Linux x86_64 and attaches it to a GitHub release when a
-# version tag (v1.0.0, v1.2.3, ...) is pushed. Nothing here runs on branches or
+# version tag (v0.9.0, v1.2.3, ...) is pushed. Nothing here runs on branches or
 # pull requests. The release notes are the matching section of CHANGELOG.md.
 #
 # The binary is built on Ubuntu 22.04 (glibc 2.35) so it also runs on Debian 12
@@ -73,8 +73,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # 0.x tags (before 1.0) and tags with a suffix such as -rc.1 are pre-releases.
           prerelease=""
-          case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
+          case "$GITHUB_REF_NAME" in v0.*|*-*) prerelease="--prerelease" ;; esac
           gh release create "$GITHUB_REF_NAME" $prerelease \
             --title "DeskWatch ${GITHUB_REF_NAME}" \
             --notes-file notes.md \
