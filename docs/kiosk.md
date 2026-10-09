@@ -173,10 +173,12 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
 
   Add `LoadCredential=kiosk-token:/etc/deskwatch/credentials/kiosk-token` to the unit, restart, and open
   `http://<host>:8787/?token=<the token>`. The page file itself has no data and loads without the token; the data
-  routes answer 401 without it. Use hex or letters and digits for the token. The token is part of the page address
-  (so it appears in the browser history and in your autostart file), and the connection is plain HTTP unless you put a
-  reverse proxy with TLS in front, so the token keeps casual visitors out, not someone who can watch your network
-  traffic.
+  routes answer 401 without it. Use hex or letters and digits for the token. The page removes `?token=...` from the
+  address bar as soon as it loads (so it stays out of the browser history, bookmarks made afterwards and Referer
+  headers) and keeps it for that browser tab only. It is still in the address you open first, so in your autostart
+  file and possibly in a reverse proxy's access log, and the connection is plain HTTP unless you put a reverse proxy
+  with TLS in front. The token keeps casual visitors out, not someone who can watch your network traffic. A one-time
+  login that sets an `HttpOnly` cookie would avoid the address altogether; that is not built yet.
 - **In a container**, `0.0.0.0:8787` inside is correct and the published port decides who can reach the page:
   `"8787:8787"` is the whole network (keep the token), `"127.0.0.1:8787:8787"` is the Docker host only, for a reverse
   proxy that adds TLS and a login. Do not expose the port to the internet; use a VPN or an authenticating proxy.

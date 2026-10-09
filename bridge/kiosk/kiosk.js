@@ -15,7 +15,7 @@
   var POLL_MS = 5000;          // polling interval when the WebSocket is down
   var HISTORY = 60;            // samples kept for the CPU sparklines
   var params = new URLSearchParams(location.search);
-  var token = params.get('token');
+  var token = takeToken();
 
   var snap = null;             // latest snapshot
   var lastMsg = 0;             // client time (ms) of the latest snapshot
@@ -24,6 +24,24 @@
   var history = {};            // host name -> recent CPU readings
   var historyAt = {};          // host name -> client time of the last reading
   var cards = {};              // card key -> { el, html }
+
+  // The token arrives as ?token=... on the page address. Take it out of the
+  // address bar right away, so it stays out of the browser history, the Referer
+  // header and bookmarks made later. It lives in this script and in
+  // sessionStorage (this tab only, gone when the tab closes), so the reload
+  // after a bridge upgrade still has it.
+  function takeToken() {
+    var KEY = 'deskwatch-token';
+    var given = params.get('token');
+    if (given) {
+      params.delete('token');
+      var rest = params.toString();
+      try { window.history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + location.hash); } catch (e) {}
+      try { sessionStorage.setItem(KEY, given); } catch (e) {}
+      return given;
+    }
+    try { return sessionStorage.getItem(KEY); } catch (e) { return null; }
+  }
 
   var $ = function (id) { return document.getElementById(id); };
 

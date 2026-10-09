@@ -98,8 +98,16 @@ docker compose -f deploy/docker-compose.dashboard.yml up -d --build
 docker compose -f deploy/docker-compose.dashboard.yml logs
 ```
 
-Then open `http://<docker host>:8787/?token=<the token>`. Bookmark that address, or put it in a kiosk browser
-([kiosk.md](kiosk.md#4-autostart-on-a-raspberry-pi) shows the Chromium kiosk start script; it takes the
+The Compose file reads the config and secrets from `${DESKWATCH_CONFIG_DIR}`, which defaults to `../dashboard` (the
+folder from the steps above, next to the file). To run it from anywhere else, or paste it into Portainer or Dockge,
+point the variable at an absolute folder that holds `bridge.toml` and `credentials/` (`DESKWATCH_CONFIG_DIR=/srv/deskwatch
+docker compose -f docker-compose.dashboard.yml up -d`, or a line in a `.env` file next to the Compose file) and use the
+published image instead of `build:`, see section 10.
+
+Then open `http://<docker host>:8787/?token=<the token>`. The page removes the token from the address bar as soon as
+it loads and keeps it for that browser tab only, so reloads work and the token stays out of the history. A bookmark
+of the page therefore needs the `?token=...` added by hand; for a kiosk browser put the full address in the start
+script ([kiosk.md](kiosk.md#4-autostart-on-a-raspberry-pi) shows the Chromium kiosk start script; it takes the
 address in `DESKWATCH_KIOSK_URL`).
 
 **What the config does.** `[mqtt] enabled = false` makes the bridge skip the broker completely: no connection, no
@@ -121,8 +129,11 @@ The page is read-only (nothing on it can change anything), but it shows PR title
 alert text. Choose one:
 
 1. **A token (the example's default).** `token_file` makes the data routes answer 401 without `?token=...`. The
-   page file itself loads without it, but holds no data. The token travels in the address over plain HTTP, so it
-   keeps casual visitors on your LAN out; it does not stop someone who can watch your network traffic.
+   page file itself loads without it, but holds no data. The first request still carries the token in its address
+   (`?token=...`), so it can appear in a reverse proxy's access log; the page then removes it from the address bar
+   and later requests send it as a query value on the data routes only. Over plain HTTP it keeps casual visitors on
+   your LAN out; it does not stop someone who can watch your network traffic. Do not log or share the first address.
+   A one-time login that sets an `HttpOnly` cookie would avoid the address altogether; that is not built yet.
 2. **A reverse proxy.** Publish the port to the host only (`"127.0.0.1:8787:8787"` in the Compose file) and let
    your proxy (Caddy, Traefik, nginx) terminate TLS and do the access control (basic auth, or your SSO). Then the
    token is optional, but keeping both costs nothing. Make the proxy pass WebSocket upgrades on `/api/kiosk/ws`;
@@ -245,15 +256,24 @@ If you want exact numbers for several machines, use a Prometheus source with nod
 ## 9. Health and restarts
 
 The image has a `HEALTHCHECK`, and `docker ps` shows `healthy` or `unhealthy`. There is no curl in the image, so the
-bridge checks itself: `deskwatch-bridge --healthcheck` reads the same config and asks its own HTTP listener for `/`
-over loopback every 30 seconds. That opens nothing new (the page file carries no data and needs no token).
+bridge checks itself: `deskwatch-bridge --healthcheck` reads the same config and asks its own HTTP listener over
+loopback every 30 seconds. The page file carries no data and needs no token, and `/healthz` only answers `ok` or
+`mqtt down`, so the probe needs no secret. The `Host` header it sends is the address it connects to.
 
 - **Dashboard on** (`[kiosk] enabled = true`): healthy when the page answers 200.
+- **MQTT on** (the default): also healthy only while the bridge is connected to the broker. `GET /healthz` answers
+  200 `ok` then and 503 `mqtt down` otherwise, so an ESP bridge with a dead broker shows `unhealthy` in `docker ps`.
+  This route is added whenever MQTT is on, which means the HTTP listener (`[http] listen`, port 8787 by default)
+  also opens for a bridge that has no dashboard or Gitea source. It serves nothing else; to keep it off the network
+  publish no port for it, or set `[http] listen = "127.0.0.1:8787"` outside a container. With `[mqtt] enabled =
+  false` there is no such check. For a few seconds after a start the connection is not up yet; the image's
+  start period covers that.
 - **Gitea source only**: healthy when the listener answers HTTP at all.
-- **Neither** (an ESP bridge with GitHub or Azure DevOps sources): there is no listener, so the check passes
-  trivially; it says nothing about the broker. Use the next two points for that.
-- **Demo started with flags** (`--demo --kiosk`): the check cannot see the flags, so it passes trivially;
-  `deploy/docker-compose.demo.yml` repeats them in its own `healthcheck`.
+- **None of these** (a dashboard-less, broker-less bridge with only GitHub or Azure DevOps sources): there is no
+  listener, so the check passes trivially.
+- **Demo started with flags** (`--demo --kiosk`): the check cannot see command line flags. Set the matching
+  environment variables instead (`DESKWATCH_DEMO=1`, `DESKWATCH_KIOSK=1`, `DESKWATCH_NO_MQTT=1`), which the bridge
+  and its health check both read; `deploy/docker-compose.demo.yml` does this.
 - **Startup problems end the process.** A missing credential, a bad config key or a taken port makes the bridge
   exit immediately with a message naming the problem, so `restart: unless-stopped` (or `docker ps` showing
   `Restarting`) is the signal. A source that cannot reach its service does not stop the bridge; it shows as the

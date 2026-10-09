@@ -327,6 +327,15 @@ fn page_files_load_nothing_from_other_hosts() {
     }
 }
 
+#[test]
+fn page_script_takes_the_token_out_of_the_address_bar() {
+    // Guard for the ?token= hardening: the script must rewrite the address
+    // (replaceState) and must not put the token back into a page link.
+    assert!(KIOSK_JS.contains("history.replaceState"));
+    assert!(KIOSK_JS.contains("params.delete('token')"));
+    assert!(!INDEX_HTML.contains("token="));
+}
+
 #[tokio::test]
 async fn snapshot_endpoint_returns_the_latest_json() {
     let mut kiosk = kiosk_with(None);

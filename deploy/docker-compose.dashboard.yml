@@ -10,8 +10,12 @@
 #   docker compose -f deploy/docker-compose.dashboard.yml up -d --build
 #   # then open http://<docker host>:8787/?token=<the token>
 #
-# Paths below are relative to this file. To use it from another folder, copy it
-# there and change `build.context` to the repository root (or a git URL).
+# The config and secrets come from ${DESKWATCH_CONFIG_DIR}, which defaults to
+# ../dashboard (next to this file, as in the steps above). To use this file from
+# another folder, or in Portainer or Dockge, set DESKWATCH_CONFIG_DIR to an
+# absolute folder that holds bridge.toml and credentials/, and replace the
+# `build:` block with `image: ghcr.io/sylentic/deskwatch-bridge:<version>`
+# (docs/docker.md, section 10).
 
 services:
   deskwatch:
@@ -23,8 +27,8 @@ services:
 
     volumes:
       # The config and one file per secret, both read-only.
-      - ../dashboard/bridge.toml:/etc/deskwatch/bridge.toml:ro
-      - ../dashboard/credentials:/run/credentials:ro
+      - ${DESKWATCH_CONFIG_DIR:-../dashboard}/bridge.toml:/etc/deskwatch/bridge.toml:ro
+      - ${DESKWATCH_CONFIG_DIR:-../dashboard}/credentials:/run/credentials:ro
 
     # The page. "8787:8787" is reachable from your whole network, so keep
     # `token_file` set. Behind a reverse proxy on the same host, publish
@@ -38,5 +42,6 @@ services:
     security_opt: ["no-new-privileges:true"]
 
     # The image's HEALTHCHECK reads this config and asks the page for `/`
-    # (the page file has no data and needs no token). `docker ps` shows
-    # "healthy" or "unhealthy".
+    # (the page file has no data and needs no token); with MQTT on it also asks
+    # `/healthz`, which fails while the broker connection is down. `docker ps`
+    # shows "healthy" or "unhealthy".

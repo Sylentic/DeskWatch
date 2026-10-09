@@ -3,7 +3,7 @@
 //! Each webhook source adds its own route (`/webhook/gitea/<name>`, later
 //! `/webhook/grafana/<name>` and so on) while it is being built. The listener
 //! only opens when at least one route exists, so a bridge with no webhook
-//! sources and no kiosk page has no open port.
+//! sources, no kiosk page and no MQTT (which adds `/healthz`) has no open port.
 
 use std::net::SocketAddr;
 

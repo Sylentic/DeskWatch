@@ -21,6 +21,7 @@ use tracing::{debug, info, warn};
 
 use crate::alerts::AlertMessage;
 use crate::config::MqttConfig;
+use crate::health::MqttLink;
 use crate::model::{Badges, PanelEvent, Screen};
 use crate::source::{Secret, load_secret};
 
@@ -193,11 +194,13 @@ impl Publisher {
 /// Drive the MQTT connection forever: reconnects on errors, announces
 /// `online` after every (re)connect, logs panel status, and forwards button
 /// events (and alerts, when `alerts` is true) to `inbound` for the composer.
+/// `link` tells `/healthz` whether the broker connection is up.
 pub async fn run_event_loop(
     mut eventloop: EventLoop,
     publisher: Publisher,
     inbound: mpsc::Sender<Inbound>,
     alerts: bool,
+    link: MqttLink,
 ) {
     let topics = publisher.topics.clone();
     let mut subscriptions = vec![topics.panel_status(), topics.panel_event()];
@@ -208,6 +211,7 @@ pub async fn run_event_loop(
         match eventloop.poll().await {
             Ok(Event::Incoming(Packet::ConnAck(_))) => {
                 info!("connected to MQTT broker");
+                link.set(true);
                 // try_* so the event loop never waits on its own request queue.
                 let client = &publisher.client;
                 if let Err(err) =
@@ -229,8 +233,10 @@ pub async fn run_event_loop(
                     }
                 }
             }
+            Ok(Event::Incoming(Packet::Disconnect)) => link.set(false),
             Ok(event) => debug!(?event, "mqtt"),
             Err(err) => {
+                link.set(false);
                 warn!("MQTT connection error: {err}, retrying in {RECONNECT_DELAY:?}");
                 tokio::time::sleep(RECONNECT_DELAY).await;
             }
