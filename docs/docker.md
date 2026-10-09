@@ -287,7 +287,7 @@ monitor such as Uptime Kuma pointed at the page can act on it.
 
 ## 10. The published image
 
-Every version tag (from the first release after 0.9.5) is built for amd64 and arm64 by the `docker` job in
+Every version tag (from 0.9.6 on) is built for amd64 and arm64 by the `docker` job in
 [`release.yml`](../.github/workflows/release.yml) and pushed to GitHub's registry:
 
 ```sh
