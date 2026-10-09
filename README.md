@@ -13,7 +13,7 @@ requests and pipeline status. When a CI job runs it switches to live progress, s
   publishes it over MQTT.
 - **Panel**: a deliberately dumb MQTT client with a touch screen (planned: an ESP32-S3 SuperMini with a 4" ST7796S
   display) that draws whatever page the bridge sends. Its drawing code, the `ui/` crate, is done and runs today in
-  a desktop simulator. The firmware is started in [`firmware/`](firmware/README.md) but not yet run on a board, and is not part of 0.9.
+  a desktop simulator. The firmware is started in [`firmware/`](firmware/README.md) but not yet run on a board, and is not part of 0.9. A TLS test binary for the bare board is described [below](#firmware-and-the-tls-spike).
 - **MQTT** (Mosquitto) sits between the two. The contract is [docs/mqtt-schema.md](docs/mqtt-schema.md), with JSON
   samples in [docs/schema/](docs/schema/) that both sides are tested against.
 
@@ -32,7 +32,7 @@ requests and pipeline status. When a CI job runs it switches to live progress, s
 
 ## What is not in 0.9
 
-- **Working firmware.** A first firmware crate exists in [`firmware/`](firmware/README.md) (Wi-Fi, MQTT, display code, all untested on hardware); the real panel waits for the display to arrive. 1.0 is reserved for the first release with working firmware on the real screen. Until then the simulator draws exactly what
+- **Working firmware.** A first firmware crate exists in [`firmware/`](firmware/README.md) (Wi-Fi, MQTT, display code, all untested on hardware) next to a TLS spike binary that measures HTTPS on the bare board (also untested); the real panel waits for the display to arrive. 1.0 is reserved for the first release with working firmware on the real screen. Until then the simulator draws exactly what
   the panel will, and the schema is the contract the firmware will implement. Over-the-air updates come last.
 - **CI runner and agent pool status** (Gitea runners, Azure DevOps agent pools) are planned after 1.0.
 - **TLS on the webhook listener.** Gitea talks plain HTTP to the bridge; put a reverse proxy in front if the path
@@ -171,6 +171,26 @@ mosquitto_pub -r -t deskpanel/screen -f ui/testdata/screens/alert_failed.json
 `ui/testdata/screens/` has one example payload per template and edge case. `cargo test -p deskwatch-ui`
 renders each one and compares it with the approved image in `ui/tests/snapshots/`; after an intended layout
 change, re-approve with `UPDATE_SNAPSHOTS=1 cargo test -p deskwatch-ui` and review the PNG diff in the PR.
+
+## Firmware and the TLS spike
+
+The panel firmware lives in [`firmware/`](firmware/README.md). It is Rust (esp-hal, embassy), outside the Cargo
+workspace because it needs the Xtensa toolchain, and has its own CI job. It builds and lints in CI but has not run on a
+board yet; 1.0 waits for that.
+
+Next to it is a **TLS spike**, a test binary that needs only the ESP32-S3 board, USB and Wi-Fi (no screen, button or
+broker). It sets the clock over SNTP, makes HTTPS requests with full certificate verification and prints handshake
+time, memory use and a result block over serial. Its purpose is to measure whether a standalone ESP that talks to
+HTTPS APIs directly is realistic, before that option is built. It is also untested on hardware. To run it:
+
+```sh
+cd firmware
+cp config.example.toml config.toml     # Wi-Fi settings; the [tls_spike] table is optional
+cargo run --release --features tls-spike --bin tls-spike
+```
+
+Setup (Xtensa toolchain, `cmake` and `ninja`, Windows and Linux specifics), how to read the output and a results
+template are in [firmware/README.md](firmware/README.md#tls-spike).
 
 ## License
 
