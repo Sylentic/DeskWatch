@@ -10,15 +10,14 @@ services:
     build:
       context: ..               # the repository root, relative to this file
     image: deskwatch-bridge:local
-    command: ["--demo", "--kiosk", "--no-mqtt"]
+    # The same as the flags --demo --kiosk --no-mqtt. Set as environment
+    # variables so the image's health check sees them too.
+    environment:
+      DESKWATCH_DEMO: "1"
+      DESKWATCH_KIOSK: "1"
+      DESKWATCH_NO_MQTT: "1"
     ports:
       - "127.0.0.1:8787:8787"   # this machine only; the demo needs no token
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    # The image's health check cannot see the flags above, so repeat them.
-    healthcheck:
-      test: ["CMD", "deskwatch-bridge", "--healthcheck", "--demo", "--kiosk"]
-      interval: 30s
-      timeout: 5s
-      start_period: 15s

@@ -8,6 +8,26 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+## [0.9.6]
+
+The homelab release: the bridge image is published to `ghcr.io`, and the Docker setup is hardened.
+
+### Changed
+
+- **Docker health check covers MQTT.** With MQTT on, the bridge serves `GET /healthz` (200 `ok` while the broker
+  connection is up, 503 `mqtt down` otherwise) and `--healthcheck` requires it, so an ESP bridge with an unreachable
+  broker shows `unhealthy` instead of `healthy`. This means the HTTP listener now also opens for a bridge without a
+  dashboard or Gitea source (it serves only `/healthz`). The probe now sends the address it connects to as the `Host`
+  header instead of a fixed `localhost`. (Fixes #25)
+- **Compose files work from any folder.** `deploy/docker-compose.dashboard.yml` reads the config and secrets from
+  `${DESKWATCH_CONFIG_DIR}`, default `../dashboard`. `--demo`, `--kiosk` and `--no-mqtt` can also be set as
+  `DESKWATCH_DEMO`, `DESKWATCH_KIOSK` and `DESKWATCH_NO_MQTT`, so the demo Compose file no longer repeats the flags
+  in a hand-written `healthcheck`. (Fixes #27)
+- **The dashboard token leaves the address bar.** The page removes `?token=` from the URL with
+  `history.replaceState` as soon as it loads and keeps the token in memory and in `sessionStorage` (this tab only,
+  so the reload after a bridge upgrade still works). The first request still carries it. Documented in
+  `docs/docker.md` and `docs/kiosk.md`; a one-time `HttpOnly` cookie login is a possible follow-up. (Fixes #24)
+
 ### Added
 
 - **Docker image on release.** Pushing a version tag now also builds the bridge image for amd64 and arm64 and
@@ -156,7 +176,8 @@ not (see the README, "What is not in 0.9").
   are Linux x86_64; build from source for other CPUs.
 - Gitea webhooks are plain HTTP unless you put a reverse proxy in front of the bridge.
 
-[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.5...HEAD
+[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.6...HEAD
+[0.9.6]: https://github.com/Sylentic/DeskWatch/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/Sylentic/DeskWatch/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/Sylentic/DeskWatch/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/Sylentic/DeskWatch/compare/v0.9.2...v0.9.3

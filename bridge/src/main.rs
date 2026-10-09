@@ -57,8 +57,13 @@ CONFIG defaults to $DESKWATCH_CONFIG, then /etc/deskwatch/bridge.toml
         (see docs/kiosk.md)
 --no-mqtt  do not connect to a broker (same as [mqtt] enabled = false), for a
         bridge that only serves the dashboard page
---healthcheck  check that the bridge's HTTP listener answers on this machine,
-        then exit 0 (healthy) or 1; used by the Docker HEALTHCHECK";
+--healthcheck  check that the bridge's HTTP listener answers on this machine
+        (and, with MQTT on, that the broker connection is up), then exit 0
+        (healthy) or 1; used by the Docker HEALTHCHECK
+
+--demo, --kiosk and --no-mqtt can also be set with DESKWATCH_DEMO=1,
+DESKWATCH_KIOSK=1 and DESKWATCH_NO_MQTT=1. A container's health check sees the
+environment but not the command line, so set them there.";
 
 /// Command line: `[--demo] [--kiosk] [--no-mqtt] [--healthcheck] [CONFIG]`.
 struct Args {
@@ -69,11 +74,20 @@ struct Args {
     config: Option<PathBuf>,
 }
 
+/// Is an on/off environment variable switched on (`1`, `true` or `yes`)?
+fn env_flag(name: &str) -> bool {
+    flag_value(std::env::var(name).ok().as_deref())
+}
+
+fn flag_value(value: Option<&str>) -> bool {
+    value.is_some_and(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
+}
+
 fn parse_args() -> Result<Args> {
     let mut args = Args {
-        demo: false,
-        kiosk: false,
-        no_mqtt: false,
+        demo: env_flag("DESKWATCH_DEMO"),
+        kiosk: env_flag("DESKWATCH_KIOSK"),
+        no_mqtt: env_flag("DESKWATCH_NO_MQTT"),
         healthcheck: false,
         config: None,
     };
@@ -109,7 +123,9 @@ async fn main() -> Result<()> {
         None if args.demo => Config::from_toml("")?,
         // The health probe also runs against a container started without a
         // config file (the demo); it then has nothing to probe unless told.
-        given if args.healthcheck && !Config::path(given.clone()).exists() => {
+        // The same goes for the demo when the image's default config path
+        // (its CMD) points at a file that is not mounted.
+        given if (args.healthcheck || args.demo) && !Config::path(given.clone()).exists() => {
             Config::from_toml("")?
         }
         given => {
@@ -172,6 +188,12 @@ async fn main() -> Result<()> {
         hooks.add("/", built.router());
         kiosk = Some(built);
     }
+    // `/healthz` (the Docker health probe) reports the broker connection, so
+    // the listener also opens for a bridge that only talks to an ESP panel.
+    let mqtt_link = health::MqttLink::default();
+    if config.mqtt.enabled {
+        hooks.add("/healthz", mqtt_link.route());
+    }
     hooks.start(config.http.listen).await?;
 
     // The channel's sender stays alive here either way, so with MQTT off the
@@ -184,6 +206,7 @@ async fn main() -> Result<()> {
             publisher.clone(),
             inbound_tx.clone(),
             config.alerts.enabled,
+            mqtt_link,
         ));
         Some(publisher)
     } else {
@@ -367,5 +390,21 @@ impl Shown {
                 Err(err) => self.failed("badges", &err),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::flag_value;
+
+    #[test]
+    fn environment_flags_accept_the_usual_spellings() {
+        for on in ["1", "true", "TRUE", "yes"] {
+            assert!(flag_value(Some(on)), "{on}");
+        }
+        for off in ["", "0", "false", "no", "off"] {
+            assert!(!flag_value(Some(off)), "{off}");
+        }
+        assert!(!flag_value(None));
     }
 }
