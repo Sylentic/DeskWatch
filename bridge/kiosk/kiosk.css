@@ -38,8 +38,10 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  cursor: none;
 }
+
+/* The pointer hides after a few seconds without movement (kiosk.js adds .idle). */
+body.idle, body.idle * { cursor: none !important; }
 
 /* ---- header ------------------------------------------------------------ */
 
@@ -233,7 +235,7 @@ body.lost .grid { opacity: .45; filter: grayscale(.7); }
 
 @media (max-width: 900px) {
   :root { font-size: 16px; }
-  body { overflow: auto; cursor: auto; }
+  body { overflow: auto; }
   #top { flex-wrap: wrap; height: auto; padding: .6rem 1rem; gap: .6rem; }
   .spacer { display: none; }
   .banner { flex-wrap: wrap; gap: .3rem 1rem; font-size: 1.2rem; }

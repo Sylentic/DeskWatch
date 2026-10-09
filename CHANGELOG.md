@@ -8,6 +8,11 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The mouse pointer no longer disappears for good on the dashboard.** It is visible as normal and only hides
+  after 3 seconds without movement (handy on a kiosk screen), then returns on the next movement.
+
 ## [0.9.7]
 
 The dashboard fixes release: clearer connection states, running pipelines in Running now, and orange for running builds.
