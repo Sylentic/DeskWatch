@@ -8,6 +8,8 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+## [0.9.3]
+
 ### Added
 
 - **Raspberry Pi packaging.** The release workflow now also builds an `aarch64` Linux tarball (with sha256) for
@@ -17,6 +19,10 @@ may change if the firmware work needs it; any such change is listed here.
 - **Docker support** for the bridge: a small multi-stage `Dockerfile` (release binary, non-root user, config and secrets
   mounted read-only), a Compose example in `deploy/docker-compose.yml`, a guide in
   [docs/docker.md](docs/docker.md), and a CI job that checks the image builds and starts. No image is published.
+
+### Changed
+
+- Docs cleanup: the install guide and README now cover Linux and Windows and no longer carry stale 0.9 statements.
 
 ## [0.9.2]
 
@@ -90,7 +96,8 @@ not (see the README, "What is not in 0.9").
   are Linux x86_64; build from source for other CPUs.
 - Gitea webhooks are plain HTTP unless you put a reverse proxy in front of the bridge.
 
-[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.3...HEAD
+[0.9.3]: https://github.com/Sylentic/DeskWatch/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/Sylentic/DeskWatch/releases/tag/v0.9.2
 [0.9.1]: https://github.com/Sylentic/DeskWatch/releases/tag/v0.9.1
 [0.9.0]: https://github.com/Sylentic/DeskWatch/releases/tag/v0.9.0
