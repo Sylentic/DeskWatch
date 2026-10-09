@@ -9,6 +9,9 @@ This page covers two ways to run the bridge on **Raspberry Pi OS 64-bit** (Debia
 Lite image is enough). Everything else (config keys, sources, Mosquitto logins, Home Assistant) is the same as on any
 Linux server, so this page points to [install.md](install.md) for it. Every host name below is a placeholder.
 
+A Pi with a screen can also show the **kiosk dashboard**, a page with all the stats, jobs, PRs and pipelines at
+once. That is a separate guide: [kiosk.md](kiosk.md).
+
 Contents: [1. Before you start](#1-before-you-start) · [2. Route A: systemd](#2-route-a-systemd-release-binary) ·
 [3. Route B: Docker](#3-route-b-docker) · [4. Mosquitto on the Pi](#4-mosquitto-on-the-pi) ·
 [5. Run the demo or the simulator](#5-the-demo-and-the-simulator) · [6. Update and remove](#6-update-and-remove) ·
@@ -127,6 +130,10 @@ and watch it from a PC with the desktop simulator (`cargo run -p deskwatch-sim -
 shipped for the Pi, and it needs a window system. A Pi is, however, a fine always-on machine to leave the demo
 running while you work on the layouts or the firmware.
 
+A Pi with a monitor or TV can show the bridge's own dashboard page in a full-screen browser, instead of (or next to)
+the ESP panel: `deskwatch-bridge --demo --kiosk` plays it with fake data, and [kiosk.md](kiosk.md) covers the config,
+the Chromium autostart and the security notes. It needs no broker.
+
 ## 6. Update and remove
 
 Route A: download the new tarball as in section 2, `sudo install -m 755 deskwatch-bridge /usr/local/bin/`, then
@@ -139,5 +146,6 @@ Route A: download the new tarball as in section 2, `sudo install -m 755 deskwatc
 - The aarch64 binary was cross-compiled and checked as a valid ARM aarch64 ELF, and the release workflow builds
   it natively on GitHub's arm64 Ubuntu 22.04 runner.
 - The multi-arch image build runs in CI (build only, nothing pushed).
+- The kiosk dashboard ([kiosk.md](kiosk.md)) has its own list of what was and was not tested.
 - **Nothing here has run on real Raspberry Pi hardware yet.** The commands in this page follow the Linux guide and
   are expected to work as written; if one does not, please open an issue with the Pi model and OS version.

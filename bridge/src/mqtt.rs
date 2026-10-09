@@ -180,10 +180,13 @@ impl Publisher {
                 "payload is over the 1 KB schema limit"
             );
         }
+        // Never wait for room in the queue: with the broker down it fills up,
+        // and the main loop also feeds the kiosk page, which must keep working.
+        // A dropped screen is retried on the next turn (the message is retained,
+        // so only the newest state matters).
         self.client
-            .publish(topic, QoS::AtLeastOnce, true, bytes)
-            .await
-            .with_context(|| format!("cannot queue publish to {topic}"))
+            .try_publish(topic, QoS::AtLeastOnce, true, bytes)
+            .with_context(|| format!("cannot queue publish to {topic} (broker down?)"))
     }
 }
 

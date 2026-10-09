@@ -13,7 +13,7 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::model::RotationEntry;
 use crate::source::{Interrupt, valid_name};
@@ -62,6 +62,9 @@ pub struct Config {
     /// Alerts raised on `<topic_prefix>/alert` by Home Assistant or scripts.
     #[serde(default)]
     pub alerts: AlertsConfig,
+    /// The browser dashboard for a big screen, served on `[http]`. Off by default.
+    #[serde(default)]
+    pub kiosk: KioskConfig,
     /// Idle pages in the order they rotate. See `[[rotation]]` in the example config.
     #[serde(default = "default_rotation")]
     pub rotation: Vec<RotationEntry>,
@@ -153,6 +156,147 @@ impl Default for HttpConfig {
             listen: SocketAddr::from(([0, 0, 0, 0], 8787)),
         }
     }
+}
+
+/// The `[kiosk]` table: the dashboard page for a Raspberry Pi or other big
+/// screen. It is read-only; the layout is a grid of widgets listed in
+/// `[[kiosk.panel]]` blocks, left to right and top to bottom.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct KioskConfig {
+    /// Serve the page and its data on the `[http]` listener.
+    pub enabled: bool,
+    /// Grid size. Every widget takes `span` cells of it.
+    pub columns: u8,
+    pub rows: u8,
+    /// Credential holding a token that the data endpoints require, passed as
+    /// `?token=...` on the page address. Set it whenever `http.listen` is
+    /// reachable from other machines.
+    pub token_file: Option<String>,
+    /// The widgets. Empty means the built-in layout.
+    pub panel: Vec<PanelConfig>,
+}
+
+impl Default for KioskConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            columns: 4,
+            rows: 3,
+            token_file: None,
+            panel: Vec::new(),
+        }
+    }
+}
+
+impl KioskConfig {
+    /// Largest grid side. Beyond this the cells are too small to read.
+    const MAX_GRID: u8 = 12;
+
+    fn validate(&self) -> Result<()> {
+        let max = Self::MAX_GRID;
+        anyhow::ensure!(
+            (1..=max).contains(&self.columns) && (1..=max).contains(&self.rows),
+            "kiosk.columns and kiosk.rows must be between 1 and {max}"
+        );
+        for (i, panel) in self.panel.iter().enumerate() {
+            let n = i + 1;
+            let [cols, rows] = panel.span;
+            anyhow::ensure!(
+                (1..=self.columns).contains(&cols) && (1..=self.rows).contains(&rows),
+                "kiosk.panel {n}: span must fit the {}x{} grid and be at least 1x1",
+                self.columns,
+                self.rows
+            );
+            anyhow::ensure!(
+                panel.host.is_none() || panel.widget == Widget::Stats,
+                "kiosk.panel {n}: host only applies to the stats widget"
+            );
+            anyhow::ensure!(
+                panel.rows != Some(0),
+                "kiosk.panel {n}: rows must be above 0"
+            );
+        }
+        Ok(())
+    }
+
+    /// The widgets to show: the configured ones, or the default layout for a
+    /// 4x3 grid.
+    pub fn panels(&self) -> Vec<PanelConfig> {
+        if self.panel.is_empty() {
+            default_panels()
+        } else {
+            self.panel.clone()
+        }
+    }
+}
+
+/// What a kiosk widget shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Widget {
+    /// One host in detail: CPU, RAM, disk, temperature, network, sparkline.
+    Stats,
+    /// A compact table of every host.
+    Hosts,
+    /// Jobs that are running now, with progress.
+    Jobs,
+    /// Open pull requests per repository.
+    Prs,
+    /// The latest run of every pipeline.
+    Pipelines,
+    /// Active alerts.
+    Alerts,
+    /// Containers and hosts that are down.
+    Containers,
+    /// Health of every source.
+    Health,
+}
+
+/// One `[[kiosk.panel]]` block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PanelConfig {
+    pub widget: Widget,
+    /// Host shown by a `stats` widget. Defaults to the first host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+    /// Replaces the widget's heading.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// Most list rows (or running jobs) to show. Default: as many as fit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rows: Option<u32>,
+    /// Grid cells taken: `[columns, rows]`.
+    #[serde(default = "default_span")]
+    pub span: [u8; 2],
+}
+
+fn default_span() -> [u8; 2] {
+    [1, 1]
+}
+
+fn panel(widget: Widget, span: [u8; 2]) -> PanelConfig {
+    PanelConfig {
+        widget,
+        host: None,
+        title: None,
+        rows: None,
+        span,
+    }
+}
+
+/// The layout used when `[[kiosk.panel]]` is not set, for the default 4x3 grid.
+pub fn default_panels() -> Vec<PanelConfig> {
+    vec![
+        panel(Widget::Stats, [1, 1]),
+        panel(Widget::Hosts, [1, 1]),
+        panel(Widget::Jobs, [2, 1]),
+        panel(Widget::Prs, [1, 2]),
+        panel(Widget::Pipelines, [2, 2]),
+        panel(Widget::Alerts, [1, 1]),
+        panel(Widget::Health, [1, 1]),
+    ]
 }
 
 /// The `[alerts]` table: alerts that arrive on `<topic_prefix>/alert`.
@@ -640,6 +784,7 @@ impl Config {
                 );
             }
         }
+        config.kiosk.validate()?;
         Ok(config)
     }
 
@@ -943,5 +1088,67 @@ mod tests {
     #[test]
     fn zero_interval_is_rejected() {
         assert!(Config::from_toml("[server]\ninterval_s = 0\n").is_err());
+    }
+
+    #[test]
+    fn kiosk_is_off_by_default_with_a_default_layout() {
+        let config = Config::from_toml("").unwrap();
+        assert!(!config.kiosk.enabled);
+        assert_eq!((config.kiosk.columns, config.kiosk.rows), (4, 3));
+        let panels = config.kiosk.panels();
+        assert_eq!(panels, default_panels());
+        // The default layout fills the default grid exactly.
+        let cells: u32 = panels
+            .iter()
+            .map(|p| u32::from(p.span[0] * p.span[1]))
+            .sum();
+        assert_eq!(cells, 12);
+    }
+
+    #[test]
+    fn kiosk_panels_parse_in_order() {
+        let config = Config::from_toml(
+            r#"
+[kiosk]
+enabled = true
+columns = 3
+rows = 2
+token_file = "kiosk-token"
+
+[[kiosk.panel]]
+widget = "stats"
+host = "homeserver"
+
+[[kiosk.panel]]
+widget = "prs"
+rows = 12
+span = [1, 2]
+title = "Reviews"
+"#,
+        )
+        .unwrap();
+        assert!(config.kiosk.enabled);
+        assert_eq!(config.kiosk.token_file.as_deref(), Some("kiosk-token"));
+        let panels = config.kiosk.panels();
+        assert_eq!(panels.len(), 2);
+        assert_eq!(panels[0].widget, Widget::Stats);
+        assert_eq!(panels[0].host.as_deref(), Some("homeserver"));
+        assert_eq!(panels[0].span, [1, 1]);
+        assert_eq!(panels[1].widget, Widget::Prs);
+        assert_eq!((panels[1].rows, panels[1].span), (Some(12), [1, 2]));
+        assert_eq!(panels[1].title.as_deref(), Some("Reviews"));
+    }
+
+    #[test]
+    fn kiosk_rejects_bad_layouts() {
+        let bad = |toml: &str| format!("{:#}", Config::from_toml(toml).unwrap_err());
+        assert!(bad("[kiosk]\ncolumns = 0").contains("between 1 and 12"));
+        assert!(bad("[kiosk]\nrows = 13").contains("between 1 and 12"));
+        assert!(bad("[[kiosk.panel]]\nwidget = \"jobs\"\nspan = [5, 1]").contains("span must fit"));
+        assert!(bad("[[kiosk.panel]]\nwidget = \"jobs\"\nspan = [1, 0]").contains("span must fit"));
+        assert!(bad("[[kiosk.panel]]\nwidget = \"prs\"\nhost = \"x\"").contains("only applies"));
+        assert!(bad("[[kiosk.panel]]\nwidget = \"clock\"").contains("unknown variant"));
+        assert!(bad("[kiosk]\nflavour = 1").contains("unknown field"));
+        assert!(bad("[[kiosk.panel]]\nwidget = \"prs\"\nrows = 0").contains("rows must be"));
     }
 }

@@ -28,6 +28,7 @@ LoadCredential=gitea-webhook-secret:/etc/deskwatch/credentials/gitea-webhook-sec
 # LoadCredential=gitea-token:/etc/deskwatch/credentials/gitea-token
 # LoadCredential=github-personal:/etc/deskwatch/credentials/github-personal
 # LoadCredential=azdo-work:/etc/deskwatch/credentials/azdo-work
+# LoadCredential=kiosk-token:/etc/deskwatch/credentials/kiosk-token
 # LoadCredential=mqtt-password:/etc/deskwatch/credentials/mqtt-password
 # LoadCredential=mqtt-client-key:/etc/deskwatch/credentials/mqtt-client-key
 Environment=RUST_LOG=info
