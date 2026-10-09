@@ -19,3 +19,6 @@
 
 # Rejected UI snapshot renders (see ui/tests/snapshots.rs)
 *.new.png
+
+# Local dashboard setup folder (docs/docker.md): holds secrets
+/dashboard/

@@ -75,10 +75,15 @@ ENV CREDENTIALS_DIRECTORY=/run/credentials \
     RUST_LOG=info
 
 USER deskwatch
-# The webhook listener (`[http] listen`, only open when a Gitea source exists).
+# The HTTP listener (`[http] listen`): the dashboard page and the Gitea webhook.
+# It only opens when `[kiosk] enabled` is set or a Gitea source exists.
 EXPOSE 8787
 
-# No HEALTHCHECK on purpose: the bridge has no status endpoint, and it exits
-# (so the restart policy handles it) when it cannot start. See docs/docker.md.
+# The bridge checks itself (the image has no curl): it asks its own listener
+# for `/` over loopback. With no dashboard and no Gitea source there is no
+# listener and the check passes, since startup problems already end the
+# process. See docs/docker.md.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD ["deskwatch-bridge", "--healthcheck"]
 ENTRYPOINT ["deskwatch-bridge"]
 CMD ["/etc/deskwatch/bridge.toml"]

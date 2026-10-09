@@ -57,9 +57,17 @@ To try it with fake data and no sources, run the demo:
 deskwatch-bridge --demo --kiosk
 ```
 
-`--kiosk` turns the page on without editing the config (the config file is optional with `--demo`). The demo needs
-no broker for the page, but the bridge still tries to reach one and logs a warning every few seconds until it
-finds one.
+`--kiosk` turns the page on without editing the config (the config file is optional with `--demo`). The page needs
+no broker, but the bridge tries to reach one unless you tell it not to and logs a warning every few seconds until it
+finds one. Add `--no-mqtt` (or `[mqtt] enabled = false` in the config) for a bridge that serves only the page:
+
+```sh
+deskwatch-bridge --demo --kiosk --no-mqtt
+```
+
+**In Docker** the same page is the main use: a container on a server that you open from any browser, with a
+dashboard-only config and no broker. The Compose files, the token and the reverse proxy options are in
+[docker.md](docker.md#3-the-dashboard-on-your-homelab).
 
 ## 3. Choose the widgets
 
@@ -169,6 +177,10 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
   (so it appears in the browser history and in your autostart file), and the connection is plain HTTP unless you put a
   reverse proxy with TLS in front, so the token keeps casual visitors out, not someone who can watch your network
   traffic.
+- **In a container**, `0.0.0.0:8787` inside is correct and the published port decides who can reach the page:
+  `"8787:8787"` is the whole network (keep the token), `"127.0.0.1:8787:8787"` is the Docker host only, for a reverse
+  proxy that adds TLS and a login. Do not expose the port to the internet; use a VPN or an authenticating proxy.
+  Details in [docker.md](docker.md#protecting-the-page).
 - Names shown come from your sources after their `alias` setting. If a work project name should not appear on a
   visible screen, give it an alias, exactly as for the ESP panel. The page has no other redaction.
 - The page sets a strict Content Security Policy: scripts and styles only from the bridge itself.

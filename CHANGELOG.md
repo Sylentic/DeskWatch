@@ -10,6 +10,17 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Added
 
+- **Docker dashboard.** The kiosk page is now a first-class way to run DeskWatch in a container on a homelab, with
+  no MQTT broker and no ESP. New `[mqtt] enabled = false` (and `--no-mqtt` on the command line) stops the bridge
+  from connecting to or logging about a broker; the ESP panel, its button and MQTT alerts need it on, which stays
+  the default. New `deploy/docker-compose.dashboard.yml` with `deploy/dashboard.example.toml` (token, published
+  port, read-only config and secrets), and `deploy/docker-compose.demo.yml` for a first try with fake data and no
+  config. `docs/docker.md` starts with a quick start and a homelab section on protecting the page (token, reverse
+  proxy, not exposing it to the internet); the README now presents the three ways to use DeskWatch with the real
+  status of each. Docker image: a `HEALTHCHECK` backed by a new `deskwatch-bridge --healthcheck`, which asks the
+  bridge's own HTTP listener for `/` over loopback (nothing new is opened); it passes trivially when the bridge has
+  no listener. CI starts the dashboard demo in the image and fetches the page and its data. Docker anchors renumbered:
+  `docker.md` sections 3 to 10 are now 4 to 11.
 - **Kiosk dashboard for big screens.** A new optional output of the bridge: one web page with many widgets at once
   and no rotation (server and host stats with a CPU graph, running jobs with progress, open PRs per repository,
   pipelines, alerts, containers that are down, source health), meant for a Raspberry Pi with a monitor or TV in a

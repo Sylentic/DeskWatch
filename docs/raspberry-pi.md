@@ -10,7 +10,9 @@ Lite image is enough). Everything else (config keys, sources, Mosquitto logins, 
 Linux server, so this page points to [install.md](install.md) for it. Every host name below is a placeholder.
 
 A Pi with a screen can also show the **kiosk dashboard**, a page with all the stats, jobs, PRs and pipelines at
-once. That is a separate guide: [kiosk.md](kiosk.md).
+once, with no broker needed. That is a separate guide: [kiosk.md](kiosk.md). The page does not have to run on the
+Pi itself: a container on a homelab server can serve it ([docker.md](docker.md#3-the-dashboard-on-your-homelab)) and
+the Pi's browser just opens its address (`DESKWATCH_KIOSK_URL`, see [kiosk.md](kiosk.md#4-autostart-on-a-raspberry-pi)).
 
 Contents: [1. Before you start](#1-before-you-start) · [2. Route A: systemd](#2-route-a-systemd-release-binary) ·
 [3. Route B: Docker](#3-route-b-docker) · [4. Mosquitto on the Pi](#4-mosquitto-on-the-pi) ·
@@ -96,7 +98,7 @@ docker save deskwatch-bridge:arm64 | ssh pi@raspberrypi.local docker load
 (The `Dockerfile` cross-compiles the Rust code on your PC, so no CPU emulation is needed to build; running the
 arm64 image on the PC would need QEMU, but you do not have to.)
 
-Then continue with [docker.md section 3 onwards](docker.md#3-config-and-secrets): config and secrets mounted
+Then continue with [docker.md section 4 onwards](docker.md#4-config-and-secrets): config and secrets mounted
 read-only, the Compose example in [`deploy/docker-compose.yml`](../deploy/docker-compose.yml), reaching the broker.
 Pointing `host` at the Pi's own broker needs the `host.docker.internal` or `network_mode: host` choice described there.
 
@@ -114,7 +116,7 @@ sudo apt install mosquitto mosquitto-clients
 Then follow [mosquitto.md](mosquitto.md) for logins and topic limits (do that before the panel arrives; an open
 broker on a home network lets anything draw on the panel). The Pi's package is the same Mosquitto 2.0 the guide
 assumes. The bridge's `[mqtt] host` is then `localhost` for Route A, or see the broker table in
-[docker.md section 5](docker.md#5-reaching-the-broker) for Route B.
+[docker.md section 6](docker.md#6-reaching-the-broker) for Route B.
 
 ## 5. The demo and the simulator
 
@@ -132,14 +134,15 @@ running while you work on the layouts or the firmware.
 
 A Pi with a monitor or TV can show the bridge's own dashboard page in a full-screen browser, instead of (or next to)
 the ESP panel: `deskwatch-bridge --demo --kiosk` plays it with fake data, and [kiosk.md](kiosk.md) covers the config,
-the Chromium autostart and the security notes. It needs no broker.
+the Chromium autostart and the security notes. It needs no broker: set `[mqtt] enabled = false` (or pass `--no-mqtt`)
+so the bridge does not keep trying to reach one.
 
 ## 6. Update and remove
 
 Route A: download the new tarball as in section 2, `sudo install -m 755 deskwatch-bridge /usr/local/bin/`, then
 `sudo systemctl restart deskwatch-bridge`. Route B: `git pull`, `docker build -t deskwatch-bridge .`, then
 `docker compose up -d`. Removal and rollback are the same as in
-[install.md section 9](install.md#9-update-roll-back-remove) and [docker.md section 10](docker.md#10-update-and-remove).
+[install.md section 9](install.md#9-update-roll-back-remove) and [docker.md section 11](docker.md#11-update-and-remove).
 
 ## 7. What was and was not tested
 

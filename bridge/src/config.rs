@@ -74,6 +74,10 @@ pub struct Config {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct MqttConfig {
+    /// Connect to the broker at all. Set to false for a bridge that only
+    /// serves the kiosk page (docs/docker.md): no connection attempts, no
+    /// warnings, and no ESP panel, button or MQTT alerts.
+    pub enabled: bool,
     pub host: String,
     pub port: u16,
     pub client_id: String,
@@ -102,6 +106,7 @@ pub struct MqttConfig {
 impl Default for MqttConfig {
     fn default() -> Self {
         Self {
+            enabled: true,
             host: "localhost".into(),
             port: 1883,
             client_id: "deskwatch-bridge".into(),
@@ -815,6 +820,13 @@ mod tests {
     fn empty_file_uses_defaults() {
         let config = Config::from_toml("").unwrap();
         assert_eq!(config.mqtt.host, "localhost");
+        assert!(config.mqtt.enabled);
+        assert!(
+            !Config::from_toml("[mqtt]\nenabled = false\n")
+                .unwrap()
+                .mqtt
+                .enabled
+        );
         assert_eq!(config.mqtt.topic_prefix, "deskpanel");
         assert_eq!(config.server.interval_s, 5);
         assert_eq!(config.rotation.len(), 1);
@@ -856,6 +868,16 @@ mod tests {
             config.source.github.is_empty(),
             "GitHub blocks are commented out"
         );
+    }
+
+    #[test]
+    fn dashboard_example_config_parses() {
+        let config =
+            Config::from_toml(include_str!("../../deploy/dashboard.example.toml")).unwrap();
+        assert!(!config.mqtt.enabled);
+        assert!(config.kiosk.enabled);
+        assert_eq!(config.kiosk.token_file.as_deref(), Some("kiosk-token"));
+        assert!(config.source.gitea.is_empty());
     }
 
     #[test]

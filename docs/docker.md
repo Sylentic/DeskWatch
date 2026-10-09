@@ -1,17 +1,42 @@
-# Running the bridge in Docker
+# DeskWatch in Docker
 
-The bridge runs fine in a container: one small image, no state on disk, config and secrets mounted read-only.
-This page covers building the image, a Compose file, reaching your MQTT broker, secrets as files and what to know
-about the stats page. Everything else (sources, Mosquitto logins, Home Assistant) is the same as in
-[install.md](install.md); only how the bridge is started and fed its files changes.
+DeskWatch runs in one small container. There are two ways to use it, and they differ only in the config file:
 
-All host names below are placeholders.
+- **The dashboard** (this page's quick start): the full-size status page in a browser, served by the bridge. Put the
+  container on your homelab, open `http://<docker host>:8787/` from any screen. It needs **no MQTT broker and no ESP**.
+- **The bridge for the ESP panel**: the same container publishing screens to your Mosquitto broker for the desk
+  panel (sections 4 to 9). It can serve the dashboard page at the same time.
+
+Sources (Gitea, GitHub, Azure DevOps, Prometheus), Mosquitto logins and Home Assistant are the same as in
+[install.md](install.md); only how the bridge is started and fed its files changes. All host names below are
+placeholders.
+
+## Quick start: the dashboard with fake data
+
+No image is published yet, so Docker builds it from the source once (a few minutes, the Rust compile). Then:
+
+```sh
+git clone https://github.com/Sylentic/DeskWatch.git && cd DeskWatch
+docker compose -f deploy/docker-compose.demo.yml up --build
+```
+
+Open <http://localhost:8787/>. You see a busy dashboard with demo data (a running job, a failed run, PRs, an
+alert). Nothing else is needed: no config, no broker, no secrets. Stop it with Ctrl+C. The same without Compose:
+
+```sh
+docker build -t deskwatch-bridge .
+docker run --rm -p 8787:8787 deskwatch-bridge --demo --kiosk --no-mqtt
+```
+
+(The log warns that the page is "open to the network without kiosk.token_file". That is expected for the demo: the
+Compose file publishes the port on `127.0.0.1` only. Section 3 covers the token for a real setup.)
 
 Contents: [1. Build the image](#1-build-the-image) · [2. Try the demo](#2-try-the-demo) ·
-[3. Config and secrets](#3-config-and-secrets) · [4. Compose](#4-compose) · [5. Reaching the broker](#5-reaching-the-broker) ·
-[6. Webhooks](#6-webhooks-gitea) · [7. The stats page](#7-the-stats-page-in-a-container) ·
-[8. Health and restarts](#8-health-and-restarts) · [9. Publishing an image](#9-publishing-an-image-optional) ·
-[10. Update and remove](#10-update-and-remove)
+[3. The dashboard on your homelab](#3-the-dashboard-on-your-homelab) ·
+[4. Config and secrets](#4-config-and-secrets) · [5. Compose for the ESP bridge](#5-compose-for-the-esp-bridge) ·
+[6. Reaching the broker](#6-reaching-the-broker) · [7. Webhooks](#7-webhooks-gitea) ·
+[8. The stats page](#8-the-stats-page-in-a-container) · [9. Health and restarts](#9-health-and-restarts) ·
+[10. Publishing an image](#10-publishing-an-image-optional) · [11. Update and remove](#11-update-and-remove)
 
 ## 1. Build the image
 
@@ -34,7 +59,14 @@ emulating the other CPU, so a multi-arch build is not much slower than a single 
 
 ## 2. Try the demo
 
-`--demo` plays fake data and needs only a broker. With one reachable as `broker.example.lan`:
+`--demo` plays fake data instead of real sources. Two variants:
+
+```sh
+# The dashboard page only (no broker): open http://localhost:8787/
+docker run --rm -p 8787:8787 deskwatch-bridge --demo --kiosk --no-mqtt
+```
+
+For the ESP panel or the desktop simulator the demo needs a broker. With one reachable as `broker.example.lan`:
 
 ```sh
 cat > demo.toml <<'TOML'
@@ -45,10 +77,65 @@ docker run --rm -v "$PWD/demo.toml:/etc/deskwatch/bridge.toml:ro" deskwatch-brid
 ```
 
 You should see `connected to MQTT broker` and `demo mode: playing fake data`. Look at it with the simulator, see
-[install.md](install.md#8-try-it-without-hardware). If your broker needs a login, use the config and secrets from the
-next section.
+[install.md](install.md#8-try-it-without-hardware). If your broker needs a login, use the config and secrets from
+section 4.
 
-## 3. Config and secrets
+## 3. The dashboard on your homelab
+
+This is the setup for a container that shows your real CI and host data on a page you open from any browser. The
+files: [`deploy/docker-compose.dashboard.yml`](../deploy/docker-compose.dashboard.yml) and
+[`deploy/dashboard.example.toml`](../deploy/dashboard.example.toml).
+
+```sh
+git clone https://github.com/Sylentic/DeskWatch.git && cd DeskWatch
+mkdir -p dashboard/credentials
+cp deploy/dashboard.example.toml dashboard/bridge.toml          # edit: display_name, sources
+openssl rand -hex 24 > dashboard/credentials/kiosk-token        # the page token
+chmod 644 dashboard/credentials/kiosk-token                     # readable by the container user
+# one file per source secret, for example a read-only GitHub token (see section 4 for the file rules):
+#   (umask 077; printf %s 'THE-TOKEN' > dashboard/credentials/github-personal) && sudo chown 10001 dashboard/credentials/github-personal
+docker compose -f deploy/docker-compose.dashboard.yml up -d --build
+docker compose -f deploy/docker-compose.dashboard.yml logs
+```
+
+Then open `http://<docker host>:8787/?token=<the token>`. Bookmark that address, or put it in a kiosk browser
+([kiosk.md](kiosk.md#4-autostart-on-a-raspberry-pi) shows the Chromium kiosk start script; it takes the
+address in `DESKWATCH_KIOSK_URL`).
+
+**What the config does.** `[mqtt] enabled = false` makes the bridge skip the broker completely: no connection, no
+warnings every few seconds. It keeps working without one; the only things that need MQTT are the ESP panel, its
+button and alerts sent over MQTT (Home Assistant). `[kiosk] enabled = true` serves the page, and `[http] listen =
+"0.0.0.0:8787"` is the right bind inside a container, because the port you *publish* decides who can reach it. The
+layout and widgets are in [kiosk.md](kiosk.md#3-choose-the-widgets). The dashboard and the ESP panel can share one
+bridge: set `enabled = true` (or delete the line) and give `[mqtt]` the broker's host, as in section 6.
+
+**Your own data.** Without any `[[source.*]]` block the page shows the container's own stats and nothing else. Add
+the sources you use (GitHub, Azure DevOps, Gitea, Prometheus) exactly as in
+[bridge/config.example.toml](../bridge/config.example.toml) and [install.md](install.md#5-sources), with their
+secrets in `dashboard/credentials/`, section 4 explains how. Only a Gitea source needs an incoming connection
+(its webhook, section 7); the others only make outgoing requests.
+
+### Protecting the page
+
+The page is read-only (nothing on it can change anything), but it shows PR titles, pipeline names, host stats and
+alert text. Choose one:
+
+1. **A token (the example's default).** `token_file` makes the data routes answer 401 without `?token=...`. The
+   page file itself loads without it, but holds no data. The token travels in the address over plain HTTP, so it
+   keeps casual visitors on your LAN out; it does not stop someone who can watch your network traffic.
+2. **A reverse proxy.** Publish the port to the host only (`"127.0.0.1:8787:8787"` in the Compose file) and let
+   your proxy (Caddy, Traefik, nginx) terminate TLS and do the access control (basic auth, or your SSO). Then the
+   token is optional, but keeping both costs nothing. Make the proxy pass WebSocket upgrades on `/api/kiosk/ws`;
+   without them the page falls back to polling `/api/kiosk` and still works, only slower to update.
+3. **Local only.** Publish `"127.0.0.1:8787:8787"` and open the page on the Docker host itself (a Pi with a screen
+   running the container).
+
+Do **not** publish the port on the internet. There is no login screen, no rate limiting and no TLS in the bridge.
+If you want the page away from home, put it behind a VPN (WireGuard, Tailscale) or a proxy that requires a real
+login. A source alias keeps work project names off a visible screen
+([kiosk.md](kiosk.md#5-security)).
+
+## 4. Config and secrets
 
 The container expects two things, both mounted **read-only**:
 
@@ -86,7 +173,7 @@ secrets:
 
 (A file-based Compose secret keeps the host file's owner and mode, so the same uid rule applies.)
 
-## 4. Compose
+## 5. Compose for the ESP bridge
 
 [`deploy/docker-compose.yml`](../deploy/docker-compose.yml) is a ready example: it builds the image, mounts the
 config and the `credentials/` folder read-only, runs with a read-only root filesystem, drops all capabilities, and
@@ -106,7 +193,7 @@ the example config ships with a Gitea block switched on: delete it (or add the `
 bridge exits at start naming the missing credential. Changing `bridge.toml` or a secret needs
 `docker compose restart`.
 
-## 5. Reaching the broker
+## 6. Reaching the broker
 
 Set `[mqtt] host` and `port` in `bridge.toml`. Which host to use depends on where Mosquitto runs:
 
@@ -132,14 +219,14 @@ port = 8883
 ca_file = "/etc/deskwatch/ca.pem"
 ```
 
-## 6. Webhooks (Gitea)
+## 7. Webhooks (Gitea)
 
 Only a Gitea source opens the webhook listener (`[http] listen`, default `0.0.0.0:8787`). Publish it in Compose with
 `ports: ["8787:8787"]`, and use `http://<docker host>:8787/webhook/gitea/<name>` as the webhook URL in Gitea (the
 rest, including `ALLOWED_HOST_LIST`, is in [install.md](install.md#gitea-actions-and-pull-requests)). Allow that port in the firewall from the Gitea host only. GitHub, Azure DevOps and
 Prometheus sources only make outgoing requests and need no published port.
 
-## 7. The stats page in a container
+## 8. The stats page in a container
 
 The built-in `stats` page reads `/proc` and `/sys`, and a container sees only part of the real machine:
 
@@ -155,23 +242,33 @@ The built-in `stats` page reads `/proc` and `/sys`, and a container sees only pa
 If you want exact numbers for several machines, use a Prometheus source with node_exporter instead
 ([install.md](install.md#prometheus-host-stats-and-containers)) and leave the local page as is.
 
-## 8. Health and restarts
+## 9. Health and restarts
 
-The image has no `HEALTHCHECK`. The bridge has no status endpoint, and adding one only for Docker would open a
-port for everyone. What it does instead:
+The image has a `HEALTHCHECK`, and `docker ps` shows `healthy` or `unhealthy`. There is no curl in the image, so the
+bridge checks itself: `deskwatch-bridge --healthcheck` reads the same config and asks its own HTTP listener for `/`
+over loopback every 30 seconds. That opens nothing new (the page file carries no data and needs no token).
 
+- **Dashboard on** (`[kiosk] enabled = true`): healthy when the page answers 200.
+- **Gitea source only**: healthy when the listener answers HTTP at all.
+- **Neither** (an ESP bridge with GitHub or Azure DevOps sources): there is no listener, so the check passes
+  trivially; it says nothing about the broker. Use the next two points for that.
+- **Demo started with flags** (`--demo --kiosk`): the check cannot see the flags, so it passes trivially;
+  `deploy/docker-compose.demo.yml` repeats them in its own `healthcheck`.
 - **Startup problems end the process.** A missing credential, a bad config key or a taken port makes the bridge
   exit immediately with a message naming the problem, so `restart: unless-stopped` (or `docker ps` showing
-  `Restarting`) is the signal. A source that cannot reach its service does not stop the bridge; it shows as the `warn` badge.
-- **The broker is the health signal.** The bridge publishes `deskpanel/bridge/status` (`online`, and a retained
-  `offline` as its last will when the connection drops). The panel already shows a red bar when it goes `offline`,
-  and Home Assistant or a monitor can watch that topic.
+  `Restarting`) is the signal. A source that cannot reach its service does not stop the bridge; it shows as the
+  `warn` badge, and on the dashboard the `health` widget names it.
+- **The broker is the health signal for the panel.** The bridge publishes `deskpanel/bridge/status` (`online`,
+  and a retained `offline` as its last will when the connection drops). The panel already shows a red bar when it
+  goes `offline`, and Home Assistant or a monitor can watch that topic.
 
-If you want a Docker-level check anyway, run a small MQTT client in a separate container that watches that topic.
+The check does not restart a container by itself (plain Docker only reports it); an autoheal container or a
+monitor such as Uptime Kuma pointed at the page can act on it.
 
-## 9. Publishing an image (optional)
+## 10. Publishing an image (optional)
 
-Nothing is published and no workflow pushes an image. CI only checks that the Docker image builds and starts (the
+Nothing is published and no workflow pushes an image, so the quick start builds from the source (a few minutes the
+first time). CI only checks that the Docker image builds and starts (the
 `docker` job in [`ci.yml`](../.github/workflows/ci.yml)). If you want a published image so people can skip the
 build, a job like this in a release workflow does it for GitHub's registry (`ghcr.io`); it needs no secret beyond
 the built-in token:
@@ -204,9 +301,12 @@ the built-in token:
 Things to decide first: the tag scheme (only version tags, `latest` too?), whether the image should be public
 (a package inherits the repository's visibility only after you set it in the package settings), and whether to
 build arm64 (a cross build under QEMU is several times slower than the amd64 one). Add the job to
-`release.yml` so it only runs on version tags. Later, `docker pull` replaces `docker build` in step 1.
+`release.yml` so it only runs on version tags. Later, `docker pull` replaces `docker build` in step 1, the quick start shrinks to
+`docker run --rm -p 8787:8787 ghcr.io/sylentic/deskwatch-bridge:latest --demo --kiosk --no-mqtt`, and the Compose
+files swap their `build:` block for `image: ghcr.io/sylentic/deskwatch-bridge:<version>`. This is the one change
+that turns "a few minutes of compiling" into "under a minute", so it is worth deciding before 1.0.
 
-## 10. Update and remove
+## 11. Update and remove
 
 ```sh
 cd DeskWatch && git pull                    # or check out the tag you want
