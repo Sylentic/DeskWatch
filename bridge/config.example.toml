@@ -31,9 +31,35 @@ interval_s = 5                  # stats sample and publish interval
 # net_iface = "eth0"            # defaults to the busiest non-loopback interface
 disk_path = "/"                 # filesystem for disk_pct (local stats are Linux only)
 
-# Shared listener for webhooks. Only opened when a source needs it.
+# Shared listener for webhooks and the kiosk page. Only opened when a source or
+# the kiosk needs it.
 [http]
 listen = "0.0.0.0:8787"
+
+# Dashboard page for a big screen (a Raspberry Pi with a monitor, a wall
+# tablet): all stats, jobs, PRs, pipelines and alerts at once, served on the
+# [http] listener above. Off by default. Guide: docs/kiosk.md
+# [kiosk]
+# enabled = true
+# columns = 4                   # grid size, 1 to 12 each
+# rows = 3
+# # token_file = "kiosk-token"  # credential; set it when the page is opened from another machine
+#
+# # Widgets, left to right and top to bottom. Without any, a default layout is used.
+# # Widgets: stats, hosts, jobs, prs, pipelines, alerts, containers, health.
+# [[kiosk.panel]]
+# widget = "stats"
+# # host = "home"               # stats only: which host, default the first
+#
+# [[kiosk.panel]]
+# widget = "jobs"
+# span = [2, 1]                 # grid cells covered: [columns, rows]
+#
+# [[kiosk.panel]]
+# widget = "prs"
+# span = [1, 2]
+# # rows = 12                   # most list rows to show; default: as many as fit
+# # title = "Reviews"
 
 # Data sources. Each type is an array, so there can be several of each; the
 # name must be unique per type. Remove a block to switch that source off.

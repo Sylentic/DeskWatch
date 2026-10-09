@@ -1,0 +1,7 @@
+# Older Raspberry Pi OS (Bullseye) or Bookworm switched to X11 (LXDE). Append
+# these lines to ~/.config/lxsession/LXDE-pi/autostart. See docs/kiosk.md.
+@xset s off
+@xset -dpms
+@xset s noblank
+# Replace /home/pi with your home folder. The empty variable drops the Wayland flag.
+@sh -c 'DESKWATCH_KIOSK_FLAGS= /home/pi/deskwatch-kiosk.sh'

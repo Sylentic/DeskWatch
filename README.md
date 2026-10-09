@@ -14,7 +14,10 @@ requests and pipeline status. When a CI job runs it switches to live progress, s
 - **Panel**: a deliberately dumb MQTT client with a touch screen (planned: an ESP32-S3 SuperMini with a 4" ST7796S
   display) that draws whatever page the bridge sends. Its drawing code, the `ui/` crate, is done and runs today in
   a desktop simulator. The firmware is started in [`firmware/`](firmware/README.md) but not yet run on a board, and is not part of 0.9. A TLS test binary for the bare board is described [below](#firmware-and-the-tls-spike).
-- **MQTT** (Mosquitto) sits between the two. The contract is [docs/mqtt-schema.md](docs/mqtt-schema.md), with JSON
+- **Kiosk dashboard** (optional, built into the bridge): a web page for a big screen, such as a Raspberry Pi with a
+  monitor or TV, that shows host stats, running jobs, pull requests, pipelines, alerts and source health all at once,
+  with no rotation. It needs no broker and no extra software, see [docs/kiosk.md](docs/kiosk.md).
+- **MQTT** (Mosquitto) sits between the bridge and the panel. The contract is [docs/mqtt-schema.md](docs/mqtt-schema.md), with JSON
   samples in [docs/schema/](docs/schema/) that both sides are tested against.
 
 ## What is in 0.9
@@ -29,6 +32,7 @@ requests and pipeline status. When a CI job runs it switches to live progress, s
 | Linux x86_64 release binary, systemd unit, install guide ([docs/install.md](docs/install.md)) | Done |
 | Source: Azure DevOps Services (pipeline runs, approvals, PRs; [docs/azure-devops.md](docs/azure-devops.md)) | Done |
 | Windows x86_64 release zip (bridge and simulator), install and test guide | Done, see [docs/windows.md](docs/windows.md) |
+| Kiosk dashboard for big screens (browser page served by the bridge, autostart example for a Raspberry Pi) | Unreleased, not yet run on a Pi: [docs/kiosk.md](docs/kiosk.md) |
 
 ## What is not in 0.9
 
@@ -55,6 +59,9 @@ DeskWatch supports **Linux and Windows**, plus the Raspberry Pi (64-bit Linux).
   simulator, a config and secrets, running the bridge as a service, and what differs (the local stats page needs
   Linux's `/proc` for now). The source, Mosquitto and Home Assistant steps in the Linux guide apply on Windows too.
 - **macOS** is not covered; contributions are welcome.
+
+A big screen (a Pi with a monitor or TV, a wall tablet) can show the [kiosk dashboard](docs/kiosk.md), a web page the
+bridge serves itself; it is off until you set `[kiosk] enabled = true`.
 
 A short overview of the sources is below.
 
@@ -140,6 +147,9 @@ cargo run -p deskwatch-sim -- --host localhost
 ```
 
 Pressing the simulator's button during the demo works as on the real panel.
+
+`--demo --kiosk` also serves the [kiosk dashboard](docs/kiosk.md) with the same fake data, at
+`http://localhost:8787/`.
 
 ## Panel UI and simulator
 

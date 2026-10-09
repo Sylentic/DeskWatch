@@ -11,6 +11,7 @@ pub mod fleet;
 pub mod gitea;
 pub mod github;
 pub mod hooks;
+pub mod kiosk;
 pub mod model;
 pub mod mqtt;
 pub mod prometheus;

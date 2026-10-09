@@ -62,6 +62,11 @@ impl Composer {
         self.alerts.apply(msg, now);
     }
 
+    /// Stats of the machine the bridge runs on, once sampled.
+    pub fn stats(&self) -> Option<&StatsData> {
+        self.stats.as_ref()
+    }
+
     pub fn set_stats(&mut self, stats: StatsData) {
         self.stats = Some(stats);
     }

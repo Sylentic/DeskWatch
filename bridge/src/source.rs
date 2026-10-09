@@ -87,6 +87,15 @@ impl fmt::Display for AuthRefused {
 impl std::error::Error for AuthRefused {}
 
 impl Health {
+    /// Name used by the kiosk page.
+    pub fn name(self) -> &'static str {
+        match self {
+            Health::Ok => "ok",
+            Health::AuthFailed => "auth_failed",
+            Health::Unreachable => "unreachable",
+        }
+    }
+
     /// Classify a failed request. Works for any error chain that contains a
     /// `reqwest::Error` or an `AuthRefused`; everything else counts as
     /// unreachable.
@@ -127,6 +136,11 @@ impl HealthBoard {
                 _ => warn!(%source, ?health, "source has a problem"),
             }
         }
+    }
+
+    /// Every source that has reported, with its health.
+    pub fn iter(&self) -> impl Iterator<Item = (&SourceId, Health)> {
+        self.sources.iter().map(|(id, health)| (id, *health))
     }
 
     /// Number of sources with a problem, for the `warn` badge.

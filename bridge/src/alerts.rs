@@ -45,7 +45,27 @@ pub enum Severity {
     Info,
 }
 
+/// An active alert as the kiosk page shows it.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct AlertView {
+    pub id: String,
+    pub severity: &'static str,
+    pub title: String,
+    pub message: String,
+    pub source: String,
+    pub since: u64,
+}
+
 impl Severity {
+    /// Name used by the kiosk page (`warn`, not the payload's `warning`).
+    pub fn name(self) -> &'static str {
+        match self {
+            Severity::Critical => "critical",
+            Severity::Warning => "warn",
+            Severity::Info => "info",
+        }
+    }
+
     /// Screen level while the alert is on screen.
     fn level(self) -> Level {
         match self {
@@ -241,6 +261,24 @@ impl Alerts {
                         self.active.values().filter(same).count().saturating_sub(1) as u32;
                 }
                 c
+            })
+            .collect()
+    }
+
+    /// Every active alert for the kiosk page, most urgent first, then newest.
+    /// Unlike the rotation page this keeps the full message.
+    pub fn views(&self) -> Vec<AlertView> {
+        let mut alerts: Vec<(&String, &Active)> = self.active.iter().collect();
+        alerts.sort_by_key(|(_, a)| (a.severity, std::cmp::Reverse(a.raised_at)));
+        alerts
+            .into_iter()
+            .map(|(id, a)| AlertView {
+                id: id.clone(),
+                severity: a.severity.name(),
+                title: a.title.clone(),
+                message: a.message.clone(),
+                source: a.source.clone(),
+                since: a.raised_at,
             })
             .collect()
     }

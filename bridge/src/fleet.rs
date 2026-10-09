@@ -82,6 +82,29 @@ impl Fleet {
         })
     }
 
+    /// Every reported host with whether its numbers are stale, in source
+    /// order (for the kiosk page).
+    pub fn hosts(&self) -> Vec<(&HostFacts, bool)> {
+        self.sources
+            .values()
+            .flat_map(|entry| {
+                entry
+                    .report
+                    .hosts
+                    .iter()
+                    .map(move |host| (host, !entry.source_ok || !host.up))
+            })
+            .collect()
+    }
+
+    /// Everything that is down.
+    pub fn down(&self) -> Vec<&Down> {
+        self.sources
+            .values()
+            .flat_map(|entry| &entry.report.down)
+            .collect()
+    }
+
     /// Rows for the `containers` page: what is down, newest report only.
     pub fn down_page(&self) -> ListData {
         let down: Vec<&Down> = self

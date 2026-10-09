@@ -10,10 +10,30 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Added
 
+- **Kiosk dashboard for big screens.** A new optional output of the bridge: one web page with many widgets at once
+  and no rotation (server and host stats with a CPU graph, running jobs with progress, open PRs per repository,
+  pipelines, alerts, containers that are down, source health), meant for a Raspberry Pi with a monitor or TV in a
+  Chromium kiosk, readable from a 1280x720 screen up to 4K and on a phone. Failed runs, warnings and critical alerts
+  show as a banner. It is built into the bridge (no extra install, no CDN or other internet resource), read-only,
+  served on the existing `[http]` listener at `/`, and fed over a WebSocket (with polling as a fallback) from
+  `/api/kiosk/ws` and `/api/kiosk`; it needs no MQTT broker, keeps the last data on screen when the bridge goes away
+  and reconnects by itself. Off by default: `[kiosk] enabled = true`, a grid and `[[kiosk.panel]]` widget list in the
+  same TOML file, and an optional `token_file`. `--kiosk` turns it on for `--demo`. The ESP panel and MQTT schema v2
+  are unchanged. Guide: [docs/kiosk.md](docs/kiosk.md), with a Chromium autostart example for Raspberry Pi OS in
+  `deploy/kiosk/`. **Not yet run on a Raspberry Pi.**
 - **TLS spike for the firmware.** A separate `tls-spike` binary in `firmware/` (cargo feature `tls-spike`, so the
   panel firmware is unchanged) that joins Wi-Fi, sets the clock over SNTP and makes HTTPS requests with full
   certificate verification using mbedtls-rs, logging handshake time, response size and heap use over serial. Needs no
   screen or broker. CI builds and lints it. **Not yet run on hardware.** See "TLS spike" in `firmware/README.md`.
+
+### Changed
+
+- The bridge no longer waits for room in the MQTT queue when it publishes a screen. With the broker unreachable the
+  queue used to fill up and stop the whole main loop; now the publish is dropped and retried on the next turn (the
+  messages are retained, so only the newest matters), the failure is logged once instead of every turn, and a clean
+  shutdown gives up after 2 seconds. Needed so the kiosk page keeps updating while the broker is down.
+- `--demo` now also reports two extra hosts and healthy sources, so the kiosk widgets have something to show. The
+  ESP panel's pages and badges in the demo are unchanged.
 
 ## [0.9.4]
 

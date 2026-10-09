@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>DeskWatch</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="kiosk.css">
+</head>
+<body>
+<header id="top">
+  <div class="brand"><span class="logo" aria-hidden="true"></span>DeskWatch</div>
+  <div id="badges" class="badges"></div>
+  <div class="spacer"></div>
+  <div id="conn" class="chip">connecting</div>
+  <div class="clock"><div id="time">--:--</div><div id="date"></div></div>
+  <div id="progress" class="topbar" hidden><i></i></div>
+</header>
+<div id="banner" class="banner" hidden></div>
+<div id="offline" class="offline" hidden></div>
+<main id="grid" class="grid"></main>
+<script src="kiosk.js"></script>
+</body>
+</html>

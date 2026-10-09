@@ -1,9 +1,9 @@
-//! The one HTTP listener that push sources share.
+//! The one HTTP listener that push sources and the kiosk page share.
 //!
 //! Each webhook source adds its own route (`/webhook/gitea/<name>`, later
 //! `/webhook/grafana/<name>` and so on) while it is being built. The listener
 //! only opens when at least one route exists, so a bridge with no webhook
-//! sources has no open port.
+//! sources and no kiosk page has no open port.
 
 use std::net::SocketAddr;
 
@@ -40,9 +40,9 @@ impl Hooks {
         }
         let listener = TcpListener::bind(listen)
             .await
-            .with_context(|| format!("cannot listen on {listen} for webhooks"))?;
+            .with_context(|| format!("cannot listen on {listen} (webhooks or kiosk page)"))?;
         for path in &self.paths {
-            info!("webhook on http://{listen}{path}");
+            info!("serving http://{listen}{path}");
         }
         tokio::spawn(async move {
             if let Err(err) = axum::serve(listener, self.router).await {

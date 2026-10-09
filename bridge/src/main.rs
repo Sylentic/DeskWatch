@@ -30,6 +30,7 @@ use deskwatch_bridge::demo::{self, Demo};
 use deskwatch_bridge::gitea::Gitea;
 use deskwatch_bridge::github::Github;
 use deskwatch_bridge::hooks::Hooks;
+use deskwatch_bridge::kiosk::Kiosk;
 use deskwatch_bridge::model::{Badges, Screen};
 use deskwatch_bridge::mqtt::{self, Inbound, Publisher};
 use deskwatch_bridge::prometheus::Prometheus;
@@ -45,27 +46,32 @@ const COMPOSE_INTERVAL: Duration = Duration::from_secs(1);
 const BADGES_REFRESH_S: u64 = 60;
 
 const USAGE: &str = "\
-usage: deskwatch-bridge [--demo] [CONFIG]
+usage: deskwatch-bridge [--demo] [--kiosk] [CONFIG]
 
 CONFIG defaults to $DESKWATCH_CONFIG, then /etc/deskwatch/bridge.toml
 (on Windows %ProgramData%\\DeskWatch\\bridge.toml).
 --demo  play a loop of fake data instead of running the sources; only the
-        [mqtt] and [alerts] settings are used, and CONFIG is optional";
+        [mqtt] and [alerts] settings are used, and CONFIG is optional
+--kiosk serve the browser dashboard even if [kiosk] enabled is not set
+        (see docs/kiosk.md)";
 
 /// Command line: `[--demo] [CONFIG]`.
 struct Args {
     demo: bool,
+    kiosk: bool,
     config: Option<PathBuf>,
 }
 
 fn parse_args() -> Result<Args> {
     let mut args = Args {
         demo: false,
+        kiosk: false,
         config: None,
     };
     for arg in std::env::args_os().skip(1) {
         match arg.to_str() {
             Some("--demo") => args.demo = true,
+            Some("--kiosk") => args.kiosk = true,
             Some("-h" | "--help") => {
                 println!("{USAGE}");
                 std::process::exit(0);
@@ -87,7 +93,7 @@ async fn main() -> Result<()> {
         .init();
 
     let args = parse_args()?;
-    let config = match Config::path_given(args.config.clone()) {
+    let mut config = match Config::path_given(args.config.clone()) {
         // The demo runs without a config file, against a broker on localhost.
         None if args.demo => Config::from_toml("")?,
         given => {
@@ -98,14 +104,16 @@ async fn main() -> Result<()> {
         }
     };
 
+    config.kiosk.enabled |= args.kiosk;
+
     // Build every source first: missing credentials or a taken port stop the
     // bridge here, before it connects anywhere. The demo runs none of them.
     let mut gitea = Vec::new();
     let mut github = Vec::new();
     let mut azure_devops = Vec::new();
     let mut prometheus = Vec::new();
+    let mut hooks = Hooks::default();
     if !args.demo {
-        let mut hooks = Hooks::default();
         for gitea_config in &config.source.gitea {
             gitea.push(Gitea::new(gitea_config, &mut hooks)?);
         }
@@ -118,8 +126,25 @@ async fn main() -> Result<()> {
         for prometheus_config in &config.source.prometheus {
             prometheus.push(Prometheus::new(prometheus_config)?);
         }
-        hooks.start(config.http.listen).await?;
     }
+    let mut kiosk = None;
+    if config.kiosk.enabled {
+        let token = match &config.kiosk.token_file {
+            Some(file) => Some(source::load_secret(file).context("kiosk.token_file")?),
+            None => None,
+        };
+        if token.is_none() && !config.http.listen.ip().is_loopback() {
+            warn!(
+                "the kiosk page is open to the network on {} without kiosk.token_file; \
+                 anyone who can reach it can read your PR titles, pipelines and host stats",
+                config.http.listen
+            );
+        }
+        let built = Kiosk::new(&config.kiosk, token);
+        hooks.add("/", built.router());
+        kiosk = Some(built);
+    }
+    hooks.start(config.http.listen).await?;
 
     let (inbound_tx, mut inbound_rx) = mpsc::channel(16);
     let (publisher, eventloop) = mqtt::connect(&config.mqtt, mqtt_password(&config.mqtt)?)?;
@@ -176,12 +201,18 @@ async fn main() -> Result<()> {
         if let Some(demo) = &mut demo {
             demo.tick(&mut composer, unix_now());
         }
+        if let Some(kiosk) = &mut kiosk {
+            kiosk.update(&mut composer, unix_now());
+        }
         shown.publish(&publisher, &mut composer, unix_now()).await;
     }
 
     info!("shutting down");
-    if let Err(err) = publisher.shutdown().await {
-        warn!("clean shutdown failed: {err:#}");
+    // Not forever: with the broker down the goodbye cannot be queued.
+    match tokio::time::timeout(Duration::from_secs(2), publisher.shutdown()).await {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => warn!("clean shutdown failed: {err:#}"),
+        Err(_) => warn!("clean shutdown timed out"),
     }
     // Give the event loop a moment to flush the offline message and disconnect.
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -253,6 +284,9 @@ fn mqtt_password(config: &MqttConfig) -> Result<Option<Secret>> {
 /// What was published last, so only changes go out.
 #[derive(Default)]
 struct Shown {
+    /// Did the last publish fail? Only the first failure of a streak is
+    /// logged, so a broker that is down does not fill the log.
+    failing: bool,
     screen: Option<Screen>,
     badges: Option<Badges>,
     /// Unix seconds of the last badges publish.
@@ -260,13 +294,25 @@ struct Shown {
 }
 
 impl Shown {
+    fn failed(&mut self, what: &str, err: &anyhow::Error) {
+        if !self.failing {
+            warn!(
+                "cannot publish {what}: {err:#} (retrying every turn, not logged again until it works)"
+            );
+        }
+        self.failing = true;
+    }
+
     async fn publish(&mut self, publisher: &Publisher, composer: &mut Composer, now: u64) {
         // `seq` is set by the publisher, so compare with it zeroed.
         let screen = composer.screen(now);
         if self.screen.as_ref() != Some(&screen) {
             match publisher.publish_screen(screen.clone()).await {
-                Ok(()) => self.screen = Some(screen),
-                Err(err) => warn!("cannot publish screen: {err:#}"),
+                Ok(()) => {
+                    self.screen = Some(screen);
+                    self.failing = false;
+                }
+                Err(err) => self.failed("screen", &err),
             }
         }
         let badges = composer.badges();
@@ -276,8 +322,9 @@ impl Shown {
                 Ok(()) => {
                     self.badges = Some(badges);
                     self.badges_at = now;
+                    self.failing = false;
                 }
-                Err(err) => warn!("cannot publish badges: {err:#}"),
+                Err(err) => self.failed("badges", &err),
             }
         }
     }

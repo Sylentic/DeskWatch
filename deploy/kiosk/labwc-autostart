@@ -1,0 +1,4 @@
+# Raspberry Pi OS Bookworm and newer (labwc). Append this line to
+# ~/.config/labwc/autostart (create the file if it is missing), after copying
+# deploy/kiosk/deskwatch-kiosk.sh to your home folder. See docs/kiosk.md.
+~/deskwatch-kiosk.sh &

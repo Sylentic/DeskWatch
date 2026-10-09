@@ -21,9 +21,11 @@
 use crate::alerts::{AlertMessage, Severity};
 use crate::ci::{OpenPull, RepoPulls, Run, RunStatus, RunningJob, Update};
 use crate::composer::Composer;
+use crate::fleet::{HostFacts, StatsReport};
 use crate::model::{
     ButtonAction, JobData, JobKind, NetData, RotationEntry, SCHEMA_VERSION, StatsData,
 };
+use crate::source::{Health, SourceId};
 
 /// Length of one loop in seconds. The script starts over after this.
 pub const LOOP_S: u64 = 130;
@@ -108,7 +110,41 @@ impl Demo {
             }
         }
         composer.set_stats(stats(now));
+        fake_fleet(composer, now);
     }
+}
+
+/// Two more hosts and healthy sources, so the kiosk page has something to
+/// show in its hosts and sources widgets. Nothing is down, so the ESP panel's
+/// badges stay as the script left them.
+fn fake_fleet(composer: &mut Composer, now: u64) {
+    let wave = |period: f32, phase: f32| ((now as f32 / period + phase).sin() + 1.0) / 2.0;
+    let host = |name: &str, cpu: f32, ram: f32, disk: f32| HostFacts {
+        name: name.into(),
+        up: true,
+        stats: StatsData {
+            host: name.into(),
+            cpu_pct: Some(cpu.round()),
+            ram_pct: Some(ram.round()),
+            disk_pct: Some(disk),
+            ..Default::default()
+        },
+    };
+    let id = SourceId::new("prometheus", "demo");
+    composer.fleet.apply(
+        &id,
+        StatsReport {
+            hosts: vec![
+                host("demo-nas", 4.0 + 12.0 * wave(17.0, 1.0), 41.0, 82.0),
+                host("demo-agent", 10.0 + 70.0 * wave(31.0, 2.0), 55.0, 47.0),
+            ],
+            down: Vec::new(),
+        },
+    );
+    composer.health.set(&id, Health::Ok);
+    composer
+        .health
+        .set(&SourceId::new(SOURCE, "demo"), Health::Ok);
 }
 
 /// Fake server stats that drift slowly, so the gauges move.
@@ -148,6 +184,28 @@ fn shift(update: Update, base: u64) -> Update {
             run.started += base;
             run.finished = run.finished.map(|f| f + base);
             Update::Run { key, run }
+        }
+        Update::Pulls { key, mut repo } => {
+            for pull in &mut repo.pulls {
+                pull.created += base;
+            }
+            Update::Pulls { key, repo }
+        }
+        Update::PullOpened {
+            key,
+            project,
+            source,
+            mut pull,
+            notify,
+        } => {
+            pull.created += base;
+            Update::PullOpened {
+                key,
+                project,
+                source,
+                pull,
+                notify,
+            }
         }
         other => other,
     }

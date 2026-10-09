@@ -83,6 +83,18 @@ pub enum RunStatus {
 }
 
 impl RunStatus {
+    /// Lowercase name used by the kiosk page.
+    pub fn name(self) -> &'static str {
+        match self {
+            RunStatus::Running => "running",
+            RunStatus::Failed => "failed",
+            RunStatus::Waiting => "waiting",
+            RunStatus::Queued => "queued",
+            RunStatus::Success => "success",
+            RunStatus::Neutral => "neutral",
+        }
+    }
+
     fn row_status(self) -> RowStatus {
         match self {
             RunStatus::Running => RowStatus::Running,
@@ -410,6 +422,30 @@ impl CiFacts {
             });
         }
         out
+    }
+
+    /// Every running job with its key, newest first (for the kiosk page).
+    pub fn jobs(&self) -> Vec<(&String, &RunningJob)> {
+        let mut jobs: Vec<_> = self.jobs.iter().collect();
+        jobs.sort_by_key(|(_, job)| Reverse(job.data.started));
+        jobs
+    }
+
+    /// Latest run of every pipeline with the time it was last updated,
+    /// running and failed ones first, then the most recently updated.
+    pub fn runs(&self) -> Vec<(&String, &Run, u64)> {
+        let mut runs: Vec<_> = self
+            .runs
+            .iter()
+            .map(|(key, (run, updated))| (key, run, *updated))
+            .collect();
+        runs.sort_by_key(|(_, run, updated)| (run.status, Reverse(*updated)));
+        runs
+    }
+
+    /// Open PRs per repository.
+    pub fn pulls(&self) -> impl Iterator<Item = &RepoPulls> {
+        self.pulls.values()
     }
 
     /// Total open PRs over all repositories.
