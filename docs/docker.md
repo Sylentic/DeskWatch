@@ -36,7 +36,7 @@ Contents: [1. Build the image](#1-build-the-image) · [2. Try the demo](#2-try-t
 [4. Config and secrets](#4-config-and-secrets) · [5. Compose for the ESP bridge](#5-compose-for-the-esp-bridge) ·
 [6. Reaching the broker](#6-reaching-the-broker) · [7. Webhooks](#7-webhooks-gitea) ·
 [8. The stats page](#8-the-stats-page-in-a-container) · [9. Health and restarts](#9-health-and-restarts) ·
-[10. Publishing an image](#10-publishing-an-image-optional) · [11. Update and remove](#11-update-and-remove)
+[10. The published image](#10-the-published-image) · [11. Update and remove](#11-update-and-remove)
 
 ## 1. Build the image
 
