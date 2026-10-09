@@ -8,12 +8,25 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Added
+
+- **Reverse proxy examples** for Caddy, nginx and Traefik (Docker labels) in `docs/docker.md`, each with TLS, basic
+  auth and the WebSocket route on `/api/kiosk/ws`.
+- **`[kiosk] max_ws_clients`** (default 16): the most live-update WebSockets open at once. A further client gets
+  `503` and its page polls instead.
+
 ### Changed
 
 - **`deploy/docker-compose.yml` uses the published image instead of building from `#main`.** It pulls
   `ghcr.io/sylentic/deskwatch-bridge` pinned to a release, so a restart or rebuild can no longer change the running
   version by surprise. Building from the source stays documented as a commented alternative. `docs/docker.md`
   (sections 5, 10 and 11) describes pulling and bumping the version. (Fixes #23)
+
+### Security
+
+- **A stalled dashboard client can no longer hold a WebSocket for ever.** The bridge drops a client that has not
+  accepted a frame for 10 seconds; the page reconnects by itself. Together with the connection cap this keeps one
+  broken or hostile client on the LAN from using up the bridge. There is still no request rate limiting.
 
 ## [0.9.7]
 

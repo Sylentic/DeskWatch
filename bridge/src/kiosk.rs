@@ -9,7 +9,9 @@
 //! - `GET /api/kiosk`: the latest snapshot as JSON;
 //! - `GET /api/kiosk/ws`: a WebSocket that sends a snapshot whenever
 //!   something changes, and at least every `HEARTBEAT_S` seconds, so the page
-//!   can tell "nothing new" from "the bridge is gone";
+//!   can tell "nothing new" from "the bridge is gone". At most
+//!   `kiosk.max_ws_clients` at a time (more get 503, the page then polls), and
+//!   a client that does not take a frame within `WRITE_TIMEOUT_S` is dropped;
 //! - `GET /`, `/kiosk.css`, `/kiosk.js`: the page.
 //!
 //! The snapshot is built from the same facts the composer uses for the ESP
@@ -18,6 +20,7 @@
 //! `?token=` or as a bearer token.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Router;
 use axum::extract::State;
@@ -28,7 +31,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
-use tokio::sync::watch;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
 
 use crate::composer::Composer;
 use crate::config::{KioskConfig, PanelConfig};
@@ -42,6 +45,11 @@ pub const SNAPSHOT_VERSION: u8 = 1;
 /// A snapshot goes out at least this often even when nothing changed.
 /// The page treats 15 s without one as a lost connection.
 pub const HEARTBEAT_S: u64 = 5;
+
+/// A WebSocket client that has not accepted a frame after this long is
+/// stalled or gone. It is dropped so it cannot hold its slot for ever; the
+/// page reconnects by itself.
+pub const WRITE_TIMEOUT_S: u64 = 10;
 
 const INDEX_HTML: &str = include_str!("../kiosk/index.html");
 const KIOSK_CSS: &str = include_str!("../kiosk/kiosk.css");
@@ -61,6 +69,8 @@ pub struct Kiosk {
     layout: Value,
     tx: watch::Sender<Frame>,
     token: Option<Secret>,
+    /// One permit per allowed WebSocket client.
+    slots: Arc<Semaphore>,
     /// The last snapshot without its timestamp, to see what changed.
     last: Option<Value>,
     /// Unix seconds when the last snapshot went out.
@@ -77,6 +87,7 @@ impl Kiosk {
             layout,
             tx,
             token,
+            slots: Arc::new(Semaphore::new(config.max_ws_clients.into())),
             last: None,
             sent_at: 0,
         }
@@ -87,6 +98,7 @@ impl Kiosk {
         let state = AppState {
             rx: self.tx.subscribe(),
             token: self.token.as_ref().map(|t| digest(t.expose())),
+            slots: self.slots.clone(),
         };
         let api = Router::new()
             .route("/api/kiosk", get(snapshot_handler))
@@ -242,6 +254,7 @@ struct AppState {
     rx: watch::Receiver<Frame>,
     /// SHA-256 of the token, so comparing never branches on its content.
     token: Option<[u8; 32]>,
+    slots: Arc<Semaphore>,
 }
 
 fn digest(text: &str) -> [u8; 32] {
@@ -336,15 +349,31 @@ async fn snapshot_handler(State(state): State<AppState>) -> Response {
 }
 
 async fn ws_handler(State(state): State<AppState>, upgrade: WebSocketUpgrade) -> Response {
-    upgrade.on_upgrade(move |socket| serve_socket(socket, state.rx))
+    // The permit lives as long as the socket task, so a closed or dropped
+    // client frees its slot. A full house is answered before the upgrade.
+    let Ok(permit) = state.slots.clone().try_acquire_owned() else {
+        return (StatusCode::SERVICE_UNAVAILABLE, "too many live connections").into_response();
+    };
+    upgrade.on_upgrade(move |socket| serve_socket(socket, state.rx, permit))
 }
 
-/// Send the current snapshot, then every new one, until the page goes away.
-async fn serve_socket(mut socket: WebSocket, mut rx: watch::Receiver<Frame>) {
+/// Send the current snapshot, then every new one, until the page goes away or
+/// stops reading.
+async fn serve_socket(
+    mut socket: WebSocket,
+    mut rx: watch::Receiver<Frame>,
+    _permit: OwnedSemaphorePermit,
+) {
+    let write_timeout = Duration::from_secs(WRITE_TIMEOUT_S);
     loop {
         let frame = rx.borrow_and_update().clone();
-        if socket.send(Message::text(frame.to_string())).await.is_err() {
-            return;
+        // A client that never reads fills its socket buffer and would block
+        // this send for ever; give up on it instead.
+        match tokio::time::timeout(write_timeout, socket.send(Message::text(frame.to_string())))
+            .await
+        {
+            Ok(Ok(())) => {}
+            _ => return,
         }
         tokio::select! {
             changed = rx.changed() => if changed.is_err() { return },
