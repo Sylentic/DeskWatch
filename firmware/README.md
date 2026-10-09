@@ -92,7 +92,7 @@ The plan, in short:
 1. **Storage.** The settings live in a dedicated flash partition (NVS style, key/value) next to the app, so an OTA
    update or a reflash of the app does not wipe them. The MQTT password is stored there as is; ESP32 flash
    encryption is possible but off by default, so treat a lost panel as a lost password, as above.
-2. **When setup mode starts.** Only when nothing is stored yet, or when the button (GPIO4) is held while powering on.
+2. **When setup mode starts.** Only when nothing is stored yet, or when the button (GPIO4) is held while powering on, also on an already configured panel (see "Changing settings later").
    Otherwise the panel boots straight into normal operation and **no web server ever runs**.
 3. **What it does.** The panel starts its own Wi-Fi access point (name `deskwatch-setup-XXXX` from the chip's MAC,
    with a random WPA2 password drawn on the screen so only someone looking at the panel can join) and serves one
@@ -103,6 +103,25 @@ The plan, in short:
    cannot be joined for several minutes, the panel falls back to setup mode too.
 5. **Compile-time config stays** as a development fallback that wins over flash when present, so the stage 1 workflow
    keeps working.
+
+### Changing settings later without wiping anything
+
+A configured panel can be reconfigured at any time, with no erase and no reflash:
+
+- **Re-enter setup mode:** hold the button (GPIO4) while powering on or pressing reset. Setup mode starts even
+  though settings are stored. Release the button after the setup network name appears on the screen.
+- **Overwrite single values:** the setup page is pre-filled with the stored values (the passwords show as blank
+  with "keep current"). Only the fields you change are written; everything else stays as it was. A new Wi-Fi
+  network, a new Mosquitto password or a new broker address is one visit to the page.
+- **Wipe is a separate, deliberate action:** a "forget all settings" button on the same page, plus a second
+  hold-at-boot with the button held for about 10 seconds. Neither is needed for ordinary changes.
+- **Cancelling is safe:** leaving setup mode without saving (or the timeout) keeps the old settings untouched.
+- **Safety net:** if new Wi-Fi settings fail to connect, the panel returns to setup mode instead of staying dead.
+
+CI and DevOps tokens are not on the panel at all, so a PAT that expires or a change of employer never touches the
+firmware. Swap the PAT in the bridge's credential file and restart the bridge, see
+[docs/azure-devops.md](../docs/azure-devops.md). The panel needs no change and keeps showing the `warn` badge until
+the bridge can log in again.
 
 Open points for that PR: whether to use `esp-storage` with `sequential-storage` or the ESP-IDF NVS partition format
 (the latter would let `esptool` or `espflash` pre-load settings from a CSV), and whether to show the setup password
