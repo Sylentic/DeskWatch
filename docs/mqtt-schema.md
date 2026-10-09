@@ -16,7 +16,8 @@ bridge owns everything else: collecting data, priority, which page is up and for
  Prometheus      (poll)    --+
  Gitea           (webhook) --+--> facts --> composer --> deskpanel/screen --> draws page
  GitHub / GHE    (poll)    --+              (priority,   deskpanel/badges --> draws header
- Home Assistant  (MQTT)    --+               rotation) <-- deskpanel/panel/event (button)
+ Azure DevOps    (poll)    --+               rotation) <-- deskpanel/panel/event (button)
+ Home Assistant  (MQTT)    --+
 ```
 
 New sources and new rotation rules never need a firmware update. A new kind of data reuses the `list` or `number`

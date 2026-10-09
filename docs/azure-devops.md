@@ -48,6 +48,9 @@ or at least Reader on it).
 
 ## 2. Store it on the server
 
+These are the Linux commands. On Windows, create the same file (`azdo-work`) in
+`C:\ProgramData\DeskWatch\credentials\` as described in [windows.md](windows.md#secrets); the config is the same.
+
 ```sh
 sudo install -d -m 700 /etc/deskwatch/credentials
 sudo sh -c 'umask 077; cat > /etc/deskwatch/credentials/azdo-work'   # paste the token, then Ctrl-D
@@ -73,7 +76,7 @@ token_file = "azdo-work"           # the credential name from step 2
 ```
 
 Then `sudo systemctl restart deskwatch-bridge` and check `journalctl -u deskwatch-bridge` for
-`polling Azure DevOps`.
+`polling Azure DevOps` (on Windows, restart the service and look in its log file).
 
 Optional keys:
 

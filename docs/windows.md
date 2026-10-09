@@ -1,6 +1,6 @@
 # DeskWatch on Windows
 
-DeskWatch supports **Linux and Windows**. The Debian guide is [install.md](install.md); this one covers
+DeskWatch supports **Linux and Windows**. The Linux guide is [install.md](install.md); this one covers
 Windows 10 and 11 (and Windows Server 2019 or newer), x86_64 only.
 
 **macOS is not covered yet.** Nothing in the bridge is knowingly Linux- or Windows-only apart from the local
@@ -33,7 +33,7 @@ a `.sha256` file next to it. The zip holds `deskwatch-bridge.exe`, `deskwatch-si
 `deploy/`, `homeassistant/`, `docs/` and the licenses.
 
 ```powershell
-$Version = "v1.0.0"      # the release you want
+$Version = "v0.9.2"      # the release you want
 $Name = "deskwatch-$Version-x86_64-windows"
 cd $env:TEMP
 $Base = "https://github.com/Sylentic/DeskWatch/releases/download/$Version"
@@ -60,7 +60,7 @@ Studio Build Tools ("Desktop development with C++"), plus [Git](https://git-scm.
 ```powershell
 git clone https://github.com/Sylentic/DeskWatch.git
 cd DeskWatch
-git checkout v1.0.0            # or stay on main for the newest, untagged code
+git checkout v0.9.2            # or stay on main for the newest, untagged code
 $env:CMAKE_POLICY_VERSION_MINIMUM = "3.5"    # needed with CMake 4 or newer, harmless otherwise
 cargo build --release --locked -p deskwatch-bridge -p deskwatch-sim
 ```

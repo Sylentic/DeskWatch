@@ -8,7 +8,7 @@ requests and pipeline status. When a CI job runs it switches to live progress, s
 
 ## How it fits together
 
-- **Bridge** (Rust, runs on a Debian home server): collects server stats, receives Gitea webhooks, polls GitHub,
+- **Bridge** (Rust, runs on a Linux or Windows machine that stays on): collects server stats, receives Gitea webhooks, polls GitHub,
   GitHub Enterprise, Azure DevOps and Prometheus, takes alerts from Home Assistant, decides what the panel should show and
   publishes it over MQTT.
 - **Panel**: a deliberately dumb MQTT client with a touch screen (planned: an ESP32-S3 SuperMini with a 4" ST7796S
@@ -22,31 +22,37 @@ requests and pipeline status. When a CI job runs it switches to live progress, s
 | Part | State |
 |---|---|
 | Bridge with idle rotation, screen priority, button handling | Done |
-| Sources: Gitea, GitHub and GitHub Enterprise, Prometheus (node_exporter, cAdvisor), local `/proc` stats | Done |
+| Sources: Gitea, GitHub and GitHub Enterprise, Prometheus (node_exporter, cAdvisor), local `/proc` stats (Linux only) | Done |
 | Alerts from Home Assistant and scripts, with blueprints | Done |
 | Mosquitto logins, ACL example, TLS | Done |
 | Panel UI (`ui/`) and desktop simulator (`sim/`) | Done |
-| Linux x86_64 release binary, systemd unit, install guide | Done |
+| Linux x86_64 release binary, systemd unit, install guide ([docs/install.md](docs/install.md)) | Done |
+| Source: Azure DevOps Services (pipeline runs, approvals, PRs; [docs/azure-devops.md](docs/azure-devops.md)) | Done |
 | Windows x86_64 release zip (bridge and simulator), install and test guide | Done, see [docs/windows.md](docs/windows.md) |
 
 ## What is not in 0.9
 
 - **The firmware.** The real panel waits for the display to arrive. 1.0 is reserved for the first release with working firmware on the real screen. Until then the simulator draws exactly what
   the panel will, and the schema is the contract the firmware will implement. Over-the-air updates come last.
-- **Azure DevOps and CI runner status** are planned for 1.1, after 1.0.
+- **CI runner and agent pool status** (Gitea runners, Azure DevOps agent pools) are planned after 1.0.
 - **TLS on the webhook listener.** Gitea talks plain HTTP to the bridge; put a reverse proxy in front if the path
   crosses an untrusted network.
-- **Release binaries for other CPUs.** Build from source on a Raspberry Pi or similar.
+- **Release binaries for other CPUs, and macOS.** Release binaries are x86_64 for Linux and Windows. Build from
+  source on a Raspberry Pi or similar; macOS is not covered, contributions are welcome.
 
 ## Install
 
-[docs/install.md](docs/install.md) walks through the whole setup on a Debian server: download or build the
-binary, config, systemd unit with credentials, Mosquitto logins, then each source and Home Assistant. A short
-overview of the sources is below.
+DeskWatch supports **Linux and Windows**.
 
-DeskWatch supports **Linux and Windows**. [docs/windows.md](docs/windows.md) covers Windows: the release zip,
-Mosquitto, trying the demo and the simulator, running the bridge as a service, and what differs (the local
-stats page needs Linux's `/proc` for now). macOS is not covered; contributions are welcome.
+- **Linux:** [docs/install.md](docs/install.md) walks through the whole setup on a systemd server (written for
+  Debian 12 or newer): download or build the binary, config, systemd unit with credentials, Mosquitto logins, then
+  each source and Home Assistant.
+- **Windows:** [docs/windows.md](docs/windows.md) covers the release zip, Mosquitto, trying the demo and the
+  simulator, a config and secrets, running the bridge as a service, and what differs (the local stats page needs
+  Linux's `/proc` for now). The source, Mosquitto and Home Assistant steps in the Linux guide apply on Windows too.
+- **macOS** is not covered; contributions are welcome.
+
+A short overview of the sources is below.
 
 ## Running the bridge by hand
 
@@ -57,19 +63,20 @@ cargo run -p deskwatch-bridge -- bridge/config.example.toml
 mosquitto_sub -t 'deskpanel/#' -v   # in another terminal
 ```
 
-The config path can also come from `DESKWATCH_CONFIG`; the default is `/etc/deskwatch/bridge.toml`. On a server
-run it as a service, see [deploy/deskwatch-bridge.service](deploy/deskwatch-bridge.service). The example config
+The config path can also come from `DESKWATCH_CONFIG`; the default is `/etc/deskwatch/bridge.toml`
+(`%ProgramData%\DeskWatch\bridge.toml` on Windows). On a Linux server run it as a service, see [deploy/deskwatch-bridge.service](deploy/deskwatch-bridge.service). The example config
 has a Gitea block switched on; remove it if you have no Gitea.
 
 Secrets never go in the config. Keys ending in `_file` name a credential: a plain name such as `gitea-token`
-is read from `$CREDENTIALS_DIRECTORY`, which systemd fills from the unit's `LoadCredential=` lines; an
-absolute path is read directly, which is handy when running by hand. The MQTT password can also come from
+is read from `$CREDENTIALS_DIRECTORY`, which systemd fills from the unit's `LoadCredential=` lines (on Windows it is
+`%ProgramData%\DeskWatch\credentials`); an absolute path is read directly, which is handy when running by hand. The MQTT password can also come from
 `DESKWATCH_MQTT_PASSWORD`.
 
 ## Sources
 
 Each source is a `[[source.<type>]]` block in the config and runs as its own task; a source that cannot log in or
-connect shows as a `warn` badge on the panel. Setup for each is in [docs/install.md](docs/install.md#5-sources).
+connect shows as a `warn` badge on the panel. Setup for each is in [docs/install.md](docs/install.md#5-sources) (Azure DevOps in more detail in
+[docs/azure-devops.md](docs/azure-devops.md)).
 
 | Source | How it gets data | What it adds |
 |---|---|---|
@@ -77,7 +84,7 @@ connect shows as a `warn` badge on the panel. Setup for each is in [docs/install
 | `github` | Polling with ETags (github.com, GitHub Enterprise Server, GHE.com) | The same as Gitea |
 | `azure_devops` | Polling with a read-only token (Azure DevOps Services); setup in [docs/azure-devops.md](docs/azure-devops.md) | Pipeline runs with stage and task (Terraform plan and apply), a notice when a deploy waits for an approval, PR count; quiet unless you set `interrupt` |
 | `prometheus` | HTTP API (node_exporter, cAdvisor) | A `stats:<host>` page per machine, a `containers` page of what stopped, a `server` badge |
-| built-in `stats` | `/proc` and `/sys` of the bridge machine | The home page, always available |
+| built-in `stats` | `/proc` and `/sys` of the bridge machine (Linux; on Windows it shows only the machine name) | The home page, always available |
 
 `interrupt` decides which repositories may take over the screen. Runs from other repositories still show on the
 pipelines page, and their failures still count in the red header badge until a green run of the same pipeline
@@ -112,7 +119,7 @@ severity, and clear them by id.
 ## Broker logins
 
 Give the bridge, the panel and Home Assistant each their own Mosquitto login limited to their own topics:
-[docs/mosquitto.md](docs/mosquitto.md) explains how to find the clients using your broker before turning
+[docs/mosquitto.md](docs/mosquitto.md) (written for a Linux broker; Windows notes in [docs/windows.md](docs/windows.md#2-mosquitto)) explains how to find the clients using your broker before turning
 anonymous access off, and [deploy/mosquitto](deploy/mosquitto) has an example config and ACL. The bridge takes
 `username`, `password_file` and optional `tls` settings in `[mqtt]`, see `bridge/config.example.toml`.
 

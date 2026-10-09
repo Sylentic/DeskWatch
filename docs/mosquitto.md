@@ -12,7 +12,10 @@ Files in this repo:
 | [`deploy/mosquitto/mosquitto.conf.example`](../deploy/mosquitto/mosquitto.conf.example) | Broker settings: logins required, password file, ACL file |
 | [`deploy/mosquitto/acl.example`](../deploy/mosquitto/acl.example) | One user per client, each limited to its own topics |
 
-Mosquitto 2.x is assumed.
+Mosquitto 2.x is assumed. The commands and paths are for a Linux broker (systemd, `/etc/mosquitto`); on Windows
+the broker's config and password file live under `C:\Program Files\mosquitto`, see
+[windows.md](windows.md#2-mosquitto), and the bridge's password goes in a credential file as described in
+[windows.md](windows.md#secrets). The ACL and the topic rules are the same everywhere.
 
 ## 1. Who may do what
 
@@ -98,7 +101,7 @@ sudo install -d -m 700 /etc/deskwatch/credentials
 sudo sh -c 'umask 077; printf %s "THE-BRIDGE-PASSWORD" > /etc/deskwatch/credentials/mqtt-password'
 ```
 
-Uncomment `LoadCredential=mqtt-password:...` in `deploy/deskwatch-bridge.service`, then
+On Linux, uncomment `LoadCredential=mqtt-password:...` in `deploy/deskwatch-bridge.service`, then
 `sudo systemctl daemon-reload && sudo systemctl restart deskwatch-bridge`. Without `password_file` the bridge
 falls back to the `DESKWATCH_MQTT_PASSWORD` environment variable, which is handy for testing only. The log line
 `connected to MQTT broker` confirms the login worked; a wrong login shows `MQTT connection error` and retries
