@@ -21,6 +21,10 @@ may change if the firmware work needs it; any such change is listed here.
   accepted a frame for 10 seconds; the page reconnects by itself. Together with the connection cap this keeps one
   broken or hostile client on the LAN from using up the bridge. There is still no request rate limiting.
 
+## [0.9.7]
+
+The dashboard fixes release: clearer connection states, running pipelines in Running now, and orange for running builds.
+
 ### Changed
 
 - **Running builds are orange on the dashboard instead of blue.** The pulsing dot in Pipelines, the Running now
@@ -211,7 +215,8 @@ not (see the README, "What is not in 0.9").
   are Linux x86_64; build from source for other CPUs.
 - Gitea webhooks are plain HTTP unless you put a reverse proxy in front of the bridge.
 
-[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.6...HEAD
+[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.7...HEAD
+[0.9.7]: https://github.com/Sylentic/DeskWatch/compare/v0.9.6...v0.9.7
 [0.9.6]: https://github.com/Sylentic/DeskWatch/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/Sylentic/DeskWatch/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/Sylentic/DeskWatch/compare/v0.9.3...v0.9.4
