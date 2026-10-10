@@ -253,6 +253,32 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
   look. Hosts that Prometheus reports as down get a red dot and a dimmed card.
 - **The bridge host's clock and the screen's clock differ.** Times such as "3 min ago" use the bridge's clock, so a
   Pi with a wrong clock still shows correct ages. The clock in the header is the screen's own.
+- **No token from your own network** (`trusted_networks`). Add the ranges of your home or office network and only
+  clients outside them need the token:
+
+  ```toml
+  [kiosk]
+  token_file = "kiosk-token"
+  trusted_networks = ["192.168.0.0/16", "fd00::/8"]   # CIDR ranges or single addresses; empty (default) trusts nobody
+  ```
+
+  The decision uses the **TCP peer address** of the connection and nothing else; `X-Forwarded-For` and similar
+  headers are never trusted, because any client can set them. That is only safe when the bridge sees the real client
+  address. It does not when:
+
+  - the bridge sits **behind a reverse proxy** (the peer is the proxy; if your range includes the proxy, everybody who
+    comes through it skips the token);
+  - the bridge runs in **Docker** and the connection arrives through the Docker gateway or a userland proxy, which
+    is common with Docker Desktop on Windows and Mac, with rootless Docker, and for connections from the Docker host
+    itself (the peer is then an internal address such as `172.x.x.x`);
+  - the bridge listens on IPv4 and IPv6 and your range covers only one family (IPv4-mapped addresses such as
+    `::ffff:192.168.1.5` are treated as IPv4, so one IPv4 range covers both).
+
+  Check what the bridge sees before relying on it: start it with `RUST_LOG=deskwatch_bridge::kiosk=debug` (for
+  Docker add `-e RUST_LOG=deskwatch_bridge::kiosk=debug`), open the page from a laptop, and read the log: each
+  request prints `kiosk request peer=Some(<address>) trusted=...`. If the address is not your laptop's, do not trust
+  that range; keep the token (or put the range of the proxy on a proxy that does its own access control). At startup
+  the bridge logs which ranges it trusts. Never trust a range that includes the internet, and never `0.0.0.0/0`.
 - **Which token is this?** The dashboard access token: the text stored in the file named by `token_file` under
   `[kiosk]` in the bridge config (in Docker, the `kiosk-token` file in the credentials folder). It is not a Gitea,
   GitHub or Azure DevOps token; those stay on the bridge and are never typed into the page.

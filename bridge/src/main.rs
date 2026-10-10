@@ -184,6 +184,12 @@ async fn main() -> Result<()> {
                 config.http.listen
             );
         }
+        if !config.kiosk.trusted_networks.is_empty() {
+            info!(
+                "kiosk: clients in {} need no token (judged by the TCP peer address; set RUST_LOG=deskwatch_bridge::kiosk=debug to see the address each request comes from)",
+                config.kiosk.trusted_networks.join(", ")
+            );
+        }
         let built = Kiosk::new(&config.kiosk, token);
         hooks.add("/", built.router());
         kiosk = Some(built);
