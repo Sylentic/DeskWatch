@@ -17,7 +17,7 @@ What you get:
 - Open pull requests count in the PR badge and appear on the `prs` page.
 - A refused or expired token, or an unreachable service, lights the `warn` badge.
 
-Not in this version: agent pools and self-hosted agent status, classic release pipelines, Azure DevOps Server
+Not in this version: agent pools and self-hosted agent status (planned, see [runners.md](runners.md)), classic release pipelines, Azure DevOps Server
 (on premises), and sign-in with Microsoft Entra instead of a token.
 
 ## Before you start

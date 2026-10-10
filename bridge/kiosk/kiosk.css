@@ -192,6 +192,8 @@ body.lost .grid { opacity: .45; filter: grayscale(.7); }
 .group:first-child { margin-top: 0; }
 .group b { color: var(--text); font-weight: 600; }
 .pr .num { color: var(--purple); font-weight: 700; margin-right: .5rem; }
+.row.off .main { color: var(--dim); }
+.row .when.crit-text { color: var(--red); }
 
 .ok { --c: var(--green); }
 .running { --c: var(--orange); }

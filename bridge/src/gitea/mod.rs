@@ -16,6 +16,7 @@
 
 pub mod api;
 pub mod payload;
+pub mod runners;
 pub mod webhook;
 
 use std::collections::{BTreeMap, HashMap};
@@ -52,6 +53,11 @@ pub enum GiteaEvent {
     PullsPolled {
         repo: String,
         pulls: Result<api::OpenPulls, Health>,
+    },
+    /// Every runner of one scope, from the runners API.
+    RunnersPolled {
+        scope: runners::RunnerScope,
+        runners: Vec<runners::ApiRunner>,
     },
 }
 
@@ -123,14 +129,14 @@ impl Source for Gitea {
 
         // The poller follows the jobs the state says are running.
         let (jobs_tx, jobs_rx) = watch::channel(Vec::new());
-        tokio::spawn(api::poll_loop(
-            api,
-            config.repos.clone(),
-            Duration::from_secs(config.job_poll_s),
-            Duration::from_secs(config.poll_s),
-            jobs_rx,
-            events_tx,
-        ));
+        let polling = api::Polling {
+            repos: config.repos.clone(),
+            runner_scopes: config.runner_scopes()?,
+            job: Duration::from_secs(config.job_poll_s),
+            pulls: Duration::from_secs(config.poll_s),
+            runners: Duration::from_secs(config.runner_poll_s),
+        };
+        tokio::spawn(api::poll_loop(api, polling, jobs_rx, events_tx));
 
         let mut state = GiteaState::new(id, config.interrupt, config.alias);
         let mut reported = None;
@@ -227,6 +233,13 @@ impl GiteaState {
                 }
             }
             GiteaEvent::PullRequest(event) => self.on_pull_request(event, now, &mut out),
+            GiteaEvent::RunnersPolled { scope, runners } => out.push(Update::Runners {
+                key: format!("{}:runners:{scope}", self.id),
+                runners: runners
+                    .into_iter()
+                    .map(|runner| runner.into_fact(KIND))
+                    .collect(),
+            }),
             GiteaEvent::PullsPolled { repo, pulls } => match pulls {
                 Ok(pulls) => {
                     out.push(Update::Pulls {
@@ -517,6 +530,34 @@ mod tests {
             "repository": repo()
         });
         GiteaEvent::WorkflowJob(serde_json::from_value(value).unwrap())
+    }
+
+    #[test]
+    fn polled_runners_replace_the_scope_in_the_fact_store() {
+        let mut state = state(true);
+        let mut facts = CiFacts::default();
+        let polled = |names: &[&str]| GiteaEvent::RunnersPolled {
+            scope: runners::RunnerScope::Org("team".into()),
+            runners: names
+                .iter()
+                .map(|name| runners::ApiRunner {
+                    name: name.to_string(),
+                    status: "idle".into(),
+                    ..Default::default()
+                })
+                .collect(),
+        };
+        feed(&mut state, &mut facts, polled(&["a", "b"]), 10);
+        assert_eq!(facts.runners().len(), 2);
+        // `b` was removed from Gitea: the next poll drops it.
+        feed(&mut state, &mut facts, polled(&["a"]), 40);
+        let names: Vec<_> = facts
+            .runners()
+            .iter()
+            .map(|(r, _)| r.name.clone())
+            .collect();
+        assert_eq!(names, ["a"]);
+        assert_eq!(facts.runners()[0].0.source, "gitea");
     }
 
     fn state(interrupt: bool) -> GiteaState {

@@ -8,6 +8,18 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Added
+
+- **Runner status on the kiosk dashboard.** A new `runners` widget lists runners and agents: offline first (red), then
+  busy (orange), then idle (green); a runner an administrator switched off shows grey and never counts as offline.
+  The header says how many are offline and the card greys out when the list stops updating.
+- **Gitea runners** as the first source for it. `[[source.gitea]]` gets `runners = ["user", "org:<name>",
+  "repo:<owner>/<name>", "admin"]` and `runner_poll_s` (default 30). Runners are off unless `runners` is set. The
+  demo (`--demo`) shows four fake runners.
+- **`docs/runners.md`**: the design for runners and agent pools across Gitea, GitHub and Azure DevOps, the token
+  scopes each needs, and the order the other two sources follow in.
+- The kiosk snapshot has a `runners` list (snapshot version stays 1; a page that does not know it ignores it).
+
 ## [0.9.8]
 
 The Docker and kiosk hardening release: Compose uses the published image, WebSocket limits, reverse proxy examples.

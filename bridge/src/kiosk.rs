@@ -208,6 +208,19 @@ pub fn snapshot(composer: &Composer, screen: &Screen, badges: &Badges, layout: &
         })
         .collect();
 
+    let runners: Vec<Value> = composer
+        .ci
+        .runners()
+        .into_iter()
+        .map(|(runner, updated)| {
+            json!({
+                "source": runner.source, "name": runner.name,
+                "status": runner.status.name(), "disabled": runner.disabled,
+                "labels": runner.labels, "updated": updated,
+            })
+        })
+        .collect();
+
     let down: Vec<Value> = composer
         .fleet
         .down()
@@ -240,6 +253,7 @@ pub fn snapshot(composer: &Composer, screen: &Screen, badges: &Badges, layout: &
     out.insert("jobs".into(), Value::Array(jobs));
     out.insert("runs".into(), Value::Array(runs));
     out.insert("pulls".into(), Value::Array(pulls));
+    out.insert("runners".into(), Value::Array(runners));
     out.insert("alerts".into(), json!(composer.alerts.views()));
     out.insert("sources".into(), Value::Array(sources));
     Value::Object(out)

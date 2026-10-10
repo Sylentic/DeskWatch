@@ -23,6 +23,11 @@ use crate::model::{
 /// running after this long are shown as neutral on the pipelines page.
 pub const JOB_MAX_AGE_S: u64 = 6 * 60 * 60;
 
+/// A runner list nobody has refreshed for this long (the source stopped
+/// asking, or the token lost its scope) is dropped. Until then the kiosk
+/// greys it out after a few missed polls.
+pub const RUNNER_MAX_AGE_S: u64 = 60 * 60;
+
 /// Most pipelines kept for the `pipelines` page. The least recently updated
 /// one is dropped first.
 pub const MAX_PIPELINES: usize = 20;
@@ -53,6 +58,52 @@ pub enum Update {
     /// A short flash that is not about a PR, such as a deploy waiting for
     /// approval.
     Notice { notice: NoticeData },
+    /// Every runner of one scope (a user, an organisation, a repository, a
+    /// pool). Replaces what was known for `key`, so a runner that was removed
+    /// disappears and an empty list clears the scope.
+    Runners { key: String, runners: Vec<Runner> },
+}
+
+/// What a runner (Gitea runner, GitHub self-hosted runner, Azure DevOps
+/// agent) is doing, the same for every CI source (integrations plan 8.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RunnerStatus {
+    // Declared in widget order: what needs attention first.
+    Offline,
+    Busy,
+    Idle,
+}
+
+impl RunnerStatus {
+    /// Lowercase name used by the kiosk page.
+    pub fn name(self) -> &'static str {
+        match self {
+            RunnerStatus::Offline => "offline",
+            RunnerStatus::Busy => "busy",
+            RunnerStatus::Idle => "idle",
+        }
+    }
+}
+
+/// One runner, as a CI source reports it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Runner {
+    /// Adapter type, such as `gitea`.
+    pub source: String,
+    pub name: String,
+    pub status: RunnerStatus,
+    /// Switched off by an administrator. Not an outage, so it is shown
+    /// neutral and never counts as offline.
+    pub disabled: bool,
+    pub labels: Vec<String>,
+}
+
+/// The runners of one scope with the Unix seconds they were last refreshed,
+/// so the page can grey out a list that stopped updating.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RunnerSet {
+    runners: Vec<Runner>,
+    updated: u64,
 }
 
 /// A job that is running right now.
@@ -180,6 +231,8 @@ pub struct CiFacts {
     pulls: BTreeMap<String, RepoPulls>,
     /// Short flashes waiting to be shown, with the time they were raised.
     notices: Vec<(NoticeData, u64)>,
+    /// Runners by scope key, such as `gitea:home:runners:org:my-org`.
+    runners: BTreeMap<String, RunnerSet>,
 }
 
 impl CiFacts {
@@ -208,6 +261,18 @@ impl CiFacts {
             } => self.pull_opened(key, project, source, pull, notify, now),
             Update::PullClosed { key, number } => self.pull_closed(&key, number),
             Update::Notice { notice } => self.notices.push((notice, now)),
+            Update::Runners { key, runners } if runners.is_empty() => {
+                self.runners.remove(&key);
+            }
+            Update::Runners { key, runners } => {
+                self.runners.insert(
+                    key,
+                    RunnerSet {
+                        runners,
+                        updated: now,
+                    },
+                );
+            }
         }
     }
 
@@ -349,6 +414,8 @@ impl CiFacts {
         {
             self.focus = None;
         }
+        self.runners
+            .retain(|_, set| now.saturating_sub(set.updated) < RUNNER_MAX_AGE_S);
         for (run, updated) in self.runs.values_mut() {
             // A run waiting for approval can wait for days, and a polled
             // source resends it when anything changes, so it never expires.
@@ -441,6 +508,29 @@ impl CiFacts {
             .collect();
         runs.sort_by_key(|(_, run, updated)| (run.status, Reverse(*updated)));
         runs
+    }
+
+    /// Every known runner with the time its scope was last refreshed: offline
+    /// first, then busy, then idle, each group by name. Overlapping scopes
+    /// (the admin list plus an organisation) list a runner twice, so the
+    /// docs say to pick one.
+    pub fn runners(&self) -> Vec<(&Runner, u64)> {
+        let mut runners: Vec<_> = self
+            .runners
+            .values()
+            .flat_map(|set| set.runners.iter().map(|r| (r, set.updated)))
+            .collect();
+        // A disabled runner is parked, so it goes last whatever it reports.
+        runners.sort_by_key(|(r, _)| (r.disabled, r.status, r.name.clone()));
+        runners
+    }
+
+    /// Runners that should be up but are not (disabled ones do not count).
+    pub fn offline_runner_count(&self) -> u32 {
+        self.runners()
+            .iter()
+            .filter(|(r, _)| !r.disabled && r.status == RunnerStatus::Offline)
+            .count() as u32
     }
 
     /// Open PRs per repository.
@@ -786,5 +876,95 @@ mod tests {
             0,
         );
         assert_eq!(facts.open_pull_count(), 1);
+    }
+
+    fn runner(name: &str, status: RunnerStatus, disabled: bool) -> Runner {
+        Runner {
+            source: "gitea".into(),
+            name: name.into(),
+            status,
+            disabled,
+            labels: vec!["ubuntu-latest".into()],
+        }
+    }
+
+    fn runners(facts: &mut CiFacts, key: &str, list: Vec<Runner>, now: u64) {
+        facts.apply(
+            Update::Runners {
+                key: key.into(),
+                runners: list,
+            },
+            now,
+        );
+    }
+
+    #[test]
+    fn runners_sort_by_attention_and_disabled_go_last() {
+        let mut facts = CiFacts::default();
+        runners(
+            &mut facts,
+            "gitea:home:runners:user",
+            vec![
+                runner("c-idle", RunnerStatus::Idle, false),
+                runner("b-busy", RunnerStatus::Busy, false),
+                runner("z-parked", RunnerStatus::Offline, true),
+                runner("a-down", RunnerStatus::Offline, false),
+            ],
+            10,
+        );
+        let names: Vec<_> = facts
+            .runners()
+            .iter()
+            .map(|(r, _)| r.name.clone())
+            .collect();
+        assert_eq!(names, ["a-down", "b-busy", "c-idle", "z-parked"]);
+        // Only the runner that should be up counts as offline.
+        assert_eq!(facts.offline_runner_count(), 1);
+    }
+
+    #[test]
+    fn runner_update_replaces_its_scope_and_empty_clears_it() {
+        let mut facts = CiFacts::default();
+        runners(
+            &mut facts,
+            "gitea:home:runners:user",
+            vec![
+                runner("a", RunnerStatus::Idle, false),
+                runner("b", RunnerStatus::Idle, false),
+            ],
+            10,
+        );
+        runners(
+            &mut facts,
+            "gitea:home:runners:org:team",
+            vec![runner("c", RunnerStatus::Busy, false)],
+            10,
+        );
+        assert_eq!(facts.runners().len(), 3);
+        // The next poll of the user scope no longer has `b`.
+        runners(
+            &mut facts,
+            "gitea:home:runners:user",
+            vec![runner("a", RunnerStatus::Busy, false)],
+            40,
+        );
+        assert_eq!(facts.runners().len(), 2);
+        runners(&mut facts, "gitea:home:runners:org:team", vec![], 40);
+        assert_eq!(facts.runners().len(), 1);
+    }
+
+    #[test]
+    fn runner_lists_expire_when_nobody_refreshes_them() {
+        let mut facts = CiFacts::default();
+        runners(
+            &mut facts,
+            "gitea:home:runners:user",
+            vec![runner("a", RunnerStatus::Idle, false)],
+            100,
+        );
+        facts.expire(100 + RUNNER_MAX_AGE_S - 1);
+        assert_eq!(facts.runners().len(), 1);
+        facts.expire(100 + RUNNER_MAX_AGE_S);
+        assert!(facts.runners().is_empty());
     }
 }
