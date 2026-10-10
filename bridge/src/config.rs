@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::gitea::runners::RunnerScope;
 use crate::model::RotationEntry;
 use crate::source::{Interrupt, valid_name};
 
@@ -331,6 +332,8 @@ pub enum Widget {
     Containers,
     /// Health of every source.
     Health,
+    /// Runners and agents: idle, busy or offline. Not in the default layout.
+    Runners,
 }
 
 /// One `[[kiosk.panel]]` block.
@@ -456,6 +459,15 @@ pub struct GiteaConfig {
     /// Seconds between step progress polls while a job runs.
     #[serde(default = "default_gitea_job_poll_s")]
     pub job_poll_s: u64,
+    /// Runner lists to show on the kiosk `runners` widget: `"user"`,
+    /// `"org:<name>"`, `"repo:<owner>/<name>"` or `"admin"` (all runners,
+    /// needs an administrator token). Empty means runners are not polled.
+    /// Do not list overlapping scopes, a runner would show twice.
+    #[serde(default)]
+    pub runners: Vec<String>,
+    /// Seconds between runner polls.
+    #[serde(default = "default_gitea_runner_poll_s")]
+    pub runner_poll_s: u64,
     /// May running jobs and finished runs take over the screen? `true`,
     /// `false`, or a list of repositories that may.
     #[serde(default = "interrupt_all")]
@@ -463,6 +475,19 @@ pub struct GiteaConfig {
     /// Short panel labels for repositories, such as `{ "team/service-a" = "work A" }`.
     #[serde(default)]
     pub alias: BTreeMap<String, String>,
+}
+
+impl GiteaConfig {
+    /// The parsed `runners` entries.
+    pub fn runner_scopes(&self) -> Result<Vec<RunnerScope>> {
+        self.runners
+            .iter()
+            .map(|text| {
+                RunnerScope::parse(text)
+                    .with_context(|| format!("source.gitea {}: runners", self.name))
+            })
+            .collect()
+    }
 }
 
 /// One `[[source.github]]` block: open PRs and Actions runs from github.com,
@@ -688,6 +713,10 @@ fn default_gitea_job_poll_s() -> u64 {
     5
 }
 
+fn default_gitea_runner_poll_s() -> u64 {
+    30
+}
+
 /// Rotation used when the config has no `[[rotation]]` blocks: the stats page only.
 fn default_rotation() -> Vec<RotationEntry> {
     vec![RotationEntry {
@@ -749,9 +778,10 @@ impl Config {
                 "two source.gitea blocks are named {name:?}"
             );
             anyhow::ensure!(
-                gitea.poll_s > 0 && gitea.job_poll_s > 0,
-                "source.gitea {name}: poll_s and job_poll_s must be above 0"
+                gitea.poll_s > 0 && gitea.job_poll_s > 0 && gitea.runner_poll_s > 0,
+                "source.gitea {name}: poll_s, job_poll_s and runner_poll_s must be above 0"
             );
+            gitea.runner_scopes()?;
             anyhow::ensure!(
                 gitea.repos.iter().all(|r| r.split('/').count() == 2),
                 "source.gitea {name}: repos entries must look like owner/name"
@@ -1001,6 +1031,24 @@ mod tests {
         assert!(list.source.gitea[0].interrupt.allows("me/a"));
         assert_eq!(list.source.gitea[0].alias["me/a"], "A");
 
+        // Runners are off unless scopes are listed.
+        assert!(gitea.runners.is_empty());
+        assert_eq!(gitea.runner_poll_s, 30);
+        let runners = Config::from_toml(&block(
+            "runners = [\"user\", \"org:team\", \"repo:me/a\"]\nrunner_poll_s = 15",
+        ))
+        .unwrap();
+        assert_eq!(runners.source.gitea[0].runner_scopes().unwrap().len(), 3);
+        let bad_scope = format!(
+            "{:#}",
+            Config::from_toml(&block("runners = [\"team\"]")).unwrap_err()
+        );
+        assert!(
+            bad_scope.contains("source.gitea home: runners"),
+            "{bad_scope}"
+        );
+        assert!(Config::from_toml(&block("runner_poll_s = 0")).is_err());
+
         assert!(Config::from_toml(&block("repos = [\"just-a-name\"]")).is_err());
         let twice = format!("{}{}", block(""), block(""));
         assert!(Config::from_toml(&twice).is_err(), "duplicate names");
@@ -1244,6 +1292,14 @@ title = "Reviews"
         assert_eq!(panels[1].widget, Widget::Prs);
         assert_eq!((panels[1].rows, panels[1].span), (Some(12), [1, 2]));
         assert_eq!(panels[1].title.as_deref(), Some("Reviews"));
+    }
+
+    #[test]
+    fn runners_widget_is_not_in_the_default_layout() {
+        assert!(default_panels().iter().all(|p| p.widget != Widget::Runners));
+        let config =
+            Config::from_toml("[[kiosk.panel]]\nwidget = \"runners\"\nspan = [2, 1]").unwrap();
+        assert_eq!(config.kiosk.panels()[0].widget, Widget::Runners);
     }
 
     #[test]

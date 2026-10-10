@@ -27,6 +27,7 @@ A grid of cards, 4 columns by 3 rows by default:
 | `alerts` | Active alerts (Home Assistant, scripts), most urgent first |
 | `containers` | Containers and hosts that are down (needs the Prometheus source) |
 | `health` | Whether every source is working, or why not (token refused, not reachable) |
+| `runners` | Runners and agents: offline first, then busy, then idle. Not in the default layout; see [runners.md](runners.md) |
 
 Interrupts do not take over the whole screen as they do on the ESP panel, because the other widgets are still
 useful. The bridge's normal priority decides (critical alert, running job, failed, warning, success, notice), and
@@ -73,7 +74,8 @@ dashboard-only config and no broker. The Compose files, the token and the revers
 
 `[[kiosk.panel]]` blocks place widgets on the grid, left to right and top to bottom, like the `[[rotation]]` list.
 Without any, the default layout is used: `stats`, `hosts`, `jobs` (2 wide), `prs` (2 tall), `pipelines` (2 by 2),
-`alerts`, `health`.
+`alerts`, `health`. Add a `runners` panel yourself (it needs a source with runner scopes set, see
+[runners.md](runners.md)); the default grid has no free cell for it.
 
 ```toml
 [kiosk]

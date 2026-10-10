@@ -6,7 +6,7 @@ use tower::ServiceExt;
 
 use super::*;
 use crate::alerts::AlertMessage;
-use crate::ci::{OpenPull, RepoPulls, Run, RunStatus, RunningJob, Update};
+use crate::ci::{OpenPull, RepoPulls, Run, RunStatus, Runner, RunnerStatus, RunningJob, Update};
 use crate::fleet::{Down, HostFacts, StatsReport};
 use crate::model::{JobData, JobKind, RotationEntry, StatsData};
 use crate::source::{Health, SourceId};
@@ -242,6 +242,57 @@ fn snapshot_carries_every_fact() {
 }
 
 #[test]
+fn snapshot_lists_runners_offline_first() {
+    let mut kiosk = kiosk_with(None);
+    let mut c = composer();
+    let runner = |name: &str, status, disabled| Runner {
+        source: "gitea".into(),
+        name: name.into(),
+        status,
+        disabled,
+        labels: vec!["ubuntu-latest".into()],
+    };
+    c.ci.apply(
+        Update::Runners {
+            key: "gitea:home:runners:user".into(),
+            runners: vec![
+                runner("idle-1", RunnerStatus::Idle, false),
+                runner("parked", RunnerStatus::Offline, true),
+                runner("down-1", RunnerStatus::Offline, false),
+                runner("busy-1", RunnerStatus::Busy, false),
+            ],
+        },
+        NOW,
+    );
+    kiosk.update(&mut c, NOW);
+    let snap = json_of(&kiosk);
+    let rows: Vec<(&str, &str, bool)> = snap["runners"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| {
+            (
+                r["name"].as_str().unwrap(),
+                r["status"].as_str().unwrap(),
+                r["disabled"].as_bool().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("down-1", "offline", false),
+            ("busy-1", "busy", false),
+            ("idle-1", "idle", false),
+            ("parked", "offline", true),
+        ]
+    );
+    assert_eq!(snap["runners"][0]["labels"][0], "ubuntu-latest");
+    assert_eq!(snap["runners"][0]["updated"], NOW);
+    assert_eq!(snap["runners"][0]["source"], "gitea");
+}
+
+#[test]
 fn layout_carries_theme_pixel_shift_and_panel_filters() {
     // Defaults leave the look unchanged: day theme, no pixel shift, no filters.
     let mut kiosk = kiosk_with(None);
@@ -295,6 +346,7 @@ fn idle_snapshot_has_no_screen() {
     let snap = json_of(&kiosk);
     assert!(snap["screen"].is_null());
     assert_eq!(snap["jobs"], json!([]));
+    assert_eq!(snap["runners"], json!([]));
     assert_eq!(snap["hosts"], json!([]));
 }
 

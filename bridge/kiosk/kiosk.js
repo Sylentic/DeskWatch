@@ -143,6 +143,9 @@
   // { title, body, count?, tag?, stale? }. A new widget is one more entry here,
   // plus its name in config.rs.
 
+  // Seconds after which a runner list counts as old (a few missed polls).
+  var RUNNERS_OLD = 150;
+
   var widgets = {
     stats: function (p) {
       var host = findHost(p.host);
@@ -235,6 +238,22 @@
           (a.message ? '<span class="sub">' + esc(a.message) + '</span>' : '') + '</div>';
       });
       return { title: 'Alerts', count: alerts.length || '', body: list(rows, p.rows, '<div class="empty good">All quiet</div>') };
+    },
+
+    runners: function (p) {
+      var runners = snap.runners || [];
+      var offline = runners.filter(function (r) { return r.status === 'offline' && !r.disabled; }).length;
+      // The bridge polls every 30 s or so; a list this old stopped updating.
+      var old = runners.some(function (r) { return nowS() - r.updated > RUNNERS_OLD; });
+      var rows = runners.map(function (r) {
+        var state = r.disabled ? 'disabled' : r.status;
+        var dotState = r.disabled ? 'neutral' : r.status === 'busy' ? 'running' : r.status === 'idle' ? 'ok' : 'failed';
+        var labels = (r.labels || []).join(', ');
+        return '<div class="row' + (r.disabled ? ' off' : '') + '">' + dot(dotState) + '<span class="main">' + esc(r.name) + '</span>' +
+          '<span class="when ' + (r.status === 'offline' && !r.disabled ? 'crit-text' : '') + '">' + esc(state) + '</span>' +
+          '<span class="sub">' + (labels ? esc(labels) : 'no labels') + src(r.source) + '</span></div>';
+      });
+      return { title: 'Runners', count: runners.length, tag: offline ? offline + ' offline' : '', stale: ciStale() || old, body: list(rows, p.rows, '<div class="empty">No runners configured</div>') };
     },
 
     health: function () {

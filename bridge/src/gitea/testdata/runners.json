@@ -1,0 +1,21 @@
+{
+  "total_count": 4,
+  "runners": [
+    {
+      "id": 1, "name": "runner-1", "status": "idle", "busy": false, "disabled": false, "ephemeral": false,
+      "labels": [ { "id": 1, "name": "ubuntu-latest", "type": "custom" } ]
+    },
+    {
+      "id": 2, "name": "runner-2", "status": "active", "busy": true, "disabled": false, "ephemeral": false,
+      "labels": [ { "id": 1, "name": "ubuntu-latest", "type": "custom" }, { "id": 2, "name": "docker", "type": "custom" } ]
+    },
+    {
+      "id": 3, "name": "runner-3", "status": "offline", "busy": false, "disabled": false, "ephemeral": false,
+      "labels": []
+    },
+    {
+      "id": 4, "name": "runner-4", "status": "offline", "busy": false, "disabled": true, "ephemeral": true,
+      "labels": [ { "id": 3, "name": "arm64", "type": "custom" } ]
+    }
+  ]
+}

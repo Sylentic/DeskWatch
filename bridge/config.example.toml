@@ -87,6 +87,11 @@ poll_s = 60                     # open PR poll, a safety net behind PR webhooks
 job_poll_s = 5                  # step progress poll while a job runs
 interrupt = true                # true, false, or a list such as ["owner/repo"]
 # alias = { "owner/repo" = "shop" }  # short labels on the panel
+# Runners for the kiosk `runners` widget (docs/runners.md). Off unless listed.
+# Needs a token: "user" = runners of the token's user, "org:<name>", "repo:<owner>/<name>",
+# "admin" = all runners (administrator token). Do not list overlapping scopes.
+# runners = ["user"]
+# runner_poll_s = 30            # seconds between runner polls
 
 # Alerts that Home Assistant or any script publishes on <topic_prefix>/alert.
 # Severity info flashes a notice, warning shows an amber screen, critical a

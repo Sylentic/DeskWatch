@@ -19,7 +19,7 @@
 //! Pressing the real (simulated) button during the demo works as usual.
 
 use crate::alerts::{AlertMessage, Severity};
-use crate::ci::{OpenPull, RepoPulls, Run, RunStatus, RunningJob, Update};
+use crate::ci::{OpenPull, RepoPulls, Run, RunStatus, Runner, RunnerStatus, RunningJob, Update};
 use crate::composer::Composer;
 use crate::fleet::{HostFacts, StatsReport};
 use crate::model::{
@@ -145,6 +145,38 @@ fn fake_fleet(composer: &mut Composer, now: u64) {
     composer
         .health
         .set(&SourceId::new(SOURCE, "demo"), Health::Ok);
+
+    // Four runners for the kiosk runners widget: one flips between busy and
+    // idle, one is down and one is switched off. Refreshed every tick, like a poll.
+    let runner = |name: &str, status: RunnerStatus, disabled: bool, labels: &[&str]| Runner {
+        source: SOURCE.into(),
+        name: name.into(),
+        status,
+        disabled,
+        labels: labels.iter().map(|l| l.to_string()).collect(),
+    };
+    let busy = if wave(13.0, 0.0) > 0.5 {
+        RunnerStatus::Busy
+    } else {
+        RunnerStatus::Idle
+    };
+    composer.ci.apply(
+        Update::Runners {
+            key: format!("{SOURCE}:demo:runners:user"),
+            runners: vec![
+                runner("demo-runner-1", busy, false, &["ubuntu-latest"]),
+                runner(
+                    "demo-runner-2",
+                    RunnerStatus::Idle,
+                    false,
+                    &["ubuntu-latest"],
+                ),
+                runner("demo-runner-3", RunnerStatus::Offline, false, &["arm64"]),
+                runner("demo-runner-4", RunnerStatus::Offline, true, &["windows"]),
+            ],
+        },
+        now,
+    );
 }
 
 /// Fake server stats that drift slowly, so the gauges move.
