@@ -418,12 +418,12 @@
     if (e && e.auth) {
       return token ? {
         code: 'rejected', pill: 'token rejected', needsToken: true,
-        title: 'The bridge did not accept the token',
-        detail: 'The token this tab uses is wrong, or it changed after the bridge was restarted. Enter the current one.'
+        title: 'The dashboard token was not accepted',
+        detail: 'The access token is wrong, or it changed. It is the text in the file set by `token_file` under `[kiosk]` in the bridge config. Enter it again.'
       } : {
         code: 'required', pill: 'token required', needsToken: true,
-        title: 'This dashboard needs a token',
-        detail: 'The bridge has a kiosk token set. Enter it below, or open the page once as ?token=... on the address.'
+        title: 'This dashboard needs its access token',
+        detail: 'Not a Gitea, GitHub or Azure DevOps token. It is the text in the file set by `token_file` under `[kiosk]` in the bridge config. Enter it below, or open this page once as `/?token=YOUR_TOKEN`.'
       };
     }
     if (e && e.status) {
@@ -458,7 +458,7 @@
     noticeKey = key;
     el.hidden = !p;
     if (!p) { el.innerHTML = ''; return; }
-    el.innerHTML = '<h2>' + esc(p.title) + '</h2><p>' + esc(p.detail) + '</p>' +
+    el.innerHTML = '<h2>' + esc(p.title) + '</h2><p>' + esc(p.detail).replace(/`([^`]+)`/g, '<code>$1</code>') + '</p>' +
       (p.needsToken ? '<div class="tokenbox"><input id="token-input" type="password" autocomplete="off" spellcheck="false" placeholder="token" aria-label="token">' +
         '<button id="token-go" type="button">Connect</button></div>' : '');
     var input = $('token-input');

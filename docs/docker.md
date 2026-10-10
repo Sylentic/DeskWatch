@@ -107,6 +107,9 @@ point the variable at an absolute folder that holds `bridge.toml` and `credentia
 docker compose -f docker-compose.dashboard.yml up -d`, or a line in a `.env` file next to the Compose file) and use the
 published image instead of `build:`, see section 10.
 
+The token here is the dashboard access token: the text in the `kiosk-token` file you just created (the file named by
+`token_file` under `[kiosk]`). It is not a Gitea, GitHub or Azure DevOps token.
+
 Then open `http://<docker host>:8787/?token=<the token>`. The page removes the token from the address bar as soon as
 it loads and keeps it for that browser tab only, so reloads work and the token stays out of the history. A bookmark
 of the page therefore needs the `?token=...` added by hand; for a kiosk browser put the full address in the start

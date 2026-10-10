@@ -32,6 +32,12 @@ may change if the firmware work needs it; any such change is listed here.
 - **Faster Docker rebuilds**: the `Dockerfile` compiles the dependencies in their own layer, so a change in the bridge,
   `sim` or `ui` source no longer recompiles them. Fixes #29.
 
+### Changed
+
+- **Clearer kiosk token card.** The "needs a token" and "token rejected" cards now say it is the dashboard access
+  token from the file named by `token_file` under `[kiosk]`, not a CI token, and show the `/?token=YOUR_TOKEN`
+  example in code style so it no longer breaks mid-word. `docs/kiosk.md` and `docs/docker.md` explain the same.
+
 ## [0.9.8]
 
 The Docker and kiosk hardening release: Compose uses the published image, WebSocket limits, reverse proxy examples.

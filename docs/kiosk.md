@@ -253,6 +253,9 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
   look. Hosts that Prometheus reports as down get a red dot and a dimmed card.
 - **The bridge host's clock and the screen's clock differ.** Times such as "3 min ago" use the bridge's clock, so a
   Pi with a wrong clock still shows correct ages. The clock in the header is the screen's own.
+- **Which token is this?** The dashboard access token: the text stored in the file named by `token_file` under
+  `[kiosk]` in the bridge config (in Docker, the `kiosk-token` file in the credentials folder). It is not a Gitea,
+  GitHub or Azure DevOps token; those stay on the bridge and are never typed into the page.
 - **The page says why it has no data.** An empty page with `connecting` used to be all you saw. Now the header chip
   and a box in the page body name the cause:
 

@@ -443,6 +443,7 @@ fn page_explains_why_it_has_no_data() {
     assert!(KIOSK_JS.contains("r.status === 401"));
     for pill in [
         "token required",
+        "Not a Gitea, GitHub or Azure DevOps token",
         "token rejected",
         "bridge unreachable",
         "polling, no live socket",
