@@ -20,6 +20,7 @@ use reqwest::header::{ACCEPT, ETAG, HeaderMap, IF_NONE_MATCH};
 use serde::de::DeserializeOwned;
 
 use super::payload::{Job, Jobs, PullRequest, WorkflowRun, WorkflowRuns};
+use crate::gitea::runners::{ApiRunner, RunnerList, RunnerScope};
 use crate::source::Secret;
 
 /// Default API root: github.com.
@@ -35,6 +36,11 @@ pub const PULLS_PAGE_SIZE: u32 = 100;
 /// Recent runs fetched per repository: enough to find the latest run of
 /// each workflow in a busy repository.
 const RUNS_PAGE_SIZE: u32 = 20;
+
+/// Self-hosted runners per page (GitHub's maximum) and the most pages read per
+/// scope, so a broken `total_count` cannot loop for ever.
+const RUNNERS_PAGE_SIZE: u32 = 100;
+const MAX_RUNNER_PAGES: u32 = 10;
 
 /// Give up on a request after this long, so a hung server cannot stall polling.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
@@ -114,6 +120,25 @@ impl HttpApi {
             .await
             .context("run jobs")?;
         Ok(jobs.jobs)
+    }
+
+    /// Every self-hosted runner of a repository or organisation, all pages.
+    /// The runner list is filed under Administration (repository) and
+    /// Self-hosted runners (organisation), so a token made for PRs and
+    /// Actions gets `403` here.
+    pub async fn runners(&self, scope: &RunnerScope) -> Result<Vec<ApiRunner>> {
+        let base = scope.path();
+        let mut runners = Vec::new();
+        for page in 1..=MAX_RUNNER_PAGES {
+            let path = format!("{base}?per_page={RUNNERS_PAGE_SIZE}&page={page}");
+            let list: RunnerList = self.get_json(&path).await.context("runners")?;
+            let empty = list.runners.is_empty();
+            runners.extend(list.runners);
+            if empty || runners.len() >= list.total_count as usize {
+                break;
+            }
+        }
+        Ok(runners)
     }
 
     /// Drop the kept job list of a finished run.
@@ -272,8 +297,19 @@ pub(crate) mod tests {
                     },
                 ),
             )
+            .route(&format!("{repo}/actions/runners"), get(runners_handler))
+            .route("/api/v3/orgs/{org}/actions/runners", get(runners_handler))
             .with_state(seen);
         serve(app).await
+    }
+
+    async fn runners_handler(State(seen): State<Arc<Seen>>, headers: HeaderMap) -> Response {
+        fixture(
+            &seen,
+            "runners",
+            headers,
+            include_str!("testdata/runners.json"),
+        )
     }
 
     pub(crate) async fn serve(app: Router) -> String {
@@ -357,5 +393,55 @@ pub(crate) mod tests {
         let api = api("http://127.0.0.1:9/api/v3");
         let err = api.runs("your-user/demo").await.unwrap_err();
         assert_eq!(Health::from_error(&err), Health::Unreachable);
+    }
+
+    #[tokio::test]
+    async fn runners_of_a_repository_and_an_organisation() {
+        let seen = Arc::new(Seen::default());
+        let api = api(&mock_github(seen.clone()).await);
+
+        let repo = api
+            .runners(&RunnerScope::Repo("your-user/demo".into()))
+            .await
+            .unwrap();
+        let names: Vec<_> = repo.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, ["build-box-1", "build-box-2", "build-box-3"]);
+        // The second poll sends the ETag back and gets the kept list.
+        let org = api
+            .runners(&RunnerScope::Org("your-org".into()))
+            .await
+            .unwrap();
+        assert_eq!(org.len(), 3);
+        api.runners(&RunnerScope::Org("your-org".into()))
+            .await
+            .unwrap();
+
+        let requests = seen.requests.lock().unwrap();
+        assert!(requests.iter().all(|(path, _)| path == "runners"));
+        assert_eq!(requests[0].1["authorization"], "Bearer test-token");
+        assert!(
+            requests[2].1.get("if-none-match").is_some(),
+            "ETag sent back"
+        );
+    }
+
+    /// The token lacks the runner right: a plain 403, not a rate limit.
+    #[tokio::test]
+    async fn runner_list_without_the_right_is_auth_failed() {
+        let app = Router::new().route(
+            "/api/v3/orgs/{org}/actions/runners",
+            get(|| async {
+                (
+                    StatusCode::FORBIDDEN,
+                    "{\"message\":\"Resource not accessible by personal access token\"}",
+                )
+            }),
+        );
+        let api = api(&serve(app).await);
+        let err = api
+            .runners(&RunnerScope::Org("your-org".into()))
+            .await
+            .unwrap_err();
+        assert_eq!(Health::from_error(&err), Health::AuthFailed);
     }
 }

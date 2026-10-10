@@ -62,8 +62,8 @@ The mini display's UI in the desktop simulator:
 
 - **Working firmware.** A first firmware crate exists in [`firmware/`](firmware/README.md) (Wi-Fi, MQTT, display code, all untested on hardware) next to a TLS spike binary that measures HTTPS on the bare board (also untested); the real panel waits for the display to arrive. 1.0 is reserved for the first release with working firmware on the real screen. Until then the simulator draws exactly what
   the panel will, and the schema is the contract the firmware will implement. Over-the-air updates come last.
-- **Runner and agent pool status on the ESP panel.** Gitea runners show on the kiosk dashboard (`runners` widget,
-  [docs/runners.md](docs/runners.md)). GitHub self-hosted runners and Azure DevOps agent pools follow, then the ESP
+- **Runner and agent pool status on the ESP panel.** Gitea runners and GitHub self-hosted runners show on the kiosk
+  dashboard (`runners` widget, [docs/runners.md](docs/runners.md)). Azure DevOps agent pools follow, then the ESP
   panel page and badge.
 - **TLS on the webhook listener.** Gitea talks plain HTTP to the bridge; put a reverse proxy in front if the path
   crosses an untrusted network.

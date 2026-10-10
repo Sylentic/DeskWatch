@@ -138,6 +138,10 @@ max_active = 10                 # least urgent, oldest alert is dropped first
 # job_poll_s = 5                # step progress while a run is in progress
 # interrupt = true              # true, false, or a list such as ["your-user/repo-a"]
 # notify_new_prs = true         # flash "New PR" for new non-draft PRs
+# # Self-hosted runners for the kiosk `runners` widget (docs/runners.md). Off unless listed.
+# # Needs more token rights: repo runners "Administration: read", org runners "Self-hosted runners: read".
+# # runners = ["repo:your-user/repo-a", "org:your-org"]   # do not list overlapping scopes
+# # runner_poll_s = 300         # seconds between runner polls
 # alias = { "your-user/repo-a" = "A" }  # short labels on the panel
 #
 # [[source.github]]

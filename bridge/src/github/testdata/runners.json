@@ -1,0 +1,24 @@
+{
+  "total_count": 3,
+  "runners": [
+    {
+      "id": 21, "name": "build-box-1", "os": "linux", "status": "online", "busy": false,
+      "labels": [
+        { "id": 1, "name": "self-hosted", "type": "read-only" },
+        { "id": 2, "name": "Linux", "type": "read-only" },
+        { "id": 3, "name": "X64", "type": "read-only" }
+      ]
+    },
+    {
+      "id": 22, "name": "build-box-2", "os": "linux", "status": "online", "busy": true,
+      "labels": [
+        { "id": 1, "name": "self-hosted", "type": "read-only" },
+        { "id": 4, "name": "gpu", "type": "custom" }
+      ]
+    },
+    {
+      "id": 23, "name": "build-box-3", "os": "windows", "status": "offline", "busy": false,
+      "labels": [ { "id": 1, "name": "self-hosted", "type": "read-only" } ]
+    }
+  ]
+}

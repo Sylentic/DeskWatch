@@ -519,9 +519,38 @@ pub struct GithubConfig {
     /// Flash "New PR" when a poll finds a new, non-draft PR.
     #[serde(default = "yes")]
     pub notify_new_prs: bool,
+    /// Self-hosted runner lists for the kiosk `runners` widget:
+    /// `"repo:<owner>/<name>"` or `"org:<name>"`. Needs extra token rights
+    /// (docs/runners.md). Empty means runners are not polled. Do not list
+    /// overlapping scopes, a runner would show twice.
+    #[serde(default)]
+    pub runners: Vec<String>,
+    /// Seconds between runner polls.
+    #[serde(default = "default_github_runner_poll_s")]
+    pub runner_poll_s: u64,
     /// Short panel labels for repositories, such as `{ "team/service-a" = "work A" }`.
     #[serde(default)]
     pub alias: BTreeMap<String, String>,
+}
+
+impl GithubConfig {
+    /// The parsed `runners` entries. GitHub only lists runners per
+    /// repository and per organisation.
+    pub fn runner_scopes(&self) -> Result<Vec<RunnerScope>> {
+        self.runners
+            .iter()
+            .map(|text| {
+                let scope = RunnerScope::parse(text)
+                    .with_context(|| format!("source.github {}: runners", self.name))?;
+                anyhow::ensure!(
+                    matches!(scope, RunnerScope::Org(_) | RunnerScope::Repo(_)),
+                    "source.github {}: runners entry {text:?} must be repo:<owner>/<name> or org:<name>",
+                    self.name
+                );
+                Ok(scope)
+            })
+            .collect()
+    }
 }
 
 /// One `[[source.azure_devops]]` block: pipeline runs and open PRs from Azure
@@ -697,6 +726,10 @@ fn default_github_job_poll_s() -> u64 {
     5
 }
 
+fn default_github_runner_poll_s() -> u64 {
+    300
+}
+
 fn yes() -> bool {
     true
 }
@@ -803,9 +836,10 @@ impl Config {
                 "source.github {name}: base_url must start with https://"
             );
             anyhow::ensure!(
-                github.poll_s > 0 && github.job_poll_s > 0,
-                "source.github {name}: poll_s and job_poll_s must be above 0"
+                github.poll_s > 0 && github.job_poll_s > 0 && github.runner_poll_s > 0,
+                "source.github {name}: poll_s, job_poll_s and runner_poll_s must be above 0"
             );
+            github.runner_scopes()?;
             anyhow::ensure!(
                 !github.repos.is_empty(),
                 "source.github {name}: repos needs at least one owner/name"
@@ -1072,6 +1106,23 @@ mod tests {
         assert_eq!((github.poll_s, github.job_poll_s), (60, 5));
         assert!(github.notify_new_prs);
         assert_eq!(github.interrupt, Interrupt::All(true));
+
+        // Runners are off unless scopes are listed; GitHub has no user or admin list.
+        assert!(github.runners.is_empty());
+        assert_eq!(github.runner_poll_s, 300);
+        let runners = Config::from_toml(&block(
+            "runners = [\"repo:me/a\", \"org:team\"]\nrunner_poll_s = 120",
+        ))
+        .unwrap();
+        assert_eq!(runners.source.github[0].runner_scopes().unwrap().len(), 2);
+        for bad in ["user", "admin", "team", "repo:me"] {
+            let toml = block(&format!("runners = [\"{bad}\"]"));
+            assert!(
+                Config::from_toml(&toml).is_err(),
+                "{bad:?} should be refused"
+            );
+        }
+        assert!(Config::from_toml(&block("runner_poll_s = 0")).is_err());
 
         let ghes = Config::from_toml(&block(
             "base_url = \"https://ghe.example.com/api/v3\"\ninterrupt = false",

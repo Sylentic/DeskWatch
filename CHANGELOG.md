@@ -10,6 +10,11 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Added
 
+- **GitHub self-hosted runners** on the kiosk `runners` widget. `[[source.github]]` gets `runners = ["repo:<owner>/<name>",
+  "org:<name>"]` and `runner_poll_s` (default 300). Off unless `runners` is set. Needs extra token rights:
+  **Administration: read** for a repository's runners, **Self-hosted runners: read** for an organisation's. A token
+  without them only loses the runner list; the PR and pipeline widgets keep working. Works on GitHub Enterprise
+  Server and GHE.com too. See `docs/runners.md`.
 - **Kiosk night theme**: `[kiosk] theme = "day" | "night" | "auto"` with `night_from` and `night_to` (default 22:00 to
   07:00, by the browser's clock). The night look is the same layout at about half the brightness. `?theme=` on the page
   address overrides the config. The default stays `day`, so nothing changes unless you set it.

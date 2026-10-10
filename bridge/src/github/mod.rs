@@ -12,6 +12,11 @@
 //!   jobs, for the step progress bar. Repositories that may not interrupt are
 //!   polled too; their jobs show on the kiosk page only.
 //!
+//! - every `runner_poll_s` (5 min), only when `runners` is set: the
+//!   self-hosted runners of those repositories and organisations. This does
+//!   not touch the source's health, because a token without the runner right
+//!   (a plain 403) must not grey out the PR and pipeline widgets.
+//!
 //! Failures back off (60 s, 2 min, 5 min), and polling slows down when less
 //! than 10 % of the rate limit is left.
 
@@ -28,6 +33,7 @@ use tracing::{debug, info, warn};
 use crate::ci::{OpenPull, RepoPulls, Run, RunStatus, RunningJob, Update};
 use crate::config::GithubConfig;
 use crate::gitea::payload::{unix_seconds, workflow_file};
+use crate::gitea::runners::RunnerScope;
 use crate::gitea::{job_kind, step_progress};
 use crate::model::{JobData, MAX_TITLE_CHARS, truncate};
 use crate::source::{self, FactSink, Health, Interrupt, Source, SourceId, unix_now};
@@ -79,8 +85,9 @@ impl Source for Github {
         let Github { id, config, api } = self;
         info!(source = %id, base_url = %config.base_url, repos = config.repos.len(), "polling GitHub");
         let poll = Duration::from_secs(config.poll_s);
+        let runner_scopes = config.runner_scopes()?;
         let mut state = GithubState::new(
-            id,
+            id.clone(),
             config.interrupt,
             config.alias,
             config.notify_new_prs,
@@ -91,9 +98,15 @@ impl Source for Github {
         let mut failures = 0;
         let mut job_ticker = tokio::time::interval(Duration::from_secs(config.job_poll_s));
         job_ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        let mut runner_ticker = tokio::time::interval(Duration::from_secs(config.runner_poll_s));
+        runner_ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
         let mut reported = None;
         loop {
             let updates = tokio::select! {
+                // Skipped altogether when no runner scopes are configured.
+                _ = runner_ticker.tick(), if !runner_scopes.is_empty() => {
+                    poll_runners(&api, &id, &runner_scopes).await
+                }
                 _ = tokio::time::sleep_until(next_poll) => {
                     let mut updates = Vec::new();
                     for repo in &config.repos {
@@ -182,6 +195,26 @@ async fn poll_repo(api: &HttpApi, state: &mut GithubState, repo: &str) -> Vec<Up
     }
     out.extend(state.on_runs(repo, runs, unix_now()));
     state.set_health(repo, Health::Ok);
+    out
+}
+
+/// Poll the self-hosted runners of each scope. A scope that fails keeps its
+/// last list (the kiosk greys it out when it gets old); a 403 usually means
+/// the token lacks the runner right, see docs/runners.md.
+async fn poll_runners(api: &HttpApi, id: &SourceId, scopes: &[RunnerScope]) -> Vec<Update> {
+    let mut out = Vec::new();
+    for scope in scopes {
+        match api.runners(scope).await {
+            Ok(runners) => {
+                debug!(%scope, count = runners.len(), "polled runners");
+                out.push(Update::Runners {
+                    key: format!("{id}:runners:{scope}"),
+                    runners: runners.into_iter().map(|r| r.into_fact(KIND)).collect(),
+                });
+            }
+            Err(err) => warn!(%scope, "cannot poll runners: {err:#}"),
+        }
+    }
     out
 }
 
