@@ -41,6 +41,8 @@ jobs:
             | jq -r '.packages[] | select(.name == "deskwatch-bridge") | .version')"
           if [ "$tag" != "$crate" ]; then
             echo "tag v$tag does not match deskwatch-bridge $crate" >&2
+            echo "The tag points at $(git rev-parse --short HEAD), which has version $crate." >&2
+            echo "Tag the merge commit of the release PR (git pull first), see docs/releasing.md." >&2
             exit 1
           fi
 
@@ -89,6 +91,8 @@ jobs:
             | jq -r '.packages[] | select(.name == "deskwatch-bridge") | .version')"
           if [ "$tag" != "$crate" ]; then
             echo "tag v$tag does not match deskwatch-bridge $crate" >&2
+            echo "The tag points at $(git rev-parse --short HEAD), which has version $crate." >&2
+            echo "Tag the merge commit of the release PR (git pull first), see docs/releasing.md." >&2
             exit 1
           fi
 
@@ -185,6 +189,8 @@ jobs:
             | jq -r '.packages[] | select(.name == "deskwatch-bridge") | .version')"
           if [ "$tag" != "$crate" ]; then
             echo "tag v$tag does not match deskwatch-bridge $crate" >&2
+            echo "The tag points at $(git rev-parse --short HEAD), which has version $crate." >&2
+            echo "Tag the merge commit of the release PR (git pull first), see docs/releasing.md." >&2
             exit 1
           fi
 
