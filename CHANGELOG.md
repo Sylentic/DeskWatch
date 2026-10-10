@@ -12,6 +12,9 @@ may change if the firmware work needs it; any such change is listed here.
 
 The kiosk release: runner status, night theme and widget filters, trusted networks, and a faster Docker build.
 
+This is the first release since 0.9.7 that is actually built: it carries everything from 0.9.8 (see below) as well as
+the changes listed here.
+
 ### Added
 
 - **`[kiosk] trusted_networks`**: CIDR ranges (or single addresses, IPv4 and IPv6) whose clients skip the kiosk token
@@ -53,6 +56,10 @@ The kiosk release: runner status, night theme and widget filters, trusted networ
 ## [0.9.8]
 
 The Docker and kiosk hardening release: Compose uses the published image, WebSocket limits, reverse proxy examples.
+
+**Never released.** The `v0.9.8` tag was pushed on the commit before this release was merged, so the release
+workflow stopped at its version check. No binaries, Docker image or GitHub release exist for 0.9.8. Everything listed
+here is part of [0.9.9](#099) and later; use 0.9.9.
 
 ### Added
 
