@@ -51,3 +51,9 @@ after the workflow has finished, so check that
 `ghcr.io/sylentic/deskwatch-bridge:<version>` can be pulled before announcing
 the release. If the workflow failed, the pinned tag does not exist and
 `docker compose pull` fails with "manifest unknown" until the release is fixed.
+
+## v0.9.8 was never released
+
+The `v0.9.8` tag was pushed on the commit before the release PR was merged, so every job stopped at the version
+check. No binaries, image or GitHub release exist for 0.9.8, and the tag was left as it is. Its changes shipped in
+0.9.9. Only tag after the release PR is merged and `git log -1` shows the bumped version.
