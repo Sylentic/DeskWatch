@@ -181,8 +181,28 @@ pub struct KioskConfig {
     /// Most live-update WebSockets open at once. More get `503` and the page
     /// falls back to polling. A page needs one per open tab or screen.
     pub max_ws_clients: u16,
+    /// Colour theme: `day` (the default look), `night` (dimmer) or `auto`
+    /// (night between `night_from` and `night_to`, by the browser's clock).
+    pub theme: Theme,
+    /// Start and end of the night, as `HH:MM`, used when `theme = "auto"`.
+    /// The window may cross midnight (22:00 to 07:00).
+    pub night_from: String,
+    pub night_to: String,
+    /// Move the whole page a few pixels every `pixel_shift_minutes`, so a
+    /// static layout does not burn into an OLED or plasma screen.
+    pub pixel_shift: bool,
+    pub pixel_shift_minutes: u16,
     /// The widgets. Empty means the built-in layout.
     pub panel: Vec<PanelConfig>,
+}
+
+/// Colour theme of the kiosk page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Theme {
+    Day,
+    Night,
+    Auto,
 }
 
 impl Default for KioskConfig {
@@ -193,6 +213,11 @@ impl Default for KioskConfig {
             rows: 3,
             token_file: None,
             max_ws_clients: 16,
+            theme: Theme::Day,
+            night_from: "22:00".into(),
+            night_to: "07:00".into(),
+            pixel_shift: false,
+            pixel_shift_minutes: 5,
             panel: Vec::new(),
         }
     }
@@ -212,6 +237,19 @@ impl KioskConfig {
             self.max_ws_clients >= 1,
             "kiosk.max_ws_clients must be at least 1"
         );
+        for (name, value) in [
+            ("night_from", &self.night_from),
+            ("night_to", &self.night_to),
+        ] {
+            anyhow::ensure!(
+                valid_time(value),
+                "kiosk.{name} must be a time as HH:MM, for example \"22:00\" (got {value:?})"
+            );
+        }
+        anyhow::ensure!(
+            (1..=120).contains(&self.pixel_shift_minutes),
+            "kiosk.pixel_shift_minutes must be between 1 and 120"
+        );
         for (i, panel) in self.panel.iter().enumerate() {
             let n = i + 1;
             let [cols, rows] = panel.span;
@@ -224,6 +262,22 @@ impl KioskConfig {
             anyhow::ensure!(
                 panel.host.is_none() || panel.widget == Widget::Stats,
                 "kiosk.panel {n}: host only applies to the stats widget"
+            );
+            let filterable = matches!(panel.widget, Widget::Jobs | Widget::Prs | Widget::Pipelines);
+            anyhow::ensure!(
+                filterable || (panel.source.is_none() && panel.repo.is_none()),
+                "kiosk.panel {n}: source and repo only apply to the jobs, prs and pipelines widgets"
+            );
+            if let Some(source) = &panel.source {
+                anyhow::ensure!(
+                    SOURCE_KINDS.contains(&source.as_str()),
+                    "kiosk.panel {n}: source must be one of {} (got {source:?})",
+                    SOURCE_KINDS.join(", ")
+                );
+            }
+            anyhow::ensure!(
+                panel.repo.as_deref().is_none_or(|r| !r.trim().is_empty()),
+                "kiosk.panel {n}: repo must not be empty"
             );
             anyhow::ensure!(
                 panel.rows != Some(0),
@@ -242,6 +296,19 @@ impl KioskConfig {
             self.panel.clone()
         }
     }
+}
+
+/// The CI systems a `source` filter can name, as the kiosk page tags them.
+const SOURCE_KINDS: [&str; 3] = ["gitea", "github", "azure_devops"];
+
+/// Is this `HH:MM` on a 24 hour clock?
+fn valid_time(text: &str) -> bool {
+    text.split_once(':').is_some_and(|(h, m)| {
+        h.len() == 2
+            && m.len() == 2
+            && h.parse::<u8>().is_ok_and(|h| h < 24)
+            && m.parse::<u8>().is_ok_and(|m| m < 60)
+    })
 }
 
 /// What a kiosk widget shows.
@@ -280,6 +347,14 @@ pub struct PanelConfig {
     /// Most list rows (or running jobs) to show. Default: as many as fit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rows: Option<u32>,
+    /// Only what comes from this CI system: `gitea`, `github` or
+    /// `azure_devops`. For the `jobs`, `prs` and `pipelines` widgets.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    /// Only this repository or project, matched without regard to case. A
+    /// trailing `*` matches a prefix (`acme/*`). Same widgets as `source`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
     /// Grid cells taken: `[columns, rows]`.
     #[serde(default = "default_span")]
     pub span: [u8; 2],
@@ -295,6 +370,8 @@ fn panel(widget: Widget, span: [u8; 2]) -> PanelConfig {
         host: None,
         title: None,
         rows: None,
+        source: None,
+        repo: None,
         span,
     }
 }
@@ -1167,6 +1244,63 @@ title = "Reviews"
         assert_eq!(panels[1].widget, Widget::Prs);
         assert_eq!((panels[1].rows, panels[1].span), (Some(12), [1, 2]));
         assert_eq!(panels[1].title.as_deref(), Some("Reviews"));
+    }
+
+    #[test]
+    fn kiosk_theme_pixel_shift_and_filters_default_to_the_current_look() {
+        let config = Config::from_toml("").unwrap();
+        assert_eq!(config.kiosk.theme, Theme::Day);
+        assert!(!config.kiosk.pixel_shift);
+        assert!(
+            config
+                .kiosk
+                .panels()
+                .iter()
+                .all(|p| p.source.is_none() && p.repo.is_none())
+        );
+    }
+
+    #[test]
+    fn kiosk_theme_pixel_shift_and_filters_parse() {
+        let config = Config::from_toml(
+            r#"
+[kiosk]
+theme = "auto"
+night_from = "21:30"
+night_to = "06:15"
+pixel_shift = true
+pixel_shift_minutes = 3
+
+[[kiosk.panel]]
+widget = "prs"
+source = "github"
+repo = "acme/*"
+"#,
+        )
+        .unwrap();
+        assert_eq!(config.kiosk.theme, Theme::Auto);
+        assert_eq!(config.kiosk.night_from, "21:30");
+        assert!(config.kiosk.pixel_shift);
+        assert_eq!(config.kiosk.pixel_shift_minutes, 3);
+        let panel = &config.kiosk.panels()[0];
+        assert_eq!(panel.source.as_deref(), Some("github"));
+        assert_eq!(panel.repo.as_deref(), Some("acme/*"));
+    }
+
+    #[test]
+    fn kiosk_rejects_bad_theme_shift_and_filters() {
+        let bad = |toml: &str| format!("{:#}", Config::from_toml(toml).unwrap_err());
+        assert!(bad("[kiosk]\ntheme = \"dusk\"").contains("unknown variant"));
+        assert!(bad("[kiosk]\nnight_from = \"25:00\"").contains("HH:MM"));
+        assert!(bad("[kiosk]\nnight_to = \"7:00\"").contains("HH:MM"));
+        assert!(bad("[kiosk]\npixel_shift_minutes = 0").contains("between 1 and 120"));
+        assert!(bad("[[kiosk.panel]]\nwidget = \"stats\"\nrepo = \"x\"").contains("only apply to"));
+        assert!(
+            bad("[[kiosk.panel]]\nwidget = \"jobs\"\nsource = \"svn\"").contains("source must be")
+        );
+        assert!(
+            bad("[[kiosk.panel]]\nwidget = \"prs\"\nrepo = \" \"").contains("must not be empty")
+        );
     }
 
     #[test]

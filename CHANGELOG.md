@@ -8,6 +8,16 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Added
+
+- **Kiosk night theme**: `[kiosk] theme = "day" | "night" | "auto"` with `night_from` and `night_to` (default 22:00 to
+  07:00, by the browser's clock). The night look is the same layout at about half the brightness. `?theme=` on the page
+  address overrides the config. The default stays `day`, so nothing changes unless you set it.
+- **Kiosk widget filters**: the `jobs`, `prs` and `pipelines` widgets take `source` (`gitea`, `github`,
+  `azure_devops`) and `repo` (a name, or a prefix ending in `*`), so one card can show work and another home.
+- **Kiosk pixel shift** for OLED screens: `pixel_shift = true` moves the page a few pixels every
+  `pixel_shift_minutes` (default 5). Off by default.
+
 ## [0.9.8]
 
 The Docker and kiosk hardening release: Compose uses the published image, WebSocket limits, reverse proxy examples.
