@@ -392,7 +392,7 @@ Every version tag (from 0.9.6 on) is built for amd64 and arm64 by the `docker` j
 [`release.yml`](../.github/workflows/release.yml) and pushed to GitHub's registry:
 
 ```sh
-docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 0.9.8; no "v"
+docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 0.9.9; no "v"
 docker run --rm -p 8787:8787 ghcr.io/sylentic/deskwatch-bridge:<version> --demo --kiosk --no-mqtt
 ```
 
