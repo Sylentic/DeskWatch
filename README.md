@@ -56,6 +56,7 @@ The mini display's UI in the desktop simulator:
 | Source: Azure DevOps Services (pipeline runs, approvals, PRs; [docs/azure-devops.md](docs/azure-devops.md)) | Done |
 | Windows x86_64 release zip (bridge and simulator), install and test guide | Done, see [docs/windows.md](docs/windows.md) |
 | Kiosk dashboard for big screens (browser page served by the bridge, autostart example for a Raspberry Pi) | Done in 0.9.5, not yet run on a Pi: [docs/kiosk.md](docs/kiosk.md) |
+| Kiosk extras: `runners` widget (Gitea and GitHub self-hosted runners, [docs/runners.md](docs/runners.md)), day/night theme, per-widget source and repo filters, OLED pixel shift, `trusted_networks` (no token from your own network) | Done in 0.9.9, run in headless Chromium with demo data: [docs/kiosk.md](docs/kiosk.md) |
 | Docker dashboard (no broker needed: `[mqtt] enabled = false`, Compose files, health check) | Done in 0.9.5, run in a container with demo data: [docs/docker.md](docs/docker.md) |
 
 ## What is not in 0.9
@@ -79,7 +80,8 @@ DeskWatch supports **Linux and Windows**, plus the Raspberry Pi (64-bit Linux).
   each source and Home Assistant.
 - **Docker:** [docs/docker.md](docs/docker.md) builds a small non-root image with a health check and has Compose
   examples for the dashboard (no broker needed) and for the ESP bridge, with config and secrets mounted read-only.
-  Multi-arch (amd64 and arm64) in CI; nothing is published to a registry.
+  The multi-arch (amd64 and arm64) image is published to `ghcr.io/sylentic/deskwatch-bridge` with every release;
+  the Compose file pins a version.
 - **Raspberry Pi:** [docs/raspberry-pi.md](docs/raspberry-pi.md) covers 64-bit Raspberry Pi OS with the aarch64 release
   binary and systemd, or Docker. A Pi is also a fine always-on machine for the demo.
 - **Windows:** [docs/windows.md](docs/windows.md) covers the release zip, Mosquitto, trying the demo and the
@@ -94,7 +96,7 @@ A short overview of the sources is below.
 
 ## Running the bridge by hand
 
-Needs a stable Rust toolchain (1.88 or newer) and a Mosquitto broker.
+Needs a stable Rust toolchain (1.88 or newer) and a Mosquitto broker (not for the kiosk dashboard alone: set `[mqtt] enabled = false`).
 
 ```sh
 cargo run -p deskwatch-bridge -- bridge/config.example.toml
@@ -123,6 +125,9 @@ connect shows as a `warn` badge on the panel. Setup for each is in [docs/install
 | `azure_devops` | Polling with a read-only token (Azure DevOps Services); setup in [docs/azure-devops.md](docs/azure-devops.md) | Pipeline runs with stage and task (Terraform plan and apply), a notice when a deploy waits for an approval, PR count; quiet unless you set `interrupt` |
 | `prometheus` | HTTP API (node_exporter, cAdvisor) | A `stats:<host>` page per machine, a `containers` page of what stopped, a `server` badge |
 | built-in `stats` | `/proc` and `/sys` of the bridge machine (Linux; on Windows it shows only the machine name) | The home page, always available |
+
+Gitea and GitHub sources can also list their self-hosted runners (`runners = [...]`) for the kiosk `runners` widget,
+see [docs/runners.md](docs/runners.md).
 
 `interrupt` decides which repositories may take over the screen. Runs from other repositories still show on the
 pipelines page, and their failures still count in the red header badge until a green run of the same pipeline

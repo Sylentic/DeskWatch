@@ -42,6 +42,8 @@ The kiosk release: runner status, night theme and widget filters, trusted networ
 
 ### Changed
 
+- **Documentation sweep.** README and the example config now cover `trusted_networks`, `max_ws_clients`, the `runners`
+  widget and the published ghcr.io image (the README still said nothing is published).
 - **Faster Docker rebuilds**: the `Dockerfile` compiles the dependencies in their own layer, so a change in the bridge,
   `sim` or `ui` source no longer recompiles them. Fixes #29.
 - **Clearer kiosk token card.** The "needs a token" and "token rejected" cards now say it is the dashboard access
