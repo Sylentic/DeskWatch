@@ -16,7 +16,7 @@ services:
     # changes the version by surprise. Bump the number to update (read the
     # CHANGELOG first). `latest` also exists but moves; see docs/docker.md,
     # section 10.
-    image: ghcr.io/sylentic/deskwatch-bridge:0.9.8
+    image: ghcr.io/sylentic/deskwatch-bridge:0.9.9
     #
     # To build from the source instead (for your own changes), replace the
     # line above with these two, run from a checkout of the version you want:

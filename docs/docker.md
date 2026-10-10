@@ -392,7 +392,7 @@ Every version tag (from 0.9.6 on) is built for amd64 and arm64 by the `docker` j
 [`release.yml`](../.github/workflows/release.yml) and pushed to GitHub's registry:
 
 ```sh
-docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 0.9.8; no "v"
+docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 0.9.9; no "v"
 docker run --rm -p 8787:8787 ghcr.io/sylentic/deskwatch-bridge:<version> --demo --kiosk --no-mqtt
 ```
 
@@ -401,8 +401,9 @@ production (`latest` moves). [`deploy/docker-compose.yml`](../deploy/docker-comp
 pinned to a release. The dashboard and demo Compose files build from the checkout they sit in, which is
 repeatable as long as you stay on one commit; to use the image there, replace their `build:` block with
 `image: ghcr.io/sylentic/deskwatch-bridge:<version>`. An updater such as Renovate or Watchtower can bump the tag.
-A new package on `ghcr.io` starts private: make it public once in the package settings (Package settings, Change
-visibility) so servers can pull it without a login. CI (the `docker` job in [`ci.yml`](../.github/workflows/ci.yml))
+The package on `ghcr.io` is public, so servers pull it without a login. (A fork publishing its own image has to make
+the package public once in its package settings, because a new package starts private.) The image exists only after
+the release workflow has finished for that tag; check that the pull works before you bump the pinned version. CI (the `docker` job in [`ci.yml`](../.github/workflows/ci.yml))
 only checks that the image builds and starts; nothing is pushed from pull requests or branches.
 
 If the image does not suit you (your own changes, another CPU), section 1 builds it from the source.

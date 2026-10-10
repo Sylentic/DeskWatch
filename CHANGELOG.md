@@ -8,6 +8,13 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+## [0.9.9]
+
+The kiosk release: runner status, night theme and widget filters, trusted networks, and a faster Docker build.
+
+This is the first release since 0.9.7 that is actually built: it carries everything from 0.9.8 (see below) as well as
+the changes listed here.
+
 ### Added
 
 - **`[kiosk] trusted_networks`**: CIDR ranges (or single addresses, IPv4 and IPv6) whose clients skip the kiosk token
@@ -38,11 +45,10 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Changed
 
+- **Documentation sweep.** README and the example config now cover `trusted_networks`, `max_ws_clients`, the `runners`
+  widget and the published ghcr.io image (the README still said nothing is published).
 - **Faster Docker rebuilds**: the `Dockerfile` compiles the dependencies in their own layer, so a change in the bridge,
   `sim` or `ui` source no longer recompiles them. Fixes #29.
-
-### Changed
-
 - **Clearer kiosk token card.** The "needs a token" and "token rejected" cards now say it is the dashboard access
   token from the file named by `token_file` under `[kiosk]`, not a CI token, and show the `/?token=YOUR_TOKEN`
   example in code style so it no longer breaks mid-word. `docs/kiosk.md` and `docs/docker.md` explain the same.
@@ -50,6 +56,10 @@ may change if the firmware work needs it; any such change is listed here.
 ## [0.9.8]
 
 The Docker and kiosk hardening release: Compose uses the published image, WebSocket limits, reverse proxy examples.
+
+**Never released.** The `v0.9.8` tag was pushed on the commit before this release was merged, so the release
+workflow stopped at its version check. No binaries, Docker image or GitHub release exist for 0.9.8. Everything listed
+here is part of [0.9.9](#099) and later; use 0.9.9.
 
 ### Added
 
@@ -270,7 +280,8 @@ not (see the README, "What is not in 0.9").
   are Linux x86_64; build from source for other CPUs.
 - Gitea webhooks are plain HTTP unless you put a reverse proxy in front of the bridge.
 
-[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.8...HEAD
+[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.9...HEAD
+[0.9.9]: https://github.com/Sylentic/DeskWatch/compare/v0.9.8...v0.9.9
 [0.9.8]: https://github.com/Sylentic/DeskWatch/compare/v0.9.7...v0.9.8
 [0.9.7]: https://github.com/Sylentic/DeskWatch/compare/v0.9.6...v0.9.7
 [0.9.6]: https://github.com/Sylentic/DeskWatch/compare/v0.9.5...v0.9.6

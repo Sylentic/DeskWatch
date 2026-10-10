@@ -45,6 +45,8 @@ listen = "0.0.0.0:8787"
 # columns = 4                   # grid size, 1 to 12 each
 # rows = 3
 # # token_file = "kiosk-token"  # credential; set it when the page is opened from another machine
+# # trusted_networks = ["192.168.0.0/16"]  # clients here need no token; judged by the TCP peer address only, empty trusts nobody
+# # max_ws_clients = 16         # live-update WebSockets at once; further tabs poll instead
 # # theme = "day"               # day (default), night (dimmer) or auto (night between the two times below)
 # # night_from = "22:00"        # auto only; the browser's clock, may cross midnight
 # # night_to = "07:00"
@@ -52,7 +54,8 @@ listen = "0.0.0.0:8787"
 # # pixel_shift_minutes = 5
 #
 # # Widgets, left to right and top to bottom. Without any, a default layout is used.
-# # Widgets: stats, hosts, jobs, prs, pipelines, alerts, containers, health.
+# # Widgets: stats, hosts, jobs, prs, pipelines, alerts, containers, health, runners
+# # (runners is not in the default layout and needs a source with `runners` set).
 # [[kiosk.panel]]
 # widget = "stats"
 # # host = "home"               # stats only: which host, default the first
