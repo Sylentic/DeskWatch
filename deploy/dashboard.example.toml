@@ -18,10 +18,14 @@ listen = "0.0.0.0:8787"
 
 [kiosk]
 enabled = true
-# A token keeps casual visitors out. Create the file first (docs/docker.md):
+# A dashboard access token keeps casual visitors out (it is not a Gitea, GitHub or Azure DevOps token). Create the file first (docs/docker.md):
 #   openssl rand -hex 24 > credentials/kiosk-token
 # then open http://<docker host>:8787/?token=<the token>
 token_file = "kiosk-token"
+# Optional: no token needed from your own network. Only safe if the bridge sees
+# the real client address (not behind a proxy or Docker NAT); docs/kiosk.md
+# shows how to check. Empty trusts nobody.
+# trusted_networks = ["192.168.0.0/16"]
 
 # Add one source block per service you want on the page; more examples are in
 # bridge/config.example.toml. The GitHub block needs a read-only fine-grained

@@ -17,14 +17,16 @@
 //! The snapshot is built from the same facts the composer uses for the ESP
 //! panel, so both screens always agree. Nothing here changes any state. If
 //! `kiosk.token_file` is set, the two `/api/kiosk` routes need the token as
-//! `?token=` or as a bearer token.
+//! `?token=` or as a bearer token, unless the TCP peer is inside
+//! `kiosk.trusted_networks` (see `net.rs`).
 
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
-use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::{ConnectInfo, State};
 use axum::http::{HeaderMap, HeaderValue, Request, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -37,6 +39,9 @@ use crate::composer::Composer;
 use crate::config::{KioskConfig, PanelConfig};
 use crate::model::{Badges, Level, Screen};
 use crate::source::Secret;
+
+pub mod net;
+use net::Network;
 
 /// Version of the snapshot layout, the `"v"` field. Separate from the MQTT
 /// schema version: the two outputs evolve on their own.
@@ -69,6 +74,8 @@ pub struct Kiosk {
     layout: Value,
     tx: watch::Sender<Frame>,
     token: Option<Secret>,
+    /// Peers in these ranges skip the token check.
+    trusted: Arc<[Network]>,
     /// One permit per allowed WebSocket client.
     slots: Arc<Semaphore>,
     /// The last snapshot without its timestamp, to see what changed.
@@ -87,6 +94,10 @@ impl Kiosk {
             layout,
             tx,
             token,
+            // Validated at config load; an unparsable list fails closed (nobody trusted).
+            trusted: net::parse_all(&config.trusted_networks)
+                .unwrap_or_default()
+                .into(),
             slots: Arc::new(Semaphore::new(config.max_ws_clients.into())),
             last: None,
             sent_at: 0,
@@ -98,6 +109,7 @@ impl Kiosk {
         let state = AppState {
             rx: self.tx.subscribe(),
             token: self.token.as_ref().map(|t| digest(t.expose())),
+            trusted: self.trusted.clone(),
             slots: self.slots.clone(),
         };
         let api = Router::new()
@@ -279,6 +291,7 @@ struct AppState {
     rx: watch::Receiver<Frame>,
     /// SHA-256 of the token, so comparing never branches on its content.
     token: Option<[u8; 32]>,
+    trusted: Arc<[Network]>,
     slots: Arc<Semaphore>,
 }
 
@@ -353,9 +366,21 @@ async fn require_token(
     request: Request<axum::body::Body>,
     next: Next,
 ) -> Response {
-    if let Some(expected) = &state.token
+    // The TCP peer, set by the listener. Missing (unit tests) means untrusted.
+    let peer = request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|info| info.0.ip());
+    let trusted = peer.is_some_and(|ip| state.trusted.iter().any(|net| net.contains(ip)));
+    tracing::debug!(?peer, trusted, path = request.uri().path(), "kiosk request");
+    if !trusted
+        && let Some(expected) = &state.token
         && !authorized(expected, request.headers(), request.uri().query())
     {
+        tracing::debug!(
+            ?peer,
+            "kiosk request refused: no token and peer not trusted"
+        );
         return (StatusCode::UNAUTHORIZED, "token missing or wrong").into_response();
     }
     next.run(request).await

@@ -179,6 +179,11 @@ pub struct KioskConfig {
     /// `?token=...` on the page address. Set it whenever `http.listen` is
     /// reachable from other machines.
     pub token_file: Option<String>,
+    /// Networks (`192.168.0.0/16`, `fd00::/8`, a single address) whose
+    /// clients need no token. Judged by the TCP peer address only, so behind
+    /// a reverse proxy or Docker port mapping read docs/kiosk.md first.
+    /// Empty (the default) trusts nobody.
+    pub trusted_networks: Vec<String>,
     /// Most live-update WebSockets open at once. More get `503` and the page
     /// falls back to polling. A page needs one per open tab or screen.
     pub max_ws_clients: u16,
@@ -213,6 +218,7 @@ impl Default for KioskConfig {
             columns: 4,
             rows: 3,
             token_file: None,
+            trusted_networks: Vec::new(),
             max_ws_clients: 16,
             theme: Theme::Day,
             night_from: "22:00".into(),
@@ -238,6 +244,8 @@ impl KioskConfig {
             self.max_ws_clients >= 1,
             "kiosk.max_ws_clients must be at least 1"
         );
+        crate::kiosk::net::parse_all(&self.trusted_networks)
+            .map_err(|e| anyhow::anyhow!("kiosk.trusted_networks: {e}"))?;
         for (name, value) in [
             ("night_from", &self.night_from),
             ("night_to", &self.night_to),

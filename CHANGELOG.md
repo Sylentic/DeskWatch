@@ -10,6 +10,10 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Added
 
+- **`[kiosk] trusted_networks`**: CIDR ranges (or single addresses, IPv4 and IPv6) whose clients skip the kiosk token
+  for the data routes and the WebSocket. Judged only by the TCP peer address, never by `X-Forwarded-For`. Default
+  empty, so nothing changes without config. Behind a proxy or Docker NAT the peer may not be the real client;
+  `docs/kiosk.md` and `docs/docker.md` say how to check it (debug log of the peer address).
 - **GitHub self-hosted runners** on the kiosk `runners` widget. `[[source.github]]` gets `runners = ["repo:<owner>/<name>",
   "org:<name>"]` and `runner_poll_s` (default 300). Off unless `runners` is set. Needs extra token rights:
   **Administration: read** for a repository's runners, **Self-hosted runners: read** for an organisation's. A token
@@ -36,6 +40,12 @@ may change if the firmware work needs it; any such change is listed here.
 
 - **Faster Docker rebuilds**: the `Dockerfile` compiles the dependencies in their own layer, so a change in the bridge,
   `sim` or `ui` source no longer recompiles them. Fixes #29.
+
+### Changed
+
+- **Clearer kiosk token card.** The "needs a token" and "token rejected" cards now say it is the dashboard access
+  token from the file named by `token_file` under `[kiosk]`, not a CI token, and show the `/?token=YOUR_TOKEN`
+  example in code style so it no longer breaks mid-word. `docs/kiosk.md` and `docs/docker.md` explain the same.
 
 ## [0.9.8]
 

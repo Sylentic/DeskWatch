@@ -443,6 +443,7 @@ fn page_explains_why_it_has_no_data() {
     assert!(KIOSK_JS.contains("r.status === 401"));
     for pill in [
         "token required",
+        "Not a Gitea, GitHub or Azure DevOps token",
         "token rejected",
         "bridge unreachable",
         "polling, no live socket",
@@ -626,4 +627,68 @@ async fn websocket_count_is_capped_and_a_closed_client_frees_its_slot() {
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
     assert!(reopened.is_ok(), "slot was not freed: {reopened:?}");
+}
+
+/// Status code of `GET /api/kiosk` without any token, over a real socket so
+/// the listener supplies the peer address.
+async fn status_for_networks(trusted: &[&str]) -> u16 {
+    let config = KioskConfig {
+        trusted_networks: trusted.iter().map(|s| s.to_string()).collect(),
+        ..KioskConfig::default()
+    };
+    let kiosk = Kiosk::new(&config, Some(Secret::new("tok")));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let app = kiosk
+        .router()
+        .into_make_service_with_connect_info::<std::net::SocketAddr>();
+    tokio::spawn(axum::serve(listener, app).into_future());
+    let mut stream = TcpStream::connect(addr).await.unwrap();
+    stream
+        .write_all(b"GET /api/kiosk HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        .await
+        .unwrap();
+    let mut reply = String::new();
+    stream.read_to_string(&mut reply).await.unwrap();
+    reply.split_whitespace().nth(1).unwrap().parse().unwrap()
+}
+
+#[tokio::test]
+async fn trusted_network_skips_the_token_and_others_do_not() {
+    assert_eq!(status_for_networks(&["127.0.0.0/8"]).await, 200);
+    assert_eq!(status_for_networks(&["::1", "127.0.0.1"]).await, 200);
+    assert_eq!(status_for_networks(&["192.168.0.0/16"]).await, 401);
+    assert_eq!(status_for_networks(&[]).await, 401);
+}
+
+#[test]
+fn network_ranges_match_ipv4_ipv6_and_mapped_addresses() {
+    use net::Network;
+    let ip = |s: &str| s.parse::<std::net::IpAddr>().unwrap();
+    let lan = Network::parse("192.168.0.0/16").unwrap();
+    assert!(lan.contains(ip("192.168.4.5")));
+    assert!(!lan.contains(ip("192.169.0.1")));
+    assert!(!lan.contains(ip("10.0.0.1")));
+    // An IPv4 client seen on a dual-stack socket.
+    assert!(lan.contains(ip("::ffff:192.168.4.5")));
+    assert!(!lan.contains(ip("::ffff:10.0.0.1")));
+    let v6 = Network::parse("fd00::/8").unwrap();
+    assert!(v6.contains(ip("fd12:3456::1")));
+    assert!(!v6.contains(ip("fe80::1")));
+    assert!(!v6.contains(ip("192.168.4.5")));
+    // Single host, everything, and bad input.
+    assert!(
+        Network::parse("203.0.113.7")
+            .unwrap()
+            .contains(ip("203.0.113.7"))
+    );
+    assert!(
+        !Network::parse("203.0.113.7")
+            .unwrap()
+            .contains(ip("203.0.113.8"))
+    );
+    assert!(Network::parse("0.0.0.0/0").unwrap().contains(ip("8.8.8.8")));
+    for bad in ["", "lan", "10.0.0.0/33", "10.0.0.0/x", "fd00::/129"] {
+        assert!(Network::parse(bad).is_err(), "{bad:?} should be refused");
+    }
 }
