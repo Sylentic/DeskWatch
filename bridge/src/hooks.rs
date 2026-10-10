@@ -45,7 +45,13 @@ impl Hooks {
             info!("serving http://{listen}{path}");
         }
         tokio::spawn(async move {
-            if let Err(err) = axum::serve(listener, self.router).await {
+            if let Err(err) = axum::serve(
+                listener,
+                self.router
+                    .into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            {
                 warn!("webhook server stopped: {err:#}");
             }
         });

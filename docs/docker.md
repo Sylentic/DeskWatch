@@ -107,6 +107,9 @@ point the variable at an absolute folder that holds `bridge.toml` and `credentia
 docker compose -f docker-compose.dashboard.yml up -d`, or a line in a `.env` file next to the Compose file) and use the
 published image instead of `build:`, see section 10.
 
+The token here is the dashboard access token: the text in the `kiosk-token` file you just created (the file named by
+`token_file` under `[kiosk]`). It is not a Gitea, GitHub or Azure DevOps token.
+
 Then open `http://<docker host>:8787/?token=<the token>`. The page removes the token from the address bar as soon as
 it loads and keeps it for that browser tab only, so reloads work and the token stays out of the history. A bookmark
 of the page therefore needs the `?token=...` added by hand; for a kiosk browser put the full address in the start
@@ -137,6 +140,12 @@ alert text. Choose one:
    and later requests send it as a query value on the data routes only. Over plain HTTP it keeps casual visitors on
    your LAN out; it does not stop someone who can watch your network traffic. Do not log or share the first address.
    A one-time login that sets an `HttpOnly` cookie would avoid the address altogether; that is not built yet.
+   **No token from your own network:** `trusted_networks = ["192.168.0.0/16"]` under `[kiosk]` skips the token for
+   clients in that range ([kiosk.md](kiosk.md#protecting-the-page) explains how to check what the bridge sees). In
+   Docker the bridge often does **not** see the real client: with Docker Desktop, rootless Docker, a reverse
+   proxy in front, or a connection from the Docker host itself, the peer is a `172.x.x.x` gateway address, and a
+   range that includes it would open the page to everyone behind that gateway. Test with
+   `RUST_LOG=deskwatch_bridge::kiosk=debug` and read the logged peer address before you rely on it.
 2. **A reverse proxy.** Publish the port to the host only (`"127.0.0.1:8787:8787"` in the Compose file) and let
    your proxy (Caddy, Traefik, nginx) terminate TLS and do the access control (basic auth, or your SSO). Then the
    token is optional, but keeping both costs nothing. Make the proxy pass WebSocket upgrades on `/api/kiosk/ws`;
