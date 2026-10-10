@@ -14,9 +14,6 @@ may change if the firmware work needs it; any such change is listed here.
   for the data routes and the WebSocket. Judged only by the TCP peer address, never by `X-Forwarded-For`. Default
   empty, so nothing changes without config. Behind a proxy or Docker NAT the peer may not be the real client;
   `docs/kiosk.md` and `docs/docker.md` say how to check it (debug log of the peer address).
-
-### Added
-
 - **Kiosk night theme**: `[kiosk] theme = "day" | "night" | "auto"` with `night_from` and `night_to` (default 22:00 to
   07:00, by the browser's clock). The night look is the same layout at about half the brightness. `?theme=` on the page
   address overrides the config. The default stays `day`, so nothing changes unless you set it.
