@@ -25,6 +25,37 @@
   font-size: min(calc(100vw / 120), calc(100vh / 67.5));
 }
 
+/* Night theme (kiosk.js sets data-theme="night" on <html>): the same layout and
+   colour meanings, about half as bright, for a dark room. Failures stay clearly red
+   and a running job stays orange. */
+:root[data-theme="night"] {
+  --bg: #07090d;
+  --header: #0e1117;
+  --card: #0c0f15;
+  --card-edge: #181d27;
+  --track: #1b202a;
+  --text: #aab0bb;
+  --dim: #6b7380;
+  --green: #2a9d68;
+  --amber: #c98a1c;
+  --red: #d04040;
+  --blue: #3578b8;
+  --orange: #c85200;
+  --purple: #8a62c8;
+  --grey: #5d6571;
+  --alert-red: #6e1010;
+  --alert-critical: #8c0000;
+  --alert-amber: #6b4100;
+  --alert-green: #0c5430;
+}
+:root[data-theme="night"] .offline { background: #1f180b; }
+:root[data-theme="night"] .banner.notice { background: #1a2b45; }
+:root[data-theme="night"] .card.stale { border-color: #3a2c14; }
+:root[data-theme="night"] .src.gitea { background: #1b3a19; }
+:root[data-theme="night"] .src.github { background: #22252d; }
+:root[data-theme="night"] .src.azure_devops, :root[data-theme="night"] .kind.build { background: #112c49; }
+:root[data-theme="night"] .kind.deploy { background: #2c1c4d; }
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body { height: 100%; }

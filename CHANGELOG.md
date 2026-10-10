@@ -10,6 +10,13 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Added
 
+- **Kiosk night theme**: `[kiosk] theme = "day" | "night" | "auto"` with `night_from` and `night_to` (default 22:00 to
+  07:00, by the browser's clock). The night look is the same layout at about half the brightness. `?theme=` on the page
+  address overrides the config. The default stays `day`, so nothing changes unless you set it.
+- **Kiosk widget filters**: the `jobs`, `prs` and `pipelines` widgets take `source` (`gitea`, `github`,
+  `azure_devops`) and `repo` (a name, or a prefix ending in `*`), so one card can show work and another home.
+- **Kiosk pixel shift** for OLED screens: `pixel_shift = true` moves the page a few pixels every
+  `pixel_shift_minutes` (default 5). Off by default.
 - **Runner status on the kiosk dashboard.** A new `runners` widget lists runners and agents: offline first (red), then
   busy (orange), then idle (green); a runner an administrator switched off shows grey and never counts as offline.
   The header says how many are offline and the card greys out when the list stops updating.
@@ -19,6 +26,11 @@ may change if the firmware work needs it; any such change is listed here.
 - **`docs/runners.md`**: the design for runners and agent pools across Gitea, GitHub and Azure DevOps, the token
   scopes each needs, and the order the other two sources follow in.
 - The kiosk snapshot has a `runners` list (snapshot version stays 1; a page that does not know it ignores it).
+
+### Changed
+
+- **Faster Docker rebuilds**: the `Dockerfile` compiles the dependencies in their own layer, so a change in the bridge,
+  `sim` or `ui` source no longer recompiles them. Fixes #29.
 
 ## [0.9.8]
 

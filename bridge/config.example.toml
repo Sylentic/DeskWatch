@@ -45,6 +45,11 @@ listen = "0.0.0.0:8787"
 # columns = 4                   # grid size, 1 to 12 each
 # rows = 3
 # # token_file = "kiosk-token"  # credential; set it when the page is opened from another machine
+# # theme = "day"               # day (default), night (dimmer) or auto (night between the two times below)
+# # night_from = "22:00"        # auto only; the browser's clock, may cross midnight
+# # night_to = "07:00"
+# # pixel_shift = false         # OLED: move the page a few pixels every pixel_shift_minutes
+# # pixel_shift_minutes = 5
 #
 # # Widgets, left to right and top to bottom. Without any, a default layout is used.
 # # Widgets: stats, hosts, jobs, prs, pipelines, alerts, containers, health.
@@ -61,6 +66,11 @@ listen = "0.0.0.0:8787"
 # span = [1, 2]
 # # rows = 12                   # most list rows to show; default: as many as fit
 # # title = "Reviews"
+#
+# [[kiosk.panel]]
+# widget = "pipelines"          # jobs, prs and pipelines can be filtered:
+# # source = "github"           # gitea, github or azure_devops
+# # repo = "acme/*"             # one repository, or a prefix ending in *; case does not matter
 
 # Data sources. Each type is an array, so there can be several of each; the
 # name must be unique per type. Remove a block to switch that source off.

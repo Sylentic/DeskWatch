@@ -293,6 +293,52 @@ fn snapshot_lists_runners_offline_first() {
 }
 
 #[test]
+fn layout_carries_theme_pixel_shift_and_panel_filters() {
+    // Defaults leave the look unchanged: day theme, no pixel shift, no filters.
+    let mut kiosk = kiosk_with(None);
+    kiosk.update(&mut busy(), NOW);
+    let layout = &json_of(&kiosk)["layout"];
+    assert_eq!(layout["theme"]["mode"], "day");
+    assert_eq!(layout["pixel_shift_s"], 0);
+    assert!(layout["panels"][2].get("source").is_none());
+
+    let config = crate::config::Config::from_toml(
+        r#"
+[kiosk]
+theme = "auto"
+night_from = "23:00"
+night_to = "06:30"
+pixel_shift = true
+pixel_shift_minutes = 4
+
+[[kiosk.panel]]
+widget = "pipelines"
+source = "github"
+repo = "acme/*"
+"#,
+    )
+    .unwrap();
+    let mut kiosk = Kiosk::new(&config.kiosk, None);
+    kiosk.update(&mut busy(), NOW);
+    let layout = &json_of(&kiosk)["layout"];
+    assert_eq!(layout["theme"]["mode"], "auto");
+    assert_eq!(layout["theme"]["night_from"], "23:00");
+    assert_eq!(layout["theme"]["night_to"], "06:30");
+    assert_eq!(layout["pixel_shift_s"], 240);
+    assert_eq!(layout["panels"][0]["source"], "github");
+    assert_eq!(layout["panels"][0]["repo"], "acme/*");
+}
+
+#[test]
+fn page_has_a_night_theme_and_pixel_shift() {
+    assert!(KIOSK_CSS.contains(":root[data-theme=\"night\"]"));
+    assert!(KIOSK_JS.contains("data-theme"));
+    assert!(KIOSK_JS.contains("pixel_shift_s"));
+    // Running stays orange in the night theme too.
+    assert!(KIOSK_CSS.contains("--orange: #c85200"));
+}
+
+#[test]
 fn idle_snapshot_has_no_screen() {
     let mut kiosk = kiosk_with(None);
     let mut c = composer();
