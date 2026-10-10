@@ -1,12 +1,12 @@
 # Runners and agent pools
 
 Which of your CI runners are up, busy or down, on the kiosk dashboard. This page is the design for all three CI
-systems and the guide for the part that exists today: **Gitea runners**.
+systems and the guide for the parts that exist today: **Gitea runners** and **GitHub self-hosted runners**.
 
 | Source | What it lists | State |
 |---|---|---|
 | Gitea | Runners of a user, organisation, repository or the whole instance | In this version |
-| GitHub, GitHub Enterprise | Self-hosted runners of a repository or organisation | Next PR |
+| GitHub, GitHub Enterprise | Self-hosted runners of a repository or organisation | In this version |
 | Azure DevOps | Agents of the self-hosted agent pools, plus queued jobs per pool | After that, mocks only until the token question is settled |
 | ESP panel | A `runners` page and an offline count in the `warn` badge | Last PR, needs a schema change |
 
@@ -90,10 +90,23 @@ span = [1, 1]
 
 Gitea pages its answers (50 per page by default). The bridge reads every page, at most 20.
 
-## 3. GitHub self-hosted runners (next PR)
+## 3. GitHub self-hosted runners (in this version)
 
-Same `Runner` fact, same `runners = [...]` entries (`"repo:<owner>/<name>"` and `"org:<name>"`), the polling
-already in the GitHub source.
+Same `Runner` fact, same `runners = [...]` grammar as Gitea, but only `"repo:<owner>/<name>"` and `"org:<name>"`
+(GitHub has no user or admin list here). `runner_poll_s` defaults to 300.
+
+```toml
+[[source.github]]
+name = "personal"
+token_file = "github-personal"
+repos = ["your-user/repo-a"]
+runners = ["repo:your-user/repo-a"]   # or "org:your-org"; off when empty or missing
+runner_poll_s = 300
+```
+
+The runner poll is separate from the PR and run poll and **does not change the source's health**. A token
+without the runner right gets a plain `403` on this list only; the bridge logs `cannot poll runners` with the
+scope and the PR and pipeline widgets stay fresh. Add the widget as in section 2.
 
 | Scope | Endpoint | Token scope |
 |---|---|---|
@@ -101,8 +114,10 @@ already in the GitHub source.
 | Organisation | `GET /orgs/{org}/actions/runners` | Fine-grained: organisation permission **Self-hosted runners: read**. Classic token: `admin:org` |
 
 This is the scope that surprises people: GitHub files the runner list under *Administration*, so a token that was
-made for pull requests and Actions only gets `403` here. The bridge will say so in the log and leave the rest of
-the GitHub source untouched; skipping `runners` needs no extra rights.
+made for pull requests and Actions only gets `403` here. Adding **Administration: read** to a fine-grained token
+is a wide read right (it also exposes repository settings), so prefer an organisation token with only
+**Self-hosted runners: read** when the runners belong to an organisation. The bridge only ever sends `GET`
+requests. Skipping `runners` needs no extra rights.
 
 Each runner has `name`, `status` (`online` or `offline`), `busy` and `labels` (objects with a `name`). GitHub-hosted
 runners are not listed, which is fine: only self-hosted ones can be down. Polling every 5 minutes is enough and
@@ -133,7 +148,7 @@ and skipped).
 ## 5. Order of the work
 
 1. **This PR:** the `Runner` fact and the kiosk widget, Gitea as the first source, config, docs, tests.
-2. **GitHub runners:** its own PR, because it brings a second token scope and its own API and rate limit tests.
+2. **GitHub runners (done):** its own PR, because it brings a second token scope and its own API tests.
 3. **Azure DevOps pools:** its own PR, mocks only, after the token scope is agreed.
 4. **ESP panel:** the `runners` page, the offline count in the `warn` badge and "waiting for runner" on the
    pipelines page, together with one amendment of the MQTT schema.

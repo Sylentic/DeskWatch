@@ -355,3 +355,110 @@ async fn source_polls_a_mock_enterprise_server() {
     let requests = seen.requests.lock().unwrap();
     assert!(requests.iter().any(|(path, _)| path == "jobs"));
 }
+
+fn source_for(config: &str) -> Github {
+    let config: GithubConfig = toml::from_str(config).unwrap();
+    Github {
+        id: SourceId::new(KIND, &config.name),
+        api: HttpApi::new(&config.base_url, crate::source::Secret::new("t")).unwrap(),
+        config,
+    }
+}
+
+#[tokio::test]
+async fn source_polls_runners_of_a_repository_and_an_organisation() {
+    let seen = Arc::new(api::tests::Seen::default());
+    let base_url = api::tests::mock_github(seen).await;
+    let source = source_for(&format!(
+        "name = \"work-ghe\"\nbase_url = \"{base_url}\"\ntoken_file = \"unused\"\n\
+         repos = [\"{REPO}\"]\nrunners = [\"repo:{REPO}\", \"org:your-org\"]\nrunner_poll_s = 1"
+    ));
+    let (tx, mut rx) = mpsc::channel(64);
+    crate::source::spawn(source, tx);
+
+    let mut sets = BTreeMap::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while sets.len() < 2 {
+        let msg = tokio::time::timeout_at(deadline, rx.recv())
+            .await
+            .expect("runners reported in time")
+            .unwrap();
+        if let SourceBody::Facts(updates) = msg.body {
+            for update in updates {
+                if let Update::Runners { key, runners } = update {
+                    sets.insert(key, runners);
+                }
+            }
+        }
+    }
+    let keys: Vec<_> = sets.keys().cloned().collect();
+    assert_eq!(
+        keys,
+        [
+            "github:work-ghe:runners:org:your-org".to_string(),
+            format!("github:work-ghe:runners:repo:{REPO}"),
+        ]
+    );
+    let runners = &sets[&keys[0]];
+    let states: Vec<_> = runners
+        .iter()
+        .map(|r| (r.name.as_str(), r.status))
+        .collect();
+    assert_eq!(
+        states,
+        [
+            ("build-box-1", crate::ci::RunnerStatus::Idle),
+            ("build-box-2", crate::ci::RunnerStatus::Busy),
+            ("build-box-3", crate::ci::RunnerStatus::Offline),
+        ]
+    );
+    assert_eq!(runners[1].labels, ["self-hosted", "gpu"]);
+    assert_eq!(runners[0].source, "github");
+}
+
+/// A token without the runner right gets 403 on the runner list only. That
+/// must not make the source look broken: the PR and pipeline widgets stay fresh.
+#[tokio::test]
+async fn refused_runner_list_does_not_hurt_source_health() {
+    use axum::Router;
+    use axum::http::StatusCode;
+    use axum::routing::get;
+
+    let repo = "/api/v3/repos/{owner}/{repo}";
+    let app = Router::new()
+        .route(&format!("{repo}/pulls"), get(|| async { "[]" }))
+        .route(
+            &format!("{repo}/actions/runs"),
+            get(|| async { "{\"workflow_runs\":[]}" }),
+        )
+        .route(
+            &format!("{repo}/actions/runners"),
+            get(|| async {
+                (
+                    StatusCode::FORBIDDEN,
+                    "{\"message\":\"Resource not accessible\"}",
+                )
+            }),
+        );
+    let base_url = api::tests::serve(app).await;
+    let source = source_for(&format!(
+        "name = \"home\"\nbase_url = \"{base_url}\"\ntoken_file = \"unused\"\n\
+         repos = [\"{REPO}\"]\nrunners = [\"repo:{REPO}\"]\nrunner_poll_s = 1"
+    ));
+    let (tx, mut rx) = mpsc::channel(64);
+    crate::source::spawn(source, tx);
+
+    // Let several runner polls fail, then collect what arrived.
+    tokio::time::sleep(Duration::from_millis(2500)).await;
+    let mut healths = Vec::new();
+    while let Ok(msg) = rx.try_recv() {
+        match msg.body {
+            SourceBody::Health(h) => healths.push(h),
+            SourceBody::Facts(updates) => {
+                assert!(!updates.iter().any(|u| matches!(u, Update::Runners { .. })));
+            }
+            SourceBody::Stats(_) => panic!("GitHub sends no host stats"),
+        }
+    }
+    assert_eq!(healths, [Health::Ok]);
+}
