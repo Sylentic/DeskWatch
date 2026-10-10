@@ -126,6 +126,23 @@
       '<polyline points="' + pts.join(' ') + '"/></svg>';
   }
 
+  // ---- filters ------------------------------------------------------------
+
+  // `source` and `repo` of a panel (jobs, prs and pipelines widgets): keep only
+  // what comes from that CI system and that repository or project. `repo`
+  // ignores case and may end in * to match a prefix. Without either, all stays.
+  function matches(panel, source, project) {
+    if (panel.source && panel.source !== source) return false;
+    var repo = (panel.repo || '').toLowerCase(), name = String(project || '').toLowerCase();
+    if (!repo) return true;
+    return repo.slice(-1) === '*' ? name.indexOf(repo.slice(0, -1)) === 0 : name === repo;
+  }
+
+  // ---- widgets ------------------------------------------------------------
+  // One entry per widget kind: name -> function(panel) returning
+  // { title, body, count?, tag?, stale? }. A new widget is one more entry here,
+  // plus its name in config.rs.
+
   var widgets = {
     stats: function (p) {
       var host = findHost(p.host);
@@ -170,7 +187,7 @@
     },
 
     jobs: function (p) {
-      var jobs = snap.jobs || [];
+      var jobs = (snap.jobs || []).filter(function (j) { return matches(p, j.source, j.project); });
       if (!jobs.length) return { title: 'Running now', body: '<div class="empty">No jobs running</div>', stale: false, plain: true };
       var max = p.rows || 3, shown = jobs.slice(0, max);
       var html = shown.map(function (j) {
@@ -188,7 +205,7 @@
     },
 
     pipelines: function (p) {
-      var runs = snap.runs || [];
+      var runs = (snap.runs || []).filter(function (r) { return matches(p, r.source, r.project); });
       var rows = runs.map(function (r) {
         var when = r.status === 'running' ? 'running' : ago(nowS() - (r.finished || r.started));
         return '<div class="row">' + dot(runStatus(r.status)) + '<span class="main">' + esc(r.project) + ' / ' + esc(r.pipeline) + '</span>' +
@@ -198,7 +215,7 @@
     },
 
     prs: function (p) {
-      var repos = (snap.pulls || []).filter(function (r) { return r.total > 0; });
+      var repos = (snap.pulls || []).filter(function (r) { return r.total > 0 && matches(p, r.source, r.project); });
       var total = repos.reduce(function (n, r) { return n + r.total; }, 0);
       var rows = [];
       repos.forEach(function (r) {
@@ -335,6 +352,46 @@
     tick();
   }
 
+  // ---- day and night, pixel shift ----------------------------------------
+
+  // The theme is chosen here, by the clock the page shows, not by the bridge:
+  // a Pi in another time zone than the server still dims at its own bedtime.
+  // `?theme=day|night|auto` on the address overrides the config (for testing).
+  function minutesOf(text, fallback) {
+    var m = /^(\d\d):(\d\d)$/.exec(text || '');
+    return m ? Number(m[1]) * 60 + Number(m[2]) : fallback;
+  }
+  function themeAt(date) {
+    var cfg = (snap && snap.layout && snap.layout.theme) || {};
+    var mode = params.get('theme') || cfg.mode || 'day';
+    if (mode !== 'auto') return mode === 'night' ? 'night' : 'day';
+    var from = minutesOf(cfg.night_from, 22 * 60), to = minutesOf(cfg.night_to, 7 * 60);
+    var now = date.getHours() * 60 + date.getMinutes();
+    if (from === to) return 'day';
+    return (from < to ? now >= from && now < to : now >= from || now < to) ? 'night' : 'day';
+  }
+  function applyTheme(date) {
+    var theme = themeAt(date), root = document.documentElement;
+    if (root.getAttribute('data-theme') !== theme) root.setAttribute('data-theme', theme);
+  }
+
+  // Pixel shift: the whole page moves one step around a small ring every
+  // `pixel_shift_s` seconds. The step follows the wall clock, so a reload
+  // does not restart the walk at the same spot.
+  var RING = [[0, 0], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+  var shiftStep = null;
+  function shiftAt(ms) {
+    var every = (snap && snap.layout && snap.layout.pixel_shift_s) || 0;
+    return every ? RING[Math.floor(ms / 1000 / every) % RING.length] : [0, 0];
+  }
+  function applyShift(ms) {
+    var step = shiftAt(ms), key = step.join(',');
+    if (key === shiftStep) return;
+    shiftStep = key;
+    // 0.25rem is 4 px at 1080p and 8 px at 4K.
+    document.body.style.transform = key === '0,0' ? '' : 'translate(' + step[0] * 0.25 + 'rem,' + step[1] * 0.25 + 'rem)';
+  }
+
   // ---- why there is no data ----------------------------------------------
 
   // Turn a failed request into something a person can act on.
@@ -408,6 +465,8 @@
   function tick() {
     var d = new Date();
     var two = function (n) { return n < 10 ? '0' + n : '' + n; };
+    applyTheme(d);
+    applyShift(d.getTime());
     $('time').textContent = two(d.getHours()) + ':' + two(d.getMinutes());
     $('date').textContent = d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
     Array.prototype.forEach.call(document.querySelectorAll('[data-since]'), function (el) {
@@ -492,7 +551,7 @@
   document.addEventListener('mousedown', wake);
   wake();
 
-  window.DeskWatchKiosk = { render: render, tick: tick, seed: function (name, values) { history[name] = values.slice(-HISTORY); } };
+  window.DeskWatchKiosk = { render: render, tick: tick, themeAt: themeAt, shiftAt: shiftAt, seed: function (name, values) { history[name] = values.slice(-HISTORY); } };
   setInterval(tick, 1000);
   tick();
   if (!params.has('static')) { poll(); connect(); }
