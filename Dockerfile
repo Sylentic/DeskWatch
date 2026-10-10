@@ -35,19 +35,40 @@ RUN case "$TARGETARCH" in \
          && echo "$cc" > /rust-linker; \
        else echo cc > /rust-linker; fi
 
-# The workspace also lists the simulator and the UI crate, so their manifests
-# must exist; only the bridge (and what it depends on) is compiled.
+# Build in two steps so a source change does not recompile the dependencies.
+#
+# Step 1 copies only the manifests and the lock file, adds empty stand-in
+# sources (the workspace also lists the simulator and the UI crate, so their
+# manifests must exist) and builds. That layer holds every dependency compiled
+# and only changes when a Cargo.toml or Cargo.lock does. Step 2 copies the real
+# sources over it. Only the bridge (and what it depends on) is compiled.
 COPY Cargo.toml Cargo.lock ./
+COPY bridge/Cargo.toml ./bridge/
+COPY sim/Cargo.toml ./sim/
+COPY ui/Cargo.toml ./ui/
+RUN mkdir -p bridge/src sim/src ui/src \
+    && echo 'fn main() {}' > bridge/src/main.rs \
+    && touch bridge/src/lib.rs sim/src/lib.rs ui/src/lib.rs
+# The compile step is shared by both builds, so it lives in one script that
+# reads the two files written above (the Rust target and the linker).
+RUN printf '%s\n' \
+      'target="$(cat /rust-target)"; linker="$(cat /rust-linker)"' \
+      'upper="$(echo "$target" | tr "a-z-" "A-Z_")"' \
+      'export "CARGO_TARGET_${upper}_LINKER=$linker" "CC_$(echo "$target" | tr "-" "_")=$linker" CARGO_PROFILE_RELEASE_STRIP=symbols' \
+      'exec cargo build --release --locked -p deskwatch-bridge --target "$target"' \
+      > /build.sh \
+    && chmod +x /build.sh \
+    && /build.sh \
+    && rm -rf bridge/src sim/src ui/src
+
 COPY bridge ./bridge
 COPY sim ./sim
 COPY ui ./ui
-RUN target="$(cat /rust-target)"; linker="$(cat /rust-linker)"; \
-    upper="$(echo "$target" | tr 'a-z-' 'A-Z_')"; \
-    export "CARGO_TARGET_${upper}_LINKER=$linker" \
-           "CC_$(echo "$target" | tr '-' '_')=$linker" \
-           CARGO_PROFILE_RELEASE_STRIP=symbols; \
-    cargo build --release --locked -p deskwatch-bridge --target "$target" \
-    && cp "target/$target/release/deskwatch-bridge" /deskwatch-bridge
+# Copied files can be older than the stand-in build, and cargo decides what to
+# rebuild by modification time, so touch them to make the real code recompile.
+RUN find bridge/src sim/src ui/src -name '*.rs' -exec touch {} + \
+    && /build.sh \
+    && cp "target/$(cat /rust-target)/release/deskwatch-bridge" /deskwatch-bridge
 
 # The runtime image's user entry (uid 10001, no shell, no home).
 RUN mkdir /out \

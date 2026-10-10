@@ -18,6 +18,11 @@ may change if the firmware work needs it; any such change is listed here.
 - **Kiosk pixel shift** for OLED screens: `pixel_shift = true` moves the page a few pixels every
   `pixel_shift_minutes` (default 5). Off by default.
 
+### Changed
+
+- **Faster Docker rebuilds**: the `Dockerfile` compiles the dependencies in their own layer, so a change in the bridge,
+  `sim` or `ui` source no longer recompiles them. Fixes #29.
+
 ## [0.9.8]
 
 The Docker and kiosk hardening release: Compose uses the published image, WebSocket limits, reverse proxy examples.
