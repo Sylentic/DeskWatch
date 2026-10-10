@@ -142,10 +142,21 @@ impl Kiosk {
     }
 }
 
-/// The layout part of a snapshot: grid size and the widgets in order.
+/// The layout part of a snapshot: grid size, the widgets in order, the
+/// theme and the pixel shift interval in seconds (0 means off). The page
+/// decides day or night itself, by its own clock.
 fn layout_json(config: &KioskConfig) -> Value {
     let panels: Vec<PanelConfig> = config.panels();
-    json!({ "columns": config.columns, "rows": config.rows, "panels": panels })
+    let shift_s = if config.pixel_shift {
+        u32::from(config.pixel_shift_minutes) * 60
+    } else {
+        0
+    };
+    json!({
+        "columns": config.columns, "rows": config.rows, "panels": panels,
+        "theme": { "mode": config.theme, "night_from": config.night_from, "night_to": config.night_to },
+        "pixel_shift_s": shift_s,
+    })
 }
 
 /// Everything the page draws, from the composer's facts. `now` is added by

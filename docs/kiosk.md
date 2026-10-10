@@ -105,7 +105,58 @@ the screen allows: a 3x2 grid on a 4K TV gives very large cards. List widgets cu
 last line says how many more there are. Configuration errors (a span larger than the grid, a `host` on a widget that
 has none, an unknown widget) stop the bridge at startup with a message that names the block.
 
-Layouts for day and night, drag and drop editing and per-widget filters are not built.
+### Filter a widget by source or repository
+
+The `jobs`, `prs` and `pipelines` widgets can show only part of what the bridge knows. Both filters are optional
+and combine (a widget needs to match both):
+
+```toml
+[[kiosk.panel]]
+widget = "prs"
+title = "Work PRs"
+source = "azure_devops"   # gitea, github or azure_devops: the tag shown next to a repository
+
+[[kiosk.panel]]
+widget = "pipelines"
+repo = "acme/*"           # one repository or project, or a prefix ending in *; case does not matter
+```
+
+`repo` is the name shown on the card (the project, after its `alias`). There is no wildcard in the middle, only a
+trailing `*`. A widget whose filter matches nothing shows its normal empty text. Filters only change the widget:
+the header counters and the banner still count everything, and `host` still belongs to `stats` only. Two copies of
+a widget with different filters is the way to split, for example, work and home pipelines over two cards.
+
+Drag and drop editing is not built.
+
+### Day and night theme
+
+The default look is unchanged. A **night theme** keeps the layout and the colour meanings (green, red, running
+orange) at about half the brightness, for a dark room:
+
+```toml
+[kiosk]
+theme = "auto"        # day (default), night, or auto
+night_from = "22:00"  # auto only, HH:MM; the window may cross midnight
+night_to = "07:00"
+```
+
+`auto` uses the clock of the **browser** (the same one as the clock in the header), not the bridge's, so a Pi in
+another time zone dims at its own bedtime. The page checks every second and switches without a reload.
+`?theme=day`, `?theme=night` or `?theme=auto` on the page address overrides the config, which is handy to try the
+night look in the afternoon.
+
+### OLED protection (pixel shift)
+
+```toml
+[kiosk]
+pixel_shift = true
+pixel_shift_minutes = 5   # 1 to 120, default 5
+```
+
+Every `pixel_shift_minutes` the whole page moves one step around a ring of nine positions, at most 0.25 rem (4 px
+at 1080p, 8 px at 4K) from the centre. That keeps the edges of cards and text from sitting on the same pixels for
+months. The step follows the wall clock, so a reload does not restart the walk. The page edge that moves out of
+view is cut off by a few pixels. Off by default. For an OLED you should still switch the screen off at night.
 
 ## 4. Autostart on a Raspberry Pi
 
@@ -145,7 +196,8 @@ Things that make a kiosk last:
   (it runs hotter). 30 Hz is plenty for this page, which only animates a progress bar and a small spinner.
 - **Memory.** A Pi 4 with 2 GB or more, or a Pi 5, is the sensible floor for Chromium at 4K; use a 1080p output on
   anything smaller. A Pi Zero 2 W is not enough for a browser.
-- **Burn-in.** The page is mostly static. On an OLED screen, switch the screen off at night
+- **Burn-in.** The page is mostly static. On an OLED screen, turn on `pixel_shift` and the night theme
+  ([section 3](#3-choose-the-widgets)), and switch the screen off at night
   (for example `wlr-randr --output HDMI-A-1 --off` from a cron job) rather than leaving it on for months.
 
 ## 5. Security
@@ -220,7 +272,7 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
 `GET /api/kiosk` returns the latest snapshot, and `/api/kiosk/ws` sends a snapshot over a WebSocket on every change
 and at least every 5 seconds (a heartbeat, so the page can tell quiet from gone). Snapshots are versioned with `"v"`
 (1), separately from the MQTT schema. Fields: `build` (bridge version; the page reloads when it changes), `now`
-(Unix seconds), `layout` (the grid and the widgets from the config), `screen` (the composer's pick as an MQTT v2
+(Unix seconds), `layout` (the grid, the widgets with their filters, `theme` and `pixel_shift_s` from the config), `screen` (the composer's pick as an MQTT v2
 screen payload, or `null` when idle), `badges`, `hosts`, `down`, `jobs`, `runs`, `pulls`, `alerts` and `sources`.
 Lists are not capped to the ESP panel's five rows. The structure is in `bridge/src/kiosk.rs` (`snapshot`) and
 covered by the tests next to it. Treat it as unstable until 1.0.
@@ -239,6 +291,12 @@ Tested: the endpoints, the WebSocket (a real handshake and pushed changes), the 
 the snapshot contents are covered by automated tests (`cargo test -p deskwatch-bridge`). The token and failure states were run in Chromium against the live `--demo --kiosk` bridge (token missing, wrong and right, WebSocket blocked, bridge unreachable). The page was run in
 Chromium against the live `--demo --kiosk` bridge and rendered at 1280x720, 1920x1080, 3840x2160 and a 420 px wide
 phone, and was checked while the bridge was killed and started again: the page dimmed and said it was offline within 25 seconds, and recovered by itself within 14 seconds of the bridge returning. The reload on a new bridge version (`build` changing) is written but was not exercised.
+
+The night theme, the `source` and `repo` filters and the pixel shift were run in headless Chromium at 1920x1080
+against the live `--demo` bridge: `theme = "auto"` picked night and day by the configured window (checked for 23:00,
+03:00, 06:59, 07:00 and 12:00, with the window crossing midnight), `?theme=` overrode the config, a `source` plus
+prefix `repo` filter kept the matching runs and emptied the others, and the pixel shift walked the nine positions in
+order and stayed at the centre when off. Not checked: how the night theme looks on a real OLED or in a dark room.
 
 **Not tested on real Raspberry Pi hardware**: Chromium on Raspberry Pi OS, the `labwc` and LXDE autostart snippets,
 Wayland and X11 behaviour, screen blanking, 4K at 30 or 60 Hz, memory use at 4K, the pointer hiding, and touch
