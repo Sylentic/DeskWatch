@@ -8,6 +8,11 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Changed
+
+- **Faster Docker rebuilds**: the `Dockerfile` compiles the dependencies in their own layer, so a change in the bridge,
+  `sim` or `ui` source no longer recompiles them. Fixes #29.
+
 ## [0.9.8]
 
 The Docker and kiosk hardening release: Compose uses the published image, WebSocket limits, reverse proxy examples.
