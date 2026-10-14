@@ -84,7 +84,16 @@ fn explain(err: &anyhow::Error, hint: &str) -> String {
         }
         (Health::AuthFailed, None) => format!("the server asked for a sign-in. {hint}"),
         (_, Some(status)) if status == reqwest::StatusCode::NOT_FOUND => {
-            "not found, or not visible to this token".to_string()
+            // The URL carries no credential (tokens travel in headers). It
+            // shows which name or path the server did not know, with any
+            // special characters as they were sent.
+            let url = err
+                .chain()
+                .find_map(|e| e.downcast_ref::<reqwest::Error>())
+                .and_then(reqwest::Error::url)
+                .map(|u| format!(" for {}", u.path()))
+                .unwrap_or_default();
+            format!("not found (HTTP 404){url}, or not visible to this token")
         }
         _ => chain_text(err),
     };
@@ -265,11 +274,19 @@ async fn azure_devops(config: &AzureDevopsConfig, overrides: &Overrides) -> Repo
     let hint = "Check that the PAT is valid, not expired, and covers this organisation \
                 (Build: read).";
     for project in config.projects.iter().take(MAX_TARGETS) {
-        report.result(
-            format!("project {project}: builds"),
-            api.builds(project).await,
-            hint,
-        );
+        let builds = api.builds(project).await;
+        let missing = is_not_found(&builds);
+        let name = format!("project {project}: builds");
+        match builds {
+            // A project the server does not know: say which projects this
+            // token does see, because the name is the usual mistake.
+            Err(err) if missing => {
+                let mut message = explain(&err, hint);
+                message.push_str(&visible_projects(&api).await);
+                report.fail(name, message);
+            }
+            other => report.result(name, other, hint),
+        }
         if config.pull_requests {
             report.result(
                 format!("project {project}: pull requests"),
@@ -296,6 +313,36 @@ async fn azure_devops(config: &AzureDevopsConfig, overrides: &Overrides) -> Repo
         }
     }
     report
+}
+
+fn is_not_found<T>(outcome: &anyhow::Result<T>) -> bool {
+    outcome.as_ref().err().is_some_and(|err| {
+        err.chain()
+            .find_map(|e| e.downcast_ref::<reqwest::Error>())
+            .and_then(reqwest::Error::status)
+            == Some(reqwest::StatusCode::NOT_FOUND)
+    })
+}
+
+/// " Projects this token can see: A, B." for a failed project check, or a hint
+/// about the organisation name when the list cannot be read either.
+async fn visible_projects(api: &crate::azure_devops::api::HttpApi) -> String {
+    match api.projects().await {
+        Ok(names) if names.is_empty() => {
+            " This token sees no projects in the organisation: check the organization name \
+             and that the PAT was made for it."
+                .to_string()
+        }
+        Ok(names) => {
+            let shown: Vec<_> = names.iter().take(MAX_TARGETS).map(String::as_str).collect();
+            format!(" Projects this token can see: {}.", shown.join(", "))
+        }
+        // The organisation itself is not found or not readable with this
+        // token: then the name before the project is the likelier mistake.
+        Err(_) => " The list of projects could not be read either: check the organization name, \
+                    and that the PAT was made for that organisation."
+            .to_string(),
+    }
 }
 
 async fn prometheus(config: &PrometheusConfig, overrides: &Overrides) -> Report {

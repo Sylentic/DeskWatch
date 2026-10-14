@@ -250,3 +250,43 @@ fn repeated_causes_are_not_printed_twice() {
     let err = anyhow::anyhow!("inner").context("outer");
     assert_eq!(chain_text(&err), "outer: inner");
 }
+
+/// A project the server does not know: the check says HTTP 404 and the path
+/// that was asked for (a name with a space, percent-encoded), and lists the
+/// projects the token does see.
+#[tokio::test]
+async fn azure_devops_unknown_project_lists_the_visible_ones() {
+    let app = Router::new()
+        .route(
+            "/your-org/_apis/projects",
+            get(|| async { r#"{"value":[{"name":"My Project"},{"name":"Other"}]}"# }),
+        )
+        .fallback(|| async { StatusCode::NOT_FOUND });
+    let base = serve(app).await;
+    let dir = Temp::new("azdo-404");
+    let token = dir.token("azdo", GOOD);
+    let report = report_for(
+        &format!(
+            "[[source.azure_devops]]\nname = \"work\"\norganization = \"your-org\"\n\
+             base_url = \"{base}\"\nprojects = [\"My Projekt\"]\ntoken_file = {token}\n"
+        ),
+        "azure_devops:work",
+    )
+    .await;
+    let builds = check(&report, "project My Projekt: builds");
+    assert!(!builds.ok);
+    assert!(builds.message.contains("HTTP 404"), "{builds:?}");
+    assert!(
+        builds
+            .message
+            .contains("/your-org/My%20Projekt/_apis/build/builds"),
+        "{builds:?}"
+    );
+    assert!(
+        builds
+            .message
+            .contains("Projects this token can see: My Project, Other."),
+        "{builds:?}"
+    );
+    assert!(!builds.message.contains(GOOD));
+}

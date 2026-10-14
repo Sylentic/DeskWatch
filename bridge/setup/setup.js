@@ -107,7 +107,7 @@
                 ['webhook_secret', 'Webhook secret (the same text as in Gitea)', true]]
     },
     azure_devops: {
-      strings: [['organization', 'Organisation', ''], ['base_url', 'Address', 'https://dev.azure.com']],
+      strings: [['organization', 'Organisation (the name after dev.azure.com/)', ''], ['base_url', 'Address (without the organisation)', 'https://dev.azure.com']],
       lists: [['projects', 'Projects, one per line']],
       bools: [['pull_requests', 'Show open pull requests']],
       secrets: [['token', 'Personal access token (read-only)', true]]

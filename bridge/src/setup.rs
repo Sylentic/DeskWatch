@@ -759,7 +759,11 @@ pub fn describe(config: &Config) -> Value {
         sources.push(json!({
             "id": format!("azure_devops:{}", s.name), "kind": "azure_devops", "name": s.name,
             "origin": origin("azure_devops", &s.name),
-            "address": format!("{}/{}", s.base_url.trim_end_matches('/'), s.organization),
+            "address": format!(
+                "{}/{}",
+                crate::azure_devops::api::clean_base_url(&s.base_url, &s.organization),
+                s.organization
+            ),
             "repos": s.projects,
             "credentials": [cred("token", &s.token_file, true)],
             "fields": {
