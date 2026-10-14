@@ -73,12 +73,15 @@ struct MqttPatch {
     password_file: Option<String>,
 }
 
-/// The setup page (`/setup`, docs/setup-page.md). Off unless it has its own token.
+/// The setup page (`/setup`, docs/setup-page.md). Off unless enabled.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SetupConfig {
-    /// Credential holding the setup token. Separate from `kiosk.token_file`,
-    /// and `kiosk.trusted_networks` never applies to this page.
+    /// Serve the setup page. It has no login: use it on a trusted network only.
+    pub enabled: bool,
+    /// Deprecated, still honoured (the bridge warns): a credential holding a
+    /// token that puts a login in front of the page, which also turns it on.
+    /// Separate from `kiosk.token_file`.
     pub token_file: Option<String>,
     /// Let the setup page restart the bridge (the process exits with code 75
     /// after a clean shutdown). Only for a bridge that is started again by
@@ -251,15 +254,15 @@ pub struct KioskConfig {
     /// Grid size. Every widget takes `span` cells of it.
     pub columns: u8,
     pub rows: u8,
-    /// Credential holding a token that the data endpoints require. The page
-    /// asks for it once and keeps a login cookie (`session_days`). Set it
-    /// whenever `http.listen` is reachable from other machines. Changing the
-    /// token logs everybody out.
+    /// Optional. Without it the page needs no login, which is fine on a home
+    /// network (never expose the port to the internet). With it the data
+    /// endpoints require this token; the page asks for it once and keeps a
+    /// login cookie (`session_days`). Changing the token logs everybody out.
     pub token_file: Option<String>,
-    /// Networks (`192.168.0.0/16`, `fd00::/8`, a single address) whose
-    /// clients need no token. Judged by the TCP peer address only, so behind
-    /// a reverse proxy or Docker port mapping read docs/kiosk.md first.
-    /// Empty (the default) trusts nobody.
+    /// Deprecated, still honoured (the bridge warns at startup). Networks
+    /// (`192.168.0.0/16`, `fd00::/8`, a single address) whose clients need no
+    /// token. Judged by the TCP peer address only, which behind a reverse
+    /// proxy or Docker is not the real client. Only matters with `token_file`.
     pub trusted_networks: Vec<String>,
     /// How many days a login stays valid. A browser logs in once with the
     /// token (`POST /api/login`) and keeps a cookie for this long.
@@ -1208,7 +1211,7 @@ mod tests {
             Config::from_toml(include_str!("../../deploy/dashboard.example.toml")).unwrap();
         assert!(!config.mqtt.enabled);
         assert!(config.kiosk.enabled);
-        assert_eq!(config.kiosk.token_file.as_deref(), Some("kiosk-token"));
+        assert!(config.kiosk.token_file.is_none());
         assert!(config.source.gitea.is_empty());
     }
 

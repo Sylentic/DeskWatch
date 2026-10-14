@@ -8,6 +8,33 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+## [0.9.12]
+
+The no-login release: the dashboard and the setup page no longer use token authentication. Both are meant for a trusted
+network (your home network); never expose the port to the internet, and do not publish it through a proxy or tunnel
+without a login. Built against mock servers only, not run in a real browser or in Docker. Authentication for the ESP
+panel's setup mode is left for when that exists.
+
+### Changed
+
+- **The dashboard needs no login by default.** `[kiosk] token_file` is optional again for the Docker quick-start: the
+  dashboard Compose file and `dashboard.example.toml` no longer create or require a token, so a new install opens at
+  once and a Raspberry Pi kiosk needs nothing typed. The bridge logs one clear warning when the page has no login and
+  listens on the network: keep it on your home network, never expose it to the internet or publish it through a proxy
+  or tunnel without a login. `token_file` and the cookie login stay for anyone who wants them (nothing about them
+  changed).
+- **The setup page needs no login either.** It is turned on with `[setup] enabled = true` and is open to whoever can
+  reach the port, so use it on a trusted network only (the bridge warns at startup). Secrets still never reach the
+  browser, token fields stay write-only and a page from another website still cannot make changes (the `Origin`
+  check). Authentication for the ESP panel's setup mode is left for when that exists.
+
+### Deprecated
+
+- **`[setup] token_file`** still works (it keeps a login in front of the page and turns the page on) but the bridge
+  warns; use `[setup] enabled = true`.
+- **`[kiosk] trusted_networks`** still works but the bridge now warns at startup and the docs advise removing it: the
+  peer address it relies on is not the real client behind Docker or a reverse proxy.
+
 ## [0.9.11]
 
 The setup release: sources, tokens and the MQTT broker can be set up in the browser instead of by hand-editing files.
@@ -339,7 +366,8 @@ not (see the README, "What is not in 0.9").
   are Linux x86_64; build from source for other CPUs.
 - Gitea webhooks are plain HTTP unless you put a reverse proxy in front of the bridge.
 
-[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.11...HEAD
+[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.12...HEAD
+[0.9.12]: https://github.com/Sylentic/DeskWatch/compare/v0.9.11...v0.9.12
 [0.9.11]: https://github.com/Sylentic/DeskWatch/compare/v0.9.10...v0.9.11
 [0.9.10]: https://github.com/Sylentic/DeskWatch/compare/v0.9.9...v0.9.10
 [0.9.9]: https://github.com/Sylentic/DeskWatch/compare/v0.9.8...v0.9.9

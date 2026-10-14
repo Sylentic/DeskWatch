@@ -450,7 +450,7 @@
       } : {
         code: 'required', pill: 'token required', needsToken: true,
         title: 'This dashboard needs its access token',
-        detail: 'Not a Gitea, GitHub or Azure DevOps token. It is the text in the file set by `token_file` under `[kiosk]` in the bridge config. Enter it below once; this browser then stays logged in. Clients on a `trusted_networks` range need none.'
+        detail: 'Not a Gitea, GitHub or Azure DevOps token. It is the text in the file set by `token_file` under `[kiosk]` in the bridge config. Enter it below once; this browser then stays logged in.'
       };
     }
     if (e && e.status) {

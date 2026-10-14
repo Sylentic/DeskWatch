@@ -179,7 +179,7 @@ echo '~/deskwatch-kiosk.sh &' >> ~/.config/labwc/autostart                # Book
 [`deploy/kiosk/deskwatch-kiosk.sh`](../deploy/kiosk/deskwatch-kiosk.sh) opens `http://localhost:8787/`. For a bridge on
 another machine, set the address with an environment variable, for example
 `DESKWATCH_KIOSK_URL='http://bridge.example.lan:8787/' ~/deskwatch-kiosk.sh &`. If the bridge has a
-[kiosk token](#5-security), the page asks for it once on first boot (use a keyboard or the touch screen); Chromium keeps
+[kiosk token](#5-security) (optional), the page asks for it once on first boot (use a keyboard or the touch screen); Chromium keeps
 the login cookie in its profile (`~/.cache/deskwatch-kiosk`), so later boots need nothing. Deleting that folder logs the
 Pi out. Older releases, or Bookworm switched to X11 with LXDE, read
 `~/.config/lxsession/LXDE-pi/autostart` instead; see
@@ -209,12 +209,14 @@ Things that make a kiosk last:
 The page and its two data routes (`/api/kiosk` and `/api/kiosk/ws`) are read-only: the page cannot press buttons or
 change anything. They show PR titles, pipeline names, host stats and alert text, so treat them like a dashboard.
 
-- By default the listener is `0.0.0.0:8787` (it has to be reachable for Gitea webhooks). With the kiosk on and no
-  token, anyone on your network can read the page, and the bridge logs a warning at startup. To keep it local, run
-  the bridge on the Pi itself with `[http] listen = "127.0.0.1:8787"`, which is fine when the Pi has no webhook
-  source.
-- **Set a token** when the page is opened from another machine (or the listener is on the network): put a long random
-  string in a credential file and name it, like every other secret:
+- **No login by default.** The listener is `0.0.0.0:8787` (it has to be reachable for Gitea webhooks and for other
+  machines on your network). With the kiosk on and no token, anyone who can reach the port can read the page. On a
+  home network that is the intended trade-off, and the bridge logs one warning at startup saying so. **Never expose
+  the port to the internet** (no router port forward, no tunnel or public reverse proxy) unless a login sits in front
+  of it: a token below, or the proxy's own login. To keep the page local to the Pi, run the bridge there with
+  `[http] listen = "127.0.0.1:8787"`, which is fine when the Pi has no webhook source.
+- **Optionally set a token** to keep other people on your network out, or when the page is reachable from further
+  away: put a long random string in a credential file and name it, like every other secret:
 
   ```toml
   [kiosk]
@@ -258,33 +260,13 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
   look. Hosts that Prometheus reports as down get a red dot and a dimmed card.
 - **The bridge host's clock and the screen's clock differ.** Times such as "3 min ago" use the bridge's clock, so a
   Pi with a wrong clock still shows correct ages. The clock in the header is the screen's own.
-- **No token from your own network** (`trusted_networks`). Add the ranges of your home or office network and only
-  clients outside them need the token:
-
-  ```toml
-  [kiosk]
-  token_file = "kiosk-token"
-  trusted_networks = ["192.168.0.0/16", "fd00::/8"]   # CIDR ranges or single addresses; empty (default) trusts nobody
-  ```
-
-  The decision uses the **TCP peer address** of the connection and nothing else; `X-Forwarded-For` and similar
-  headers are never trusted, because any client can set them. That is only safe when the bridge sees the real client
-  address. It does not when:
-
-  - the bridge sits **behind a reverse proxy** (the peer is the proxy; if your range includes the proxy, everybody who
-    comes through it skips the token);
-  - the bridge runs in **Docker** and the connection arrives through the Docker gateway or a userland proxy, which
-    is common with Docker Desktop on Windows and Mac, with rootless Docker, and for connections from the Docker host
-    itself (the peer is then an internal address such as `172.x.x.x`);
-  - the bridge listens on IPv4 and IPv6 and your range covers only one family (IPv4-mapped addresses such as
-    `::ffff:192.168.1.5` are treated as IPv4, so one IPv4 range covers both).
-
-  Check what the bridge sees before relying on it: start it with `RUST_LOG=deskwatch_bridge::kiosk=debug` (for
-  Docker add `-e RUST_LOG=deskwatch_bridge::kiosk=debug`), open the page from a laptop, and read the log: each
-  request prints `kiosk request peer=Some(<address>) trusted=...`. If the address is not your laptop's, do not trust
-  that range; keep the token (or put the range of the proxy on a proxy that does its own access control). At startup
-  the bridge logs which ranges it trusts. Never trust a range that includes the internet, and never `0.0.0.0/0`.
-- **Which token is this?** The dashboard access token: the text stored in the file named by `token_file` under
+- **`trusted_networks` is deprecated.** It still works (clients in the listed ranges skip `token_file`, and the bridge
+  logs a warning at startup), but it only has meaning when `token_file` is set, and it judges the **TCP peer address**
+  only, which is not the real client behind a reverse proxy, with Docker Desktop, rootless Docker, or for connections
+  from the Docker host itself (the peer is then a `172.x.x.x` gateway address, and a range that covers it opens the
+  page to everyone behind it). Remove it. If you do not want a login on your home network, leave `token_file` out
+  instead. If you do want one, keep `token_file` and enter the token once per browser.
+- **Which token is this?** (Only if you set `token_file`.) The dashboard access token: the text stored in the file named by `token_file` under
   `[kiosk]` in the bridge config (in Docker, the `kiosk-token` file in the credentials folder). It is not a Gitea,
   GitHub or Azure DevOps token; those stay on the bridge and are never typed into the page.
 - **The page says why it has no data.** An empty page with `connecting` used to be all you saw. Now the header chip

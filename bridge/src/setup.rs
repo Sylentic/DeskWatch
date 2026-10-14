@@ -16,11 +16,12 @@
 //!   and only saved when the test passes (or the person insists). It takes
 //!   effect after a restart; `bridge.toml` is never touched.
 //!
-//! The page is off unless `[setup] token_file` is set, and it has its own
-//! token, cookie and failure limit, apart from the dashboard's. Unlike the
-//! dashboard it ignores `kiosk.trusted_networks` completely: the peer address
-//! is not good enough to decide who may see (and later change) credentials.
-//! The cookie lasts `SESSION_S`, shorter than the dashboard's.
+//! The page is off unless `[setup] enabled = true`. It has no login: whoever
+//! can reach the port can use it, so it belongs on a trusted network only (the
+//! bridge warns at startup). Secrets are never sent to the browser and a page
+//! from another site cannot make changes (the `Origin` check). The deprecated
+//! `[setup] token_file` still turns a login on, with its own token, cookie
+//! (`SESSION_S`) and failure limit, apart from the dashboard's.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -59,8 +60,15 @@ pub struct Setup {
     shared: Arc<Shared>,
 }
 
-struct Shared {
+/// The optional login (the deprecated `[setup] token_file`).
+struct Auth {
     token: [u8; 32],
+    sessions: Sessions,
+    limiter: Limiter,
+}
+
+struct Shared {
+    auth: Option<Auth>,
     /// The config the bridge runs with, for connection tests.
     config: Config,
     /// What `bridge.toml` alone says: the data folder's sources are added to it.
@@ -81,8 +89,6 @@ struct Shared {
     saving: tokio::sync::Mutex<()>,
     /// One connection test at a time: each one makes real requests.
     testing: Semaphore,
-    sessions: Sessions,
-    limiter: Limiter,
     mqtt_enabled: bool,
     mqtt: MqttLink,
     /// Source id (`github:main`) to health name, kept current by the main loop.
@@ -90,6 +96,7 @@ struct Shared {
 }
 
 impl Setup {
+    /// A setup page behind its own token (the deprecated `[setup] token_file`).
     pub fn new(
         config: &Config,
         token: &Secret,
@@ -97,10 +104,34 @@ impl Setup {
         store: Option<Store>,
         supervisor: Option<Supervisor>,
     ) -> Self {
+        Self::build(config, Some(token), mqtt, store, supervisor)
+    }
+
+    /// A setup page without a login: for a trusted network only.
+    pub fn open(
+        config: &Config,
+        mqtt: MqttLink,
+        store: Option<Store>,
+        supervisor: Option<Supervisor>,
+    ) -> Self {
+        Self::build(config, None, mqtt, store, supervisor)
+    }
+
+    fn build(
+        config: &Config,
+        token: Option<&Secret>,
+        mqtt: MqttLink,
+        store: Option<Store>,
+        supervisor: Option<Supervisor>,
+    ) -> Self {
         let started = source_ids(config);
         Self {
             shared: Arc::new(Shared {
-                token: digest(token.expose()),
+                auth: token.map(|token| Auth {
+                    token: digest(token.expose()),
+                    sessions: Sessions::new("setup", token.expose(), SESSION_S),
+                    limiter: Limiter::default(),
+                }),
                 config: config.clone(),
                 base: config.without_overlay(),
                 store,
@@ -111,8 +142,6 @@ impl Setup {
                 restart: Arc::new(Notify::new()),
                 saving: tokio::sync::Mutex::new(()),
                 testing: Semaphore::new(1),
-                sessions: Sessions::new("setup", token.expose(), SESSION_S),
-                limiter: Limiter::default(),
                 mqtt_enabled: config.mqtt.enabled,
                 mqtt,
                 health: Mutex::new(BTreeMap::new()),
@@ -171,8 +200,12 @@ async fn login(
     if !session::same_origin(&headers) {
         return (StatusCode::FORBIDDEN, "cross-origin request refused").into_response();
     }
+    // Without a token there is nothing to log in to.
+    let Some(auth) = &shared.auth else {
+        return StatusCode::NO_CONTENT.into_response();
+    };
     let now = unix_now();
-    if let Some(wait) = shared.limiter.blocked(now) {
+    if let Some(wait) = auth.limiter.blocked(now) {
         tracing::warn!("setup login refused: too many wrong tokens lately");
         let mut response = (StatusCode::TOO_MANY_REQUESTS, "too many wrong tokens").into_response();
         if let Ok(value) = HeaderValue::from_str(&wait.to_string()) {
@@ -187,8 +220,8 @@ async fn login(
     let Some(given) = given else {
         return (StatusCode::BAD_REQUEST, "expected {\"token\": \"...\"}").into_response();
     };
-    if !same(&shared.token, &digest(&given)) {
-        shared.limiter.record_failure(now);
+    if !same(&auth.token, &digest(&given)) {
+        auth.limiter.record_failure(now);
         tracing::warn!("setup login with a wrong token");
         tokio::time::sleep(Duration::from_millis(400)).await;
         return (StatusCode::UNAUTHORIZED, "token wrong").into_response();
@@ -196,7 +229,7 @@ async fn login(
     tracing::info!("setup login");
     let cookie = session::set_cookie(
         session::SETUP_COOKIE,
-        &shared.sessions.issue(now),
+        &auth.sessions.issue(now),
         SESSION_S,
         session::is_https(&headers),
     );
@@ -353,8 +386,11 @@ async fn test(
 }
 
 fn logged_in(shared: &Shared, headers: &HeaderMap) -> bool {
-    session::cookie_value(headers, session::SETUP_COOKIE)
-        .is_some_and(|v| shared.sessions.valid(v, unix_now()))
+    match &shared.auth {
+        None => true,
+        Some(auth) => session::cookie_value(headers, session::SETUP_COOKIE)
+            .is_some_and(|v| auth.sessions.valid(v, unix_now())),
+    }
 }
 
 /// A JSON answer with `no-store`.
