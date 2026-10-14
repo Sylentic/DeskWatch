@@ -37,6 +37,11 @@ disk_path = "/"                 # filesystem for disk_pct (local stats are Linux
 [http]
 listen = "0.0.0.0:8787"
 
+# A writable folder where the bridge keeps sources.toml (more [[source.*]] blocks)
+# and credentials/ (secrets written by it). Off by default. Guide: docs/data-dir.md
+# [data]
+# dir = "/var/lib/deskwatch"    # or the DESKWATCH_DATA_DIR environment variable
+
 # Dashboard page for a big screen (a Raspberry Pi with a monitor, a wall
 # tablet): all stats, jobs, PRs, pipelines and alerts at once, served on the
 # [http] listener above. Off by default. Guide: docs/kiosk.md

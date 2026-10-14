@@ -29,6 +29,10 @@ services:
       # The config and one file per secret, both read-only.
       - ${DESKWATCH_CONFIG_DIR:-../dashboard}/bridge.toml:/etc/deskwatch/bridge.toml:ro
       - ${DESKWATCH_CONFIG_DIR:-../dashboard}/credentials:/run/credentials:ro
+      # Optional writable data folder for sources and secrets the bridge keeps
+      # itself (docs/data-dir.md). Create it with `sudo chown 10001 dashboard/data`,
+      # uncomment this line and the DESKWATCH_DATA_DIR variable below.
+      # - ${DESKWATCH_CONFIG_DIR:-../dashboard}/data:/var/lib/deskwatch
 
     # The page. "8787:8787" is reachable from your whole network, so keep
     # `token_file` set. Behind a reverse proxy on the same host, publish
@@ -40,6 +44,9 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+
+    # environment:
+    #   DESKWATCH_DATA_DIR: /var/lib/deskwatch   # with the data volume above
 
     # The image's HEALTHCHECK reads this config and asks the page for `/`
     # (the page file has no data and needs no token); with MQTT on it also asks
