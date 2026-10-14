@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use tokio::sync::Semaphore;
+use tokio::sync::{Notify, Semaphore};
 
 use axum::Router;
 use axum::extract::State;
@@ -73,6 +73,10 @@ struct Shared {
     started: BTreeSet<String>,
     /// A saved change could not be applied while running: it needs a restart.
     changed: AtomicBool,
+    /// `[setup] allow_restart`: the page may ask the bridge to restart itself.
+    allow_restart: bool,
+    /// Signalled by the restart button; the main loop shuts down cleanly.
+    restart: Arc<Notify>,
     /// One save at a time.
     saving: tokio::sync::Mutex<()>,
     /// One connection test at a time: each one makes real requests.
@@ -103,6 +107,8 @@ impl Setup {
                 supervisor,
                 started,
                 changed: AtomicBool::new(false),
+                allow_restart: config.setup.allow_restart,
+                restart: Arc::new(Notify::new()),
                 saving: tokio::sync::Mutex::new(()),
                 testing: Semaphore::new(1),
                 sessions: Sessions::new("setup", token.expose(), SESSION_S),
@@ -112,6 +118,11 @@ impl Setup {
                 health: Mutex::new(BTreeMap::new()),
             }),
         }
+    }
+
+    /// Fires when the page asked for a restart (and `allow_restart` is on).
+    pub fn restart_signal(&self) -> Arc<Notify> {
+        self.shared.restart.clone()
     }
 
     /// Record the current health of every source. Called every main loop turn.
@@ -140,6 +151,8 @@ impl Setup {
             .route("/api/setup/test", post(test))
             .route("/api/setup/source", post(save_source))
             .route("/api/setup/source/delete", post(delete_source))
+            .route("/api/setup/mqtt", post(save_mqtt))
+            .route("/api/setup/restart", post(restart))
             .with_state(self.shared.clone())
     }
 }
@@ -224,6 +237,8 @@ async fn status(State(shared): State<Arc<Shared>>, headers: HeaderMap) -> Respon
     }
     out["can_edit"] = json!(can_edit);
     out["restart_needed"] = json!(shared.changed.load(Ordering::Relaxed));
+    out["can_restart"] = json!(shared.allow_restart);
+    out["mqtt"]["editable"] = json!(can_edit);
     out["mqtt"]["connected"] = json!(shared.mqtt_enabled && shared.mqtt.is_up());
     let mut response = out.to_string().into_response();
     let h = response.headers_mut();
@@ -314,9 +329,9 @@ async fn test(
     tracing::info!(?id, "setup: connection test");
     let run = async {
         if id == "mqtt" {
-            Some(crate::probe::mqtt(&shared.config.mqtt).await)
+            Some(crate::probe::mqtt(&effective_config(&shared).mqtt).await)
         } else {
-            crate::probe::source(&shared.config, &id).await
+            crate::probe::source(&effective_config(&shared), &id).await
         }
     };
     let report = match tokio::time::timeout(TEST_TIMEOUT, run).await {
@@ -548,6 +563,119 @@ async fn delete_source(
     )
 }
 
+async fn save_mqtt(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let request = match change_request(&shared, &headers, &body) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    let store = shared.store.as_ref().expect("checked above");
+    let force = request
+        .get("force")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let fields = request
+        .get("fields")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let secrets: BTreeMap<String, String> = request
+        .get("secrets")
+        .and_then(Value::as_object)
+        .map(|m| {
+            m.iter()
+                .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string())))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let _saving = shared.saving.lock().await;
+    let current = match store.read_sources() {
+        Ok(current) => current,
+        Err(err) => return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}")),
+    };
+    let plan = match edit::set_mqtt(&current, &fields, &secrets) {
+        Ok(plan) => plan,
+        Err(err) => return refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
+    };
+    let candidate = match shared.base.clone().with_overlay(&plan.text) {
+        Ok(candidate) => candidate,
+        Err(err) => return refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
+    };
+    let overrides: crate::probe::Overrides = plan.secrets.iter().cloned().collect();
+    let report = {
+        let Ok(_permit) = shared.testing.try_acquire() else {
+            return refuse(
+                StatusCode::TOO_MANY_REQUESTS,
+                "a connection test is still running",
+            );
+        };
+        match tokio::time::timeout(
+            TEST_TIMEOUT,
+            crate::probe::mqtt_with(&candidate.mqtt, &overrides),
+        )
+        .await
+        {
+            Ok(report) => report,
+            Err(_) => return refuse(StatusCode::GATEWAY_TIMEOUT, "the test took too long"),
+        }
+    };
+    if !report.ok && !force {
+        tracing::info!("setup: MQTT settings not saved, the connection test failed");
+        return json_response(
+            StatusCode::OK,
+            json!({ "saved": false, "id": "mqtt", "report": report }),
+        );
+    }
+    for (credential, secret) in &plan.secrets {
+        if let Err(err) = store.write_secret(credential, secret.expose()) {
+            return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}"));
+        }
+    }
+    if let Err(err) = store.write_sources(&plan.text) {
+        return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}"));
+    }
+    // The broker connection is made once at startup.
+    shared.changed.store(true, Ordering::Relaxed);
+    tracing::info!(
+        forced = force && !report.ok,
+        password_written = !plan.secrets.is_empty(),
+        "setup: MQTT settings saved (apply after a restart)"
+    );
+    json_response(
+        StatusCode::OK,
+        json!({ "saved": true, "id": "mqtt", "report": report, "restart_needed": true }),
+    )
+}
+
+/// Ask the bridge to shut down cleanly and exit, so its supervisor starts it
+/// again with the saved settings. Off unless `[setup] allow_restart` is set.
+async fn restart(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    _body: axum::body::Bytes,
+) -> Response {
+    if !session::same_origin(&headers) {
+        return refuse(StatusCode::FORBIDDEN, "cross-origin request refused");
+    }
+    if !logged_in(&shared, &headers) {
+        return refuse(StatusCode::UNAUTHORIZED, "login required");
+    }
+    if !shared.allow_restart {
+        return refuse(
+            StatusCode::CONFLICT,
+            "restarting from the page is off ([setup] allow_restart, docs/setup-page.md)",
+        );
+    }
+    tracing::info!("setup: restart requested from the page");
+    // `notify_one` keeps the signal if the main loop is busy for a moment.
+    shared.restart.notify_one();
+    json_response(StatusCode::ACCEPTED, json!({ "restarting": true }))
+}
+
 /// The part of the status that depends only on the config. Holds names and
 /// places, never a secret value: a credential is reported as `mounted`,
 /// `data_folder` or `missing`.
@@ -639,6 +767,7 @@ pub fn describe(config: &Config) -> Value {
         "mqtt": {
             "enabled": mqtt.enabled, "host": mqtt.host, "port": mqtt.port, "tls": mqtt.tls,
             "username": mqtt.username, "password": mqtt_password,
+            "origin": if config.mqtt_before_overlay.is_some() { "data_folder" } else { "bridge_toml" },
         },
         "sources": sources,
     })

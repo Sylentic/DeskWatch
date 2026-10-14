@@ -119,6 +119,16 @@
     }
   };
 
+  // The broker settings use the same form. The password is stored by the bridge
+  // as a credential and never comes back.
+  FORMS.mqtt = {
+    strings: [['host', 'Broker address', 'localhost'], ['port', 'Port', '1883'],
+              ['username', 'Login name (empty = no login)', '']],
+    lists: [],
+    bools: [['enabled', 'Connect to the broker'], ['tls', 'Use TLS (usually port 8883)']],
+    secrets: [['password', 'Password', false]]
+  };
+
   function post(url, body) {
     return fetch(url, {
       method: 'POST', cache: 'no-store', credentials: 'same-origin',
@@ -131,9 +141,10 @@
 
   function openForm(kind, source) {
     var spec = FORMS[kind], values = {}, f = source && source.fields || {};
-    spec.strings.forEach(function (x) { values[x[0]] = f[x[0]] != null ? f[x[0]] : x[2]; });
+    spec.strings.forEach(function (x) { values[x[0]] = f[x[0]] != null ? String(f[x[0]]) : x[2]; });
     spec.lists.forEach(function (x) { values[x[0]] = (f[x[0]] || []).join('\n'); });
     (spec.bools || []).forEach(function (x) { values[x[0]] = !!f[x[0]]; });
+    if (kind === 'mqtt') values.username = f.username || '';
     form = { kind: kind, mode: source ? 'edit' : 'add', name: source ? source.name : '', values: values,
              secrets: {}, advanced: !!f.hosts_advanced, busy: false, result: null, error: null };
     if (last) render(last);
@@ -153,12 +164,17 @@
     notice = null;
     form.busy = true; form.error = null; if (!force) form.result = null;
     render(last);
-    post('api/setup/source', { kind: form.kind, name: form.name.trim(), create: form.mode === 'add',
-                               fields: fields, secrets: secrets, force: !!force }).then(function (j) {
+    var isMqtt = form.kind === 'mqtt';
+    if (isMqtt) fields.port = /^\d+$/.test(String(fields.port).trim()) ? parseInt(fields.port, 10) : fields.port;
+    var request = isMqtt
+      ? post('api/setup/mqtt', { fields: fields, secrets: secrets, force: !!force })
+      : post('api/setup/source', { kind: form.kind, name: form.name.trim(), create: form.mode === 'add',
+                                   fields: fields, secrets: secrets, force: !!force });
+    request.then(function (j) {
       if (!j || !form) return;
       form.busy = false;
       if (j.error) form.error = j.error;
-      else if (j.saved) { results[j.id] = j.report; notice = applyNotice(j); form = null; load(); return; }
+      else if (j.saved) { results[j.id] = j.report; notice = isMqtt ? null : applyNotice(j); form = null; load(); return; }
       else form.result = j.report;
       render(last);
     });
@@ -180,6 +196,19 @@
     });
   }
 
+  // Ask the bridge to restart itself (only offered when [setup] allow_restart
+  // is on), then wait for it to answer again.
+  function restartBridge() {
+    if (!window.confirm('Restart the bridge now? The dashboard and panel are offline for a few seconds.')) return;
+    post('api/setup/restart', {}).then(function (j) {
+      if (!j || j.error) { window.alert(j && j.error || 'The restart failed.'); return; }
+      clearTimeout(timer);
+      app.textContent = '';
+      app.appendChild(el('p', 'banner', 'Restarting the bridge…'));
+      timer = setTimeout(load, 4000);
+    });
+  }
+
   function field(labelText, control) {
     var label = el('label', 'field');
     label.appendChild(el('span', null, labelText));
@@ -189,11 +218,15 @@
 
   function formCard() {
     var spec = FORMS[form.kind], card = el('section', 'card');
-    card.appendChild(el('h2', null, (form.mode === 'add' ? 'Add ' : 'Change ') + (KIND[form.kind] || form.kind) + ' source'));
+    var isMqtt = form.kind === 'mqtt';
+    card.appendChild(el('h2', null, isMqtt ? 'Change the MQTT broker settings'
+      : (form.mode === 'add' ? 'Add ' : 'Change ') + (KIND[form.kind] || form.kind) + ' source'));
     var box = el('div', 'form');
-    var name = el('input'); name.value = form.name; name.readOnly = form.mode === 'edit';
-    name.addEventListener('input', function () { form.name = name.value; });
-    box.appendChild(field('Name (letters, digits, - and _)', name));
+    if (!isMqtt) {
+      var name = el('input'); name.value = form.name; name.readOnly = form.mode === 'edit';
+      name.addEventListener('input', function () { form.name = name.value; });
+      box.appendChild(field('Name (letters, digits, - and _)', name));
+    }
     spec.strings.forEach(function (x) {
       var i = el('input'); i.value = form.values[x[0]];
       i.addEventListener('input', function () { form.values[x[0]] = i.value; });
@@ -310,13 +343,28 @@
     } else {
       row(dl, 'MQTT broker', 'off');
     }
+    row(dl, 'MQTT settings from', m.origin === 'data_folder' ? 'data folder (changed here)' : 'bridge.toml');
     info.appendChild(dl);
     if (m.enabled) info.appendChild(testBlock('mqtt'));
+    if (m.editable && !form) {
+      var change = el('button', 'secondary', 'Change broker settings');
+      change.type = 'button';
+      change.addEventListener('click', function () { openForm('mqtt', { name: 'mqtt', fields: m }); });
+      var line = el('div', 'buttons'); line.appendChild(change); info.appendChild(line);
+    }
     app.appendChild(info);
+    if (form && form.kind === 'mqtt') app.appendChild(formCard());
 
     if (d.restart_needed || notice) {
       var banner = el('p', 'banner', notice || 'Changes are saved. Restart the bridge to apply them.');
       banner.setAttribute('role', 'status');
+      if (d.restart_needed && d.can_restart) {
+        var again = el('button', null, 'Restart now');
+        again.type = 'button';
+        again.addEventListener('click', restartBridge);
+        banner.appendChild(document.createTextNode(' '));
+        banner.appendChild(again);
+      }
       app.insertBefore(banner, app.firstChild);
     }
     app.appendChild(el('h2', null, 'Sources'));

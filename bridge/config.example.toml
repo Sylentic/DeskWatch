@@ -43,10 +43,12 @@ listen = "0.0.0.0:8787"
 # dir = "/var/lib/deskwatch"    # or the DESKWATCH_DATA_DIR environment variable
 
 # The setup page (/setup): shows sources, credentials (never their values), the
-# broker and live source health. Read-only for now. Off unless it has its own
+# broker and live source health, and (with a data folder) adds, changes and
+# removes sources and changes the broker settings. Off unless it has its own
 # token, separate from [kiosk]; trusted_networks never applies. Guide: docs/setup-page.md
 # [setup]
 # token_file = "setup-token"
+# allow_restart = true          # a "Restart now" button; only when Docker or systemd starts the bridge again
 
 # Dashboard page for a big screen (a Raspberry Pi with a monitor, a wall
 # tablet): all stats, jobs, PRs, pipelines and alerts at once, served on the

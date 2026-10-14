@@ -53,6 +53,24 @@ pub fn default_config_path() -> PathBuf {
 struct Overlay {
     #[serde(default)]
     source: Sources,
+    /// Broker settings the setup page changed. Only the keys present replace
+    /// the ones from `bridge.toml`.
+    #[serde(default)]
+    mqtt: Option<MqttPatch>,
+}
+
+/// The `[mqtt]` keys the setup page can change (docs/setup-page.md). Anything
+/// else (client id, certificates, topic prefix) stays in `bridge.toml`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MqttPatch {
+    enabled: Option<bool>,
+    host: Option<String>,
+    port: Option<u16>,
+    tls: Option<bool>,
+    /// An empty text means no login.
+    username: Option<String>,
+    password_file: Option<String>,
 }
 
 /// The setup page (`/setup`, docs/setup-page.md). Off unless it has its own token.
@@ -62,6 +80,12 @@ pub struct SetupConfig {
     /// Credential holding the setup token. Separate from `kiosk.token_file`,
     /// and `kiosk.trusted_networks` never applies to this page.
     pub token_file: Option<String>,
+    /// Let the setup page restart the bridge (the process exits with code 75
+    /// after a clean shutdown). Only for a bridge that is started again by
+    /// its supervisor: Docker `restart: unless-stopped`, systemd
+    /// `Restart=on-failure`. Off by default, because otherwise the bridge
+    /// would simply stop.
+    pub allow_restart: bool,
 }
 
 /// Where the bridge may keep files it writes itself.
@@ -105,6 +129,10 @@ pub struct Config {
     /// folder rather than `bridge.toml`. Filled by `with_overlay`.
     #[serde(skip)]
     pub overlay_sources: std::collections::BTreeSet<String>,
+    /// The `[mqtt]` section as `bridge.toml` had it, when the data folder
+    /// changed some of its keys. Filled by `with_overlay`.
+    #[serde(skip)]
+    pub mqtt_before_overlay: Option<MqttConfig>,
     /// Data sources, one array per adapter type.
     #[serde(default)]
     pub source: Sources,
@@ -868,7 +896,22 @@ impl Config {
     /// holds only `[[source.*]]` blocks; a source name already used in the
     /// main config for the same type is refused instead of silently replaced.
     pub fn with_overlay(mut self, overlay: &str) -> Result<Self> {
-        let Overlay { source } = toml::from_str(overlay).context("invalid sources overlay")?;
+        let Overlay { source, mqtt } =
+            toml::from_str(overlay).context("invalid sources overlay")?;
+        if let Some(patch) = mqtt {
+            self.mqtt_before_overlay = Some(self.mqtt.clone());
+            let m = &mut self.mqtt;
+            m.enabled = patch.enabled.unwrap_or(m.enabled);
+            m.host = patch.host.unwrap_or_else(|| m.host.clone());
+            m.port = patch.port.unwrap_or(m.port);
+            m.tls = patch.tls.unwrap_or(m.tls);
+            if let Some(username) = patch.username {
+                m.username = Some(username).filter(|u| !u.is_empty());
+            }
+            if let Some(file) = patch.password_file {
+                m.password_file = Some(file);
+            }
+        }
         macro_rules! merge {
             ($($kind:ident),+) => {$(
                 for extra in source.$kind {
@@ -905,6 +948,9 @@ impl Config {
             .prometheus
             .retain(|s| keep("prometheus", &s.name));
         base.overlay_sources.clear();
+        if let Some(original) = base.mqtt_before_overlay.take() {
+            base.mqtt = original;
+        }
         base
     }
 

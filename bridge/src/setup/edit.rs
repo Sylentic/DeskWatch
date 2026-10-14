@@ -217,6 +217,78 @@ pub fn upsert(
     })
 }
 
+/// The credential the broker password is stored under.
+pub const MQTT_PASSWORD: &str = "mqtt-password";
+
+/// Change the broker settings in `[mqtt]` of `sources.toml`. `fields` may hold
+/// `enabled`, `tls` (yes/no), `host`, `username` (text; empty = no login) and
+/// `port`; `secrets` may hold `password` (empty or missing = keep).
+pub fn set_mqtt(
+    current: &str,
+    fields: &Map<String, Value>,
+    secrets: &BTreeMap<String, String>,
+) -> Result<Plan> {
+    for key in secrets.keys() {
+        anyhow::ensure!(key == "password", "MQTT has no secret called {key:?}");
+    }
+    let mut root = parse(current)?;
+    let table = root
+        .entry("mqtt")
+        .or_insert_with(|| toml::Value::Table(Table::new()))
+        .as_table_mut()
+        .context("`mqtt` in sources.toml is not a table")?;
+    for (key, value) in fields {
+        match key.as_str() {
+            "enabled" | "tls" => {
+                let flag = value
+                    .as_bool()
+                    .with_context(|| format!("{key} must be true or false"))?;
+                table.insert(key.clone(), toml::Value::Boolean(flag));
+            }
+            "host" => {
+                let text = value.as_str().context("host must be text")?.trim();
+                anyhow::ensure!(!text.is_empty(), "host must not be empty");
+                table.insert(key.clone(), toml::Value::String(text.into()));
+            }
+            "username" => {
+                let text = value.as_str().context("username must be text")?.trim();
+                table.insert(key.clone(), toml::Value::String(text.into()));
+            }
+            "port" => {
+                let port = value
+                    .as_u64()
+                    .and_then(|p| u16::try_from(p).ok())
+                    .filter(|p| *p > 0)
+                    .context("port must be a number from 1 to 65535")?;
+                table.insert(key.clone(), toml::Value::Integer(i64::from(port)));
+            }
+            _ => bail!("{key:?} cannot be set from the setup page"),
+        }
+    }
+    let mut stored = Vec::new();
+    if let Some(password) = secrets
+        .get("password")
+        .map(|v| v.trim())
+        .filter(|v| !v.is_empty())
+    {
+        anyhow::ensure!(
+            crate::source::credential_status(MQTT_PASSWORD)
+                != crate::source::CredentialStatus::Mounted,
+            "a mounted credential named {MQTT_PASSWORD} already exists and would win over the new \
+             one; remove or rename that file"
+        );
+        table.insert(
+            "password_file".into(),
+            toml::Value::String(MQTT_PASSWORD.into()),
+        );
+        stored.push((MQTT_PASSWORD.to_string(), Secret::new(password)));
+    }
+    Ok(Plan {
+        text: toml::to_string(&root).context("cannot write sources.toml")?,
+        secrets: stored,
+    })
+}
+
 /// Remove source `kind`/`name`. Returns the new file text and the names of the
 /// credentials the source used (the caller deletes those that are the page's own).
 pub fn remove(current: &str, kind: &str, name: &str) -> Result<(String, Vec<String>)> {

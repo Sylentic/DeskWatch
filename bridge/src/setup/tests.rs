@@ -566,3 +566,200 @@ async fn removing_a_source_deletes_its_entry_and_its_own_secrets() {
     let (status, ..) = send(&router, "POST", "/api/setup/source/delete", &headers, &gone).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+/// A broker that accepts any login: answers a CONNECT with a CONNACK and then
+/// reads until the client hangs up.
+async fn fake_broker() -> u16 {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            tokio::spawn(async move {
+                let mut buf = [0u8; 512];
+                if socket.read(&mut buf).await.unwrap_or(0) > 0 {
+                    let _ = socket.write_all(&[0x20, 0x02, 0x00, 0x00]).await;
+                }
+                while socket.read(&mut buf).await.unwrap_or(0) > 0 {}
+            });
+        }
+    });
+    port
+}
+
+#[tokio::test]
+async fn mqtt_settings_are_tested_then_saved_and_need_a_restart() {
+    let (router, temp, cookie) = with_data("mqtt").await;
+    let data = temp.0.join("data");
+    let headers = [("cookie", cookie.as_str())];
+    let port = fake_broker().await;
+    let request = |port: u16, force: bool| {
+        json!({
+            "fields": { "host": "127.0.0.1", "port": port, "username": "deskwatch-bridge", "tls": false },
+            "secrets": { "password": "broker-password-value" },
+            "force": force,
+        })
+        .to_string()
+    };
+
+    // Nothing listens on port 1: the test fails and nothing is written.
+    let (status, _, text) = send(
+        &router,
+        "POST",
+        "/api/setup/mqtt",
+        &headers,
+        &request(1, false),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["saved"], false, "{text}");
+    assert!(!text.contains("broker-password-value"));
+    assert!(!data.join("credentials/mqtt-password").exists());
+
+    // A broker that answers: saved, restart needed, password stored privately.
+    let (_, _, text) = send(
+        &router,
+        "POST",
+        "/api/setup/mqtt",
+        &headers,
+        &request(port, false),
+    )
+    .await;
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["saved"], true, "{text}");
+    assert_eq!(v["restart_needed"], true);
+    assert!(!text.contains("broker-password-value"));
+    assert_eq!(
+        std::fs::read_to_string(data.join("credentials/mqtt-password")).unwrap(),
+        "broker-password-value"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(data.join("credentials/mqtt-password"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+    let (_, _, text) = send(&router, "GET", "/api/setup/status", &headers, "").await;
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["restart_needed"], true);
+    assert_eq!(v["mqtt"]["port"], port);
+    assert_eq!(v["mqtt"]["origin"], "data_folder");
+    assert_eq!(v["mqtt"]["editable"], true);
+    assert!(!text.contains("broker-password-value"));
+
+    // "Save anyway" writes settings whose test failed.
+    let (_, _, text) = send(
+        &router,
+        "POST",
+        "/api/setup/mqtt",
+        &headers,
+        &request(1, true),
+    )
+    .await;
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["saved"], true, "{text}");
+    assert_eq!(v["report"]["ok"], false);
+
+    // Bad input and the usual guards.
+    let bad = json!({ "fields": { "port": 0 } }).to_string();
+    let (status, ..) = send(&router, "POST", "/api/setup/mqtt", &headers, &bad).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, ..) = send(
+        &router,
+        "POST",
+        "/api/setup/mqtt",
+        &[],
+        &request(port, false),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn a_source_added_from_the_page_can_be_tested_at_once() {
+    use crate::probe::tests::{gitea_mock, serve};
+    let (router, _temp, cookie) = with_data("test-new").await;
+    let headers = [("cookie", cookie.as_str())];
+    let base = serve(gitea_mock()).await;
+    let add = json!({
+        "kind": "gitea", "name": "home", "create": true,
+        "fields": { "base_url": base, "repos": ["o/r"] },
+        "secrets": { "token": "good-token-value", "webhook_secret": "h" },
+    })
+    .to_string();
+    let (_, _, text) = send(&router, "POST", "/api/setup/source", &headers, &add).await;
+    assert!(text.contains("\"saved\":true"), "{text}");
+    let body = json!({ "id": "gitea:home" }).to_string();
+    let (status, _, text) = send(&router, "POST", "/api/setup/test", &headers, &body).await;
+    // Found (not a 404 "no such source") and checked. Whether the checks pass
+    // depends on the process-wide credentials folder, which the test runs share.
+    assert_eq!(status, StatusCode::OK, "{text}");
+    assert!(text.contains("\"checks\":["), "{text}");
+}
+
+#[tokio::test]
+async fn restarting_needs_the_option_a_login_and_the_same_origin() {
+    let temp = Temp::new("restart");
+    let mut config = config(&temp.0);
+    let off = Setup::new(
+        &config,
+        &Secret::new("setup-token"),
+        MqttLink::default(),
+        None,
+        None,
+    );
+    let router = off.router();
+    let cookie = logged_in(&router).await;
+    let ok = [("cookie", cookie.as_str())];
+    let (status, ..) = send(&router, "POST", "/api/setup/restart", &ok, "").await;
+    assert_eq!(status, StatusCode::CONFLICT, "off by default");
+
+    config.setup.allow_restart = true;
+    let on = Setup::new(
+        &config,
+        &Secret::new("setup-token"),
+        MqttLink::default(),
+        None,
+        None,
+    );
+    let signal = on.restart_signal();
+    let router = on.router();
+    let cookie = logged_in(&router).await;
+    let ok = [("cookie", cookie.as_str())];
+    assert_eq!(
+        send(&router, "POST", "/api/setup/restart", &[], "").await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    let evil = [
+        ("cookie", cookie.as_str()),
+        ("host", "b.lan"),
+        ("origin", "http://evil.example"),
+    ];
+    assert_eq!(
+        send(&router, "POST", "/api/setup/restart", &evil, "")
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    // Neither refused call raised the signal; the real one does.
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), signal.notified())
+            .await
+            .is_err()
+    );
+    let (status, ..) = send(&router, "POST", "/api/setup/restart", &ok, "").await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    tokio::time::timeout(Duration::from_secs(1), signal.notified())
+        .await
+        .expect("the restart signal fired");
+
+    let (_, _, text) = send(&router, "GET", "/api/setup/status", &ok, "").await;
+    assert!(text.contains("\"can_restart\":true"), "{text}");
+}

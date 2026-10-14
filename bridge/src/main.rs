@@ -108,6 +108,9 @@ fn parse_args() -> Result<Args> {
     Ok(args)
 }
 
+/// Exit code after a restart asked for on the setup page.
+const RESTART_EXIT_CODE: i32 = 75;
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -146,6 +149,9 @@ async fn main() -> Result<()> {
             .with_overlay(&overlay)
             .with_context(|| format!("in {}", dir.join("sources.toml").display()))?;
         info!("data folder {}", dir.display());
+        if config.mqtt_before_overlay.is_some() {
+            info!("MQTT settings changed on the setup page are applied on top of bridge.toml");
+        }
         store = Some(opened);
     }
 
@@ -265,6 +271,9 @@ async fn main() -> Result<()> {
     let mut stats_ticker = tokio::time::interval(Duration::from_secs(config.server.interval_s));
     let mut compose_ticker = tokio::time::interval(COMPOSE_INTERVAL);
     let mut shutdown = Shutdown::new()?;
+    // The setup page's restart button (only when `[setup] allow_restart`).
+    let restart = setup.as_ref().map(Setup::restart_signal);
+    let mut restarting = false;
     loop {
         tokio::select! {
             _ = stats_ticker.tick(), if demo.is_none() => composer.set_stats(collector.collect()),
@@ -275,6 +284,15 @@ async fn main() -> Result<()> {
                 Inbound::Alert(alert) => composer.alert(alert, unix_now()),
             },
             _ = shutdown.wait() => break,
+            _ = async {
+                match &restart {
+                    Some(signal) => signal.notified().await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                restarting = true;
+                break;
+            }
         }
         if let Some(demo) = &mut demo {
             demo.tick(&mut composer, unix_now());
@@ -305,6 +323,12 @@ async fn main() -> Result<()> {
         }
         // Give the event loop a moment to flush the offline message and disconnect.
         tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    if restarting {
+        // Not 0: systemd's Restart=on-failure and Docker's restart policies
+        // both start the bridge again after this.
+        info!("exiting so the supervisor starts the bridge again");
+        std::process::exit(RESTART_EXIT_CODE);
     }
     Ok(())
 }
