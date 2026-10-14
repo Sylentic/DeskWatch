@@ -491,7 +491,11 @@ pub fn default_panels() -> Vec<PanelConfig> {
         panel(Widget::Prs, [1, 2]),
         panel(Widget::Alerts, [1, 1]),
         panel(Widget::Health, [1, 1]),
-        panel(Widget::Pipelines, [2, 1]),
+        // Newest first and capped at the 4 latest runs, which fit at 1080p.
+        PanelConfig {
+            rows: Some(4),
+            ..panel(Widget::Pipelines, [2, 1])
+        },
     ]
 }
 
@@ -1552,6 +1556,12 @@ title = "Reviews"
     #[test]
     fn runners_widget_is_not_in_the_default_layout() {
         assert!(default_panels().iter().all(|p| p.widget != Widget::Runners));
+        // The default Pipelines panel shows the 4 latest runs.
+        let pipelines = default_panels()
+            .into_iter()
+            .find(|p| p.widget == Widget::Pipelines)
+            .unwrap();
+        assert_eq!(pipelines.rows, Some(4));
         let config =
             Config::from_toml("[[kiosk.panel]]\nwidget = \"runners\"\nspan = [2, 1]").unwrap();
         assert_eq!(config.kiosk.panels()[0].widget, Widget::Runners);

@@ -10,7 +10,7 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Changed
 
-- Kiosk default layout: Running now is now the large panel (2 by 2, top right) and Pipelines the smaller one below it (2 wide, bottom right; it shows the 4 latest runs without scrolling at 1080p), instead of the Pipelines-first order of 0.9.13 (PR 69). Your own `[[kiosk.panel]]` order is untouched.
+- Kiosk default layout: Running now is now the large panel (2 by 2, top right) and Pipelines the smaller one below it (2 wide, bottom right; it shows the 4 latest runs, more with a `rows` setting of your own), instead of the Pipelines-first order of 0.9.13 (PR 69). Your own `[[kiosk.panel]]` order is untouched.
 - Kiosk Pipelines panel: the latest run is at the top. Runs are listed newest first across Gitea, GitHub and Azure DevOps instead of failed and running ones first; the MQTT pipelines page is unchanged.
 - **Docs: running under Komodo or Portainer.** `docs/docker.md` has a new section on inline `configs: content:` (a refused
   `read_only`, a changed config that is not noticed, secrets from stack variables), the named volume for the data folder and
