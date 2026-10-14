@@ -800,3 +800,12 @@ async fn without_a_token_another_site_still_cannot_change_anything() {
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn status_says_whether_the_dashboard_is_there_to_link_back_to() {
+    let temp = Temp::new("kiosk-flag");
+    let router = open_setup(&temp).router();
+    let (_, _, body) = send(&router, "GET", "/api/setup/status", &[], "").await;
+    let status: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(status["kiosk"], false);
+}

@@ -116,6 +116,19 @@ impl Kiosk {
         }
     }
 
+    /// Show a "Setup" link in the page header (when the setup page is served).
+    /// It travels in the layout part of every snapshot as `"setup": true`.
+    pub fn with_setup_link(mut self, on: bool) -> Self {
+        if on {
+            self.layout["setup"] = json!(true);
+            let first = json!({
+                "v": SNAPSHOT_VERSION, "build": env!("CARGO_PKG_VERSION"), "layout": self.layout
+            });
+            self.tx.send_replace(Frame::from(first.to_string()));
+        }
+        self
+    }
+
     /// Routes for the shared listener. Cheap to call once at startup.
     pub fn router(&self) -> Router {
         let state = AppState {

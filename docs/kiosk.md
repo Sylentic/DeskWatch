@@ -160,6 +160,9 @@ at 1080p, 8 px at 4K) from the centre. That keeps the edges of cards and text fr
 months. The step follows the wall clock, so a reload does not restart the walk. The page edge that moves out of
 view is cut off by a few pixels. Off by default. For an OLED you should still switch the screen off at night.
 
+With `[setup] enabled = true` the header also shows a small **Setup** link that opens the [setup page](setup-page.md);
+without it the link is not there.
+
 ## 4. Autostart on a Raspberry Pi
 
 Two parts: the bridge runs as in [raspberry-pi.md](raspberry-pi.md), and Chromium starts in kiosk mode when the Pi
