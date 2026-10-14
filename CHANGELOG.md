@@ -10,6 +10,10 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Added
 
+- **Setup page, read-only** (`[setup] token_file`, off by default): `/setup` shows each source (address, repositories,
+  whether it comes from `bridge.toml` or the data folder, live health), whether each credential is found or missing
+  (never its value), and the MQTT broker and its connection. It has its own token, login cookie (12 hours) and failure
+  limit, and ignores `kiosk.trusted_networks`. Editing comes in later steps; see docs/setup-page.md.
 - **Data folder** (`[data] dir` or `DESKWATCH_DATA_DIR`, off by default): a writable folder holding `sources.toml`
   (more `[[source.*]]` blocks, merged with `bridge.toml`; a duplicate name is an error) and `credentials/` (secrets in
   0600 files, atomic writes, found by a plain `token_file` name; a mounted credential of the same name wins).

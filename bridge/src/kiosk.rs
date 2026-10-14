@@ -121,10 +121,13 @@ impl Kiosk {
         let state = AppState {
             rx: self.tx.subscribe(),
             token: self.token.as_ref().map(|t| digest(t.expose())),
-            sessions: self
-                .token
-                .as_ref()
-                .map(|t| Arc::new(Sessions::new(t.expose(), self.session_days))),
+            sessions: self.token.as_ref().map(|t| {
+                Arc::new(Sessions::new(
+                    "kiosk",
+                    t.expose(),
+                    u64::from(self.session_days) * 86_400,
+                ))
+            }),
             limiter: self.limiter.clone(),
             trusted: self.trusted.clone(),
             slots: self.slots.clone(),
@@ -332,16 +335,16 @@ fn unix_now() -> u64 {
         .map_or(0, |d| d.as_secs())
 }
 
-fn digest(text: &str) -> [u8; 32] {
+pub(crate) fn digest(text: &str) -> [u8; 32] {
     Sha256::digest(text.as_bytes()).into()
 }
 
 /// Compare two digests without stopping at the first difference.
-fn same(a: &[u8; 32], b: &[u8; 32]) -> bool {
+pub(crate) fn same(a: &[u8; 32], b: &[u8; 32]) -> bool {
     a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-async fn asset(content_type: &'static str, body: &'static str) -> Response {
+pub(crate) async fn asset(content_type: &'static str, body: &'static str) -> Response {
     let mut response = body.into_response();
     let headers = response.headers_mut();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
@@ -429,7 +432,7 @@ async fn require_token(
     let trusted = peer.is_some_and(|ip| state.trusted.iter().any(|net| net.contains(ip)));
     tracing::debug!(?peer, trusted, path = request.uri().path(), "kiosk request");
     if !trusted && let (Some(expected), Some(sessions)) = (&state.token, &state.sessions) {
-        let has_session = session::cookie_value(request.headers())
+        let has_session = session::cookie_value(request.headers(), session::COOKIE)
             .is_some_and(|value| sessions.valid(value, unix_now()));
         if !has_session {
             match token_given(expected, request.headers(), request.uri().query()) {
@@ -497,6 +500,7 @@ async fn login_handler(
         return (StatusCode::UNAUTHORIZED, "token wrong").into_response();
     }
     let cookie = session::set_cookie(
+        session::COOKIE,
         &sessions.issue(now),
         sessions.lifetime_s(),
         session::is_https(&headers),
