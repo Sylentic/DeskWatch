@@ -177,6 +177,59 @@ async fn get(router: &Router, uri: &str, bearer: Option<&str>) -> (StatusCode, H
     (status, headers, String::from_utf8(body.to_vec()).unwrap())
 }
 
+/// The Pipelines panel shows the latest run first, across sources, even when
+/// an older run failed. A running run counts from its start.
+#[test]
+fn runs_are_listed_newest_first() {
+    let mut kiosk = kiosk_with(None);
+    let mut c = composer();
+    let at = |source: &str, pipeline: &str, status: RunStatus, finished: u64| {
+        let mut r = run(pipeline, status);
+        r.source = source.into();
+        r.started = finished - 30;
+        r.finished = Some(finished);
+        r
+    };
+    for (key, r) in [
+        (
+            "g:old",
+            at("gitea", "old.yml", RunStatus::Failed, NOW - 900),
+        ),
+        (
+            "h:new",
+            at("github", "new.yml", RunStatus::Success, NOW - 10),
+        ),
+        (
+            "a:mid",
+            at("azure_devops", "mid.yml", RunStatus::Success, NOW - 300),
+        ),
+        (
+            "g:run",
+            Run {
+                finished: None,
+                ..at("gitea", "live.yml", RunStatus::Running, NOW - 60)
+            },
+        ),
+    ] {
+        c.ci.apply(
+            Update::Run {
+                key: key.into(),
+                run: r,
+            },
+            NOW,
+        );
+    }
+    kiosk.update(&mut c, NOW);
+    let snap = json_of(&kiosk);
+    let order: Vec<&str> = snap["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["pipeline"].as_str().unwrap())
+        .collect();
+    assert_eq!(order, ["new.yml", "live.yml", "mid.yml", "old.yml"]);
+}
+
 #[test]
 fn snapshot_carries_every_fact() {
     let mut kiosk = kiosk_with(None);

@@ -23,7 +23,7 @@ A grid of cards, 4 columns by 3 rows by default:
 | `hosts` | A compact table of every host (the bridge's own machine and every host a Prometheus source reports) |
 | `jobs` | Jobs running now, with step, progress bar and a live elapsed time |
 | `prs` | Open pull requests per repository, newest first, with the total |
-| `pipelines` | The latest run of every pipeline: running and failed first, then the most recent |
+| `pipelines` | The latest run of every pipeline, newest first across all sources (a running run counts from its start, a finished one from its end), so the top rows are always the most recent activity; the default layout shows the 4 latest runs (`rows = 4`, with a "+N more" line when there are more) |
 | `alerts` | Active alerts (Home Assistant, scripts), most urgent first |
 | `containers` | Containers and hosts that are down (needs the Prometheus source) |
 | `health` | Whether every source is working, or why not (token refused, not reachable) |
@@ -73,8 +73,8 @@ dashboard-only config and no broker. The Compose files, the token and the revers
 ## 3. Choose the widgets
 
 `[[kiosk.panel]]` blocks place widgets on the grid, left to right and top to bottom, like the `[[rotation]]` list.
-Without any, the default layout is used: `stats`, `hosts`, `pipelines` (2 by 2), `prs` (2 tall),
-`alerts`, `health`, `jobs` (2 wide). Add a `runners` panel yourself (it needs a source with runner scopes set, see
+Without any, the default layout is used: `stats`, `hosts`, `jobs` (2 by 2, top right), `prs` (2 tall),
+`alerts`, `health`, `pipelines` (2 wide, bottom right). Add a `runners` panel yourself (it needs a source with runner scopes set, see
 [runners.md](runners.md)); the default grid has no free cell for it.
 
 ```toml
