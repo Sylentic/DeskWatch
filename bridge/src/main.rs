@@ -141,13 +141,15 @@ async fn main() -> Result<()> {
     // The data folder (docs/data-dir.md): sources and secrets kept there are
     // added to the ones in bridge.toml. Off unless `[data] dir` or
     // DESKWATCH_DATA_DIR is set.
+    let mut store = None;
     if let Some(dir) = config.data_dir() {
-        let store = Store::open(&dir)?;
-        let overlay = store.read_sources()?;
+        let opened = Store::open(&dir)?;
+        let overlay = opened.read_sources()?;
         config = config
             .with_overlay(&overlay)
             .with_context(|| format!("in {}", dir.join("sources.toml").display()))?;
         info!("data folder {}", dir.display());
+        store = Some(opened);
     }
 
     config.kiosk.enabled |= args.kiosk;
@@ -215,7 +217,7 @@ async fn main() -> Result<()> {
     let mut setup = None;
     if let Some(file) = &config.setup.token_file {
         let token = source::load_secret(file).context("setup.token_file")?;
-        let built = Setup::new(&config, &token, mqtt_link.clone());
+        let built = Setup::new(&config, &token, mqtt_link.clone(), store.clone());
         hooks.add("/setup", built.router());
         info!("setup page on /setup (its own token; kiosk.trusted_networks does not apply)");
         if !config.http.listen.ip().is_loopback() {

@@ -890,6 +890,24 @@ impl Config {
         Ok(self)
     }
 
+    /// This config without the sources that came from the data folder: what
+    /// `bridge.toml` alone says. The setup page adds a changed overlay to it.
+    pub fn without_overlay(&self) -> Self {
+        let mut base = self.clone();
+        let keep =
+            |kind: &str, name: &str| !self.overlay_sources.contains(&format!("{kind}:{name}"));
+        base.source.gitea.retain(|s| keep("gitea", &s.name));
+        base.source.github.retain(|s| keep("github", &s.name));
+        base.source
+            .azure_devops
+            .retain(|s| keep("azure_devops", &s.name));
+        base.source
+            .prometheus
+            .retain(|s| keep("prometheus", &s.name));
+        base.overlay_sources.clear();
+        base
+    }
+
     /// The checks that need a whole config: ranges, unique names, consistent
     /// pairs. Run again after an overlay is added.
     fn validate(&self) -> Result<()> {

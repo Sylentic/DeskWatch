@@ -48,5 +48,6 @@ config; it is the only state the bridge keeps. On a systemd install, give the un
 
 ## Not covered yet
 
-Changes to `sources.toml` are read at startup, so edit and restart. Editing in the browser, testing a connection and
-reloading without a restart come in later steps.
+Changes to `sources.toml` are read at startup. The setup page can add, edit and remove sources and replace their
+tokens (see setup-page.md), but a restart is still needed to apply them. Reloading without a restart comes in a later
+step.

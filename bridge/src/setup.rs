@@ -9,7 +9,12 @@
 //!   exists, never its value), MQTT, the data folder and live source health;
 //! - `POST /api/setup/test` with `{"id": "github:main"}` or `{"id": "mqtt"}`:
 //!   tries the connection with the real credentials and reports each check
-//!   (`probe.rs`). One test at a time.
+//!   (`probe.rs`). One test at a time;
+//! - `POST /api/setup/source` and `POST /api/setup/source/delete`: add, change
+//!   or remove a source kept in the data folder's `sources.toml` (`edit.rs`),
+//!   and store its tokens there. Needs a data folder. A change is tested first
+//!   and only saved when the test passes (or the person insists). It takes
+//!   effect after a restart; `bridge.toml` is never touched.
 //!
 //! The page is off unless `[setup] token_file` is set, and it has its own
 //! token, cookie and failure limit, apart from the dashboard's. Unlike the
@@ -17,7 +22,8 @@
 //! is not good enough to decide who may see (and later change) credentials.
 //! The cookie lasts `SESSION_S`, shorter than the dashboard's.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -35,6 +41,9 @@ use crate::health::MqttLink;
 use crate::kiosk::session::{self, Limiter, Sessions};
 use crate::kiosk::{asset, digest, same};
 use crate::source::{Secret, credential_status};
+use crate::store::Store;
+
+pub mod edit;
 
 /// How long a setup login lasts.
 pub const SESSION_S: u64 = 12 * 3600;
@@ -53,12 +62,20 @@ struct Shared {
     token: [u8; 32],
     /// The config the bridge runs with, for connection tests.
     config: Config,
+    /// What `bridge.toml` alone says: the data folder's sources are added to it.
+    base: Config,
+    /// The data folder, when there is one. Without it the page cannot save.
+    store: Option<Store>,
+    /// Sources that were started with the bridge. Others are saved, not running yet.
+    running: BTreeSet<String>,
+    /// Something was saved since the bridge started: it needs a restart.
+    changed: AtomicBool,
+    /// One save at a time.
+    saving: tokio::sync::Mutex<()>,
     /// One connection test at a time: each one makes real requests.
     testing: Semaphore,
     sessions: Sessions,
     limiter: Limiter,
-    /// Facts that only change with the config: built once.
-    fixed: Value,
     mqtt_enabled: bool,
     mqtt: MqttLink,
     /// Source id (`github:main`) to health name, kept current by the main loop.
@@ -66,15 +83,20 @@ struct Shared {
 }
 
 impl Setup {
-    pub fn new(config: &Config, token: &Secret, mqtt: MqttLink) -> Self {
+    pub fn new(config: &Config, token: &Secret, mqtt: MqttLink, store: Option<Store>) -> Self {
+        let running = source_ids(config);
         Self {
             shared: Arc::new(Shared {
                 token: digest(token.expose()),
                 config: config.clone(),
+                base: config.without_overlay(),
+                store,
+                running,
+                changed: AtomicBool::new(false),
+                saving: tokio::sync::Mutex::new(()),
                 testing: Semaphore::new(1),
                 sessions: Sessions::new("setup", token.expose(), SESSION_S),
                 limiter: Limiter::default(),
-                fixed: describe(config),
                 mqtt_enabled: config.mqtt.enabled,
                 mqtt,
                 health: Mutex::new(BTreeMap::new()),
@@ -106,6 +128,8 @@ impl Setup {
             .route("/api/setup/login", post(login))
             .route("/api/setup/status", get(status))
             .route("/api/setup/test", post(test))
+            .route("/api/setup/source", post(save_source))
+            .route("/api/setup/source/delete", post(delete_source))
             .with_state(self.shared.clone())
     }
 }
@@ -172,13 +196,20 @@ async fn status(State(shared): State<Arc<Shared>>, headers: HeaderMap) -> Respon
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clone();
-    let mut out = shared.fixed.clone();
+    // What is saved on disk, which can be ahead of what runs.
+    let effective = effective_config(&shared);
+    let mut out = describe(&effective);
+    let can_edit = shared.store.is_some();
     if let Some(sources) = out["sources"].as_array_mut() {
         for source in sources {
             let id = source["id"].as_str().unwrap_or_default().to_string();
             source["health"] = json!(health.get(&id).copied().unwrap_or("unknown"));
+            source["running"] = json!(shared.running.contains(&id));
+            source["editable"] = json!(can_edit && source["origin"] == "data_folder");
         }
     }
+    out["can_edit"] = json!(can_edit);
+    out["restart_needed"] = json!(shared.changed.load(Ordering::Relaxed));
     out["mqtt"]["connected"] = json!(shared.mqtt_enabled && shared.mqtt.is_up());
     let mut response = out.to_string().into_response();
     let h = response.headers_mut();
@@ -188,6 +219,36 @@ async fn status(State(shared): State<Arc<Shared>>, headers: HeaderMap) -> Respon
     );
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
+}
+
+/// `bridge.toml` plus the data folder's `sources.toml` as it is on disk now;
+/// the running config if there is no data folder or the file does not parse.
+fn effective_config(shared: &Shared) -> Config {
+    shared
+        .store
+        .as_ref()
+        .and_then(|store| store.read_sources().ok())
+        .and_then(|text| shared.base.clone().with_overlay(&text).ok())
+        .unwrap_or_else(|| shared.config.clone())
+}
+
+/// `kind:name` of every source in a config.
+fn source_ids(config: &Config) -> BTreeSet<String> {
+    let s = &config.source;
+    let mut ids = BTreeSet::new();
+    ids.extend(s.gitea.iter().map(|c| format!("gitea:{}", c.name)));
+    ids.extend(s.github.iter().map(|c| format!("github:{}", c.name)));
+    ids.extend(
+        s.azure_devops
+            .iter()
+            .map(|c| format!("azure_devops:{}", c.name)),
+    );
+    ids.extend(
+        s.prometheus
+            .iter()
+            .map(|c| format!("prometheus:{}", c.name)),
+    );
+    ids
 }
 
 /// The longest a connection test may take as a whole.
@@ -249,6 +310,202 @@ fn logged_in(shared: &Shared, headers: &HeaderMap) -> bool {
         .is_some_and(|v| shared.sessions.valid(v, unix_now()))
 }
 
+/// A JSON answer with `no-store`.
+fn json_response(status: StatusCode, value: Value) -> Response {
+    let mut response = (status, value.to_string()).into_response();
+    let h = response.headers_mut();
+    h.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
+fn refuse(status: StatusCode, message: impl std::fmt::Display) -> Response {
+    json_response(status, json!({ "error": message.to_string() }))
+}
+
+/// Checks shared by the routes that change something: same origin, logged in,
+/// and a data folder to write to. Gives back the parsed JSON body.
+#[allow(clippy::result_large_err)]
+fn change_request(shared: &Shared, headers: &HeaderMap, body: &[u8]) -> Result<Value, Response> {
+    if !session::same_origin(headers) {
+        return Err(refuse(
+            StatusCode::FORBIDDEN,
+            "cross-origin request refused",
+        ));
+    }
+    if !logged_in(shared, headers) {
+        return Err(refuse(StatusCode::UNAUTHORIZED, "login required"));
+    }
+    if shared.store.is_none() {
+        return Err(refuse(
+            StatusCode::CONFLICT,
+            "no data folder is configured, so nothing can be saved (docs/data-dir.md)",
+        ));
+    }
+    if body.len() > 16 * 1024 {
+        return Err(refuse(StatusCode::PAYLOAD_TOO_LARGE, "request too large"));
+    }
+    serde_json::from_slice(body).map_err(|_| refuse(StatusCode::BAD_REQUEST, "expected JSON"))
+}
+
+async fn save_source(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let request = match change_request(&shared, &headers, &body) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    let store = shared.store.as_ref().expect("checked above");
+    let text = |key: &str| {
+        request
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
+    let (kind, name) = (text("kind"), text("name"));
+    let create = request
+        .get("create")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let force = request
+        .get("force")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let fields = request
+        .get("fields")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let secrets: BTreeMap<String, String> = request
+        .get("secrets")
+        .and_then(Value::as_object)
+        .map(|m| {
+            m.iter()
+                .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string())))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // One save at a time, so two browsers cannot overwrite each other's file.
+    let _saving = shared.saving.lock().await;
+    let current = match store.read_sources() {
+        Ok(current) => current,
+        Err(err) => return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}")),
+    };
+    let plan = match edit::upsert(&current, &kind, &name, create, &fields, &secrets) {
+        Ok(plan) => plan,
+        Err(err) => return refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
+    };
+    // The whole config, as it would be, must be valid before anything is tried.
+    let candidate = match shared.base.clone().with_overlay(&plan.text) {
+        Ok(candidate) => candidate,
+        Err(err) => return refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
+    };
+    let overrides: crate::probe::Overrides = plan.secrets.iter().cloned().collect();
+    let id = format!("{kind}:{name}");
+    let report = {
+        let Ok(_permit) = shared.testing.try_acquire() else {
+            return refuse(
+                StatusCode::TOO_MANY_REQUESTS,
+                "a connection test is still running",
+            );
+        };
+        match tokio::time::timeout(
+            TEST_TIMEOUT,
+            crate::probe::source_with(&candidate, &id, &overrides),
+        )
+        .await
+        {
+            Ok(Some(report)) => report,
+            Ok(None) => return refuse(StatusCode::NOT_FOUND, "no such source"),
+            Err(_) => return refuse(StatusCode::GATEWAY_TIMEOUT, "the test took too long"),
+        }
+    };
+    if !report.ok && !force {
+        tracing::info!(?id, "setup: not saved, the connection test failed");
+        return json_response(
+            StatusCode::OK,
+            json!({ "saved": false, "id": id, "report": report }),
+        );
+    }
+    for (credential, secret) in &plan.secrets {
+        if let Err(err) = store.write_secret(credential, secret.expose()) {
+            return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}"));
+        }
+    }
+    if let Err(err) = store.write_sources(&plan.text) {
+        return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}"));
+    }
+    shared.changed.store(true, Ordering::Relaxed);
+    let replaced: Vec<&str> = plan.secrets.iter().map(|(n, _)| n.as_str()).collect();
+    tracing::info!(
+        ?id,
+        created = create,
+        forced = force && !report.ok,
+        secrets_written = ?replaced,
+        "setup: source saved (applies after a restart)"
+    );
+    json_response(
+        StatusCode::OK,
+        json!({ "saved": true, "id": id, "report": report, "restart_needed": true }),
+    )
+}
+
+async fn delete_source(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let request = match change_request(&shared, &headers, &body) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    let store = shared.store.as_ref().expect("checked above");
+    let text = |key: &str| {
+        request
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
+    let (kind, name) = (text("kind"), text("name"));
+    let _saving = shared.saving.lock().await;
+    let current = match store.read_sources() {
+        Ok(current) => current,
+        Err(err) => return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}")),
+    };
+    let (new_text, credentials) = match edit::remove(&current, &kind, &name) {
+        Ok(done) => done,
+        Err(err) => return refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
+    };
+    if let Err(err) = shared.base.clone().with_overlay(&new_text) {
+        return refuse(StatusCode::BAD_REQUEST, format!("{err:#}"));
+    }
+    if let Err(err) = store.write_sources(&new_text) {
+        return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}"));
+    }
+    // Delete only the data folder's own files; a mounted credential is not ours.
+    let mut removed = Vec::new();
+    for credential in credentials {
+        if store.has_secret(&credential) && store.remove_secret(&credential).is_ok() {
+            removed.push(credential);
+        }
+    }
+    shared.changed.store(true, Ordering::Relaxed);
+    let id = format!("{kind}:{name}");
+    tracing::info!(?id, secrets_removed = ?removed, "setup: source removed (applies after a restart)");
+    json_response(
+        StatusCode::OK,
+        json!({ "saved": true, "id": id, "restart_needed": true }),
+    )
+}
+
 /// The part of the status that depends only on the config. Holds names and
 /// places, never a secret value: a credential is reported as `mounted`,
 /// `data_folder` or `missing`.
@@ -278,6 +535,7 @@ pub fn describe(config: &Config) -> Value {
             "id": format!("gitea:{}", s.name), "kind": "gitea", "name": s.name,
             "origin": origin("gitea", &s.name),
             "address": s.base_url, "repos": s.repos, "credentials": creds,
+            "fields": { "base_url": s.base_url, "repos": s.repos },
         }));
     }
     for s in &config.source.github {
@@ -286,6 +544,7 @@ pub fn describe(config: &Config) -> Value {
             "origin": origin("github", &s.name),
             "address": s.base_url, "repos": s.repos,
             "credentials": [cred("token", &s.token_file, true)],
+            "fields": { "base_url": s.base_url, "repos": s.repos },
         }));
     }
     for s in &config.source.azure_devops {
@@ -295,6 +554,10 @@ pub fn describe(config: &Config) -> Value {
             "address": format!("{}/{}", s.base_url.trim_end_matches('/'), s.organization),
             "repos": s.projects,
             "credentials": [cred("token", &s.token_file, true)],
+            "fields": {
+                "organization": s.organization, "base_url": s.base_url,
+                "projects": s.projects, "pull_requests": s.pull_requests,
+            },
         }));
     }
     for s in &config.source.prometheus {
@@ -309,6 +572,15 @@ pub fn describe(config: &Config) -> Value {
             "address": s.url,
             "repos": s.hosts.iter().map(|h| h.name.clone()).collect::<Vec<_>>(),
             "credentials": creds,
+            "fields": {
+                "url": s.url,
+                "hosts": s.hosts.iter().map(|h| h.instance.clone()).collect::<Vec<_>>(),
+                // A host with its own settings cannot be edited as a plain list.
+                "hosts_advanced": s.hosts.iter().any(|h| {
+                    h.cadvisor.is_some() || !h.expect_containers.is_empty()
+                        || h.name != h.instance.rsplit_once(':').map_or(h.instance.as_str(), |(host, _)| host)
+                }),
+            },
         }));
     }
     let mqtt = &config.mqtt;

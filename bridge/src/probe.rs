@@ -17,7 +17,7 @@ use crate::config::{
     AzureDevopsConfig, Config, GiteaConfig, GithubConfig, MqttConfig, PrometheusConfig,
 };
 use crate::gitea::api::{GiteaApi, HttpApi as GiteaHttp};
-use crate::source::{Health, load_secret};
+use crate::source::{Health, Secret, load_secret};
 
 /// Most repositories, projects or hosts checked in one test.
 const MAX_TARGETS: usize = 10;
@@ -112,9 +112,25 @@ fn chain_text(err: &anyhow::Error) -> String {
     text
 }
 
+/// Secrets that are not on disk yet: a token being entered on the setup page
+/// is tested before it is saved. A name found here wins over the files.
+pub type Overrides = std::collections::HashMap<String, Secret>;
+
+fn lookup(overrides: &Overrides, name: &str) -> anyhow::Result<Secret> {
+    match overrides.get(name) {
+        Some(secret) => Ok(secret.clone()),
+        None => load_secret(name),
+    }
+}
+
 /// Look up a credential, as the real source would.
-fn credential(report: &mut Report, label: &str, name: &str) -> Option<crate::source::Secret> {
-    match load_secret(name) {
+fn credential(
+    report: &mut Report,
+    overrides: &Overrides,
+    label: &str,
+    name: &str,
+) -> Option<Secret> {
+    match lookup(overrides, name) {
         Ok(secret) => Some(secret),
         Err(err) => {
             report.fail(label, chain_text(&err));
@@ -126,21 +142,28 @@ fn credential(report: &mut Report, label: &str, name: &str) -> Option<crate::sou
 /// Test the source with this id (`github:main`, `gitea:home`, ...), or
 /// `None` when the config has no such source.
 pub async fn source(config: &Config, id: &str) -> Option<Report> {
+    source_with(config, id, &Overrides::new()).await
+}
+
+/// Like `source`, with secrets that are not saved yet.
+pub async fn source_with(config: &Config, id: &str, overrides: &Overrides) -> Option<Report> {
     let (kind, name) = id.split_once(':')?;
     let s = &config.source;
     let report = match kind {
-        "github" => github(s.github.iter().find(|c| c.name == name)?).await,
-        "gitea" => gitea(s.gitea.iter().find(|c| c.name == name)?).await,
-        "azure_devops" => azure_devops(s.azure_devops.iter().find(|c| c.name == name)?).await,
-        "prometheus" => prometheus(s.prometheus.iter().find(|c| c.name == name)?).await,
+        "github" => github(s.github.iter().find(|c| c.name == name)?, overrides).await,
+        "gitea" => gitea(s.gitea.iter().find(|c| c.name == name)?, overrides).await,
+        "azure_devops" => {
+            azure_devops(s.azure_devops.iter().find(|c| c.name == name)?, overrides).await
+        }
+        "prometheus" => prometheus(s.prometheus.iter().find(|c| c.name == name)?, overrides).await,
         _ => return None,
     };
     Some(report.done())
 }
 
-async fn github(config: &GithubConfig) -> Report {
+async fn github(config: &GithubConfig, overrides: &Overrides) -> Report {
     let mut report = Report::default();
-    let Some(token) = credential(&mut report, "token", &config.token_file) else {
+    let Some(token) = credential(&mut report, overrides, "token", &config.token_file) else {
         return report;
     };
     let api = match crate::github::api::HttpApi::new(&config.base_url, token) {
@@ -171,9 +194,9 @@ async fn github(config: &GithubConfig) -> Report {
     report
 }
 
-async fn gitea(config: &GiteaConfig) -> Report {
+async fn gitea(config: &GiteaConfig, overrides: &Overrides) -> Report {
     let mut report = Report::default();
-    match credential_present(&config.webhook_secret_file) {
+    match credential_present(overrides, &config.webhook_secret_file) {
         Ok(()) => report.pass(
             "webhook secret",
             "found (its value cannot be checked from here; it must match the webhook in Gitea)",
@@ -181,7 +204,7 @@ async fn gitea(config: &GiteaConfig) -> Report {
         Err(err) => report.fail("webhook secret", err),
     }
     let token = match &config.token_file {
-        Some(file) => match credential(&mut report, "token", file) {
+        Some(file) => match credential(&mut report, overrides, "token", file) {
             Some(token) => Some(token),
             None => return report,
         },
@@ -225,9 +248,9 @@ async fn gitea(config: &GiteaConfig) -> Report {
     report
 }
 
-async fn azure_devops(config: &AzureDevopsConfig) -> Report {
+async fn azure_devops(config: &AzureDevopsConfig, overrides: &Overrides) -> Report {
     let mut report = Report::default();
-    let Some(token) = credential(&mut report, "token", &config.token_file) else {
+    let Some(token) = credential(&mut report, overrides, "token", &config.token_file) else {
         return report;
     };
     let api =
@@ -275,10 +298,10 @@ async fn azure_devops(config: &AzureDevopsConfig) -> Report {
     report
 }
 
-async fn prometheus(config: &PrometheusConfig) -> Report {
+async fn prometheus(config: &PrometheusConfig, overrides: &Overrides) -> Report {
     let mut report = Report::default();
     let token = match &config.token_file {
-        Some(file) => match credential(&mut report, "token", file) {
+        Some(file) => match credential(&mut report, overrides, "token", file) {
             Some(token) => Some(token),
             None => return report,
         },
@@ -324,8 +347,10 @@ fn escape_label(value: &str) -> String {
 }
 
 /// Is the credential there? Without reading its value into the report.
-fn credential_present(name: &str) -> Result<(), String> {
-    load_secret(name).map(|_| ()).map_err(|e| format!("{e:#}"))
+fn credential_present(overrides: &Overrides, name: &str) -> Result<(), String> {
+    lookup(overrides, name)
+        .map(|_| ())
+        .map_err(|e| chain_text(&e))
 }
 
 /// Test the broker connection and login.
