@@ -42,6 +42,7 @@ use crate::kiosk::session::{self, Limiter, Sessions};
 use crate::kiosk::{asset, digest, same};
 use crate::source::{Secret, credential_status};
 use crate::store::Store;
+use crate::supervisor::Supervisor;
 
 pub mod edit;
 
@@ -66,9 +67,11 @@ struct Shared {
     base: Config,
     /// The data folder, when there is one. Without it the page cannot save.
     store: Option<Store>,
-    /// Sources that were started with the bridge. Others are saved, not running yet.
-    running: BTreeSet<String>,
-    /// Something was saved since the bridge started: it needs a restart.
+    /// Starts, stops and replaces sources when something is saved. Without it
+    /// (tests) the sources that started with the bridge are the only ones that run.
+    supervisor: Option<Supervisor>,
+    started: BTreeSet<String>,
+    /// A saved change could not be applied while running: it needs a restart.
     changed: AtomicBool,
     /// One save at a time.
     saving: tokio::sync::Mutex<()>,
@@ -83,15 +86,22 @@ struct Shared {
 }
 
 impl Setup {
-    pub fn new(config: &Config, token: &Secret, mqtt: MqttLink, store: Option<Store>) -> Self {
-        let running = source_ids(config);
+    pub fn new(
+        config: &Config,
+        token: &Secret,
+        mqtt: MqttLink,
+        store: Option<Store>,
+        supervisor: Option<Supervisor>,
+    ) -> Self {
+        let started = source_ids(config);
         Self {
             shared: Arc::new(Shared {
                 token: digest(token.expose()),
                 config: config.clone(),
                 base: config.without_overlay(),
                 store,
-                running,
+                supervisor,
+                started,
                 changed: AtomicBool::new(false),
                 saving: tokio::sync::Mutex::new(()),
                 testing: Semaphore::new(1),
@@ -200,11 +210,15 @@ async fn status(State(shared): State<Arc<Shared>>, headers: HeaderMap) -> Respon
     let effective = effective_config(&shared);
     let mut out = describe(&effective);
     let can_edit = shared.store.is_some();
+    let running = match &shared.supervisor {
+        Some(supervisor) => supervisor.running().await,
+        None => shared.started.clone(),
+    };
     if let Some(sources) = out["sources"].as_array_mut() {
         for source in sources {
             let id = source["id"].as_str().unwrap_or_default().to_string();
             source["health"] = json!(health.get(&id).copied().unwrap_or("unknown"));
-            source["running"] = json!(shared.running.contains(&id));
+            source["running"] = json!(running.contains(&id));
             source["editable"] = json!(can_edit && source["origin"] == "data_folder");
         }
     }
@@ -249,6 +263,24 @@ fn source_ids(config: &Config) -> BTreeSet<String> {
             .map(|c| format!("prometheus:{}", c.name)),
     );
     ids
+}
+
+/// Make the running sources match the saved config. `Err` says why source
+/// `id` could not be started (or that there is no supervisor); then the change
+/// is saved but needs a restart.
+async fn apply(shared: &Shared, config: &Config, id: &str) -> Result<(), String> {
+    let Some(supervisor) = &shared.supervisor else {
+        shared.changed.store(true, Ordering::Relaxed);
+        return Err("this bridge cannot apply changes while running".into());
+    };
+    let outcome = supervisor.reconcile(config, &[id.to_string()]).await;
+    match outcome.failed.into_iter().find(|(failed, _)| failed == id) {
+        Some((_, reason)) => {
+            shared.changed.store(true, Ordering::Relaxed);
+            Err(reason)
+        }
+        None => Ok(()),
+    }
 }
 
 /// The longest a connection test may take as a whole.
@@ -442,18 +474,23 @@ async fn save_source(
     if let Err(err) = store.write_sources(&plan.text) {
         return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}"));
     }
-    shared.changed.store(true, Ordering::Relaxed);
+    let applied = apply(&shared, &candidate, &id).await;
     let replaced: Vec<&str> = plan.secrets.iter().map(|(n, _)| n.as_str()).collect();
     tracing::info!(
         ?id,
         created = create,
         forced = force && !report.ok,
         secrets_written = ?replaced,
-        "setup: source saved (applies after a restart)"
+        applied = applied.is_ok(),
+        "setup: source saved"
     );
     json_response(
         StatusCode::OK,
-        json!({ "saved": true, "id": id, "report": report, "restart_needed": true }),
+        json!({
+            "saved": true, "id": id, "report": report,
+            "applied": applied.is_ok(), "apply_error": applied.err(),
+            "restart_needed": shared.changed.load(Ordering::Relaxed),
+        }),
     )
 }
 
@@ -484,9 +521,10 @@ async fn delete_source(
         Ok(done) => done,
         Err(err) => return refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
     };
-    if let Err(err) = shared.base.clone().with_overlay(&new_text) {
-        return refuse(StatusCode::BAD_REQUEST, format!("{err:#}"));
-    }
+    let candidate = match shared.base.clone().with_overlay(&new_text) {
+        Ok(candidate) => candidate,
+        Err(err) => return refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
+    };
     if let Err(err) = store.write_sources(&new_text) {
         return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}"));
     }
@@ -497,12 +535,16 @@ async fn delete_source(
             removed.push(credential);
         }
     }
-    shared.changed.store(true, Ordering::Relaxed);
     let id = format!("{kind}:{name}");
-    tracing::info!(?id, secrets_removed = ?removed, "setup: source removed (applies after a restart)");
+    let applied = apply(&shared, &candidate, &id).await;
+    tracing::info!(?id, secrets_removed = ?removed, applied = applied.is_ok(), "setup: source removed");
     json_response(
         StatusCode::OK,
-        json!({ "saved": true, "id": id, "restart_needed": true }),
+        json!({
+            "saved": true, "id": id,
+            "applied": applied.is_ok(), "apply_error": applied.err(),
+            "restart_needed": shared.changed.load(Ordering::Relaxed),
+        }),
     )
 }
 

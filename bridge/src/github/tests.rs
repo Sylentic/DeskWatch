@@ -332,6 +332,7 @@ async fn source_polls_a_mock_enterprise_server() {
         assert_eq!(msg.source.to_string(), "github:work-ghe");
         match msg.body {
             SourceBody::Health(h) => health = Some(h),
+            SourceBody::Forget => panic!("a source never forgets itself"),
             SourceBody::Facts(updates) => {
                 for update in updates {
                     match update {
@@ -458,6 +459,7 @@ async fn refused_runner_list_does_not_hurt_source_health() {
                 assert!(!updates.iter().any(|u| matches!(u, Update::Runners { .. })));
             }
             SourceBody::Stats(_) => panic!("GitHub sends no host stats"),
+            SourceBody::Forget => panic!("a source never forgets itself"),
         }
     }
     assert_eq!(healths, [Health::Ok]);

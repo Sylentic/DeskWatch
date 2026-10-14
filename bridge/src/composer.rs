@@ -54,6 +54,11 @@ impl Composer {
                 self.health.set(&msg.source, health);
                 self.fleet.set_source_ok(&msg.source, health == Health::Ok);
             }
+            SourceBody::Forget => {
+                self.ci.forget(&format!("{}:", msg.source));
+                self.fleet.forget(&msg.source);
+                self.health.forget(&msg.source);
+            }
         }
     }
 
@@ -279,8 +284,12 @@ mod tests {
     }
 
     fn pr_opened() -> Update {
+        pr_opened_in("r")
+    }
+
+    fn pr_opened_in(key: &str) -> Update {
         Update::PullOpened {
-            key: "r".into(),
+            key: key.into(),
             project: "demo".into(),
             source: "gitea".into(),
             pull: OpenPull {
@@ -396,6 +405,32 @@ mod tests {
 
         composer.apply(health(Health::Ok), 21);
         assert_eq!(composer.badges().items.len(), 1);
+    }
+
+    #[test]
+    fn a_forgotten_source_leaves_the_pages_and_the_badges() {
+        let mut composer = Composer::new(rotation(), 0);
+        send(&mut composer, pr_opened_in("gitea:home:o/r"), 0);
+        send(&mut composer, running_job("gitea:home:o/r:1", 0), 0);
+        let home = |body| SourceMsg {
+            source: SourceId::new("gitea", "home"),
+            body,
+        };
+        composer.apply(home(SourceBody::Health(Health::AuthFailed)), 0);
+        assert_eq!(composer.ci.open_pull_count(), 1);
+        assert!(!composer.health.all_ok());
+
+        // Another source's facts stay.
+        let other = SourceMsg {
+            source: SourceId::new("gitea", "homelab"),
+            body: SourceBody::Facts(vec![running_job("gitea:homelab:o/r:2", 0)]),
+        };
+        composer.apply(other, 0);
+
+        composer.apply(home(SourceBody::Forget), 1);
+        assert_eq!(composer.ci.open_pull_count(), 0);
+        assert!(composer.health.all_ok());
+        assert_eq!(composer.ci.jobs().len(), 1);
     }
 
     fn alert(json: &str) -> AlertMessage {

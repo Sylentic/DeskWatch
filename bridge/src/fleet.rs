@@ -66,6 +66,11 @@ impl Fleet {
         );
     }
 
+    /// Drop what `source` reported (it was removed).
+    pub fn forget(&mut self, source: &SourceId) {
+        self.sources.remove(source);
+    }
+
     /// A source's health changed. Its numbers count as stale until it works again.
     pub fn set_source_ok(&mut self, source: &SourceId, ok: bool) {
         if let Some(entry) = self.sources.get_mut(source) {

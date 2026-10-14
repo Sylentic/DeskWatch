@@ -10,9 +10,13 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Added
 
+- **Sources reload without a restart.** Adding, editing, removing a source or replacing its token on the setup page
+  takes effect at once: the bridge starts, replaces or stops that source's task, drops what a stopped source reported
+  (pages, badges, warnings) and adds or removes its Gitea webhook route. A source that cannot start leaves the old
+  one running and the page shows why. A source's helper task now stops with it.
 - **Setup page: add, edit and remove sources, replace tokens** (needs the data folder). Write-only token fields,
   validate-before-save with the connection test (with "Save anyway"), unknown keys in `sources.toml` are kept, every
-  change is logged without values. Applies after a restart for now.
+  change is logged without values.
 - **Setup page, read-only** (`[setup] token_file`, off by default): `/setup` shows each source (address, repositories,
   whether it comes from `bridge.toml` or the data folder, live health), whether each credential is found or missing
   (never its value), and the MQTT broker and its connection. It has its own token, login cookie (12 hours) and failure

@@ -607,6 +607,7 @@ async fn source_polls_a_mock_service() {
         assert_eq!(msg.source.to_string(), "azure_devops:work");
         match msg.body {
             SourceBody::Health(h) => health = Some(h),
+            SourceBody::Forget => panic!("a source never forgets itself"),
             SourceBody::Facts(updates) => {
                 for update in updates {
                     match update {
@@ -795,6 +796,7 @@ async fn refused_pool_list_does_not_hurt_source_health() {
     while let Ok(msg) = rx.try_recv() {
         match msg.body {
             SourceBody::Health(h) => health = Some(h),
+            SourceBody::Forget => panic!("a source never forgets itself"),
             SourceBody::Facts(updates) => {
                 assert!(
                     !updates

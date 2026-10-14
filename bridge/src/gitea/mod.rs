@@ -136,7 +136,9 @@ impl Source for Gitea {
             pulls: Duration::from_secs(config.poll_s),
             runners: Duration::from_secs(config.runner_poll_s),
         };
-        tokio::spawn(api::poll_loop(api, polling, jobs_rx, events_tx));
+        let _poller = source::AbortOnDrop(tokio::spawn(api::poll_loop(
+            api, polling, jobs_rx, events_tx,
+        )));
 
         let mut state = GiteaState::new(id, config.interrupt, config.alias);
         let mut reported = None;

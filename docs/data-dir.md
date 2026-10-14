@@ -48,6 +48,6 @@ config; it is the only state the bridge keeps. On a systemd install, give the un
 
 ## Not covered yet
 
-Changes to `sources.toml` are read at startup. The setup page can add, edit and remove sources and replace their
-tokens (see setup-page.md), but a restart is still needed to apply them. Reloading without a restart comes in a later
-step.
+`sources.toml` is read at startup and whenever the setup page saves a change; a hand edit of the file is picked up at the
+next save or restart. Only `[[source.*]]` blocks can live here, so the MQTT broker, the listen address and the rotation
+stay in `bridge.toml` (the setup page gets MQTT settings in a later step).

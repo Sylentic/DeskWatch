@@ -20,6 +20,7 @@ sha2 = "0.11.0"
 time = { version = "0.3.45", features = ["serde", "parsing"] }
 tokio = { version = "1.53.2", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 toml = "1.1.7"
+tower = { version = "0.5.3", features = ["util"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
@@ -29,4 +30,3 @@ nix = { version = "0.31.3", features = ["fs"] }
 
 [dev-dependencies]
 tokio = { version = "1.53.2", features = ["test-util", "macros", "rt"] }
-tower = { version = "0.5.3", features = ["util"] }
