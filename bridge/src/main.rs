@@ -23,22 +23,19 @@ use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 use deskwatch_bridge::alerts::Alerts;
-use deskwatch_bridge::azure_devops::AzureDevops;
 use deskwatch_bridge::composer::Composer;
 use deskwatch_bridge::config::Config;
 use deskwatch_bridge::demo::{self, Demo};
-use deskwatch_bridge::gitea::Gitea;
-use deskwatch_bridge::github::Github;
 use deskwatch_bridge::health;
 use deskwatch_bridge::hooks::Hooks;
 use deskwatch_bridge::kiosk::Kiosk;
 use deskwatch_bridge::model::{Badges, Screen};
 use deskwatch_bridge::mqtt::{self, Inbound, Publisher};
-use deskwatch_bridge::prometheus::Prometheus;
 use deskwatch_bridge::setup::Setup;
 use deskwatch_bridge::source::{self, unix_now};
 use deskwatch_bridge::stats::StatsCollector;
 use deskwatch_bridge::store::Store;
+use deskwatch_bridge::supervisor::Supervisor;
 
 /// How often the composer re-checks timers (alert expiry, rotation dwell).
 const COMPOSE_INTERVAL: Duration = Duration::from_secs(1);
@@ -166,27 +163,11 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Build every source first: missing credentials or a taken port stop the
-    // bridge here, before it connects anywhere. The demo runs none of them.
-    let mut gitea = Vec::new();
-    let mut github = Vec::new();
-    let mut azure_devops = Vec::new();
-    let mut prometheus = Vec::new();
+    // Sources report here. The sender stays alive in this function, so `recv`
+    // simply waits forever when no source is configured.
+    let (source_tx, mut source_rx) = mpsc::channel(64);
     let mut hooks = Hooks::default();
-    if !args.demo {
-        for gitea_config in &config.source.gitea {
-            gitea.push(Gitea::new(gitea_config, &mut hooks)?);
-        }
-        for github_config in &config.source.github {
-            github.push(Github::new(github_config)?);
-        }
-        for azure_config in &config.source.azure_devops {
-            azure_devops.push(AzureDevops::new(azure_config)?);
-        }
-        for prometheus_config in &config.source.prometheus {
-            prometheus.push(Prometheus::new(prometheus_config)?);
-        }
-    }
+    let supervisor = Supervisor::new(source_tx.clone(), hooks.webhooks());
     let mut kiosk = None;
     if config.kiosk.enabled {
         let token = match &config.kiosk.token_file {
@@ -217,7 +198,13 @@ async fn main() -> Result<()> {
     let mut setup = None;
     if let Some(file) = &config.setup.token_file {
         let token = source::load_secret(file).context("setup.token_file")?;
-        let built = Setup::new(&config, &token, mqtt_link.clone(), store.clone());
+        let built = Setup::new(
+            &config,
+            &token,
+            mqtt_link.clone(),
+            store.clone(),
+            Some(supervisor.clone()),
+        );
         hooks.add("/setup", built.router());
         info!("setup page on /setup (its own token; kiosk.trusted_networks does not apply)");
         if !config.http.listen.ip().is_loopback() {
@@ -231,6 +218,16 @@ async fn main() -> Result<()> {
     }
     if config.mqtt.enabled {
         hooks.add("/healthz", mqtt_link.route());
+    }
+    // Build and start the sources. A missing credential or a bad setting
+    // stops the bridge here, before it connects to the broker. The demo runs
+    // none of them. Later changes from the setup page go through the same
+    // supervisor, without a restart.
+    if !args.demo {
+        let outcome = supervisor.reconcile(&config, &[]).await;
+        if let Some((id, reason)) = outcome.failed.first() {
+            anyhow::bail!("source {id}: {reason}");
+        }
     }
     hooks.start(config.http.listen).await?;
 
@@ -251,22 +248,6 @@ async fn main() -> Result<()> {
         info!("MQTT is off: serving the dashboard page only, no panel, button or MQTT alerts");
         None
     };
-
-    // Sources report here. The sender stays alive in this function, so `recv`
-    // simply waits forever when no source is configured.
-    let (source_tx, mut source_rx) = mpsc::channel(64);
-    for source in gitea {
-        source::spawn(source, source_tx.clone());
-    }
-    for source in github {
-        source::spawn(source, source_tx.clone());
-    }
-    for source in azure_devops {
-        source::spawn(source, source_tx.clone());
-    }
-    for source in prometheus {
-        source::spawn(source, source_tx.clone());
-    }
 
     let mut collector = StatsCollector::new(&config.server);
     let mut composer;

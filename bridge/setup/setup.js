@@ -13,6 +13,7 @@
   var last = null;       // latest status, so a finished test can redraw at once
   var results = {};      // source id -> latest test report (kept across refreshes)
   var running = {};      // source id -> true while its test runs
+  var notice = null;     // message after the last save that could not be applied
   var form = null;       // the open add/edit form, or null (see openForm)
 
   function el(tag, cls, text) {
@@ -149,6 +150,7 @@
     });
     (spec.bools || []).forEach(function (x) { fields[x[0]] = !!form.values[x[0]]; });
     spec.secrets.forEach(function (x) { if (form.secrets[x[0]]) secrets[x[0]] = form.secrets[x[0]]; });
+    notice = null;
     form.busy = true; form.error = null; if (!force) form.result = null;
     render(last);
     post('api/setup/source', { kind: form.kind, name: form.name.trim(), create: form.mode === 'add',
@@ -156,17 +158,24 @@
       if (!j || !form) return;
       form.busy = false;
       if (j.error) form.error = j.error;
-      else if (j.saved) { results[j.id] = j.report; form = null; load(); return; }
+      else if (j.saved) { results[j.id] = j.report; notice = applyNotice(j); form = null; load(); return; }
       else form.result = j.report;
       render(last);
     });
   }
 
+  // What to tell after a save: it runs now, or it is saved but could not start.
+  function applyNotice(j) {
+    if (j.applied) return null;
+    return 'Saved, but ' + j.id + ' could not be started: ' + (j.apply_error || 'unknown reason') + '. Restart the bridge to try again.';
+  }
+
   function removeSource(s) {
-    if (!window.confirm('Remove ' + s.name + ' and the tokens saved for it? This takes effect after a restart.')) return;
+    if (!window.confirm('Remove ' + s.name + ' and the tokens saved for it?')) return;
     post('api/setup/source/delete', { kind: s.kind, name: s.name }).then(function (j) {
       if (!j) return;
       if (j.error) window.alert(j.error);
+      else notice = applyNotice(j);
       load();
     });
   }
@@ -268,7 +277,7 @@
       row(dl, c.label, v);
     });
     card.appendChild(dl);
-    if (!s.running) card.appendChild(el('p', 'muted', 'Saved, but not running yet. Restart the bridge to start it.'));
+    if (!s.running) card.appendChild(el('p', 'muted', 'Saved, but not running. Fix the details and save again, or restart the bridge.'));
     card.appendChild(testBlock(s.id));
     if (s.editable) {
       var b = el('div', 'buttons');
@@ -305,8 +314,8 @@
     if (m.enabled) info.appendChild(testBlock('mqtt'));
     app.appendChild(info);
 
-    if (d.restart_needed) {
-      var banner = el('p', 'banner', 'Changes are saved. Restart the bridge to apply them.');
+    if (d.restart_needed || notice) {
+      var banner = el('p', 'banner', notice || 'Changes are saved. Restart the bridge to apply them.');
       banner.setAttribute('role', 'status');
       app.insertBefore(banner, app.firstChild);
     }
@@ -318,7 +327,7 @@
     });
     if (d.can_edit) app.appendChild(form && form.mode === 'add' ? formCard() : addCard());
     app.appendChild(el('p', 'muted', d.can_edit
-      ? 'Tokens are never sent to the browser. Sources from bridge.toml are changed in that file; the ones added here live in the data folder and apply after a restart.'
+      ? 'Tokens are never sent to the browser. Sources from bridge.toml are changed in that file; the ones added here live in the data folder and start, change or stop right away.'
       : 'Tokens are never sent to the browser. To add and change sources here, give the bridge a data folder ([data] dir, see docs/data-dir.md).'));
   }
 

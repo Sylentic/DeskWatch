@@ -43,6 +43,7 @@ fn setup(temp: &Temp) -> Setup {
         &Secret::new("setup-token"),
         MqttLink::default(),
         None,
+        None,
     )
 }
 
@@ -131,6 +132,7 @@ async fn health_and_mqtt_state_are_live() {
         &config(&temp.0),
         &Secret::new("setup-token"),
         link.clone(),
+        None,
         None,
     );
     let router = setup.router();
@@ -246,7 +248,14 @@ async fn trusted_networks_do_not_open_the_setup_page() {
     let temp = Temp::new("trusted");
     let mut cfg = config(&temp.0);
     cfg.kiosk.trusted_networks = vec!["0.0.0.0/0".into()];
-    let router = Setup::new(&cfg, &Secret::new("setup-token"), MqttLink::default(), None).router();
+    let router = Setup::new(
+        &cfg,
+        &Secret::new("setup-token"),
+        MqttLink::default(),
+        None,
+        None,
+    )
+    .router();
     let (status, ..) = send(&router, "GET", "/api/setup/status", &[], "").await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
@@ -344,6 +353,7 @@ async fn a_connection_test_runs_the_real_checks_and_one_runs_at_a_time() {
         &Secret::new("setup-token"),
         MqttLink::default(),
         None,
+        None,
     );
     let router = setup.router();
     let cookie = logged_in(&router).await;
@@ -381,11 +391,15 @@ async fn with_data(tag: &str) -> (Router, Temp, String) {
     let data = temp.0.join("data");
     let store = Store::open(&data).unwrap();
     let config = Config::from_toml("").unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+    tokio::spawn(async move { while rx.recv().await.is_some() {} });
+    let supervisor = Supervisor::new(tx, crate::hooks::Webhooks::default());
     let router = Setup::new(
         &config,
         &Secret::new("setup-token"),
         MqttLink::default(),
         Some(store),
+        Some(supervisor),
     )
     .router();
     let cookie = logged_in(&router).await;
@@ -468,7 +482,8 @@ async fn a_good_source_is_saved_a_failing_one_is_not_unless_forced() {
     assert_eq!(status, StatusCode::OK, "{text}");
     let v: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(v["saved"], true, "{text}");
-    assert_eq!(v["restart_needed"], true);
+    assert_eq!(v["applied"], true, "{text}");
+    assert_eq!(v["restart_needed"], false);
     assert!(!text.contains("good-token-value") && !text.contains("hook-secret-value"));
     let saved = std::fs::read_to_string(data.join("sources.toml")).unwrap();
     assert!(saved.contains("gitea") && saved.contains("home"));
@@ -487,15 +502,15 @@ async fn a_good_source_is_saved_a_failing_one_is_not_unless_forced() {
         assert_eq!(mode & 0o777, 0o600);
     }
 
-    // The status now lists it as editable, not running yet, restart needed.
+    // The status now lists it as editable and running, with no restart needed.
     let (_, _, text) = send(&router, "GET", "/api/setup/status", &headers, "").await;
     let v: Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(v["restart_needed"], true);
+    assert_eq!(v["restart_needed"], false);
     assert_eq!(v["can_edit"], true);
     let src = &v["sources"][0];
     assert_eq!(src["id"], "gitea:home");
     assert_eq!(src["editable"], true);
-    assert_eq!(src["running"], false);
+    assert_eq!(src["running"], true);
     assert!(!text.contains("good-token-value"));
 
     // A duplicate create is a bad request.

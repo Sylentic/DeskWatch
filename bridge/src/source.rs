@@ -138,6 +138,11 @@ impl HealthBoard {
         }
     }
 
+    /// Drop a removed source, so it no longer counts in the `warn` badge.
+    pub fn forget(&mut self, source: &SourceId) {
+        self.sources.remove(source);
+    }
+
     /// Every source that has reported, with its health.
     pub fn iter(&self) -> impl Iterator<Item = (&SourceId, Health)> {
         self.sources.iter().map(|(id, health)| (id, *health))
@@ -171,6 +176,8 @@ pub enum SourceBody {
     /// Host stats and what is down, replacing the source's previous report.
     Stats(StatsReport),
     Health(Health),
+    /// The source was removed or replaced: drop everything it reported.
+    Forget,
 }
 
 /// A source's handle for reporting to the main loop.
@@ -202,6 +209,16 @@ impl FactSink {
         self.send(SourceBody::Stats(report)).await
     }
 
+    /// Tell the main loop to drop everything `source` reported. Used by the
+    /// supervisor, after it stopped the source's task.
+    pub async fn forget(source: SourceId, tx: &mpsc::Sender<SourceMsg>) -> bool {
+        let msg = SourceMsg {
+            source,
+            body: SourceBody::Forget,
+        };
+        tx.send(msg).await.is_ok()
+    }
+
     /// Report health. Returns false once the main loop has stopped.
     pub async fn health(&self, health: Health) -> bool {
         self.send(SourceBody::Health(health)).await
@@ -226,8 +243,19 @@ pub trait Source: Send + 'static {
     fn run(self, sink: FactSink) -> impl Future<Output = Result<()>> + Send;
 }
 
+/// Aborts a task when dropped. A source that starts helper tasks keeps their
+/// guards, so stopping the source (aborting its own task) stops them too.
+pub struct AbortOnDrop(pub tokio::task::JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 /// Start a source as a task. Errors are logged and mark the source unreachable.
-pub fn spawn(source: impl Source, tx: mpsc::Sender<SourceMsg>) {
+/// Abort the returned handle to stop the source.
+pub fn spawn(source: impl Source, tx: mpsc::Sender<SourceMsg>) -> tokio::task::JoinHandle<()> {
     let sink = FactSink::new(source.id(), tx);
     tokio::spawn(async move {
         let id = sink.source().clone();
@@ -235,7 +263,7 @@ pub fn spawn(source: impl Source, tx: mpsc::Sender<SourceMsg>) {
             warn!(source = %id, "source stopped: {err:#}");
             sink.health(Health::Unreachable).await;
         }
-    });
+    })
 }
 
 /// The current time in Unix seconds, the clock every fact uses.

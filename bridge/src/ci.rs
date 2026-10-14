@@ -256,6 +256,24 @@ pub struct CiFacts {
 impl CiFacts {
     // --- Writes from sources ---------------------------------------------
 
+    /// Drop every fact whose key starts with `prefix` (`gitea:home:`), after
+    /// the source that wrote them was removed or replaced.
+    pub fn forget(&mut self, prefix: &str) {
+        self.jobs.retain(|key, _| !key.starts_with(prefix));
+        if self
+            .focus
+            .as_deref()
+            .is_some_and(|key| key.starts_with(prefix))
+        {
+            self.focus = None;
+        }
+        self.runs.retain(|key, _| !key.starts_with(prefix));
+        self.alerts.retain(|key, _| !key.starts_with(prefix));
+        self.pulls.retain(|key, _| !key.starts_with(prefix));
+        self.runners.retain(|key, _| !key.starts_with(prefix));
+        self.queued.retain(|key, _| !key.starts_with(prefix));
+    }
+
     /// Apply one update from a source. `now` is Unix seconds.
     pub fn apply(&mut self, update: Update, now: u64) {
         match update {

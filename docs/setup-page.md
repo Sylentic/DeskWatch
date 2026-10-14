@@ -60,7 +60,12 @@ With a data folder configured ([data-dir.md](data-dir.md)) the page can change s
 - Sources from `bridge.toml` are shown but not editable; change those by hand. A mounted credential with the same name
   as a page-managed one is refused, because the mounted one would win and hide the change.
 - Every save or removal is logged (source id, which secret files were written; never a value).
-- Changes apply after a restart for now. The page says so, and marks a new source "not running yet".
+- **No restart needed.** A saved source starts at once, an edited one is replaced (its facts and warnings are dropped
+  first), a removed one stops and disappears from the dashboard, the panel and the `warn` badge. A new Gitea source
+  gets its webhook route (`/webhook/gitea/<name>`) immediately, and a removed one answers 404. If a saved source
+  cannot be started (for example a credential file vanished), the old version keeps running, the page says why, and a
+  restart will show the same error. Settings outside `[[source.*]]` (the MQTT broker, the listen address, the rotation)
+  are still read at startup.
 
 ## Security
 

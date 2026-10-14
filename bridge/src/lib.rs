@@ -21,3 +21,4 @@ pub mod setup;
 pub mod source;
 pub mod stats;
 pub mod store;
+pub mod supervisor;
