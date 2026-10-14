@@ -76,13 +76,21 @@ The file holds the token and nothing else; a trailing newline is fine.
 ```toml
 [[source.azure_devops]]
 name = "work"                      # used in logs; letters, digits, - and _
-organization = "your-org"          # from https://dev.azure.com/your-org
-projects = ["project-a"]           # one or more projects
+organization = "your-org"          # only the name from https://dev.azure.com/your-org
+projects = ["project-a"]           # one or more projects, as shown in Azure DevOps
 token_file = "azdo-work"           # the credential name from step 2
 ```
 
 Then `sudo systemctl restart deskwatch-bridge` and check `journalctl -u deskwatch-bridge` for
 `polling Azure DevOps` (on Windows, restart the service and look in its log file).
+
+What to enter, using the browser address `https://dev.azure.com/your-org/My%20Project` as the example:
+
+| Key | Enter | Not |
+|---|---|---|
+| `organization` | `your-org` | the whole address, or `your-org/My Project` |
+| `projects` | `My Project`, with the space (`My%20Project` as the browser shows it also works) | `project-a/...` or a repository name |
+| `base_url` (the setup page calls it Address) | leave out, or `https://dev.azure.com` | `https://dev.azure.com/your-org`: the bridge adds the organisation itself, so repeating it ends in 404. The bridge drops a repeated organisation from the address, but keep it clean |
 
 Optional keys:
 

@@ -10,6 +10,9 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Changed
 
+- **Azure DevOps address and project names**: an address that already ends in the organisation (`https://dev.azure.com/<organization>/`) no longer
+  doubles it in the request path, and a project name pasted as `My%20Project` is no longer encoded twice. Both ended in a 404 from a real
+  organisation. The setup page labels say what to enter.
 - **Azure DevOps connection test**: a 404 now says `HTTP 404` and the path that was asked for, and lists the projects the
   token can see, so a mistyped project or organisation name is easy to spot.
 - Documentation audit against 0.9.12: the setup page and data folder are now covered in the README, the Docker guide, the install guide, the Compose files, the example config and the systemd unit; the Azure DevOps agent pool status is described as done (mock answers only); the authentication stance and the open ESP setup-mode question are stated in the README; one dead link in the firmware guide removed.

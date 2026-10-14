@@ -22,6 +22,50 @@ use crate::source::{AuthRefused, Secret};
 /// Azure DevOps Services.
 pub const AZURE_DEVOPS_COM: &str = "https://dev.azure.com";
 
+/// The service address without the organisation. Pasting
+/// `https://dev.azure.com/<organization>/` into the address field would make
+/// every request go to `/<organization>/<organization>/...` and answer 404, so
+/// a first path segment equal to the organisation is dropped (any path at all
+/// on `dev.azure.com`). Other paths are kept: a proxy may serve it below one.
+pub fn clean_base_url(base_url: &str, organization: &str) -> String {
+    let Ok(mut url) = Url::parse(base_url.trim()) else {
+        return base_url.trim().to_string();
+    };
+    let first = url.path_segments().and_then(|mut s| s.next()).unwrap_or("");
+    let own_org = !first.is_empty() && first.eq_ignore_ascii_case(organization.trim());
+    if own_org || (url.host_str() == Some("dev.azure.com") && !first.is_empty()) {
+        url.set_path("");
+    }
+    url.set_query(None);
+    url.set_fragment(None);
+    url.as_str().trim_end_matches('/').to_string()
+}
+
+/// A project name as typed or pasted: `My%20Project` from a browser address
+/// becomes `My Project`, so it is not encoded a second time (`%2520`). A name
+/// without a valid `%XX` is left alone.
+pub fn plain_name(name: &str) -> String {
+    let bytes = name.trim().as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let hex = |b: u8| (b as char).to_digit(16).map(|d| d as u8);
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && let (Some(h), Some(l)) = (
+                bytes.get(i + 1).copied().and_then(hex),
+                bytes.get(i + 2).copied().and_then(hex),
+            )
+        {
+            out.push(h * 16 + l);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).unwrap_or_else(|_| name.trim().to_string())
+}
+
 /// REST API version the payload shapes were written against.
 const API_VERSION: &str = "7.1";
 
@@ -54,7 +98,8 @@ impl HttpApi {
             .context("cannot build HTTP client")?;
         Ok(Self {
             client,
-            base_url: Url::parse(base_url).context("base_url is not a valid URL")?,
+            base_url: Url::parse(&clean_base_url(base_url, organization))
+                .context("base_url is not a valid URL")?,
             organization: organization.to_string(),
             token,
         })
@@ -63,8 +108,9 @@ impl HttpApi {
     /// Recent builds of a project, newest first.
     pub async fn builds(&self, project: &str) -> Result<Vec<Build>> {
         let top = BUILDS_PAGE_SIZE.to_string();
+        let project = plain_name(project);
         let url = self.url(
-            &[project, "_apis", "build", "builds"],
+            &[&project, "_apis", "build", "builds"],
             &[("queryOrder", "queueTimeDescending"), ("$top", &top)],
         )?;
         let builds: List<Build> = self.get_json(url).await.context("builds")?;
@@ -74,7 +120,11 @@ impl HttpApi {
     /// The stages, jobs and tasks of one build.
     pub async fn timeline(&self, project: &str, build_id: u64) -> Result<Vec<Record>> {
         let id = build_id.to_string();
-        let url = self.url(&[project, "_apis", "build", "builds", &id, "timeline"], &[])?;
+        let project = plain_name(project);
+        let url = self.url(
+            &[&project, "_apis", "build", "builds", &id, "timeline"],
+            &[],
+        )?;
         let timeline: Timeline = self.get_json(url).await.context("build timeline")?;
         Ok(timeline.records)
     }
@@ -82,8 +132,9 @@ impl HttpApi {
     /// Open (active) pull requests of every repository in a project.
     pub async fn pulls(&self, project: &str) -> Result<Vec<PullRequest>> {
         let top = PULLS_PAGE_SIZE.to_string();
+        let project = plain_name(project);
         let url = self.url(
-            &[project, "_apis", "git", "pullrequests"],
+            &[&project, "_apis", "git", "pullrequests"],
             &[("searchCriteria.status", "active"), ("$top", &top)],
         )?;
         let pulls: List<PullRequest> = self.get_json(url).await.context("open pulls")?;
@@ -395,6 +446,53 @@ pub(crate) mod tests {
                 "/your-org/My%20Project/_apis/git/pullrequests",
                 "/your-org/My%20Project/_apis/build/builds/7/timeline",
             ]
+        );
+    }
+
+    /// A name pasted from a browser address (`My%20Project`) must not be
+    /// encoded twice, and an address that already holds the organisation
+    /// must not repeat it. Both gave a 404 from a real organisation.
+    #[tokio::test]
+    async fn pasted_names_and_addresses_do_not_double_up() {
+        assert_eq!(plain_name("My%20Project"), "My Project");
+        assert_eq!(plain_name("My Project"), "My Project");
+        assert_eq!(plain_name("100%"), "100%");
+        assert_eq!(plain_name("a%zzb%2"), "a%zzb%2");
+        assert_eq!(plain_name("caf%C3%A9"), "café");
+
+        assert_eq!(
+            clean_base_url("https://dev.azure.com/your-org/", "your-org"),
+            "https://dev.azure.com"
+        );
+        assert_eq!(
+            clean_base_url("https://dev.azure.com/Your-Org/My%20Project", "your-org"),
+            "https://dev.azure.com"
+        );
+        assert_eq!(
+            clean_base_url("https://dev.azure.com/", "your-org"),
+            "https://dev.azure.com"
+        );
+        // A proxy path that is not the organisation stays, on another host.
+        assert_eq!(
+            clean_base_url("https://proxy.example/azdo/", "your-org"),
+            "https://proxy.example/azdo"
+        );
+
+        let paths = Arc::new(Mutex::new(Vec::new()));
+        let seen = paths.clone();
+        let app = Router::new().fallback(move |uri: axum::http::Uri| {
+            let seen = seen.clone();
+            async move {
+                seen.lock().unwrap().push(uri.path().to_string());
+                ([("content-type", "application/json")], r#"{"value":[]}"#)
+            }
+        });
+        let base = serve(app).await;
+        let api = HttpApi::new(&format!("{base}/your-org/"), "your-org", Secret::new("t")).unwrap();
+        api.builds("My%20Project").await.unwrap();
+        assert_eq!(
+            *paths.lock().unwrap(),
+            ["/your-org/My%20Project/_apis/build/builds"]
         );
     }
 
