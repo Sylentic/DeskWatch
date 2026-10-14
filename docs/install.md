@@ -35,6 +35,11 @@ Contents: [1. Get the binary](#1-get-the-binary) · [2. Install it](#2-install-t
 [8. Try it without hardware](#8-try-it-without-hardware) · [9. Update, roll back, remove](#9-update-roll-back-remove) ·
 [10. Troubleshooting](#10-troubleshooting)
 
+Prefer a browser to a text editor for the sources? The optional [setup page](setup-page.md) can add, test and remove
+sources and tokens (and change the MQTT broker) once you give the bridge a writable [data folder](data-dir.md); on
+systemd that means `StateDirectory=deskwatch` in the unit and `[data] dir = "/var/lib/deskwatch"` plus
+`[setup] enabled = true` in `bridge.toml`. It has no login: trusted network only.
+
 ## 1. Get the binary
 
 ### Option A: download a release

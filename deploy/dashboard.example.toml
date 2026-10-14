@@ -26,6 +26,15 @@ enabled = true
 #   openssl rand -hex 24 > credentials/kiosk-token ; chmod 644 credentials/kiosk-token
 # token_file = "kiosk-token"
 
+# Optional: manage sources and tokens from the browser (docs/setup-page.md). Needs
+# the writable data volume in docker-compose.dashboard.yml (docs/data-dir.md). The
+# page has NO login: trusted network only, never exposed to the internet.
+# [data]
+# dir = "/var/lib/deskwatch"
+# [setup]
+# enabled = true
+# allow_restart = true          # "Restart now" button; Compose restarts the container
+
 # Add one source block per service you want on the page; more examples are in
 # bridge/config.example.toml. The GitHub block needs a read-only fine-grained
 # token in credentials/github-personal.

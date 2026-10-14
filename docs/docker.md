@@ -123,6 +123,23 @@ the sources you use (GitHub, Azure DevOps, Gitea, Prometheus) exactly as in
 secrets in `dashboard/credentials/`, section 4 explains how. Only a Gitea source needs an incoming connection
 (its webhook, section 7); the others only make outgoing requests.
 
+### Managing sources in the browser (optional)
+
+The [setup page](setup-page.md) at `/setup` shows and tests every source and, with a writable data folder, adds, edits
+and removes sources and tokens without editing files. It is off by default. To use it with the dashboard Compose
+file, create the folder owned by the container user (uid 10001), uncomment the `data` volume and the
+`DESKWATCH_DATA_DIR` variable in `deploy/docker-compose.dashboard.yml`, and add `[setup] enabled = true` to
+`bridge.toml`:
+
+```sh
+mkdir -p dashboard/data && sudo chown 10001 dashboard/data
+```
+
+The page has no login, so it shares the rule of the dashboard: home network only, never published to the internet or
+through a proxy without its own login. `[setup] allow_restart = true` adds a "Restart now" button, which works because
+the Compose files use `restart: unless-stopped`. Back up `dashboard/data` with the rest of your config. Details:
+[data-dir.md](data-dir.md).
+
 ### Protecting the page
 
 The page is read-only (nothing on it can change anything), but it shows PR titles, pipeline names, host stats and

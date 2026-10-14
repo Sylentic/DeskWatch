@@ -41,7 +41,8 @@ services:
     ports:
       - "8787:8787"
 
-    # Hardening: the bridge writes nothing to disk and needs no privileges.
+    # Hardening: the root filesystem is read-only and the bridge needs no privileges
+    # (it writes only to the optional data volume above).
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]

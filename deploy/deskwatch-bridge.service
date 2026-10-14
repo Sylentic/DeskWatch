@@ -39,6 +39,9 @@ RestartSec=5
 # reads /proc and /sys, talks to the broker and its sources, and listens for
 # webhooks (port set by http.listen, 8787 by default).
 DynamicUser=yes
+# For the optional data folder and setup page (docs/data-dir.md, docs/setup-page.md):
+# uncomment, and set `[data] dir = "/var/lib/deskwatch"` in bridge.toml.
+# StateDirectory=deskwatch
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
