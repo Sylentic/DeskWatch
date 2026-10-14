@@ -8,6 +8,11 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+## [0.9.10]
+
+The Azure DevOps release: agent pools, waiting jobs and non-approval checks. All three are built against mock
+responses only, not yet checked against a real organisation.
+
 ### Added
 
 - **Azure DevOps checks other than approvals** (branch control, business hours, invoked functions): a stage held by a
@@ -291,7 +296,8 @@ not (see the README, "What is not in 0.9").
   are Linux x86_64; build from source for other CPUs.
 - Gitea webhooks are plain HTTP unless you put a reverse proxy in front of the bridge.
 
-[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.9...HEAD
+[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.10...HEAD
+[0.9.10]: https://github.com/Sylentic/DeskWatch/compare/v0.9.9...v0.9.10
 [0.9.9]: https://github.com/Sylentic/DeskWatch/compare/v0.9.8...v0.9.9
 [0.9.8]: https://github.com/Sylentic/DeskWatch/compare/v0.9.7...v0.9.8
 [0.9.7]: https://github.com/Sylentic/DeskWatch/compare/v0.9.6...v0.9.7
