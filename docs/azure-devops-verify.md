@@ -75,8 +75,8 @@ get "https://dev.azure.com/$ORG/$PROJECT/_apis/build/builds/$BUILD/timeline?api-
 
 ## 3. Run the bridge
 
-Add the block from [azure-devops.md](azure-devops.md), start the bridge with debug logging (`RUST_LOG=debug`), and
-open the kiosk. Compare what it shows with what Azure DevOps shows:
+Add the block from [azure-devops.md](azure-devops.md), start the bridge with `RUST_LOG=deskwatch_bridge::azure_devops=debug` (on Linux add
+`Environment=RUST_LOG=...` with `systemctl edit deskwatch-bridge`), and open the kiosk. Compare what it shows with what Azure DevOps shows:
 
 | You do | You should see |
 |---|---|
