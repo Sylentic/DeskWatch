@@ -131,7 +131,7 @@ as a QR code.
 ## TLS spike
 
 A separate binary, `tls-spike`, answers one question before the project commits to the standalone-ESP option
-([docs/deployment-options.md](../docs/deployment-options.md) in the project files, if you have them): can this
+(the deployment options write-up lives in the project files, not in this repository): can this
 ESP32-S3 make an HTTPS request with **full certificate verification**, how long does it take, and how much RAM and
 flash does it need? It needs **no screen, no button and no MQTT broker**, only the board, a USB cable and Wi-Fi.
 

@@ -179,7 +179,7 @@ by label) is still left to the ESP panel step.
 
 1. **This PR:** the `Runner` fact and the kiosk widget, Gitea as the first source, config, docs, tests.
 2. **GitHub runners (done):** its own PR, because it brings a second token scope and its own API tests.
-3. **Azure DevOps pools (done):** its own PR, mocks only. Queued jobs per pool follow once the shapes are checked.
+3. **Azure DevOps pools (done):** its own PR, mocks only. Queued jobs per pool are in too; the shapes still need checking against a real organisation.
 4. **ESP panel:** the `runners` page, the offline count in the `warn` badge and "waiting for runner" on the
    pipelines page, together with one amendment of the MQTT schema.
 

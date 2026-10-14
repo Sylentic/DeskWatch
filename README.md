@@ -10,7 +10,7 @@ Enterprise, Azure DevOps, Prometheus, Home Assistant, the machine's own stats) a
 |---|---|---|
 | **1. Mini display** (ESP32-S3) | A 4" touch screen on your desk that rotates through stats, PRs and pipelines, switches to live progress when a job runs, goes red on a failure and clears with a button | Drawing code done and checked in a desktop simulator. The firmware exists but has **never run on a board**; waiting on the screen. 1.0 is reserved for the first release that works on the real display. [firmware/](firmware/README.md) |
 | **2. Raspberry Pi with a full-size screen** | A dashboard page in a full-screen browser on a monitor or TV, up to 4K, everything at once, no rotation | Page built and tested in Chromium on a PC. **Not yet run on a Pi.** [docs/kiosk.md](docs/kiosk.md), [docs/raspberry-pi.md](docs/raspberry-pi.md) |
-| **3. Docker dashboard** | The same dashboard page, served by a container on your homelab; open it from any browser | Works: builds and serves the page with demo data, the token, and a health check were run in a container. Not yet run against real sources on a homelab. The image is published to ghcr.io with each release. [docs/docker.md](docs/docker.md) |
+| **3. Docker dashboard** | The same dashboard page, served by a container on your homelab; open it from any browser | Works: builds and serves the page with demo data, the optional token, and a health check were run in a container. Not yet run against real sources on a homelab. The image is published to ghcr.io with each release. [docs/docker.md](docs/docker.md) |
 
 Ways 2 and 3 are the same page served by the same bridge and need **no MQTT broker**; only the ESP panel does.
 
@@ -57,6 +57,8 @@ The mini display's UI in the desktop simulator:
 | Windows x86_64 release zip (bridge and simulator), install and test guide | Done, see [docs/windows.md](docs/windows.md) |
 | Kiosk dashboard for big screens (browser page served by the bridge, autostart example for a Raspberry Pi) | Done in 0.9.5, not yet run on a Pi: [docs/kiosk.md](docs/kiosk.md) |
 | Kiosk extras: `runners` widget (Gitea and GitHub self-hosted runners, [docs/runners.md](docs/runners.md)), day/night theme, per-widget source and repo filters, OLED pixel shift, `trusted_networks` (since deprecated) | Done in 0.9.9, run in headless Chromium with demo data: [docs/kiosk.md](docs/kiosk.md) |
+| Setup page (`/setup`, off by default, opt in with `[setup] enabled = true`): see, test, add, edit and remove sources and tokens, change the MQTT broker, live source reload, optional restart button. No login, trusted network only. Needs a writable data folder to change anything | Done in 0.9.11 and 0.9.12, built against mock servers and a fake broker only: [docs/setup-page.md](docs/setup-page.md), [docs/data-dir.md](docs/data-dir.md) |
+| Azure DevOps extras: self-hosted agent pools and queued jobs on the `runners` widget, "Check pending" for non-approval checks | Done in 0.9.10, against mock answers only; [docs/azure-devops-verify.md](docs/azure-devops-verify.md) is the checklist for a real organisation |
 | Docker dashboard (no broker needed: `[mqtt] enabled = false`, Compose files, health check) | Done in 0.9.5, run in a container with demo data: [docs/docker.md](docs/docker.md) |
 
 ## What is not in 0.9
@@ -64,8 +66,13 @@ The mini display's UI in the desktop simulator:
 - **Working firmware.** A first firmware crate exists in [`firmware/`](firmware/README.md) (Wi-Fi, MQTT, display code, all untested on hardware) next to a TLS spike binary that measures HTTPS on the bare board (also untested); the real panel waits for the display to arrive. 1.0 is reserved for the first release with working firmware on the real screen. Until then the simulator draws exactly what
   the panel will, and the schema is the contract the firmware will implement. Over-the-air updates come last.
 - **Runner and agent pool status on the ESP panel.** Gitea runners and GitHub self-hosted runners show on the kiosk
-  dashboard (`runners` widget, [docs/runners.md](docs/runners.md)). Azure DevOps agent pools follow, then the ESP
-  panel page and badge.
+  dashboard (`runners` widget, [docs/runners.md](docs/runners.md)). Azure DevOps agent pools and the jobs waiting
+  per pool show there too (mock answers only, not yet checked against a real organisation). The ESP panel page and badge
+  follow.
+- **Authentication.** Neither the dashboard nor the setup page asks for a login by default; both are for a trusted
+  network and must not be exposed to the internet or published through a proxy or tunnel without its own login. The
+  older `[kiosk] token_file` and `[setup] token_file` still work but are deprecated (see the changelog). How the ESP
+  panel's own setup mode (step 8 of the setup plan) is protected is an open point for when the screen exists.
 - **TLS on the webhook listener.** Gitea talks plain HTTP to the bridge; put a reverse proxy in front if the path
   crosses an untrusted network.
 - **Release binaries for macOS and 32-bit ARM.** Release binaries are x86_64 for Linux and Windows, and aarch64 for
