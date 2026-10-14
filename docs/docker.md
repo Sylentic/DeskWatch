@@ -135,6 +135,10 @@ file, create the folder owned by the container user (uid 10001), uncomment the `
 mkdir -p dashboard/data && sudo chown 10001 dashboard/data
 ```
 
+A named volume (`data:/var/lib/deskwatch` plus a top-level `volumes: { data: }`) needs no `chown` from 0.9.14 on, and is
+the better choice when a stack manager (Komodo, Portainer) deploys the Compose file from git, because a relative
+`./data` would then sit inside the manager's checkout. See [data-dir.md](data-dir.md#docker).
+
 The page has no login, so it shares the rule of the dashboard: home network only, never published to the internet or
 through a proxy without its own login. `[setup] allow_restart = true` adds a "Restart now" button, which works because
 the Compose files use `restart: unless-stopped`. Back up `dashboard/data` with the rest of your config. Details:

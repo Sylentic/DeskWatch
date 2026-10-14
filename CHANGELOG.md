@@ -8,6 +8,14 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Changed
+
+- **Docker: a named volume now works for the data folder.** The image contains an empty `/var/lib/deskwatch` owned by
+  uid 10001, so a new named volume mounted there is writable for the bridge and the setup page can save without a
+  manual `chown`. `docs/data-dir.md` and `docs/docker.md` show the named volume next to the bind mount and explain why
+  a relative path is a bad idea under Komodo or Portainer. A named volume created earlier is still root-owned (one-off
+  fix in `docs/data-dir.md`).
+
 ## [0.9.13]
 
 ### Added
