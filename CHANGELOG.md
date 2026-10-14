@@ -10,7 +10,8 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Changed
 
-- Kiosk default layout: Running now is now the large panel (2 by 2, top right) and Pipelines the smaller one below it (2 wide, bottom right), instead of the Pipelines-first order of 0.9.13 (PR 69). Your own `[[kiosk.panel]]` order is untouched.
+- Kiosk default layout: Running now is now the large panel (2 by 2, top right) and Pipelines the smaller one below it (2 wide, bottom right; it shows at least the 3 latest runs), instead of the Pipelines-first order of 0.9.13 (PR 69). Your own `[[kiosk.panel]]` order is untouched.
+- Kiosk Pipelines panel: the latest run is at the top. Runs are listed newest first across Gitea, GitHub and Azure DevOps instead of failed and running ones first; the MQTT pipelines page is unchanged.
 - **Docker: a named volume now works for the data folder.** The image contains an empty `/var/lib/deskwatch` owned by
   uid 10001, so a new named volume mounted there is writable for the bridge and the setup page can save without a
   manual `chown`. `docs/data-dir.md` and `docs/docker.md` show the named volume next to the bind mount and explain why

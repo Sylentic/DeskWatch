@@ -236,9 +236,13 @@ pub fn snapshot(composer: &Composer, screen: &Screen, badges: &Badges, layout: &
         })
         .collect();
 
-    let runs: Vec<Value> = composer
-        .ci
-        .runs()
+    // Newest run first, whatever the source or status, so the top of the
+    // Pipelines panel is the latest activity. The sort is stable: runs from
+    // the same moment keep the order of `ci.runs()` (failed and running
+    // first). A running run counts from its start, a finished one from its end.
+    let mut ordered = composer.ci.runs();
+    ordered.sort_by_key(|(_, run, _)| std::cmp::Reverse(run.finished.unwrap_or(run.started)));
+    let runs: Vec<Value> = ordered
         .into_iter()
         .map(|(key, run, updated)| {
             json!({
