@@ -8,6 +8,8 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+## [0.9.13]
+
 ### Added
 
 - **A "Setup" link in the dashboard header** that opens `/setup`, shown only when the setup page is on
@@ -381,7 +383,8 @@ not (see the README, "What is not in 0.9").
   are Linux x86_64; build from source for other CPUs.
 - Gitea webhooks are plain HTTP unless you put a reverse proxy in front of the bridge.
 
-[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.12...HEAD
+[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.13...HEAD
+[0.9.13]: https://github.com/Sylentic/DeskWatch/compare/v0.9.12...v0.9.13
 [0.9.12]: https://github.com/Sylentic/DeskWatch/compare/v0.9.11...v0.9.12
 [0.9.11]: https://github.com/Sylentic/DeskWatch/compare/v0.9.10...v0.9.11
 [0.9.10]: https://github.com/Sylentic/DeskWatch/compare/v0.9.9...v0.9.10
