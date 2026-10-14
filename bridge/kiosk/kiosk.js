@@ -381,6 +381,7 @@
     });
 
     var layout = snap.layout || { columns: 4, rows: 3, panels: [] };
+    $('setup-link').hidden = !layout.setup;
     var grid = $('grid');
     grid.style.setProperty('--cols', layout.columns);
     grid.style.setProperty('--rows', layout.rows);

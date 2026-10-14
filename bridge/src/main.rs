@@ -196,7 +196,7 @@ async fn main() -> Result<()> {
                 config.kiosk.trusted_networks.join(", ")
             );
         }
-        let built = Kiosk::new(&config.kiosk, token);
+        let built = Kiosk::new(&config.kiosk, token).with_setup_link(config.setup.is_on());
         hooks.add("/", built.router());
         kiosk = Some(built);
     }
@@ -205,7 +205,7 @@ async fn main() -> Result<()> {
     let mqtt_link = health::MqttLink::default();
     // The setup page (docs/setup-page.md): off unless it has its own token.
     let mut setup = None;
-    if config.setup.enabled || config.setup.token_file.is_some() {
+    if config.setup.is_on() {
         let built = match &config.setup.token_file {
             Some(file) => {
                 let token = source::load_secret(file).context("setup.token_file")?;

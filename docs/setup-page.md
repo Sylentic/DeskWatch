@@ -18,6 +18,9 @@ the internet**, and do not publish it through a reverse proxy or tunnel unless t
 shows a secret (only whether a credential exists), token fields are write-only, and a page from another website cannot
 make changes in your browser (the `Origin` check, below).
 
+When the dashboard is on too, it shows a small **Setup** link in its header that opens this page, and this page has a
+**Dashboard** link back.
+
 ## What it shows, and what it never shows
 
 - Per source: type, address, repositories or projects, whether it comes from `bridge.toml` or the data folder

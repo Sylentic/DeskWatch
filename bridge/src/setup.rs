@@ -269,6 +269,8 @@ async fn status(State(shared): State<Arc<Shared>>, headers: HeaderMap) -> Respon
         }
     }
     out["can_edit"] = json!(can_edit);
+    // The dashboard is served too, so the page can link back to it.
+    out["kiosk"] = json!(shared.config.kiosk.enabled);
     out["restart_needed"] = json!(shared.changed.load(Ordering::Relaxed));
     out["can_restart"] = json!(shared.allow_restart);
     out["mqtt"]["editable"] = json!(can_edit);

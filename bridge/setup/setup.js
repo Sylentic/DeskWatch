@@ -327,6 +327,7 @@
   function render(d) {
     last = d;
     document.getElementById('build').textContent = 'version ' + d.build;
+    document.getElementById('dashboard-link').hidden = !d.kiosk;
     app.textContent = '';
     var info = el('section', 'card');
     info.appendChild(el('h2', null, 'Bridge'));

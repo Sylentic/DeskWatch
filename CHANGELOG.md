@@ -8,6 +8,11 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Added
+
+- **A "Setup" link in the dashboard header** that opens `/setup`, shown only when the setup page is on
+  (`[setup] enabled = true`), so a wall screen without it stays clean. The setup page links back with "Dashboard".
+
 ### Changed
 
 - Documentation audit against 0.9.12: the setup page and data folder are now covered in the README, the Docker guide, the install guide, the Compose files, the example config and the systemd unit; the Azure DevOps agent pool status is described as done (mock answers only); the authentication stance and the open ESP setup-mode question are stated in the README; one dead link in the firmware guide removed.
