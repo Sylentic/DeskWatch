@@ -19,3 +19,5 @@ are made up. Nothing here comes from a real organisation.
 - `jobrequests_12.json`, `jobrequests_13.json`: `GET _apis/distributedtask/pools/{id}/jobrequests?completedRequestCount=0`.
   Pool 12 has one running job (has `assignTime`) and two waiting ones (neither `assignTime` nor `finishTime`); pool 13
   is empty. **Hand-written from the documented shape.**
+- `timeline_check.json`: the approval timeline with the approval swapped for a `Checkpoint.ExtendedCheck` still in
+  progress (a "business hours" check). **The record type names for non-approval checks are an assumption.**
