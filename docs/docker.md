@@ -28,8 +28,8 @@ docker build -t deskwatch-bridge .
 docker run --rm -p 8787:8787 deskwatch-bridge --demo --kiosk --no-mqtt
 ```
 
-(The log warns that the page is "open to the network without kiosk.token_file". That is expected for the demo: the
-Compose file publishes the port on `127.0.0.1` only. Section 3 covers the token for a real setup.)
+(The log may warn that the page "has no login". That is expected for the demo: the Compose file publishes the port on
+`127.0.0.1` only. Section 3 covers who can see the page in a real setup.)
 
 Contents: [1. Build the image](#1-build-the-image) · [2. Try the demo](#2-try-the-demo) ·
 [3. The dashboard on your homelab](#3-the-dashboard-on-your-homelab) ·
@@ -93,8 +93,6 @@ files: [`deploy/docker-compose.dashboard.yml`](../deploy/docker-compose.dashboar
 git clone https://github.com/Sylentic/DeskWatch.git && cd DeskWatch
 mkdir -p dashboard/credentials
 cp deploy/dashboard.example.toml dashboard/bridge.toml          # edit: display_name, sources
-openssl rand -hex 24 > dashboard/credentials/kiosk-token        # the page token
-chmod 644 dashboard/credentials/kiosk-token                     # readable by the container user
 # one file per source secret, for example a read-only GitHub token (see section 4 for the file rules):
 #   (umask 077; printf %s 'THE-TOKEN' > dashboard/credentials/github-personal) && sudo chown 10001 dashboard/credentials/github-personal
 docker compose -f deploy/docker-compose.dashboard.yml up -d --build
@@ -107,13 +105,10 @@ point the variable at an absolute folder that holds `bridge.toml` and `credentia
 docker compose -f docker-compose.dashboard.yml up -d`, or a line in a `.env` file next to the Compose file) and use the
 published image instead of `build:`, see section 10.
 
-The token here is the dashboard access token: the text in the `kiosk-token` file you just created (the file named by
-`token_file` under `[kiosk]`). It is not a Gitea, GitHub or Azure DevOps token.
-
-Then open `http://<docker host>:8787/`. The page asks for the token once; after that the browser keeps a login cookie
-(30 days by default, `session_days` under `[kiosk]`), so new tabs and browser restarts need nothing and the token never
-appears in an address. The Raspberry Pi kiosk browser keeps its cookie in its profile, so the token is entered once on
-first boot ([kiosk.md](kiosk.md#4-autostart-on-a-raspberry-pi)). Changing the token file logs everybody out.
+Then open `http://<docker host>:8787/`. There is no login by default, so it works at once from any browser on your
+network, and a Raspberry Pi kiosk needs nothing typed on first boot. **Keep it on your home network:** do not forward
+the port from your router, and do not publish it through a tunnel or reverse proxy without a login (see "Protecting
+the page" below). The bridge logs one warning at startup that the page has no login.
 
 **What the config does.** `[mqtt] enabled = false` makes the bridge skip the broker completely: no connection, no
 warnings every few seconds. It keeps working without one; the only things that need MQTT are the ESP panel, its
@@ -131,9 +126,13 @@ secrets in `dashboard/credentials/`, section 4 explains how. Only a Gitea source
 ### Protecting the page
 
 The page is read-only (nothing on it can change anything), but it shows PR titles, pipeline names, host stats and
-alert text. Choose one:
+alert text. By default there is no login, which is fine on a home network and is why a new install just works. Do
+not expose the port to the internet. If other people can reach your network, or you open the page beyond it, choose
+one of these:
 
-1. **A token (the example's default).** `token_file` makes the data routes answer 401 without a login. The page
+1. **A token (optional).** Create the file (`openssl rand -hex 24 > dashboard/credentials/kiosk-token`, `chmod 644`
+   it) and set `token_file = "kiosk-token"` under `[kiosk]`. It is the dashboard access token, not a Gitea, GitHub or
+   Azure DevOps token. `token_file` makes the data routes answer 401 without a login. The page
    file itself loads without it, but holds no data. The page asks for the token once and trades it for a session
    cookie (`HttpOnly`, `SameSite=Strict`, `Secure` when a proxy says `X-Forwarded-Proto: https`), so the token is not
    in the address, the history or an access log. Wrong tokens are slowed down and, after five in a minute, refused
@@ -141,15 +140,12 @@ alert text. Choose one:
    are not affected). The live WebSocket refuses a request whose `Origin` is another site. Scripts use
    `Authorization: Bearer <token>`. The old `?token=` address still works but is deprecated and logs a warning. Over
    plain HTTP it keeps casual visitors on your LAN out; it does not stop someone who can watch your network traffic.
-   **No token from your own network:** `trusted_networks = ["192.168.0.0/16"]` under `[kiosk]` skips the token for
-   clients in that range ([kiosk.md](kiosk.md#protecting-the-page) explains how to check what the bridge sees). In
-   Docker the bridge often does **not** see the real client: with Docker Desktop, rootless Docker, a reverse
-   proxy in front, or a connection from the Docker host itself, the peer is a `172.x.x.x` gateway address, and a
-   range that includes it would open the page to everyone behind that gateway. Test with
-   `RUST_LOG=deskwatch_bridge::kiosk=debug` and read the logged peer address before you rely on it.
+   `trusted_networks` (skip the token for a network range) is deprecated: it still works and logs a warning, but in
+   Docker the bridge often does not see the real client, so it cannot be relied on. Leave `token_file` out instead if
+   you do not want a login.
 2. **A reverse proxy.** Publish the port to the host only (`"127.0.0.1:8787:8787"` in the Compose file) and let
    your proxy (Caddy, Traefik, nginx) terminate TLS and do the access control (basic auth, or your SSO). Then the
-   token is optional, but keeping both costs nothing. Make the proxy pass WebSocket upgrades on `/api/kiosk/ws`;
+   token is optional, but keeping both costs nothing. Without a proxy login, do not publish the port to the internet. Make the proxy pass WebSocket upgrades on `/api/kiosk/ws`;
    without them the page falls back to polling `/api/kiosk` and still works, only slower to update.
 3. **Local only.** Publish `"127.0.0.1:8787:8787"` and open the page on the Docker host itself (a Pi with a screen
    running the container).

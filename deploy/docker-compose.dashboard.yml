@@ -5,10 +5,9 @@
 #   git clone https://github.com/Sylentic/DeskWatch.git && cd DeskWatch
 #   mkdir -p dashboard/credentials
 #   cp deploy/dashboard.example.toml dashboard/bridge.toml        # then edit it
-#   openssl rand -hex 24 > dashboard/credentials/kiosk-token      # the dashboard access token (not a CI token)
-#   chmod 644 dashboard/credentials/kiosk-token                   # readable by uid 10001
 #   docker compose -f deploy/docker-compose.dashboard.yml up -d --build
-#   # then open http://<docker host>:8787/ and enter the token once
+#   # then open http://<docker host>:8787/ (no login by default; docs/docker.md,
+#   # "Protecting the page", for the optional token)
 #
 # The config and secrets come from ${DESKWATCH_CONFIG_DIR}, which defaults to
 # ../dashboard (next to this file, as in the steps above). To use this file from
@@ -34,9 +33,11 @@ services:
       # uncomment this line and the DESKWATCH_DATA_DIR variable below.
       # - ${DESKWATCH_CONFIG_DIR:-../dashboard}/data:/var/lib/deskwatch
 
-    # The page. "8787:8787" is reachable from your whole network, so keep
-    # `token_file` set. Behind a reverse proxy on the same host, publish
-    # "127.0.0.1:8787:8787" instead and let only the proxy reach it.
+    # The page. "8787:8787" is reachable from your whole network, which is fine
+    # at home. Never forward this port from your router or publish it through a
+    # tunnel without a login (`token_file`, or the proxy's own). Behind a reverse
+    # proxy on the same host, publish "127.0.0.1:8787:8787" instead and let only
+    # the proxy reach it.
     ports:
       - "8787:8787"
 

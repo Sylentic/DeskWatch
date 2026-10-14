@@ -251,15 +251,15 @@ pub struct KioskConfig {
     /// Grid size. Every widget takes `span` cells of it.
     pub columns: u8,
     pub rows: u8,
-    /// Credential holding a token that the data endpoints require. The page
-    /// asks for it once and keeps a login cookie (`session_days`). Set it
-    /// whenever `http.listen` is reachable from other machines. Changing the
-    /// token logs everybody out.
+    /// Optional. Without it the page needs no login, which is fine on a home
+    /// network (never expose the port to the internet). With it the data
+    /// endpoints require this token; the page asks for it once and keeps a
+    /// login cookie (`session_days`). Changing the token logs everybody out.
     pub token_file: Option<String>,
-    /// Networks (`192.168.0.0/16`, `fd00::/8`, a single address) whose
-    /// clients need no token. Judged by the TCP peer address only, so behind
-    /// a reverse proxy or Docker port mapping read docs/kiosk.md first.
-    /// Empty (the default) trusts nobody.
+    /// Deprecated, still honoured (the bridge warns at startup). Networks
+    /// (`192.168.0.0/16`, `fd00::/8`, a single address) whose clients need no
+    /// token. Judged by the TCP peer address only, which behind a reverse
+    /// proxy or Docker is not the real client. Only matters with `token_file`.
     pub trusted_networks: Vec<String>,
     /// How many days a login stays valid. A browser logs in once with the
     /// token (`POST /api/login`) and keeps a cookie for this long.
@@ -1208,7 +1208,7 @@ mod tests {
             Config::from_toml(include_str!("../../deploy/dashboard.example.toml")).unwrap();
         assert!(!config.mqtt.enabled);
         assert!(config.kiosk.enabled);
-        assert_eq!(config.kiosk.token_file.as_deref(), Some("kiosk-token"));
+        assert!(config.kiosk.token_file.is_none());
         assert!(config.source.gitea.is_empty());
     }
 

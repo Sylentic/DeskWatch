@@ -8,6 +8,20 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Changed
+
+- **The dashboard needs no login by default.** `[kiosk] token_file` is optional again for the Docker quick-start: the
+  dashboard Compose file and `dashboard.example.toml` no longer create or require a token, so a new install opens at
+  once and a Raspberry Pi kiosk needs nothing typed. The bridge logs one clear warning when the page has no login and
+  listens on the network: keep it on your home network, never expose it to the internet or publish it through a proxy
+  or tunnel without a login. `token_file` and the cookie login stay for anyone who wants them (nothing about them
+  changed). The setup page is unaffected: it still needs its own token and still writes secrets only behind it.
+
+### Deprecated
+
+- **`[kiosk] trusted_networks`** still works but the bridge now warns at startup and the docs advise removing it: the
+  peer address it relies on is not the real client behind Docker or a reverse proxy.
+
 ## [0.9.11]
 
 The setup release: sources, tokens and the MQTT broker can be set up in the browser instead of by hand-editing files.

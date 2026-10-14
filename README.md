@@ -21,7 +21,7 @@ git clone https://github.com/Sylentic/DeskWatch.git && cd DeskWatch
 docker compose -f deploy/docker-compose.demo.yml up --build     # first build takes a few minutes
 ```
 
-Open <http://localhost:8787/> for a dashboard with fake data. For your own data, put it on a homelab with a token and
+Open <http://localhost:8787/> for a dashboard with fake data. For your own data, put it on a homelab (no login by default, keep it off the internet) and
 real sources: [docs/docker.md](docs/docker.md#3-the-dashboard-on-your-homelab).
 
 The mini display's UI in the desktop simulator:
@@ -56,7 +56,7 @@ The mini display's UI in the desktop simulator:
 | Source: Azure DevOps Services (pipeline runs, approvals, PRs; [docs/azure-devops.md](docs/azure-devops.md)) | Done |
 | Windows x86_64 release zip (bridge and simulator), install and test guide | Done, see [docs/windows.md](docs/windows.md) |
 | Kiosk dashboard for big screens (browser page served by the bridge, autostart example for a Raspberry Pi) | Done in 0.9.5, not yet run on a Pi: [docs/kiosk.md](docs/kiosk.md) |
-| Kiosk extras: `runners` widget (Gitea and GitHub self-hosted runners, [docs/runners.md](docs/runners.md)), day/night theme, per-widget source and repo filters, OLED pixel shift, `trusted_networks` (no token from your own network) | Done in 0.9.9, run in headless Chromium with demo data: [docs/kiosk.md](docs/kiosk.md) |
+| Kiosk extras: `runners` widget (Gitea and GitHub self-hosted runners, [docs/runners.md](docs/runners.md)), day/night theme, per-widget source and repo filters, OLED pixel shift, `trusted_networks` (since deprecated) | Done in 0.9.9, run in headless Chromium with demo data: [docs/kiosk.md](docs/kiosk.md) |
 | Docker dashboard (no broker needed: `[mqtt] enabled = false`, Compose files, health check) | Done in 0.9.5, run in a container with demo data: [docs/docker.md](docs/docker.md) |
 
 ## What is not in 0.9

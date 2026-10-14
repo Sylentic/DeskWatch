@@ -182,14 +182,17 @@ async fn main() -> Result<()> {
         };
         if token.is_none() && !config.http.listen.ip().is_loopback() {
             warn!(
-                "the kiosk page is open to the network on {} without kiosk.token_file; \
-                 anyone who can reach it can read your PR titles, pipelines and host stats",
+                "the kiosk page on {} has no login: anyone who can reach this port can read your PR titles, \
+                 pipelines and host stats. That is fine on a home network. Do not expose the port to the internet, \
+                 and do not publish it through a proxy or tunnel without kiosk.token_file or a login on the proxy",
                 config.http.listen
             );
         }
         if !config.kiosk.trusted_networks.is_empty() {
-            info!(
-                "kiosk: clients in {} need no token (judged by the TCP peer address; set RUST_LOG=deskwatch_bridge::kiosk=debug to see the address each request comes from)",
+            warn!(
+                "kiosk.trusted_networks is deprecated and will be removed: it still works (clients in {} need no token, \
+                 judged by the TCP peer address, which behind Docker or a proxy is not the real client), but it only \
+                 matters when kiosk.token_file is set. Remove it, or drop token_file for a page without a login",
                 config.kiosk.trusted_networks.join(", ")
             );
         }
