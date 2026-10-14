@@ -10,6 +10,8 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Changed
 
+- **Azure DevOps connection test**: a 404 now says `HTTP 404` and the path that was asked for, and lists the projects the
+  token can see, so a mistyped project or organisation name is easy to spot.
 - Documentation audit against 0.9.12: the setup page and data folder are now covered in the README, the Docker guide, the install guide, the Compose files, the example config and the systemd unit; the Azure DevOps agent pool status is described as done (mock answers only); the authentication stance and the open ESP setup-mode question are stated in the README; one dead link in the firmware guide removed.
 
 ## [0.9.12]
@@ -45,11 +47,6 @@ The setup release: sources, tokens and the MQTT broker can be set up in the brow
 Everything here is built against mock servers and fake brokers only, not yet checked against a real GitHub, Azure
 DevOps or Mosquitto. The planned last step, a setup mode on the ESP panel itself, is **not** part of this release: it
 waits for the screen (see `docs/setup-page.md`).
-
-### Changed
-
-- **Azure DevOps connection test**: a 404 now says `HTTP 404` and the path that was asked for, and lists the projects the
-  token can see, so a mistyped project or organisation name is easy to spot.
 
 ### Added
 
