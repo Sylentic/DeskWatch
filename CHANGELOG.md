@@ -10,6 +10,10 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Changed
 
+- **Docs: running under Komodo or Portainer.** `docs/docker.md` has a new section on inline `configs: content:` (a refused
+  `read_only`, a changed config that is not noticed, secrets from stack variables), the named volume for the data folder and
+  who can reach the port.
+
 - **Docker: a named volume now works for the data folder.** The image contains an empty `/var/lib/deskwatch` owned by
   uid 10001, so a new named volume mounted there is writable for the bridge and the setup page can save without a
   manual `chown`. `docs/data-dir.md` and `docs/docker.md` show the named volume next to the bind mount and explain why

@@ -32,7 +32,7 @@ docker run --rm -p 8787:8787 deskwatch-bridge --demo --kiosk --no-mqtt
 `127.0.0.1` only. Section 3 covers who can see the page in a real setup.)
 
 Contents: [1. Build the image](#1-build-the-image) · [2. Try the demo](#2-try-the-demo) ·
-[3. The dashboard on your homelab](#3-the-dashboard-on-your-homelab) ·
+[3. The dashboard on your homelab](#3-the-dashboard-on-your-homelab) (also [Komodo and Portainer](#komodo-portainer-and-inline-configs)) ·
 [4. Config and secrets](#4-config-and-secrets) · [5. Compose for the ESP bridge](#5-compose-for-the-esp-bridge) ·
 [6. Reaching the broker](#6-reaching-the-broker) · [7. Webhooks](#7-webhooks-gitea) ·
 [8. The stats page](#8-the-stats-page-in-a-container) · [9. Health and restarts](#9-health-and-restarts) ·
@@ -143,6 +143,65 @@ The page has no login, so it shares the rule of the dashboard: home network only
 through a proxy without its own login. `[setup] allow_restart = true` adds a "Restart now" button, which works because
 the Compose files use `restart: unless-stopped`. Back up `dashboard/data` with the rest of your config. Details:
 [data-dir.md](data-dir.md).
+
+### Komodo, Portainer and inline configs
+
+Stack managers such as Komodo and Portainer can run a Compose file with the config and secrets written into it
+(`configs: ... content:`) instead of files next to it. DeskWatch works that way, with three things to know:
+
+1. **`read_only: true` can be refused.** With inline `configs: content:` mounts, Compose may stop with an error that
+   `file` is the sole supported option, so the hardened service from the examples does not start. Leave `read_only`
+   out and keep `cap_drop: [ALL]` and `no-new-privileges`; the container still runs as uid 10001 without privileges.
+2. **A changed inline config is not noticed.** When only `configs.<name>.content` changed, Compose leaves the old
+   container running. Put the same text in a label through a YAML anchor and alias, and the container is recreated on
+   every edit:
+
+   ```yaml
+   x-bridge-toml: &bridge_toml |
+     [mqtt]
+     enabled = false
+     [kiosk]
+     enabled = true
+     [http]
+     listen = "0.0.0.0:8787"
+
+   services:
+     deskwatch:
+       image: ghcr.io/sylentic/deskwatch-bridge:<version>
+       restart: unless-stopped
+       cap_drop: [ALL]
+       security_opt: ["no-new-privileges:true"]
+       ports: ["8787:8787"]
+       environment:
+         DESKWATCH_DATA_DIR: /var/lib/deskwatch
+       labels:
+         deskwatch.config: *bridge_toml     # only here to force a recreate when the text changes
+       configs:
+         - source: bridge_toml
+           target: /etc/deskwatch/bridge.toml
+       volumes:
+         - data:/var/lib/deskwatch          # named volume, see below
+
+   configs:
+     bridge_toml:
+       content: *bridge_toml
+
+   volumes:
+     data:
+   ```
+
+3. **Secrets taken from the manager's variables are not covered by that trick.** The label only follows text that is
+   in the file. If you inline a secret from a stack variable, a rotated secret does not recreate the container; stop
+   and start the stack (destroy and redeploy) after rotating one. Prefer the setup page's secret store in the data
+   folder for tokens ([setup-page.md](setup-page.md)), so a token never sits in the stack at all.
+
+**The data folder.** Use a named volume as in the example, not `./data`: under a stack manager `.` is its checkout of
+your repository, and an update can wipe or conflict with a folder inside it. A named volume is writable for the bridge
+without a `chown` from 0.9.14 on ([data-dir.md](data-dir.md#docker)).
+
+**Who can open it.** Without `[kiosk] token_file` the port has no login of its own, and neither does the setup page.
+Publish it to a trusted network only, or put it behind a proxy that asks for a login
+([Protecting the page](#protecting-the-page)). Never publish it to the internet as is.
 
 ### Protecting the page
 
