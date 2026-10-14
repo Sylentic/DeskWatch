@@ -490,9 +490,15 @@ pub(crate) mod tests {
         let base = serve(app).await;
         let api = HttpApi::new(&format!("{base}/your-org/"), "your-org", Secret::new("t")).unwrap();
         api.builds("My%20Project").await.unwrap();
+        // A bare trailing slash gives a single slash in the path, not `//`.
+        let api = HttpApi::new(&format!("{base}/"), "your-org", Secret::new("t")).unwrap();
+        api.builds("My Project").await.unwrap();
         assert_eq!(
             *paths.lock().unwrap(),
-            ["/your-org/My%20Project/_apis/build/builds"]
+            [
+                "/your-org/My%20Project/_apis/build/builds",
+                "/your-org/My%20Project/_apis/build/builds"
+            ]
         );
     }
 
