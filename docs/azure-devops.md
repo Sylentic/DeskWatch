@@ -136,6 +136,6 @@ project may take over the ESP screen).
 |---|---|
 | `warn` badge, journal says the sign-in page was returned or the request was refused | Token expired, revoked, created for a different organisation, or missing the **Build: Read** scope |
 | `warn` badge only with `pull_requests = true` | Token lacks **Code: Read**; add it or set `pull_requests = false` |
-| `warn` badge, journal says `404` | Wrong `organization` or project name (spaces are fine, the bridge encodes them) |
+| `warn` badge, journal says `404` | Wrong `organization` or project name (spaces are fine, the bridge sends them as `%20`). The test button on the setup page shows the path that was asked for and lists the projects the token can see: copy the name from there exactly |
 | Pipeline never appears | It has not run among the newest 50 builds of the project |
 | Deploy shows "running" while it waits for an approval or check | The record type is not one the bridge knows. Run with `RUST_LOG=debug`, or look at the build timeline (`.../builds/{id}/timeline`) for the `type` of the record that is `inProgress`, and open an issue |

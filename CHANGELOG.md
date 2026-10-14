@@ -46,6 +46,11 @@ Everything here is built against mock servers and fake brokers only, not yet che
 DevOps or Mosquitto. The planned last step, a setup mode on the ESP panel itself, is **not** part of this release: it
 waits for the screen (see `docs/setup-page.md`).
 
+### Changed
+
+- **Azure DevOps connection test**: a 404 now says `HTTP 404` and the path that was asked for, and lists the projects the
+  token can see, so a mistyped project or organisation name is easy to spot.
+
 ### Added
 
 - **Setup page: MQTT broker settings.** With a data folder the page changes `enabled`, `host`, `port`, `tls`, the login

@@ -90,6 +90,18 @@ impl HttpApi {
         Ok(pulls.value)
     }
 
+    /// Names of the projects the token can see, for explaining a 404.
+    pub async fn projects(&self) -> Result<Vec<String>> {
+        #[derive(serde::Deserialize, Default)]
+        #[serde(default)]
+        struct Project {
+            name: String,
+        }
+        let url = self.url(&["_apis", "projects"], &[("$top", "100")])?;
+        let projects: List<Project> = self.get_json(url).await.context("projects")?;
+        Ok(projects.value.into_iter().map(|p| p.name).collect())
+    }
+
     /// Every agent pool of the organisation (organisation level, not per
     /// project). Needs the Agent Pools (Read) scope.
     pub async fn pools(&self) -> Result<Vec<Pool>> {
@@ -356,6 +368,34 @@ pub(crate) mod tests {
         ] {
             assert_eq!(Health::from_error(&err), Health::AuthFailed);
         }
+    }
+
+    /// A project name with a space goes out as `%20`, never as a raw space,
+    /// a `+` or a double-encoded `%2520`.
+    #[tokio::test]
+    async fn project_names_with_spaces_are_percent_encoded() {
+        let paths = Arc::new(Mutex::new(Vec::new()));
+        let seen = paths.clone();
+        let app = Router::new().fallback(move |uri: axum::http::Uri| {
+            let seen = seen.clone();
+            async move {
+                seen.lock().unwrap().push(uri.path().to_string());
+                ([("content-type", "application/json")], r#"{"value":[]}"#)
+            }
+        });
+        let api = api(&serve(app).await);
+        api.builds("My Project").await.unwrap();
+        api.pulls("My Project").await.unwrap();
+        api.timeline("My Project", 7).await.unwrap();
+        let paths = paths.lock().unwrap();
+        assert_eq!(
+            *paths,
+            [
+                "/your-org/My%20Project/_apis/build/builds",
+                "/your-org/My%20Project/_apis/git/pullrequests",
+                "/your-org/My%20Project/_apis/build/builds/7/timeline",
+            ]
+        );
     }
 
     #[tokio::test]
