@@ -253,7 +253,19 @@
           '<span class="when ' + (r.status === 'offline' && !r.disabled ? 'crit-text' : '') + '">' + esc(state) + '</span>' +
           '<span class="sub">' + (labels ? esc(labels) : 'no labels') + src(r.source) + '</span></div>';
       });
-      return { title: 'Runners', count: runners.length, tag: offline ? offline + ' offline' : '', stale: ciStale() || old, body: list(rows, p.rows, '<div class="empty">No runners configured</div>') };
+      // Jobs waiting for an agent (Azure DevOps pools), busiest pool first.
+      var queued = snap.queued_jobs || [];
+      var waiting = queued.reduce(function (n, q) { return n + q.queued; }, 0);
+      queued.forEach(function (q) {
+        if (nowS() - q.updated > RUNNERS_OLD) { old = true; }
+        rows.unshift('<div class="row">' + dot('waiting') + '<span class="main">' + esc(q.pool) + '</span>' +
+          '<span class="when">' + q.queued + ' waiting</span>' +
+          '<span class="sub">for an agent' + src(q.source) + '</span></div>');
+      });
+      var tags = [];
+      if (offline) { tags.push(offline + ' offline'); }
+      if (waiting) { tags.push(waiting + ' waiting'); }
+      return { title: 'Runners', count: runners.length, tag: tags.join(', '), stale: ciStale() || old, body: list(rows, p.rows, '<div class="empty">No runners configured</div>') };
     },
 
     health: function () {

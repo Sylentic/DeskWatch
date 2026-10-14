@@ -109,7 +109,7 @@ All requests are `GET` with API version 7.1, authenticated as the token's user. 
 | `{project}/_apis/build/builds/{id}/timeline` | Stage and task progress and approvals of each build in progress; the failed task of a newly failed build |
 | `{project}/_apis/git/pullrequests` (active, newest 100) | Open PRs |
 
-With `agent_pools` set it adds one request for the pool list and one per pool every `agent_poll_s`. That is two requests per project when nothing runs. While a build runs it adds one timeline request per poll, or
+With `agent_pools` set it adds one request for the pool list and two per pool (agents and job requests) every `agent_poll_s`. That is two requests per project when nothing runs. While a build runs it adds one timeline request per poll, or
 one every `job_poll_s` for every build in progress (the kiosk's Running now widget lists them, whether or not the
 project may take over the ESP screen).
 

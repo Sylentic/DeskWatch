@@ -1,0 +1,8 @@
+{
+  "count": 3,
+  "value": [
+    { "requestId": 9001, "queueTime": "2026-10-08T18:00:00Z", "assignTime": "2026-10-08T18:00:05Z" },
+    { "requestId": 9002, "queueTime": "2026-10-08T18:01:00Z" },
+    { "requestId": 9003, "queueTime": "2026-10-08T18:01:30Z" }
+  ]
+}

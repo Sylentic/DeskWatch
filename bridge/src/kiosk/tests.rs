@@ -692,3 +692,29 @@ fn network_ranges_match_ipv4_ipv6_and_mapped_addresses() {
         assert!(Network::parse(bad).is_err(), "{bad:?} should be refused");
     }
 }
+
+#[test]
+fn queued_jobs_are_in_the_snapshot_busiest_pool_first() {
+    let mut kiosk = kiosk_with(None);
+    let mut c = composer();
+    for (pool, queued) in [("Small", 1), ("Big", 5), ("Empty", 0)] {
+        c.ci.apply(
+            Update::QueuedJobs {
+                key: format!("azure_devops:work:queue:pool:{pool}"),
+                source: "azure_devops".into(),
+                pool: pool.into(),
+                queued,
+            },
+            NOW,
+        );
+    }
+    kiosk.update(&mut c, NOW);
+    let snap = json_of(&kiosk);
+    let pools: Vec<(&str, u64)> = snap["queued_jobs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|q| (q["pool"].as_str().unwrap(), q["queued"].as_u64().unwrap()))
+        .collect();
+    assert_eq!(pools, [("Big", 5), ("Small", 1)]);
+}

@@ -146,3 +146,21 @@ pub struct Agent {
     /// Only its presence matters, so the content is not read.
     pub assigned_request: Option<serde::de::IgnoredAny>,
 }
+
+/// One item of `GET _apis/distributedtask/pools/{id}/jobrequests`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct JobRequest {
+    /// Set once an agent took the job.
+    pub assign_time: Option<String>,
+    /// Set once the job is over.
+    pub finish_time: Option<String>,
+}
+
+impl JobRequest {
+    /// Assumption, see docs/runners.md: a request nobody took and nobody
+    /// finished is waiting for an agent.
+    pub fn is_queued(&self) -> bool {
+        self.assign_time.is_none() && self.finish_time.is_none()
+    }
+}

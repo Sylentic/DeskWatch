@@ -62,6 +62,14 @@ pub enum Update {
     /// pool). Replaces what was known for `key`, so a runner that was removed
     /// disappears and an empty list clears the scope.
     Runners { key: String, runners: Vec<Runner> },
+    /// How many jobs wait for an agent in one pool (Azure DevOps). Replaces
+    /// what was known for `key`; zero clears it.
+    QueuedJobs {
+        key: String,
+        source: String,
+        pool: String,
+        queued: u32,
+    },
 }
 
 /// What a runner (Gitea runner, GitHub self-hosted runner, Azure DevOps
@@ -104,6 +112,14 @@ pub struct Runner {
 struct RunnerSet {
     runners: Vec<Runner>,
     updated: u64,
+}
+
+/// Jobs waiting for an agent in one pool, with the time it was refreshed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QueuedJobs {
+    pub source: String,
+    pub pool: String,
+    pub queued: u32,
 }
 
 /// A job that is running right now.
@@ -233,6 +249,8 @@ pub struct CiFacts {
     notices: Vec<(NoticeData, u64)>,
     /// Runners by scope key, such as `gitea:home:runners:org:my-org`.
     runners: BTreeMap<String, RunnerSet>,
+    /// Jobs waiting for an agent by pool key, with the time they were refreshed.
+    queued: BTreeMap<String, (QueuedJobs, u64)>,
 }
 
 impl CiFacts {
@@ -261,6 +279,33 @@ impl CiFacts {
             } => self.pull_opened(key, project, source, pull, notify, now),
             Update::PullClosed { key, number } => self.pull_closed(&key, number),
             Update::Notice { notice } => self.notices.push((notice, now)),
+            Update::QueuedJobs {
+                key,
+                source,
+                pool,
+                queued: 0,
+            } => {
+                let _ = (source, pool);
+                self.queued.remove(&key);
+            }
+            Update::QueuedJobs {
+                key,
+                source,
+                pool,
+                queued,
+            } => {
+                self.queued.insert(
+                    key,
+                    (
+                        QueuedJobs {
+                            source,
+                            pool,
+                            queued,
+                        },
+                        now,
+                    ),
+                );
+            }
             Update::Runners { key, runners } if runners.is_empty() => {
                 self.runners.remove(&key);
             }
@@ -416,6 +461,8 @@ impl CiFacts {
         }
         self.runners
             .retain(|_, set| now.saturating_sub(set.updated) < RUNNER_MAX_AGE_S);
+        self.queued
+            .retain(|_, (_, updated)| now.saturating_sub(*updated) < RUNNER_MAX_AGE_S);
         for (run, updated) in self.runs.values_mut() {
             // A run waiting for approval can wait for days, and a polled
             // source resends it when anything changes, so it never expires.
@@ -523,6 +570,14 @@ impl CiFacts {
         // A disabled runner is parked, so it goes last whatever it reports.
         runners.sort_by_key(|(r, _)| (r.disabled, r.status, r.name.clone()));
         runners
+    }
+
+    /// Pools with jobs waiting for an agent, with the time they were
+    /// refreshed, busiest first.
+    pub fn queued_jobs(&self) -> Vec<(&QueuedJobs, u64)> {
+        let mut pools: Vec<_> = self.queued.values().map(|(q, t)| (q, *t)).collect();
+        pools.sort_by_key(|(q, _)| (std::cmp::Reverse(q.queued), q.pool.clone()));
+        pools
     }
 
     /// Runners that should be up but are not (disabled ones do not count).
@@ -920,6 +975,30 @@ mod tests {
         assert_eq!(names, ["a-down", "b-busy", "c-idle", "z-parked"]);
         // Only the runner that should be up counts as offline.
         assert_eq!(facts.offline_runner_count(), 1);
+    }
+
+    #[test]
+    fn queued_jobs_replace_clear_and_expire() {
+        let mut facts = CiFacts::default();
+        let queue = |pool: &str, queued| Update::QueuedJobs {
+            key: format!("azure_devops:work:queue:pool:{pool}"),
+            source: "azure_devops".into(),
+            pool: pool.into(),
+            queued,
+        };
+        facts.apply(queue("a", 1), 1000);
+        facts.apply(queue("b", 4), 1000);
+        facts.apply(queue("a", 2), 1010);
+        let pools: Vec<_> = facts
+            .queued_jobs()
+            .iter()
+            .map(|(q, _)| (q.pool.as_str(), q.queued))
+            .collect();
+        assert_eq!(pools, [("b", 4), ("a", 2)], "busiest first, a replaced");
+        facts.apply(queue("b", 0), 1020);
+        assert_eq!(facts.queued_jobs().len(), 1, "zero clears");
+        facts.expire(1010 + RUNNER_MAX_AGE_S);
+        assert!(facts.queued_jobs().is_empty(), "old numbers are dropped");
     }
 
     #[test]

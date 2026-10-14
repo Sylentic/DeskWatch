@@ -16,7 +16,7 @@ use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use reqwest::{StatusCode, Url};
 use serde::de::DeserializeOwned;
 
-use super::payload::{Agent, Build, List, Pool, PullRequest, Record, Timeline};
+use super::payload::{Agent, Build, JobRequest, List, Pool, PullRequest, Record, Timeline};
 use crate::source::{AuthRefused, Secret};
 
 /// Azure DevOps Services.
@@ -107,6 +107,18 @@ impl HttpApi {
         )?;
         let agents: List<Agent> = self.get_json(url).await.context("pool agents")?;
         Ok(agents.value)
+    }
+
+    /// Job requests of one pool that are not finished. Asks for no completed
+    /// requests, so the answer stays small on a busy pool.
+    pub async fn job_requests(&self, pool_id: u64) -> Result<Vec<JobRequest>> {
+        let id = pool_id.to_string();
+        let url = self.url(
+            &["_apis", "distributedtask", "pools", &id, "jobrequests"],
+            &[("completedRequestCount", "0")],
+        )?;
+        let requests: List<JobRequest> = self.get_json(url).await.context("job requests")?;
+        Ok(requests.value)
     }
 
     /// `{base}/{organization}/{path...}?api-version=7.1&{query}`, with every
@@ -241,6 +253,21 @@ pub(crate) mod tests {
                             _ => include_str!("testdata/agents_13.json"),
                         };
                         answer(&seen, "agents", q, h, body)
+                    },
+                ),
+            )
+            .route(
+                "/your-org/_apis/distributedtask/pools/{id}/jobrequests",
+                get(
+                    |State(seen): State<Arc<Seen>>,
+                     Path(id): Path<u64>,
+                     RawQuery(q): RawQuery,
+                     h: HeaderMap| async move {
+                        let body = match id {
+                            12 => include_str!("testdata/jobrequests_12.json"),
+                            _ => include_str!("testdata/jobrequests_13.json"),
+                        };
+                        answer(&seen, "jobrequests", q, h, body)
                     },
                 ),
             )
