@@ -914,3 +914,13 @@ fn queued_jobs_are_in_the_snapshot_busiest_pool_first() {
         .collect();
     assert_eq!(pools, [("Big", 5), ("Small", 1)]);
 }
+
+#[test]
+fn setup_link_is_in_the_layout_only_when_asked() {
+    let plain = kiosk_with(None);
+    assert!(json_of(&plain)["layout"].get("setup").is_none());
+    let linked = kiosk_with(None).with_setup_link(true);
+    assert_eq!(json_of(&linked)["layout"]["setup"], true);
+    let off = kiosk_with(None).with_setup_link(false);
+    assert!(json_of(&off)["layout"].get("setup").is_none());
+}

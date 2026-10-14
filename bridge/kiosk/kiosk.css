@@ -119,7 +119,9 @@ body.idle, body.idle * { cursor: none !important; }
   padding: .7rem 1.4rem; font-size: 1.7rem; font-weight: 600;
   background: var(--alert-red);
 }
-.banner[hidden], .offline[hidden], .notice[hidden], .topbar[hidden] { display: none; }
+.banner[hidden], .offline[hidden], .notice[hidden], .topbar[hidden], .setup-link[hidden] { display: none; }
+.setup-link { color: var(--dim); font-size: 1.05rem; text-decoration: none; padding: .2rem .7rem; border: 1px solid var(--card-edge); border-radius: .4rem; opacity: .75; }
+.setup-link:hover, .setup-link:focus-visible { opacity: 1; background: var(--card); }
 .banner.critical { background: var(--alert-critical); }
 .banner.warn { background: var(--alert-amber); }
 .banner.success { background: var(--alert-green); }

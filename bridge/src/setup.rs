@@ -269,6 +269,8 @@ async fn status(State(shared): State<Arc<Shared>>, headers: HeaderMap) -> Respon
         }
     }
     out["can_edit"] = json!(can_edit);
+    // The dashboard is served too, so the page can link back to it.
+    out["kiosk"] = json!(shared.config.kiosk.enabled);
     out["restart_needed"] = json!(shared.changed.load(Ordering::Relaxed));
     out["can_restart"] = json!(shared.allow_restart);
     out["mqtt"]["editable"] = json!(can_edit);
@@ -757,7 +759,11 @@ pub fn describe(config: &Config) -> Value {
         sources.push(json!({
             "id": format!("azure_devops:{}", s.name), "kind": "azure_devops", "name": s.name,
             "origin": origin("azure_devops", &s.name),
-            "address": format!("{}/{}", s.base_url.trim_end_matches('/'), s.organization),
+            "address": format!(
+                "{}/{}",
+                crate::azure_devops::api::clean_base_url(&s.base_url, &s.organization),
+                s.organization
+            ),
             "repos": s.projects,
             "credentials": [cred("token", &s.token_file, true)],
             "fields": {

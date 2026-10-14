@@ -10,6 +10,8 @@
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; }
 header { display: flex; align-items: baseline; gap: 1rem; padding: 1rem 16px; border-bottom: 1px solid var(--line); }
+#dashboard-link { margin-left: auto; color: var(--accent); }
+#dashboard-link[hidden] { display: none; }
 h1 { font-size: 1.25rem; margin: 0; }
 h2 { font-size: 1.05rem; margin: 0 0 .5rem; }
 main { max-width: 56rem; margin: 0 auto; padding: 1rem 16px 3rem; }

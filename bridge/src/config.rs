@@ -91,6 +91,13 @@ pub struct SetupConfig {
     pub allow_restart: bool,
 }
 
+impl SetupConfig {
+    /// Is the setup page served? Also true with the deprecated `token_file`.
+    pub fn is_on(&self) -> bool {
+        self.enabled || self.token_file.is_some()
+    }
+}
+
 /// Where the bridge may keep files it writes itself.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
