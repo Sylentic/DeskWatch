@@ -100,6 +100,16 @@ impl HttpApi {
         })
     }
 
+    /// Can the token see `owner/name`? One cheap request, for the setup
+    /// page's connection test.
+    pub async fn repo(&self, repo: &str) -> Result<()> {
+        let _: serde_json::Value = self
+            .get_json(&format!("/repos/{repo}"))
+            .await
+            .context("repository")?;
+        Ok(())
+    }
+
     /// Open pull requests of `owner/name`, newest first.
     pub async fn open_pulls(&self, repo: &str) -> Result<Vec<PullRequest>> {
         let path = format!("/repos/{repo}/pulls?state=open&per_page={PULLS_PAGE_SIZE}");

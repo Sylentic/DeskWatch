@@ -6,7 +6,10 @@
 //! - `GET /setup`, `/setup.js`, `/setup.css`: the page;
 //! - `POST /api/setup/login`: trades the setup token for a session cookie;
 //! - `GET /api/setup/status`: sources, credentials (only whether each one
-//!   exists, never its value), MQTT, the data folder and live source health.
+//!   exists, never its value), MQTT, the data folder and live source health;
+//! - `POST /api/setup/test` with `{"id": "github:main"}` or `{"id": "mqtt"}`:
+//!   tries the connection with the real credentials and reports each check
+//!   (`probe.rs`). One test at a time.
 //!
 //! The page is off unless `[setup] token_file` is set, and it has its own
 //! token, cookie and failure limit, apart from the dashboard's. Unlike the
@@ -17,6 +20,8 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use tokio::sync::Semaphore;
 
 use axum::Router;
 use axum::extract::State;
@@ -46,6 +51,10 @@ pub struct Setup {
 
 struct Shared {
     token: [u8; 32],
+    /// The config the bridge runs with, for connection tests.
+    config: Config,
+    /// One connection test at a time: each one makes real requests.
+    testing: Semaphore,
     sessions: Sessions,
     limiter: Limiter,
     /// Facts that only change with the config: built once.
@@ -61,6 +70,8 @@ impl Setup {
         Self {
             shared: Arc::new(Shared {
                 token: digest(token.expose()),
+                config: config.clone(),
+                testing: Semaphore::new(1),
                 sessions: Sessions::new("setup", token.expose(), SESSION_S),
                 limiter: Limiter::default(),
                 fixed: describe(config),
@@ -94,6 +105,7 @@ impl Setup {
             )
             .route("/api/setup/login", post(login))
             .route("/api/setup/status", get(status))
+            .route("/api/setup/test", post(test))
             .with_state(self.shared.clone())
     }
 }
@@ -152,9 +164,7 @@ async fn login(
 }
 
 async fn status(State(shared): State<Arc<Shared>>, headers: HeaderMap) -> Response {
-    let allowed = session::cookie_value(&headers, session::SETUP_COOKIE)
-        .is_some_and(|v| shared.sessions.valid(v, unix_now()));
-    if !allowed {
+    if !logged_in(&shared, &headers) {
         return (StatusCode::UNAUTHORIZED, "login required").into_response();
     }
     let health = shared
@@ -178,6 +188,65 @@ async fn status(State(shared): State<Arc<Shared>>, headers: HeaderMap) -> Respon
     );
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
+}
+
+/// The longest a connection test may take as a whole.
+const TEST_TIMEOUT: Duration = Duration::from_secs(45);
+
+async fn test(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    if !session::same_origin(&headers) {
+        return (StatusCode::FORBIDDEN, "cross-origin request refused").into_response();
+    }
+    if !logged_in(&shared, &headers) {
+        return (StatusCode::UNAUTHORIZED, "login required").into_response();
+    }
+    let id = (body.len() <= 1024)
+        .then(|| serde_json::from_slice::<Value>(&body).ok())
+        .flatten()
+        .and_then(|v| v.get("id")?.as_str().map(str::to_string));
+    let Some(id) = id else {
+        return (StatusCode::BAD_REQUEST, "expected {\"id\": \"...\"}").into_response();
+    };
+    let Ok(_permit) = shared.testing.try_acquire() else {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            "another test is still running",
+        )
+            .into_response();
+    };
+    tracing::info!(?id, "setup: connection test");
+    let run = async {
+        if id == "mqtt" {
+            Some(crate::probe::mqtt(&shared.config.mqtt).await)
+        } else {
+            crate::probe::source(&shared.config, &id).await
+        }
+    };
+    let report = match tokio::time::timeout(TEST_TIMEOUT, run).await {
+        Ok(Some(report)) => report,
+        Ok(None) => return (StatusCode::NOT_FOUND, "no such source").into_response(),
+        Err(_) => return (StatusCode::GATEWAY_TIMEOUT, "the test took too long").into_response(),
+    };
+    tracing::info!(?id, ok = report.ok, "setup: connection test done");
+    let mut response = json!({ "id": id, "ok": report.ok, "checks": report.checks })
+        .to_string()
+        .into_response();
+    let h = response.headers_mut();
+    h.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
+fn logged_in(shared: &Shared, headers: &HeaderMap) -> bool {
+    session::cookie_value(headers, session::SETUP_COOKIE)
+        .is_some_and(|v| shared.sessions.valid(v, unix_now()))
 }
 
 /// The part of the status that depends only on the config. Holds names and

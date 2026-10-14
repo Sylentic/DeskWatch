@@ -149,6 +149,50 @@ fn tls_config(config: &MqttConfig) -> Result<TlsConfiguration> {
     })
 }
 
+/// The broker password: `mqtt.password_file` if set, else the environment.
+pub fn password(config: &MqttConfig) -> Result<Option<Secret>> {
+    if let Some(file) = &config.password_file {
+        return load_secret(file).context("mqtt.password_file").map(Some);
+    }
+    Ok(std::env::var(crate::config::MQTT_PASSWORD_ENV)
+        .ok()
+        .filter(|p| !p.is_empty())
+        .map(Secret::new))
+}
+
+/// Try to connect and log in with `config`, then disconnect: the setup
+/// page's connection test. It uses its own client id (the same id would make
+/// the broker drop the bridge's live connection) and sets no Last Will (an
+/// abrupt end would otherwise mark the bridge offline). Says nothing about
+/// what the login may publish or subscribe to.
+pub async fn probe(config: &MqttConfig, password: Option<Secret>) -> Result<()> {
+    let id = format!("{}-setup-test", config.client_id);
+    let mut options = MqttOptions::new(id, &config.host, config.port);
+    options.set_keep_alive(Duration::from_secs(config.keep_alive_s));
+    if let Some(username) = &config.username {
+        let password = password.as_ref().map(Secret::expose).unwrap_or_default();
+        options.set_credentials(username, password);
+    }
+    if config.tls {
+        options.set_transport(Transport::tls_with_config(tls_config(config)?));
+    }
+    let (client, mut eventloop) = AsyncClient::new(options, 4);
+    let connected = tokio::time::timeout(Duration::from_secs(8), async {
+        loop {
+            match eventloop.poll().await {
+                Ok(Event::Incoming(Packet::ConnAck(_))) => return Ok(()),
+                Ok(_) => {}
+                Err(err) => return Err(anyhow::Error::new(err)),
+            }
+        }
+    })
+    .await;
+    let _ = client.try_disconnect();
+    // Let the DISCONNECT go out, so the broker sees a clean end.
+    let _ = tokio::time::timeout(Duration::from_millis(500), eventloop.poll()).await;
+    connected.map_err(|_| anyhow::anyhow!("no answer from the broker within 8 seconds"))?
+}
+
 impl Publisher {
     /// Publish a screen on `<prefix>/screen`, retained, with the next `seq`.
     pub async fn publish_screen(&self, mut screen: Screen) -> Result<()> {

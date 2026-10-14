@@ -1,6 +1,7 @@
-// DeskWatch setup page (read-only for now). Shows how the bridge is
-// configured. Secrets are never sent to the browser: a credential is only
-// reported as present or missing. Everything is built with textContent, so
+// DeskWatch setup page. Shows how the bridge is configured and can test a
+// connection (the bridge makes the requests, with the real credentials).
+// Secrets are never sent to the browser: a credential is only reported as
+// present or missing. Everything is built with textContent, so
 // nothing from the config can inject markup.
 (function () {
   'use strict';
@@ -8,6 +9,9 @@
   var app = document.getElementById('app');
   var REFRESH_MS = 5000;
   var timer = null;
+  var last = null;       // latest status, so a finished test can redraw at once
+  var results = {};      // source id -> latest test report (kept across refreshes)
+  var running = {};      // source id -> true while its test runs
 
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -42,6 +46,50 @@
     return pill(s[0], s[1]);
   }
 
+  // A "Test connection" button and the result of the latest test.
+  function testBlock(id) {
+    var box = el('div', 'test');
+    var button = el('button', 'secondary', running[id] ? 'Testing…' : 'Test connection');
+    button.type = 'button';
+    button.disabled = !!running[id];
+    button.addEventListener('click', function () { runTest(id); });
+    box.appendChild(button);
+    var r = results[id];
+    if (r) {
+      var list = el('ul', 'checks');
+      list.setAttribute('aria-label', 'test result');
+      r.checks.forEach(function (c) {
+        var li = el('li');
+        li.appendChild(pill(c.ok ? 'ok' : 'failed', c.ok ? 'ok' : 'bad'));
+        li.appendChild(document.createTextNode(' ' + c.name + (c.ok && c.message === 'ok' ? '' : ': ' + c.message)));
+        list.appendChild(li);
+      });
+      if (r.error) list.appendChild(el('li', 'err', r.error));
+      box.appendChild(list);
+    }
+    return box;
+  }
+
+  function runTest(id) {
+    running[id] = true;
+    delete results[id];
+    if (last) render(last);
+    fetch('api/setup/test', {
+      method: 'POST', cache: 'no-store', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id })
+    }).then(function (r) {
+      if (r.status === 401) { loginForm(); return null; }
+      if (!r.ok) return { checks: [], error: r.status === 429 ? 'Another test is still running.' : r.status === 504 ? 'The test took too long.' : 'The test failed (HTTP ' + r.status + ').' };
+      return r.json();
+    }, function () { return { checks: [], error: 'Cannot reach the bridge.' }; })
+      .then(function (report) {
+        running[id] = false;
+        if (report) results[id] = report;
+        if (last) render(last);
+      });
+  }
+
   function sourceCard(s) {
     var card = el('section', 'card');
     var h = el('h2', null, (KIND[s.kind] || s.kind) + ': ' + s.name + ' ');
@@ -59,10 +107,12 @@
       row(dl, c.label, v);
     });
     card.appendChild(dl);
+    card.appendChild(testBlock(s.id));
     return card;
   }
 
   function render(d) {
+    last = d;
     document.getElementById('build').textContent = 'version ' + d.build;
     app.textContent = '';
     var info = el('section', 'card');
@@ -81,12 +131,13 @@
       row(dl, 'MQTT broker', 'off');
     }
     info.appendChild(dl);
+    if (m.enabled) info.appendChild(testBlock('mqtt'));
     app.appendChild(info);
 
     app.appendChild(el('h2', null, 'Sources'));
     if (!d.sources.length) app.appendChild(el('p', 'muted', 'No sources configured.'));
     d.sources.forEach(function (s) { app.appendChild(sourceCard(s)); });
-    app.appendChild(el('p', 'muted', 'This page only shows the setup for now. Tokens are never sent to the browser.'));
+    app.appendChild(el('p', 'muted', 'Tokens are never sent to the browser. Editing comes later; for now change bridge.toml or the data folder.'));
   }
 
   function loginForm(message) {

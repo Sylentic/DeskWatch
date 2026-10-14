@@ -25,7 +25,7 @@ use tracing_subscriber::EnvFilter;
 use deskwatch_bridge::alerts::Alerts;
 use deskwatch_bridge::azure_devops::AzureDevops;
 use deskwatch_bridge::composer::Composer;
-use deskwatch_bridge::config::{Config, MQTT_PASSWORD_ENV, MqttConfig};
+use deskwatch_bridge::config::Config;
 use deskwatch_bridge::demo::{self, Demo};
 use deskwatch_bridge::gitea::Gitea;
 use deskwatch_bridge::github::Github;
@@ -36,7 +36,7 @@ use deskwatch_bridge::model::{Badges, Screen};
 use deskwatch_bridge::mqtt::{self, Inbound, Publisher};
 use deskwatch_bridge::prometheus::Prometheus;
 use deskwatch_bridge::setup::Setup;
-use deskwatch_bridge::source::{self, Secret, unix_now};
+use deskwatch_bridge::source::{self, unix_now};
 use deskwatch_bridge::stats::StatsCollector;
 use deskwatch_bridge::store::Store;
 
@@ -236,7 +236,7 @@ async fn main() -> Result<()> {
     // receiver just waits forever.
     let (inbound_tx, mut inbound_rx) = mpsc::channel(16);
     let publisher = if config.mqtt.enabled {
-        let (publisher, eventloop) = mqtt::connect(&config.mqtt, mqtt_password(&config.mqtt)?)?;
+        let (publisher, eventloop) = mqtt::connect(&config.mqtt, mqtt::password(&config.mqtt)?)?;
         tokio::spawn(mqtt::run_event_loop(
             eventloop,
             publisher.clone(),
@@ -373,19 +373,6 @@ impl Shutdown {
             _ = self.shutdown.recv() => {}
         }
     }
-}
-
-/// The broker password: `mqtt.password_file` if set, else the environment.
-fn mqtt_password(config: &MqttConfig) -> Result<Option<Secret>> {
-    if let Some(file) = &config.password_file {
-        return source::load_secret(file)
-            .context("mqtt.password_file")
-            .map(Some);
-    }
-    Ok(std::env::var(MQTT_PASSWORD_ENV)
-        .ok()
-        .filter(|p| !p.is_empty())
-        .map(Secret::new))
 }
 
 /// What was published last, so only changes go out.

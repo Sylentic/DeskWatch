@@ -14,6 +14,10 @@ may change if the firmware work needs it; any such change is listed here.
   whether it comes from `bridge.toml` or the data folder, live health), whether each credential is found or missing
   (never its value), and the MQTT broker and its connection. It has its own token, login cookie (12 hours) and failure
   limit, and ignores `kiosk.trusted_networks`. Editing comes in later steps; see docs/setup-page.md.
+- **Test connection** on the setup page, per source and for the MQTT broker: the bridge makes a few read-only requests
+  with the real credentials and lists each check (repositories, projects, runners, agent pools, hosts, broker login),
+  with a hint when the token is refused. One test at a time; messages never contain a credential. The MQTT test uses
+  its own client id and no Last Will, so it never disturbs the live connection.
 - **Data folder** (`[data] dir` or `DESKWATCH_DATA_DIR`, off by default): a writable folder holding `sources.toml`
   (more `[[source.*]]` blocks, merged with `bridge.toml`; a duplicate name is an error) and `credentials/` (secrets in
   0600 files, atomic writes, found by a plain `token_file` name; a mounted credential of the same name wins).
