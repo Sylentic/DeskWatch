@@ -14,7 +14,8 @@
 //!   interrupt are polled too; their job shows on the kiosk page only.
 //!
 //! - every `agent_poll_s` (60 s), only when `agent_pools` is set: the agents
-//!   of those self-hosted pools, as runners for the kiosk. This does not
+//!   of those self-hosted pools, as runners for the kiosk, and how many jobs
+//!   wait for an agent in each pool. This does not
 //!   touch the source's health, because a token without the Agent Pools
 //!   right gets a plain 403 on this list only.
 //!
@@ -169,6 +170,19 @@ async fn poll_agent_pools(api: &HttpApi, id: &SourceId, names: &[String]) -> Vec
                 });
             }
             Err(err) => warn!(pool = %name, "cannot poll agents: {err:#}"),
+        }
+        match api.job_requests(pool.id).await {
+            Ok(requests) => {
+                let queued = requests.iter().filter(|r| r.is_queued()).count() as u32;
+                debug!(pool = %name, queued, "polled job requests");
+                out.push(Update::QueuedJobs {
+                    key: format!("{id}:queue:pool:{name}"),
+                    source: KIND.into(),
+                    pool: truncate(name, MAX_TITLE_CHARS),
+                    queued,
+                });
+            }
+            Err(err) => warn!(pool = %name, "cannot poll job requests: {err:#}"),
         }
     }
     out

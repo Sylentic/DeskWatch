@@ -7,7 +7,7 @@ systems and the guide for the parts that exist today: **Gitea runners**, **GitHu
 |---|---|---|
 | Gitea | Runners of a user, organisation, repository or the whole instance | In this version |
 | GitHub, GitHub Enterprise | Self-hosted runners of a repository or organisation | In this version |
-| Azure DevOps | Agents of the self-hosted agent pools | In this version, built against mock responses only. Queued jobs per pool are not in yet |
+| Azure DevOps | Agents of the self-hosted agent pools | In this version, built against mock responses only, with the number of jobs waiting per pool |
 | ESP panel | A `runners` page and an offline count in the `warn` badge | Last PR, needs a schema change |
 
 ## 1. How it fits
@@ -44,8 +44,8 @@ The kiosk snapshot has a new top-level `runners` list (version stays 1, a page t
   contract with the firmware. That waits until the three sources are in, so the schema is changed once.
 - **"Waiting for runner" on the pipelines page** (a queued run with no online runner that has its label). Best
   effort and label matching differs per system, so it follows the schema change.
-- **Queued jobs per pool.** Only Azure DevOps shows them cheaply (section 4); the fact grows an optional count in
-  that PR.
+- **Queued jobs per pool** are in for Azure DevOps (section 4), on the `runners` widget only. Gitea and GitHub do
+  not offer a cheap count.
 
 ## 2. Gitea runners (this version)
 
@@ -161,10 +161,19 @@ skipped; Microsoft-hosted pools are never shown. Like the other runner polls, a 
 `403` because the token lacks **Agent Pools (Read)**) is logged as `cannot poll agent pools` and **does not
 change the source's health**, so the pipeline and PR widgets stay fresh.
 
-**Not verified against a real organisation:** the shapes of the pool and agent answers were written from the
-documented API. Check on first use that `status` is `online`/`offline` and that `assignedRequest` appears only
-while an agent runs a job. The queued-jobs count (`jobrequests`) is left out until that is checked, so there is no
-"waiting for an agent" signal yet.
+**Queued jobs.** Each poll also asks `GET .../pools/{poolId}/jobrequests?completedRequestCount=0` and counts the
+requests that have no `assignTime` and no `finishTime`: those wait for an agent. The kiosk snapshot gets a
+top-level `queued_jobs` list (`source`, `pool`, `queued`, `updated`; pools with nothing waiting are left out),
+and the `runners` widget shows a row `<pool>: n waiting` per pool above the agents plus an `n waiting` tag. It uses
+the same token scope, and a failure is logged (`cannot poll job requests`) without touching the source's health.
+The numbers are dropped after an hour without a refresh, like the runner lists.
+
+**Not verified against a real organisation:** the shapes of the pool, agent and job request answers were written
+from the documented API. Check on first use that `status` is `online`/`offline`, that `assignedRequest` appears
+only while an agent runs a job, that `completedRequestCount=0` really leaves out finished requests, and that a
+waiting request has neither `assignTime` nor `finishTime`. If the last one is wrong the count is simply too high
+or zero; nothing else depends on it. "Waiting for runner" on the pipelines page (matching a queued run to a pool
+by label) is still left to the ESP panel step.
 
 ## 5. Order of the work
 

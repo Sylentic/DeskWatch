@@ -13,6 +13,8 @@ may change if the firmware work needs it; any such change is listed here.
 - **Azure DevOps agent pools** on the kiosk `runners` widget. `[[source.azure_devops]]` gets `agent_pools = ["<pool name>"]`
   and `agent_poll_s` (default 60). Off unless `agent_pools` is set. Needs one more token scope, **Agent Pools (Read)**;
   a refused list is logged and does not change the source's health. Built against mock responses only.
+- **Jobs waiting for an agent** per Azure DevOps pool: the kiosk snapshot gets a `queued_jobs` list (version stays 1) and
+  the `runners` widget shows a `n waiting` row per pool and tag. Same token scope, same mock-only caveat.
 
 ## [0.9.9]
 

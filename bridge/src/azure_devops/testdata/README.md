@@ -16,3 +16,6 @@ are made up. Nothing here comes from a real organisation.
   ones. **Written from the documented shape, not recorded from a real organisation.**
 - `agents_12.json`, `agents_13.json`: `GET _apis/distributedtask/pools/{id}/agents?includeAssignedRequest=true`.
   Pool 12 has an idle, a busy (`assignedRequest` set) and a disabled agent; pool 13 one offline agent.
+- `jobrequests_12.json`, `jobrequests_13.json`: `GET _apis/distributedtask/pools/{id}/jobrequests?completedRequestCount=0`.
+  Pool 12 has one running job (has `assignTime`) and two waiting ones (neither `assignTime` nor `finishTime`); pool 13
+  is empty. **Hand-written from the documented shape.**

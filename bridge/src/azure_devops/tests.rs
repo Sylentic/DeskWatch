@@ -656,20 +656,35 @@ async fn source_polls_agent_pools() {
     crate::source::spawn(source, tx);
 
     let mut sets = BTreeMap::new();
+    let mut queues = BTreeMap::new();
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
-    while sets.len() < 2 {
+    while sets.len() < 2 || queues.len() < 2 {
         let msg = tokio::time::timeout_at(deadline, rx.recv())
             .await
             .expect("agents reported in time")
             .unwrap();
         if let SourceBody::Facts(updates) = msg.body {
             for update in updates {
-                if let Update::Runners { key, runners } = update {
-                    sets.insert(key, runners);
+                match update {
+                    Update::Runners { key, runners } => {
+                        sets.insert(key, runners);
+                    }
+                    Update::QueuedJobs { key, queued, .. } => {
+                        queues.insert(key, queued);
+                    }
+                    _ => {}
                 }
             }
         }
     }
+    // Two jobs wait in Homelab, none in Build Farm.
+    assert_eq!(
+        queues,
+        BTreeMap::from([
+            ("azure_devops:work:queue:pool:Build Farm".to_string(), 0),
+            ("azure_devops:work:queue:pool:Homelab".to_string(), 2),
+        ])
+    );
     let keys: Vec<_> = sets.keys().cloned().collect();
     assert_eq!(
         keys,
@@ -742,7 +757,11 @@ async fn refused_pool_list_does_not_hurt_source_health() {
         match msg.body {
             SourceBody::Health(h) => health = Some(h),
             SourceBody::Facts(updates) => {
-                assert!(!updates.iter().any(|u| matches!(u, Update::Runners { .. })));
+                assert!(
+                    !updates
+                        .iter()
+                        .any(|u| matches!(u, Update::Runners { .. } | Update::QueuedJobs { .. }))
+                );
             }
             SourceBody::Stats(_) => {}
         }
