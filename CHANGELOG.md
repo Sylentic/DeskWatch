@@ -8,6 +8,13 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+## [0.9.12]
+
+The no-login release: the dashboard and the setup page no longer use token authentication. Both are meant for a trusted
+network (your home network); never expose the port to the internet, and do not publish it through a proxy or tunnel
+without a login. Built against mock servers only, not run in a real browser or in Docker. Authentication for the ESP
+panel's setup mode is left for when that exists.
+
 ### Changed
 
 - **The dashboard needs no login by default.** `[kiosk] token_file` is optional again for the Docker quick-start: the
@@ -359,7 +366,8 @@ not (see the README, "What is not in 0.9").
   are Linux x86_64; build from source for other CPUs.
 - Gitea webhooks are plain HTTP unless you put a reverse proxy in front of the bridge.
 
-[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.11...HEAD
+[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.12...HEAD
+[0.9.12]: https://github.com/Sylentic/DeskWatch/compare/v0.9.11...v0.9.12
 [0.9.11]: https://github.com/Sylentic/DeskWatch/compare/v0.9.10...v0.9.11
 [0.9.10]: https://github.com/Sylentic/DeskWatch/compare/v0.9.9...v0.9.10
 [0.9.9]: https://github.com/Sylentic/DeskWatch/compare/v0.9.8...v0.9.9
