@@ -47,6 +47,35 @@ pub fn default_config_path() -> PathBuf {
     }
 }
 
+/// What `sources.toml` in the data folder may hold.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Overlay {
+    #[serde(default)]
+    source: Sources,
+}
+
+/// Where the bridge may keep files it writes itself.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DataConfig {
+    /// A writable folder for `sources.toml` and `credentials/` (docs/data-dir.md).
+    /// Without it (and without `DESKWATCH_DATA_DIR`) the bridge reads only
+    /// `bridge.toml` and writes nothing, as before.
+    pub dir: Option<PathBuf>,
+}
+
+impl Config {
+    /// The data folder: `[data] dir`, else the `DESKWATCH_DATA_DIR` environment variable.
+    pub fn data_dir(&self) -> Option<PathBuf> {
+        self.data.dir.clone().or_else(|| {
+            std::env::var_os("DESKWATCH_DATA_DIR")
+                .filter(|d| !d.is_empty())
+                .map(PathBuf::from)
+        })
+    }
+}
+
 /// Top-level config file layout.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -57,6 +86,9 @@ pub struct Config {
     pub server: ServerConfig,
     #[serde(default)]
     pub http: HttpConfig,
+    /// Folder the bridge may write to. Off unless set.
+    #[serde(default)]
+    pub data: DataConfig,
     /// Data sources, one array per adapter type.
     #[serde(default)]
     pub source: Sources,
@@ -811,15 +843,47 @@ impl Config {
     /// Parse a config from TOML text.
     pub fn from_toml(text: &str) -> Result<Self> {
         let config: Config = toml::from_str(text).context("invalid config")?;
+        config.validate()?;
+        Ok(config)
+    }
+
+    /// Add the sources of an overlay file (`sources.toml` in the data
+    /// folder, see `store.rs`) and check the result as a whole. The overlay
+    /// holds only `[[source.*]]` blocks; a source name already used in the
+    /// main config for the same type is refused instead of silently replaced.
+    pub fn with_overlay(mut self, overlay: &str) -> Result<Self> {
+        let Overlay { source } = toml::from_str(overlay).context("invalid sources overlay")?;
+        macro_rules! merge {
+            ($($kind:ident),+) => {$(
+                for extra in source.$kind {
+                    anyhow::ensure!(
+                        !self.source.$kind.iter().any(|s| s.name == extra.name),
+                        "source.{} {:?} is in both bridge.toml and the data folder's sources.toml; \
+                         rename or remove one",
+                        stringify!($kind),
+                        extra.name
+                    );
+                    self.source.$kind.push(extra);
+                }
+            )+};
+        }
+        merge!(gitea, github, azure_devops, prometheus);
+        self.validate()?;
+        Ok(self)
+    }
+
+    /// The checks that need a whole config: ranges, unique names, consistent
+    /// pairs. Run again after an overlay is added.
+    fn validate(&self) -> Result<()> {
         anyhow::ensure!(
-            config.server.interval_s > 0,
+            self.server.interval_s > 0,
             "server.interval_s must be above 0"
         );
         anyhow::ensure!(
-            !config.rotation.is_empty(),
+            !self.rotation.is_empty(),
             "rotation needs at least one page"
         );
-        let mqtt = &config.mqtt;
+        let mqtt = &self.mqtt;
         anyhow::ensure!(
             mqtt.client_cert_file.is_some() == mqtt.client_key_file.is_some(),
             "mqtt.client_cert_file and mqtt.client_key_file go together"
@@ -829,7 +893,7 @@ impl Config {
             "mqtt.ca_file and mqtt.client_cert_file need mqtt.tls = true"
         );
         let mut names = HashSet::new();
-        for gitea in &config.source.gitea {
+        for gitea in &self.source.gitea {
             let name = &gitea.name;
             anyhow::ensure!(
                 valid_name(name),
@@ -850,7 +914,7 @@ impl Config {
             );
         }
         let mut names = HashSet::new();
-        for github in &config.source.github {
+        for github in &self.source.github {
             let name = &github.name;
             anyhow::ensure!(
                 valid_name(name),
@@ -879,7 +943,7 @@ impl Config {
             );
         }
         let mut names = HashSet::new();
-        for azure in &config.source.azure_devops {
+        for azure in &self.source.azure_devops {
             let name = &azure.name;
             anyhow::ensure!(
                 valid_name(name),
@@ -915,7 +979,7 @@ impl Config {
             );
         }
         let mut names = HashSet::new();
-        for prom in &config.source.prometheus {
+        for prom in &self.source.prometheus {
             let name = &prom.name;
             anyhow::ensure!(
                 valid_name(name),
@@ -975,8 +1039,8 @@ impl Config {
                 );
             }
         }
-        config.kiosk.validate()?;
-        Ok(config)
+        self.kiosk.validate()?;
+        Ok(())
     }
 
     /// Read and parse a config file.

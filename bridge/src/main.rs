@@ -37,6 +37,7 @@ use deskwatch_bridge::mqtt::{self, Inbound, Publisher};
 use deskwatch_bridge::prometheus::Prometheus;
 use deskwatch_bridge::source::{self, Secret, unix_now};
 use deskwatch_bridge::stats::StatsCollector;
+use deskwatch_bridge::store::Store;
 
 /// How often the composer re-checks timers (alert expiry, rotation dwell).
 const COMPOSE_INTERVAL: Duration = Duration::from_secs(1);
@@ -135,6 +136,18 @@ async fn main() -> Result<()> {
             config
         }
     };
+
+    // The data folder (docs/data-dir.md): sources and secrets kept there are
+    // added to the ones in bridge.toml. Off unless `[data] dir` or
+    // DESKWATCH_DATA_DIR is set.
+    if let Some(dir) = config.data_dir() {
+        let store = Store::open(&dir)?;
+        let overlay = store.read_sources()?;
+        config = config
+            .with_overlay(&overlay)
+            .with_context(|| format!("in {}", dir.join("sources.toml").display()))?;
+        info!("data folder {}", dir.display());
+    }
 
     config.kiosk.enabled |= args.kiosk;
     config.mqtt.enabled &= !args.no_mqtt;

@@ -284,12 +284,26 @@ pub fn load_secret(name: &str) -> Result<Secret> {
         .filter(|d| !d.is_empty())
         .map(PathBuf::from)
         .or_else(|| cfg!(windows).then(|| crate::config::windows_data_dir().join("credentials")));
-    let path = credential_path(name, dir)?;
+    let path = resolve_credential(name, dir, crate::store::credentials_dir())?;
     let text = std::fs::read_to_string(&path)
         .with_context(|| format!("cannot read credential {name} at {}", path.display()))?;
     let value = text.trim();
     anyhow::ensure!(!value.is_empty(), "credential {name} is empty");
     Ok(Secret::new(value))
+}
+
+/// Where to read credential `name`: the mounted folder, or else the data
+/// folder's own credentials (store.rs) when the mounted one has no such file.
+/// A mounted file of the same name wins.
+fn resolve_credential(name: &str, mounted: Option<PathBuf>, own: Option<&Path>) -> Result<PathBuf> {
+    let found = credential_path(name, mounted);
+    if matches!(&found, Ok(path) if path.exists()) || Path::new(name).is_absolute() {
+        return found;
+    }
+    match own.map(|dir| dir.join(name)) {
+        Some(path) if path.exists() && valid_name(name) => Ok(path),
+        _ => found,
+    }
 }
 
 fn credential_path(name: &str, credentials_dir: Option<PathBuf>) -> Result<PathBuf> {
@@ -359,6 +373,39 @@ mod tests {
         let secret = Secret::new("hunter2");
         assert_eq!(format!("{secret:?}"), "***");
         assert_eq!(secret.expose(), "hunter2");
+    }
+
+    #[test]
+    fn own_credentials_fill_in_after_mounted_ones() {
+        let base = std::env::temp_dir().join(format!("deskwatch-resolve-{}", std::process::id()));
+        let (mounted, own) = (base.join("mounted"), base.join("own"));
+        std::fs::create_dir_all(&mounted).unwrap();
+        std::fs::create_dir_all(&own).unwrap();
+        std::fs::write(mounted.join("both"), "m").unwrap();
+        std::fs::write(own.join("both"), "o").unwrap();
+        std::fs::write(own.join("only-own"), "o").unwrap();
+        let resolve = |name: &str, m: Option<&Path>| {
+            resolve_credential(name, m.map(Path::to_path_buf), Some(own.as_path()))
+        };
+        assert_eq!(
+            resolve("both", Some(&mounted)).unwrap(),
+            mounted.join("both")
+        );
+        assert_eq!(
+            resolve("only-own", Some(&mounted)).unwrap(),
+            own.join("only-own")
+        );
+        // No mounted folder at all (a bare run with only a data folder).
+        assert_eq!(resolve("only-own", None).unwrap(), own.join("only-own"));
+        // Missing everywhere: the error still names the mounted location.
+        assert_eq!(
+            resolve("nope", Some(&mounted)).unwrap(),
+            mounted.join("nope")
+        );
+        assert!(resolve("nope", None).is_err());
+        // Names that could leave the folder never reach the data folder.
+        assert!(resolve("../own/only-own", Some(&mounted)).is_err());
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

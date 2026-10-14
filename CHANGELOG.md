@@ -8,6 +8,13 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Added
+
+- **Data folder** (`[data] dir` or `DESKWATCH_DATA_DIR`, off by default): a writable folder holding `sources.toml`
+  (more `[[source.*]]` blocks, merged with `bridge.toml`; a duplicate name is an error) and `credentials/` (secrets in
+  0600 files, atomic writes, found by a plain `token_file` name; a mounted credential of the same name wins).
+  `bridge.toml` is never rewritten. This is the base for the planned setup page; see docs/data-dir.md.
+
 ### Changed
 
 - **One-time login for the dashboard** (issue 32). With `[kiosk] token_file` set, the page asks for the token once and

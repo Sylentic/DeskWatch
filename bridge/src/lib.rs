@@ -18,3 +18,4 @@ pub mod mqtt;
 pub mod prometheus;
 pub mod source;
 pub mod stats;
+pub mod store;
