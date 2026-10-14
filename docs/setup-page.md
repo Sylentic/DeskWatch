@@ -2,7 +2,8 @@
 
 A page in the browser that shows how the bridge is set up: sources, their credentials, the MQTT broker, the data
 folder, and whether every source works right now. Every source and the broker have a **Test connection** button.
-**It does not change anything yet.** Adding and editing sources and replacing tokens come in later releases.
+With a [data folder](data-dir.md) it also adds, edits and removes sources, replaces tokens and changes the broker
+settings (see below). Without one it only shows and tests.
 
 It is **off by default**. Turn it on by giving it its own token:
 
@@ -90,6 +91,14 @@ tells the broker it is going offline) and exits with code 75. That only helps wh
 Docker with `restart: unless-stopped` (the compose files in `deploy/` have it) or the systemd unit in
 `deploy/deskwatch-bridge.service` (`Restart=on-failure`). A bridge started by hand just stops, so the button is off by
 default. It needs the setup login and the same origin like every change.
+
+## Not yet
+
+- **Setup on the ESP panel itself** (a setup-mode access point with its own page, for the bridgeless variant) is not
+  built. It waits for the screen and the firmware work on real hardware.
+- The kiosk layout, the rotation and the listen address stay in `bridge.toml`; the page does not edit them.
+- Everything here is tested against mock servers and a fake broker, not against a real GitHub, Azure DevOps or
+  Mosquitto.
 
 ## Security
 

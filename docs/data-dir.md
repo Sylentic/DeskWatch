@@ -1,8 +1,8 @@
 # The data folder
 
 By default the bridge only reads: `bridge.toml` and the credential files you mount. The **data folder** is an optional,
-writable folder where the bridge keeps files it writes itself. It is the base for the setup page that is planned
-(adding sources and replacing tokens in the browser); today it also works by hand. Without it nothing changes.
+writable folder where the bridge keeps files it writes itself. It is where the [setup page](setup-page.md) saves what you add or change in the browser (sources, tokens, broker
+settings); it also works by hand. Without it nothing changes.
 
 Turn it on with `[data] dir = "/var/lib/deskwatch"` in `bridge.toml`, or the `DESKWATCH_DATA_DIR` environment
 variable. The bridge creates the folder and stops at startup, with the reason, if it cannot write to it.
