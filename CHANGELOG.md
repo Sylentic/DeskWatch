@@ -8,6 +8,12 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Added
+
+- **Azure DevOps agent pools** on the kiosk `runners` widget. `[[source.azure_devops]]` gets `agent_pools = ["<pool name>"]`
+  and `agent_poll_s` (default 60). Off unless `agent_pools` is set. Needs one more token scope, **Agent Pools (Read)**;
+  a refused list is logged and does not change the source's health. Built against mock responses only.
+
 ## [0.9.9]
 
 The kiosk release: runner status, night theme and widget filters, trusted networks, and a faster Docker build.

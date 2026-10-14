@@ -631,3 +631,121 @@ async fn an_unreachable_service_lights_the_warn_badge() {
         .unwrap();
     assert!(matches!(msg.body, SourceBody::Health(Health::Unreachable)));
 }
+
+#[tokio::test]
+async fn source_polls_agent_pools() {
+    let seen = Arc::new(api::tests::Seen::default());
+    let base_url = api::tests::mock_azure(seen.clone()).await;
+    // "Azure Pipelines" is Microsoft-hosted and "Missing" does not exist:
+    // both are skipped, the other two are reported.
+    let config = config(&format!(
+        "base_url = \"{base_url}\"\nagent_poll_s = 1\n\
+         agent_pools = [\"Homelab\", \"Build Farm\", \"Azure Pipelines\", \"Missing\"]\n"
+    ));
+    let source = AzureDevops {
+        id: SourceId::new(KIND, &config.name),
+        api: HttpApi::new(
+            &config.base_url,
+            &config.organization,
+            crate::source::Secret::new("test-pat"),
+        )
+        .unwrap(),
+        config,
+    };
+    let (tx, mut rx) = mpsc::channel(64);
+    crate::source::spawn(source, tx);
+
+    let mut sets = BTreeMap::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while sets.len() < 2 {
+        let msg = tokio::time::timeout_at(deadline, rx.recv())
+            .await
+            .expect("agents reported in time")
+            .unwrap();
+        if let SourceBody::Facts(updates) = msg.body {
+            for update in updates {
+                if let Update::Runners { key, runners } = update {
+                    sets.insert(key, runners);
+                }
+            }
+        }
+    }
+    let keys: Vec<_> = sets.keys().cloned().collect();
+    assert_eq!(
+        keys,
+        [
+            "azure_devops:work:runners:pool:Build Farm",
+            "azure_devops:work:runners:pool:Homelab",
+        ]
+    );
+    let farm = &sets[&keys[0]];
+    assert_eq!(farm[0].status, crate::ci::RunnerStatus::Offline);
+    let homelab = &sets[&keys[1]];
+    let states: Vec<_> = homelab
+        .iter()
+        .map(|r| (r.name.as_str(), r.status, r.disabled))
+        .collect();
+    assert_eq!(
+        states,
+        [
+            ("agent-1", crate::ci::RunnerStatus::Idle, false),
+            ("agent-2", crate::ci::RunnerStatus::Busy, false),
+            ("agent-3", crate::ci::RunnerStatus::Idle, true),
+        ]
+    );
+    assert_eq!(homelab[0].labels, ["Homelab"]);
+    assert_eq!(homelab[0].source, "azure_devops");
+}
+
+/// A token without Agent Pools (Read) gets 403 on the pool list only. That
+/// must not make the source look broken: builds and PRs stay fresh.
+#[tokio::test]
+async fn refused_pool_list_does_not_hurt_source_health() {
+    let app = axum::Router::new()
+        .route(
+            "/your-org/_apis/distributedtask/pools",
+            axum::routing::get(|| async { axum::http::StatusCode::FORBIDDEN }),
+        )
+        .route(
+            "/your-org/{project}/_apis/build/builds",
+            axum::routing::get(|| async {
+                ([("content-type", "application/json")], r#"{"value":[]}"#)
+            }),
+        )
+        .route(
+            "/your-org/{project}/_apis/git/pullrequests",
+            axum::routing::get(|| async {
+                ([("content-type", "application/json")], r#"{"value":[]}"#)
+            }),
+        );
+    let base_url = api::tests::serve(app).await;
+    let config = config(&format!(
+        "base_url = \"{base_url}\"\nagent_poll_s = 1\nagent_pools = [\"Homelab\"]\n"
+    ));
+    let source = AzureDevops {
+        id: SourceId::new(KIND, &config.name),
+        api: HttpApi::new(
+            &config.base_url,
+            &config.organization,
+            crate::source::Secret::new("test-pat"),
+        )
+        .unwrap(),
+        config,
+    };
+    let (tx, mut rx) = mpsc::channel(64);
+    crate::source::spawn(source, tx);
+
+    // Let several pool polls fail, then look at what arrived.
+    tokio::time::sleep(Duration::from_millis(2500)).await;
+    let mut health = None;
+    while let Ok(msg) = rx.try_recv() {
+        match msg.body {
+            SourceBody::Health(h) => health = Some(h),
+            SourceBody::Facts(updates) => {
+                assert!(!updates.iter().any(|u| matches!(u, Update::Runners { .. })));
+            }
+            SourceBody::Stats(_) => {}
+        }
+    }
+    assert_eq!(health, Some(Health::Ok));
+}

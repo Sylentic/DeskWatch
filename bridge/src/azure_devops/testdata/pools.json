@@ -1,0 +1,8 @@
+{
+  "count": 3,
+  "value": [
+    { "id": 1, "name": "Azure Pipelines", "isHosted": true },
+    { "id": 12, "name": "Homelab", "isHosted": false },
+    { "id": 13, "name": "Build Farm", "isHosted": false }
+  ]
+}

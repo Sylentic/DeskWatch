@@ -17,7 +17,8 @@ What you get:
 - Open pull requests count in the PR badge and appear on the `prs` page.
 - A refused or expired token, or an unreachable service, lights the `warn` badge.
 
-Not in this version: agent pools and self-hosted agent status (planned, see [runners.md](runners.md)), classic release pipelines, Azure DevOps Server
+Self-hosted agent pools can be shown on the kiosk `runners` widget (optional, needs one more token scope, see
+[runners.md](runners.md#4-azure-devops-agent-pools-in-this-version)). Not in this version: classic release pipelines, Azure DevOps Server
 (on premises), and sign-in with Microsoft Entra instead of a token.
 
 ## Before you start
@@ -39,6 +40,8 @@ is never written to the config, the logs or MQTT.
    |---|---|---|
    | **Build** | **Read** | Pipeline runs and their stages and tasks |
    | **Code** | **Read** | Open pull requests (leave out and set `pull_requests = false` if you do not want PRs) |
+
+   | **Agent Pools** | **Read** | Optional: self-hosted agents on the kiosk `runners` widget (`agent_pools`) |
 
    Nothing else is needed. Do not give **Full access**, and do not tick any Write, Manage or Execute access.
 5. Create the token and copy it once; Azure DevOps does not show it again.
@@ -88,6 +91,8 @@ Optional keys:
 | `pull_requests` | `true` | Count open PRs (needs **Code: Read**) |
 | `notify_new_prs` | `true` | Flash "New PR" for a new non-draft PR |
 | `deploy_words` | `["deploy", "terraform"]` | Pipelines whose name contains one of these words (any case) are deploys |
+| `agent_pools` | none | Names of self-hosted agent pools to show as runners (needs **Agent Pools: Read**) |
+| `agent_poll_s` | `60` | Seconds between agent pool polls |
 | `alias` | none | Short panel labels: `"project-a" = "infra"` for pipelines, `"project-a/repo-a" = "A"` for a repository's PRs |
 
 Use `alias` for anything you would rather not show on a screen at the office.
@@ -104,7 +109,7 @@ All requests are `GET` with API version 7.1, authenticated as the token's user. 
 | `{project}/_apis/build/builds/{id}/timeline` | Stage and task progress and approvals of each build in progress; the failed task of a newly failed build |
 | `{project}/_apis/git/pullrequests` (active, newest 100) | Open PRs |
 
-That is two requests per project when nothing runs. While a build runs it adds one timeline request per poll, or
+With `agent_pools` set it adds one request for the pool list and one per pool every `agent_poll_s`. That is two requests per project when nothing runs. While a build runs it adds one timeline request per poll, or
 one every `job_poll_s` for every build in progress (the kiosk's Running now widget lists them, whether or not the
 project may take over the ESP screen).
 
