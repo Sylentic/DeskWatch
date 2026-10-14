@@ -42,6 +42,7 @@ fn setup(temp: &Temp) -> Setup {
         &config(&temp.0),
         &Secret::new("setup-token"),
         MqttLink::default(),
+        None,
     )
 }
 
@@ -126,7 +127,12 @@ async fn status_needs_a_login_and_never_carries_a_secret() {
 async fn health_and_mqtt_state_are_live() {
     let temp = Temp::new("live");
     let link = MqttLink::default();
-    let setup = Setup::new(&config(&temp.0), &Secret::new("setup-token"), link.clone());
+    let setup = Setup::new(
+        &config(&temp.0),
+        &Secret::new("setup-token"),
+        link.clone(),
+        None,
+    );
     let router = setup.router();
     let cookie = logged_in(&router).await;
     let get = || async {
@@ -240,7 +246,7 @@ async fn trusted_networks_do_not_open_the_setup_page() {
     let temp = Temp::new("trusted");
     let mut cfg = config(&temp.0);
     cfg.kiosk.trusted_networks = vec!["0.0.0.0/0".into()];
-    let router = Setup::new(&cfg, &Secret::new("setup-token"), MqttLink::default()).router();
+    let router = Setup::new(&cfg, &Secret::new("setup-token"), MqttLink::default(), None).router();
     let (status, ..) = send(&router, "GET", "/api/setup/status", &[], "").await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
@@ -333,7 +339,12 @@ async fn a_connection_test_runs_the_real_checks_and_one_runs_at_a_time() {
         temp.token("tok", "good-token-value")
     );
     let config = Config::from_toml(&text).unwrap();
-    let setup = Setup::new(&config, &Secret::new("setup-token"), MqttLink::default());
+    let setup = Setup::new(
+        &config,
+        &Secret::new("setup-token"),
+        MqttLink::default(),
+        None,
+    );
     let router = setup.router();
     let cookie = logged_in(&router).await;
     let headers = [("cookie", cookie.as_str())];
@@ -362,4 +373,181 @@ async fn a_connection_test_runs_the_real_checks_and_one_runs_at_a_time() {
 fn the_page_can_test_a_connection() {
     assert!(SETUP_JS.contains("api/setup/test"));
     assert!(SETUP_JS.contains("Test connection"));
+}
+
+/// A setup router with a data folder, plus the folder's path and a login cookie.
+async fn with_data(tag: &str) -> (Router, Temp, String) {
+    let temp = Temp::new(tag);
+    let data = temp.0.join("data");
+    let store = Store::open(&data).unwrap();
+    let config = Config::from_toml("").unwrap();
+    let router = Setup::new(
+        &config,
+        &Secret::new("setup-token"),
+        MqttLink::default(),
+        Some(store),
+    )
+    .router();
+    let cookie = logged_in(&router).await;
+    (router, temp, cookie)
+}
+
+#[tokio::test]
+async fn changes_need_login_same_origin_and_a_data_folder() {
+    let temp = Temp::new("change-guards");
+    let body = json!({ "kind": "github", "name": "x", "create": true }).to_string();
+    // No data folder: refused even when logged in.
+    let router = setup(&temp).router();
+    let cookie = logged_in(&router).await;
+    let ok = [("cookie", cookie.as_str())];
+    let (status, ..) = send(&router, "POST", "/api/setup/source", &ok, &body).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    let (router, _temp, cookie) = with_data("change-guards2").await;
+    let (status, ..) = send(&router, "POST", "/api/setup/source", &[], &body).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let evil = [
+        ("cookie", cookie.as_str()),
+        ("host", "b.lan"),
+        ("origin", "http://evil.example"),
+    ];
+    for uri in ["/api/setup/source", "/api/setup/source/delete"] {
+        let (status, ..) = send(&router, "POST", uri, &evil, &body).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{uri}");
+    }
+    let ok = [("cookie", cookie.as_str())];
+    let (status, ..) = send(&router, "POST", "/api/setup/source", &ok, "nope").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn a_good_source_is_saved_a_failing_one_is_not_unless_forced() {
+    use crate::probe::tests::{gitea_mock, serve};
+    let (router, temp, cookie) = with_data("save").await;
+    let data = temp.0.join("data");
+    let base = serve(gitea_mock()).await;
+    let headers = [("cookie", cookie.as_str())];
+    let request = |token: &str, force: bool| {
+        json!({
+            "kind": "gitea", "name": "home", "create": true, "force": force,
+            "fields": { "base_url": base, "repos": ["o/r"] },
+            "secrets": { "token": token, "webhook_secret": "hook-secret-value" },
+        })
+        .to_string()
+    };
+
+    // A wrong token fails the test, so nothing is written.
+    let (status, _, text) = send(
+        &router,
+        "POST",
+        "/api/setup/source",
+        &headers,
+        &request("wrong-token", false),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["saved"], false);
+    assert!(!text.contains("wrong-token") && !text.contains("hook-secret-value"));
+    assert!(!data.join("credentials/gitea-home-token").exists());
+    assert!(
+        !std::fs::read_to_string(data.join("sources.toml"))
+            .unwrap_or_default()
+            .contains("home")
+    );
+
+    // The right token saves the entry and the secret files.
+    let (status, _, text) = send(
+        &router,
+        "POST",
+        "/api/setup/source",
+        &headers,
+        &request("good-token-value", false),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["saved"], true, "{text}");
+    assert_eq!(v["restart_needed"], true);
+    assert!(!text.contains("good-token-value") && !text.contains("hook-secret-value"));
+    let saved = std::fs::read_to_string(data.join("sources.toml")).unwrap();
+    assert!(saved.contains("gitea") && saved.contains("home"));
+    assert!(!saved.contains("good-token-value"));
+    assert_eq!(
+        std::fs::read_to_string(data.join("credentials/gitea-home-token")).unwrap(),
+        "good-token-value"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(data.join("credentials/gitea-home-token"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+
+    // The status now lists it as editable, not running yet, restart needed.
+    let (_, _, text) = send(&router, "GET", "/api/setup/status", &headers, "").await;
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["restart_needed"], true);
+    assert_eq!(v["can_edit"], true);
+    let src = &v["sources"][0];
+    assert_eq!(src["id"], "gitea:home");
+    assert_eq!(src["editable"], true);
+    assert_eq!(src["running"], false);
+    assert!(!text.contains("good-token-value"));
+
+    // A duplicate create is a bad request.
+    let (status, ..) = send(
+        &router,
+        "POST",
+        "/api/setup/source",
+        &headers,
+        &request("good-token-value", false),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Forcing saves a failing configuration anyway.
+    let forced = json!({
+        "kind": "gitea", "name": "home", "force": true,
+        "fields": { "base_url": base, "repos": ["o/r"] },
+        "secrets": { "token": "still-wrong" },
+    })
+    .to_string();
+    let (_, _, text) = send(&router, "POST", "/api/setup/source", &headers, &forced).await;
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["saved"], true, "{text}");
+    assert_eq!(
+        std::fs::read_to_string(data.join("credentials/gitea-home-token")).unwrap(),
+        "still-wrong"
+    );
+}
+
+#[tokio::test]
+async fn removing_a_source_deletes_its_entry_and_its_own_secrets() {
+    use crate::probe::tests::{gitea_mock, serve};
+    let (router, temp, cookie) = with_data("remove").await;
+    let data = temp.0.join("data");
+    let base = serve(gitea_mock()).await;
+    let headers = [("cookie", cookie.as_str())];
+    let add = json!({
+        "kind": "gitea", "name": "home", "create": true,
+        "fields": { "base_url": base, "repos": ["o/r"] },
+        "secrets": { "token": "good-token-value", "webhook_secret": "h" },
+    })
+    .to_string();
+    let (_, _, text) = send(&router, "POST", "/api/setup/source", &headers, &add).await;
+    assert!(text.contains("\"saved\":true"), "{text}");
+    assert!(data.join("credentials/gitea-home-token").exists());
+
+    let gone = json!({ "kind": "gitea", "name": "home" }).to_string();
+    let (status, _, text) =
+        send(&router, "POST", "/api/setup/source/delete", &headers, &gone).await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    assert!(!data.join("credentials/gitea-home-token").exists());
+    assert!(!data.join("credentials/gitea-home-webhook_secret").exists());
+    let (status, ..) = send(&router, "POST", "/api/setup/source/delete", &headers, &gone).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }

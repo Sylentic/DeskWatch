@@ -30,3 +30,14 @@ button:disabled { opacity: .6; cursor: default; }
 .test { margin-top: .75rem; }
 ul.checks { margin: .5rem 0 0; padding: 0; list-style: none; }
 ul.checks li { margin: .25rem 0; overflow-wrap: anywhere; }
+textarea, select { padding: .5rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; }
+.form { display: grid; gap: .75rem; }
+.field { display: grid; gap: .25rem; }
+.field span { color: var(--muted); font-size: .9rem; }
+.field input, .field textarea { width: 100%; flex: none; }
+.check { display: flex; align-items: center; gap: .25rem; }
+.check input { flex: none; }
+.buttons { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .75rem; }
+.buttons select { flex: 0 1 14rem; }
+button.danger { color: var(--bad); border-color: var(--bad); }
+.banner { background: var(--card); border: 1px solid var(--warn); border-left-width: 4px; border-radius: 6px; padding: .5rem 1rem; color: var(--warn); }

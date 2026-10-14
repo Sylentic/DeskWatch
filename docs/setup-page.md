@@ -46,6 +46,22 @@ The MQTT test uses its own client id (`<client_id>-setup-test`) so it does not k
 no Last Will. It proves that host, port, TLS and the login work; it does **not** check what the login may publish or
 subscribe to, so an ACL mistake still shows up as a source of trouble in the broker log.
 
+## Adding, editing and removing sources
+
+With a data folder configured ([data-dir.md](data-dir.md)) the page can change sources that live in the data folder:
+
+- **Add a source** (GitHub, Gitea, Azure DevOps, Prometheus), **Edit** it, **Remove** it.
+- A token field is write-only. Leave it empty on an edit to keep the current token; fill it in to replace it. The value
+  goes to the bridge once and is stored as `credentials/<kind>-<name>-<key>` (0600). It is never sent back.
+- **Validate before save**: the whole configuration, as it would be, must load, and the connection test runs with the
+  new values. If the test fails nothing is written and the failing checks are shown; **Save anyway** writes it
+  regardless (for a server that is down right now).
+- Settings the page does not know (hand-added keys in `sources.toml`) are kept on an edit.
+- Sources from `bridge.toml` are shown but not editable; change those by hand. A mounted credential with the same name
+  as a page-managed one is refused, because the mounted one would win and hide the change.
+- Every save or removal is logged (source id, which secret files were written; never a value).
+- Changes apply after a restart for now. The page says so, and marks a new source "not running yet".
+
 ## Security
 
 - **Its own token**, separate from the dashboard's. A dashboard login is useless here even with the same token text.
