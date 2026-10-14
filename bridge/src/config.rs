@@ -487,11 +487,11 @@ pub fn default_panels() -> Vec<PanelConfig> {
     vec![
         panel(Widget::Stats, [1, 1]),
         panel(Widget::Hosts, [1, 1]),
-        panel(Widget::Jobs, [2, 1]),
-        panel(Widget::Prs, [1, 2]),
         panel(Widget::Pipelines, [2, 2]),
+        panel(Widget::Prs, [1, 2]),
         panel(Widget::Alerts, [1, 1]),
         panel(Widget::Health, [1, 1]),
+        panel(Widget::Jobs, [2, 1]),
     ]
 }
 

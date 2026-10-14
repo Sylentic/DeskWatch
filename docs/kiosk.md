@@ -73,8 +73,8 @@ dashboard-only config and no broker. The Compose files, the token and the revers
 ## 3. Choose the widgets
 
 `[[kiosk.panel]]` blocks place widgets on the grid, left to right and top to bottom, like the `[[rotation]]` list.
-Without any, the default layout is used: `stats`, `hosts`, `jobs` (2 wide), `prs` (2 tall), `pipelines` (2 by 2),
-`alerts`, `health`. Add a `runners` panel yourself (it needs a source with runner scopes set, see
+Without any, the default layout is used: `stats`, `hosts`, `pipelines` (2 by 2), `prs` (2 tall),
+`alerts`, `health`, `jobs` (2 wide). Add a `runners` panel yourself (it needs a source with runner scopes set, see
 [runners.md](runners.md)); the default grid has no free cell for it.
 
 ```toml
