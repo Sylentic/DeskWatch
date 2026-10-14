@@ -8,6 +8,13 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+## [0.9.11]
+
+The setup release: sources, tokens and the MQTT broker can be set up in the browser instead of by hand-editing files.
+Everything here is built against mock servers and fake brokers only, not yet checked against a real GitHub, Azure
+DevOps or Mosquitto. The planned last step, a setup mode on the ESP panel itself, is **not** part of this release: it
+waits for the screen (see `docs/setup-page.md`).
+
 ### Added
 
 - **Setup page: MQTT broker settings.** With a data folder the page changes `enabled`, `host`, `port`, `tls`, the login
@@ -25,7 +32,7 @@ may change if the firmware work needs it; any such change is listed here.
 - **Setup page, read-only** (`[setup] token_file`, off by default): `/setup` shows each source (address, repositories,
   whether it comes from `bridge.toml` or the data folder, live health), whether each credential is found or missing
   (never its value), and the MQTT broker and its connection. It has its own token, login cookie (12 hours) and failure
-  limit, and ignores `kiosk.trusted_networks`. Editing comes in later steps; see docs/setup-page.md.
+  limit, and ignores `kiosk.trusted_networks`; see docs/setup-page.md.
 - **Test connection** on the setup page, per source and for the MQTT broker: the bridge makes a few read-only requests
   with the real credentials and lists each check (repositories, projects, runners, agent pools, hosts, broker login),
   with a hint when the token is refused. One test at a time; messages never contain a credential. The MQTT test uses
@@ -33,7 +40,7 @@ may change if the firmware work needs it; any such change is listed here.
 - **Data folder** (`[data] dir` or `DESKWATCH_DATA_DIR`, off by default): a writable folder holding `sources.toml`
   (more `[[source.*]]` blocks, merged with `bridge.toml`; a duplicate name is an error) and `credentials/` (secrets in
   0600 files, atomic writes, found by a plain `token_file` name; a mounted credential of the same name wins).
-  `bridge.toml` is never rewritten. This is the base for the planned setup page; see docs/data-dir.md.
+  `bridge.toml` is never rewritten. The setup page saves into it; see docs/data-dir.md.
 
 ### Changed
 
@@ -332,7 +339,8 @@ not (see the README, "What is not in 0.9").
   are Linux x86_64; build from source for other CPUs.
 - Gitea webhooks are plain HTTP unless you put a reverse proxy in front of the bridge.
 
-[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.10...HEAD
+[Unreleased]: https://github.com/Sylentic/DeskWatch/compare/v0.9.11...HEAD
+[0.9.11]: https://github.com/Sylentic/DeskWatch/compare/v0.9.10...v0.9.11
 [0.9.10]: https://github.com/Sylentic/DeskWatch/compare/v0.9.9...v0.9.10
 [0.9.9]: https://github.com/Sylentic/DeskWatch/compare/v0.9.8...v0.9.9
 [0.9.8]: https://github.com/Sylentic/DeskWatch/compare/v0.9.7...v0.9.8

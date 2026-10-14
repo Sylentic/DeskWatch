@@ -92,6 +92,11 @@ DeskWatch supports **Linux and Windows**, plus the Raspberry Pi (64-bit Linux).
 A big screen (a Pi with a monitor or TV, a wall tablet) or any browser can show the [kiosk dashboard](docs/kiosk.md), a
 web page the bridge serves itself; it is off until you set `[kiosk] enabled = true` (the Docker dashboard setup does).
 
+The bridge can also serve a [setup page](docs/setup-page.md) (off until you give it its own token): it shows every source
+and credential (never the values), tests a connection, and with a data folder adds, changes and removes sources,
+replaces tokens and changes the MQTT broker settings, without hand-editing files. Sources apply at once; broker
+changes need a restart.
+
 A short overview of the sources is below.
 
 ## Running the bridge by hand
