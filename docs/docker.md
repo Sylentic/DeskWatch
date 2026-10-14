@@ -110,11 +110,10 @@ published image instead of `build:`, see section 10.
 The token here is the dashboard access token: the text in the `kiosk-token` file you just created (the file named by
 `token_file` under `[kiosk]`). It is not a Gitea, GitHub or Azure DevOps token.
 
-Then open `http://<docker host>:8787/?token=<the token>`. The page removes the token from the address bar as soon as
-it loads and keeps it for that browser tab only, so reloads work and the token stays out of the history. A bookmark
-of the page therefore needs the `?token=...` added by hand; for a kiosk browser put the full address in the start
-script ([kiosk.md](kiosk.md#4-autostart-on-a-raspberry-pi) shows the Chromium kiosk start script; it takes the
-address in `DESKWATCH_KIOSK_URL`).
+Then open `http://<docker host>:8787/`. The page asks for the token once; after that the browser keeps a login cookie
+(30 days by default, `session_days` under `[kiosk]`), so new tabs and browser restarts need nothing and the token never
+appears in an address. The Raspberry Pi kiosk browser keeps its cookie in its profile, so the token is entered once on
+first boot ([kiosk.md](kiosk.md#4-autostart-on-a-raspberry-pi)). Changing the token file logs everybody out.
 
 **What the config does.** `[mqtt] enabled = false` makes the bridge skip the broker completely: no connection, no
 warnings every few seconds. It keeps working without one; the only things that need MQTT are the ESP panel, its
@@ -134,12 +133,14 @@ secrets in `dashboard/credentials/`, section 4 explains how. Only a Gitea source
 The page is read-only (nothing on it can change anything), but it shows PR titles, pipeline names, host stats and
 alert text. Choose one:
 
-1. **A token (the example's default).** `token_file` makes the data routes answer 401 without `?token=...`. The
-   page file itself loads without it, but holds no data. The first request still carries the token in its address
-   (`?token=...`), so it can appear in a reverse proxy's access log; the page then removes it from the address bar
-   and later requests send it as a query value on the data routes only. Over plain HTTP it keeps casual visitors on
-   your LAN out; it does not stop someone who can watch your network traffic. Do not log or share the first address.
-   A one-time login that sets an `HttpOnly` cookie would avoid the address altogether; that is not built yet.
+1. **A token (the example's default).** `token_file` makes the data routes answer 401 without a login. The page
+   file itself loads without it, but holds no data. The page asks for the token once and trades it for a session
+   cookie (`HttpOnly`, `SameSite=Strict`, `Secure` when a proxy says `X-Forwarded-Proto: https`), so the token is not
+   in the address, the history or an access log. Wrong tokens are slowed down and, after five in a minute, refused
+   for a minute (for everybody: behind Docker or a proxy the client address cannot be trusted; logins already open
+   are not affected). The live WebSocket refuses a request whose `Origin` is another site. Scripts use
+   `Authorization: Bearer <token>`. The old `?token=` address still works but is deprecated and logs a warning. Over
+   plain HTTP it keeps casual visitors on your LAN out; it does not stop someone who can watch your network traffic.
    **No token from your own network:** `trusted_networks = ["192.168.0.0/16"]` under `[kiosk]` skips the token for
    clients in that range ([kiosk.md](kiosk.md#protecting-the-page) explains how to check what the bridge sees). In
    Docker the bridge often does **not** see the real client: with Docker Desktop, rootless Docker, a reverse
@@ -158,8 +159,9 @@ alert text. Choose one:
 All three examples terminate TLS for `dashboard.example.lan` (a placeholder), ask for a username and password, and
 pass the WebSocket on `/api/kiosk/ws`. The bridge listens on `127.0.0.1:8787` (published as in option 2) or, when
 the proxy runs in Docker too, on `deskwatch:8787` over a shared network. The browser sends the basic auth login on
-the WebSocket by itself, and the bridge ignores a `Basic` header, so keeping `token_file` set still works: open
-`https://dashboard.example.lan/?token=<the token>`. Create the login hash with `htpasswd -nbB desk 'a-password'`
+the WebSocket by itself, and the bridge ignores a `Basic` header, so keeping `token_file` set still works: the page
+asks for the token once. The proxy must pass the browser's `Host` (with the port, if it is not 443) or send
+`X-Forwarded-Host`, because the bridge compares the WebSocket's `Origin` with it. Create the login hash with `htpasswd -nbB desk 'a-password'`
 (package `apache2-utils`) or, for Caddy, `caddy hash-password`.
 
 **Caddy.** `reverse_proxy` upgrades WebSockets without extra lines, and Caddy gets the certificate by itself when the
@@ -198,7 +200,7 @@ server {
     location / {
         proxy_pass http://127.0.0.1:8787;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
+        proxy_set_header Host $http_host;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
         proxy_read_timeout 1h;

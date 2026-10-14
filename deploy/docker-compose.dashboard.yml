@@ -8,7 +8,7 @@
 #   openssl rand -hex 24 > dashboard/credentials/kiosk-token      # the dashboard access token (not a CI token)
 #   chmod 644 dashboard/credentials/kiosk-token                   # readable by uid 10001
 #   docker compose -f deploy/docker-compose.dashboard.yml up -d --build
-#   # then open http://<docker host>:8787/?token=<the token>
+#   # then open http://<docker host>:8787/ and enter the token once
 #
 # The config and secrets come from ${DESKWATCH_CONFIG_DIR}, which defaults to
 # ../dashboard (next to this file, as in the steps above). To use this file from

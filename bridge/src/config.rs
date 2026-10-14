@@ -175,15 +175,19 @@ pub struct KioskConfig {
     /// Grid size. Every widget takes `span` cells of it.
     pub columns: u8,
     pub rows: u8,
-    /// Credential holding a token that the data endpoints require, passed as
-    /// `?token=...` on the page address. Set it whenever `http.listen` is
-    /// reachable from other machines.
+    /// Credential holding a token that the data endpoints require. The page
+    /// asks for it once and keeps a login cookie (`session_days`). Set it
+    /// whenever `http.listen` is reachable from other machines. Changing the
+    /// token logs everybody out.
     pub token_file: Option<String>,
     /// Networks (`192.168.0.0/16`, `fd00::/8`, a single address) whose
     /// clients need no token. Judged by the TCP peer address only, so behind
     /// a reverse proxy or Docker port mapping read docs/kiosk.md first.
     /// Empty (the default) trusts nobody.
     pub trusted_networks: Vec<String>,
+    /// How many days a login stays valid. A browser logs in once with the
+    /// token (`POST /api/login`) and keeps a cookie for this long.
+    pub session_days: u16,
     /// Most live-update WebSockets open at once. More get `503` and the page
     /// falls back to polling. A page needs one per open tab or screen.
     pub max_ws_clients: u16,
@@ -219,6 +223,7 @@ impl Default for KioskConfig {
             rows: 3,
             token_file: None,
             trusted_networks: Vec::new(),
+            session_days: 30,
             max_ws_clients: 16,
             theme: Theme::Day,
             night_from: "22:00".into(),
@@ -243,6 +248,10 @@ impl KioskConfig {
         anyhow::ensure!(
             self.max_ws_clients >= 1,
             "kiosk.max_ws_clients must be at least 1"
+        );
+        anyhow::ensure!(
+            (1..=365).contains(&self.session_days),
+            "kiosk.session_days must be between 1 and 365"
         );
         crate::kiosk::net::parse_all(&self.trusted_networks)
             .map_err(|e| anyhow::anyhow!("kiosk.trusted_networks: {e}"))?;
@@ -1455,6 +1464,7 @@ repo = "acme/*"
         assert!(bad("[kiosk]\ncolumns = 0").contains("between 1 and 12"));
         assert!(bad("[kiosk]\nrows = 13").contains("between 1 and 12"));
         assert!(bad("[kiosk]\nmax_ws_clients = 0").contains("at least 1"));
+        assert!(bad("[kiosk]\nsession_days = 0").contains("between 1 and 365"));
         assert!(bad("[[kiosk.panel]]\nwidget = \"jobs\"\nspan = [5, 1]").contains("span must fit"));
         assert!(bad("[[kiosk.panel]]\nwidget = \"jobs\"\nspan = [1, 0]").contains("span must fit"));
         assert!(bad("[[kiosk.panel]]\nwidget = \"prs\"\nhost = \"x\"").contains("only applies"));

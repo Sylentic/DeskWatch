@@ -495,13 +495,209 @@ async fn token_protects_the_data_but_not_the_page() {
         get(&router, "/api/kiosk", Some("s3cret/+")).await.0,
         StatusCode::OK
     );
-    // The page sends the token the way encodeURIComponent writes it.
+    // The deprecated ?token= still works, also the way encodeURIComponent writes it.
     assert_eq!(
         get(&router, "/api/kiosk?x=1&token=s3cret%2F%2B", None)
             .await
             .0,
         StatusCode::OK
     );
+}
+
+/// A request with free choice of method, headers and body.
+async fn send(
+    router: &Router,
+    method: &str,
+    uri: &str,
+    headers: &[(&str, &str)],
+    body: &str,
+) -> (StatusCode, HeaderMap) {
+    let mut request = Request::builder().method(method).uri(uri);
+    for (name, value) in headers {
+        request = request.header(*name, *value);
+    }
+    let response = router
+        .clone()
+        .oneshot(request.body(Body::from(body.to_string())).unwrap())
+        .await
+        .unwrap();
+    (response.status(), response.headers().clone())
+}
+
+fn login_body(token: &str) -> String {
+    json!({ "token": token }).to_string()
+}
+
+/// The `name=value` part of a `Set-Cookie` header, as a browser sends it back.
+fn cookie_of(headers: &HeaderMap) -> String {
+    let set = headers[header::SET_COOKIE].to_str().unwrap();
+    set.split(';').next().unwrap().to_string()
+}
+
+#[tokio::test]
+async fn login_sets_a_cookie_that_replaces_the_token() {
+    let router = kiosk_with(Some("s3cret")).router();
+    let (status, headers) = send(&router, "POST", "/api/login", &[], &login_body("s3cret")).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let set = headers[header::SET_COOKIE].to_str().unwrap().to_string();
+    for part in ["HttpOnly", "SameSite=Strict", "Path=/", "Max-Age=2592000"] {
+        assert!(set.contains(part), "cookie lacks {part}: {set}");
+    }
+    assert!(!set.contains("Secure"), "plain HTTP must not get Secure");
+    assert!(
+        !set.contains("s3cret"),
+        "the token must not be in the cookie"
+    );
+
+    let cookie = cookie_of(&headers);
+    let (status, _) = send(&router, "GET", "/api/kiosk", &[("cookie", &cookie)], "").await;
+    assert_eq!(status, StatusCode::OK);
+    // Among other cookies, too.
+    let both = format!("a=b; {cookie}; c=d");
+    assert_eq!(
+        send(&router, "GET", "/api/kiosk", &[("cookie", &both)], "")
+            .await
+            .0,
+        StatusCode::OK
+    );
+    // A forged or expired cookie does not count.
+    for bad in [
+        "deskwatch_session=1.2",
+        "deskwatch_session=99999999999.00",
+        "deskwatch_session=",
+    ] {
+        assert_eq!(
+            send(&router, "GET", "/api/kiosk", &[("cookie", bad)], "")
+                .await
+                .0,
+            StatusCode::UNAUTHORIZED,
+            "{bad}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn login_cookie_is_secure_behind_an_https_proxy() {
+    let router = kiosk_with(Some("s3cret")).router();
+    let (_, headers) = send(
+        &router,
+        "POST",
+        "/api/login",
+        &[("x-forwarded-proto", "https")],
+        &login_body("s3cret"),
+    )
+    .await;
+    assert!(
+        headers[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .contains("; Secure")
+    );
+}
+
+#[tokio::test]
+async fn wrong_login_is_refused_and_then_rate_limited() {
+    let router = kiosk_with(Some("s3cret")).router();
+    for _ in 0..session::MAX_FAILURES {
+        let (status, headers) = send(&router, "POST", "/api/login", &[], &login_body("nope")).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert!(!headers.contains_key(header::SET_COOKIE));
+    }
+    // Now even the right token waits.
+    let (status, headers) = send(&router, "POST", "/api/login", &[], &login_body("s3cret")).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert!(headers.contains_key(header::RETRY_AFTER));
+    // Bad bodies are not a way around the check.
+    let router = kiosk_with(Some("s3cret")).router();
+    assert_eq!(
+        send(&router, "POST", "/api/login", &[], "not json").await.0,
+        StatusCode::BAD_REQUEST
+    );
+}
+
+#[tokio::test]
+async fn login_from_another_site_is_refused() {
+    let router = kiosk_with(Some("s3cret")).router();
+    let headers = [("host", "dash.lan:8787"), ("origin", "http://evil.example")];
+    let (status, _) = send(
+        &router,
+        "POST",
+        "/api/login",
+        &headers,
+        &login_body("s3cret"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let same = [
+        ("host", "dash.lan:8787"),
+        ("origin", "http://dash.lan:8787"),
+    ];
+    let (status, _) = send(&router, "POST", "/api/login", &same, &login_body("s3cret")).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn cross_origin_data_requests_are_refused_even_with_a_cookie() {
+    let router = kiosk_with(Some("s3cret")).router();
+    let (_, headers) = send(&router, "POST", "/api/login", &[], &login_body("s3cret")).await;
+    let cookie = cookie_of(&headers);
+    let foreign = [
+        ("cookie", cookie.as_str()),
+        ("host", "dash.lan:8787"),
+        ("origin", "https://evil.example"),
+    ];
+    assert_eq!(
+        send(&router, "GET", "/api/kiosk/ws", &foreign, "").await.0,
+        StatusCode::FORBIDDEN
+    );
+    let own = [
+        ("cookie", cookie.as_str()),
+        ("host", "dash.lan:8787"),
+        ("origin", "http://dash.lan:8787"),
+    ];
+    // Passes the Origin and cookie checks (then fails only for lack of an upgrade).
+    assert_ne!(
+        send(&router, "GET", "/api/kiosk/ws", &own, "").await.0,
+        StatusCode::FORBIDDEN
+    );
+    assert_ne!(
+        send(&router, "GET", "/api/kiosk/ws", &own, "").await.0,
+        StatusCode::UNAUTHORIZED
+    );
+}
+
+#[test]
+fn changing_the_token_invalidates_sessions_and_expiry_is_enforced() {
+    let old = session::Sessions::new("old-token", 30);
+    let cookie = old.issue(1_000);
+    let value = |c: &str| c.to_string();
+    assert!(old.valid(&value(&cookie), 1_001));
+    assert!(!session::Sessions::new("new-token", 30).valid(&cookie, 1_001));
+    assert!(!old.valid(&cookie, 1_000 + 30 * 86_400), "expired");
+    assert!(old.valid(&cookie, 1_000 + 30 * 86_400 - 1));
+    assert!(!old.valid("", 1));
+    assert!(!old.valid("nodot", 1));
+}
+
+#[test]
+fn failure_limit_forgets_old_failures() {
+    let limiter = session::Limiter::default();
+    for _ in 0..session::MAX_FAILURES {
+        limiter.record_failure(100);
+    }
+    assert_eq!(limiter.blocked(101), Some(session::WINDOW_S - 1));
+    assert_eq!(limiter.blocked(100 + session::WINDOW_S), None);
+}
+
+#[test]
+fn page_trades_the_token_for_a_cookie() {
+    assert!(KIOSK_JS.contains("api/login"));
+    assert!(
+        !KIOSK_JS.contains("sessionStorage"),
+        "no token kept in storage"
+    );
+    assert!(!KIOSK_JS.contains("withToken"), "no token in request URLs");
+    assert!(!KIOSK_JS.contains("open this page once as"));
 }
 
 #[test]

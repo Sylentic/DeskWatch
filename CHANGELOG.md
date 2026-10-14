@@ -8,6 +8,15 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Changed
+
+- **One-time login for the dashboard** (issue 32). With `[kiosk] token_file` set, the page asks for the token once and
+  trades it (`POST /api/login`) for a session cookie (`HttpOnly`, `SameSite=Strict`, `Secure` behind an HTTPS proxy),
+  valid `[kiosk] session_days` days (default 30). The token no longer has to be in an address. Replacing the token
+  file logs every browser out. Wrong tokens are delayed and, after five in a minute, logins are refused for a minute.
+  The live WebSocket refuses a foreign `Origin`. `Authorization: Bearer` keeps working for scripts; `?token=` still
+  works but is deprecated and logs a warning once.
+
 ## [0.9.10]
 
 The Azure DevOps release: agent pools, waiting jobs and non-approval checks. All three are built against mock

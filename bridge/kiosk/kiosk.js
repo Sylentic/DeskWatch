@@ -33,22 +33,37 @@
   var wsFailed = false;        // the WebSocket is down, the page polls instead
   var noticeKey = null;        // which notice is on screen, to redraw it only on a change
 
-  // The token arrives as ?token=... on the page address. Take it out of the
-  // address bar right away, so it stays out of the browser history, the Referer
-  // header and bookmarks made later. It lives in this script and in
-  // sessionStorage (this tab only, gone when the tab closes), so the reload
-  // after a bridge upgrade still has it.
+  // The token is entered once and traded for a login cookie (POST api/login),
+  // so it is not kept in the page at all. An old bookmark with ?token=... still
+  // works: the token is taken out of the address bar right away, so it stays
+  // out of the browser history and the Referer header, and is traded the same way.
   function takeToken() {
-    var KEY = 'deskwatch-token';
     var given = params.get('token');
-    if (given) {
-      params.delete('token');
-      var rest = params.toString();
-      try { window.history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + location.hash); } catch (e) {}
-      try { sessionStorage.setItem(KEY, given); } catch (e) {}
-      return given;
-    }
-    try { return sessionStorage.getItem(KEY); } catch (e) { return null; }
+    if (!given) return null;
+    params.delete('token');
+    var rest = params.toString();
+    try { window.history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + location.hash); } catch (e) {}
+    return given;
+  }
+
+  // Trade a token for the login cookie. Resolves to null on success, else to
+  // a problem for describe()'s notice.
+  function login(given) {
+    return fetch('api/login', {
+      method: 'POST', cache: 'no-store', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: given })
+    }).then(function (r) {
+      if (r.ok) return null;
+      if (r.status === 429) {
+        return {
+          code: 'limited', pill: 'too many attempts', needsToken: true,
+          title: 'Too many wrong tokens',
+          detail: 'Logins are paused for a minute after a few wrong tokens. Wait a moment and try again.'
+        };
+      }
+      return describe(r.status === 401 ? { auth: true } : { status: r.status });
+    }, function () { return describe({}); });
   }
 
   var $ = function (id) { return document.getElementById(id); };
@@ -435,7 +450,7 @@
       } : {
         code: 'required', pill: 'token required', needsToken: true,
         title: 'This dashboard needs its access token',
-        detail: 'Not a Gitea, GitHub or Azure DevOps token. It is the text in the file set by `token_file` under `[kiosk]` in the bridge config. Enter it below, or open this page once as `/?token=YOUR_TOKEN`. Clients on a `trusted_networks` range need none.'
+        detail: 'Not a Gitea, GitHub or Azure DevOps token. It is the text in the file set by `token_file` under `[kiosk]` in the bridge config. Enter it below once; this browser then stays logged in. Clients on a `trusted_networks` range need none.'
       };
     }
     if (e && e.status) {
@@ -477,16 +492,20 @@
     if (input) input.focus();
   }
 
-  // Use a token typed into the notice: keep it for this tab and try again now.
+  // Use a token typed into the notice: log in with it, then try again now.
   function submitToken() {
     var input = $('token-input');
     var given = input && input.value.trim();
     if (!given) return;
+    // 'rejected' (a token was tried) rather than 'required' while the notice shows.
     token = given;
-    try { sessionStorage.setItem('deskwatch-token', given); } catch (e) {}
-    problem = null;
-    poll();
-    reconnect();
+    login(given).then(function (failed) {
+      if (failed) { problem = failed; tick(); return; }
+      token = null;
+      problem = null;
+      poll();
+      reconnect();
+    });
   }
   document.addEventListener('click', function (ev) { if (ev.target && ev.target.id === 'token-go') submitToken(); });
   document.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' && ev.target && ev.target.id === 'token-input') submitToken(); });
@@ -527,13 +546,11 @@
 
   // ---- network ------------------------------------------------------------
 
-  function withToken(url) { return token ? url + (url.indexOf('?') < 0 ? '?' : '&') + 'token=' + encodeURIComponent(token) : url; }
-
   var ws = null, retry = 1000, pollTimer = null, retryTimer = null, lastTry = 0;
 
   function poll() {
     lastTry = lastTry || Date.now();
-    fetch(withToken('api/kiosk'), { cache: 'no-store' })
+    fetch('api/kiosk', { cache: 'no-store' })
       .then(function (r) {
         if (r.status === 401) throw { auth: true };
         if (!r.ok) throw { status: r.status };
@@ -542,15 +559,13 @@
       .then(function (data) { problem = null; render(data); })
       .catch(function (e) {
         problem = describe(e);
-        // A refused token must not be tried again; the wrong one is dropped.
-        if (e && e.auth && token) { try { sessionStorage.removeItem('deskwatch-token'); } catch (x) {} }
         tick();
       });
   }
 
   function connect() {
     retryTimer = null;
-    var url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + location.pathname.replace(/[^/]*$/, '') + withToken('api/kiosk/ws');
+    var url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + location.pathname.replace(/[^/]*$/, '') + 'api/kiosk/ws';
     try { ws = new WebSocket(url); } catch (e) { ws = null; }
     if (!ws) { wsFailed = true; later(); return; }
     ws.onopen = function () { retry = 1000; wsFailed = false; if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } };
@@ -585,5 +600,11 @@
   window.DeskWatchKiosk = { render: render, tick: tick, themeAt: themeAt, shiftAt: shiftAt, seed: function (name, values) { history[name] = values.slice(-HISTORY); } };
   setInterval(tick, 1000);
   tick();
-  if (!params.has('static')) { poll(); connect(); }
+  if (!params.has('static')) {
+    if (token) {
+      // An address with ?token=: log in first, so the first request has the cookie.
+      var first = token;
+      login(first).then(function (failed) { if (failed) problem = failed; else token = null; poll(); connect(); });
+    } else { poll(); connect(); }
+  }
 })();
