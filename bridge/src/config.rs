@@ -73,12 +73,15 @@ struct MqttPatch {
     password_file: Option<String>,
 }
 
-/// The setup page (`/setup`, docs/setup-page.md). Off unless it has its own token.
+/// The setup page (`/setup`, docs/setup-page.md). Off unless enabled.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SetupConfig {
-    /// Credential holding the setup token. Separate from `kiosk.token_file`,
-    /// and `kiosk.trusted_networks` never applies to this page.
+    /// Serve the setup page. It has no login: use it on a trusted network only.
+    pub enabled: bool,
+    /// Deprecated, still honoured (the bridge warns): a credential holding a
+    /// token that puts a login in front of the page, which also turns it on.
+    /// Separate from `kiosk.token_file`.
     pub token_file: Option<String>,
     /// Let the setup page restart the bridge (the process exits with code 75
     /// after a clean shutdown). Only for a bridge that is started again by

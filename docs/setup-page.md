@@ -5,19 +5,18 @@ folder, and whether every source works right now. Every source and the broker ha
 With a [data folder](data-dir.md) it also adds, edits and removes sources, replaces tokens and changes the broker
 settings (see below). Without one it only shows and tests.
 
-It is **off by default**. Turn it on by giving it its own token:
+It is **off by default**. Turn it on in `bridge.toml`, restart the bridge and open `http://<host>:8787/setup`:
 
 ```toml
 [setup]
-token_file = "setup-token"      # a credential, like kiosk-token
+enabled = true
 ```
 
-```sh
-openssl rand -hex 24 > credentials/setup-token      # not a CI token; chmod so the bridge user can read it
-```
-
-Restart the bridge and open `http://<host>:8787/setup`. The page asks for the token once and keeps a login cookie for
-12 hours (`HttpOnly`, `SameSite=Strict`, `Secure` behind an HTTPS proxy that sends `X-Forwarded-Proto`).
+There is no login. Whoever can reach the port can use the page, so it belongs on a network you trust (your home
+network). The bridge logs a warning at startup when the page is reachable from the network. **Never expose the port to
+the internet**, and do not publish it through a reverse proxy or tunnel unless that has its own login. The page never
+shows a secret (only whether a credential exists), token fields are write-only, and a page from another website cannot
+make changes in your browser (the `Origin` check, below).
 
 ## What it shows, and what it never shows
 
@@ -90,7 +89,7 @@ With `[setup] allow_restart = true` the banner gets a **Restart now** button. Th
 tells the broker it is going offline) and exits with code 75. That only helps when something starts it again:
 Docker with `restart: unless-stopped` (the compose files in `deploy/` have it) or the systemd unit in
 `deploy/deskwatch-bridge.service` (`Restart=on-failure`). A bridge started by hand just stops, so the button is off by
-default. It needs the setup login and the same origin like every change.
+default. It needs the same origin like every change.
 
 ## Not yet
 
@@ -102,13 +101,20 @@ default. It needs the setup login and the same origin like every change.
 
 ## Security
 
-- **Its own token**, separate from the dashboard's. A dashboard login is useless here even with the same token text.
-- **`kiosk.trusted_networks` never applies.** The peer address is not reliable enough (Docker, reverse proxies) to
-  decide who may see credentials and, later, change them.
-- Wrong tokens are delayed, and five in a minute pause logins for a minute for everybody. Requests whose `Origin` is
-  another site are refused.
+- **No login.** Anyone who can reach the port can open the page and, with a data folder, change sources and store
+  tokens. Keep the port on a trusted network. A website you have open in your browser cannot use the page for you:
+  requests whose `Origin` is another site are refused.
+- Secrets never reach the browser, whatever the network.
+- **Deprecated: `[setup] token_file`.** Existing configs keep working: with it the page still asks for its own token
+  (separate from the dashboard's, a 12-hour login cookie, wrong tokens delayed and five in a minute pause logins), and
+  the bridge warns at startup. `kiosk.trusted_networks` never applied to this page.
 - The connection is plain HTTP unless you put a TLS reverse proxy in front ([docker.md](docker.md) has examples). The
   bridge logs a warning when the page is reachable from the network. Until you have TLS, keep the listener on
   `127.0.0.1` or on a network you trust.
 - The page is built with `textContent` only, so nothing from the config can inject markup, and it loads nothing from
   other sites (CSP).
+
+## Open points
+
+- Authentication for the ESP panel's own setup mode (step 8 of the plan) is still to be worked out when that option
+  exists.

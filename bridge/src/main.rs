@@ -205,21 +205,36 @@ async fn main() -> Result<()> {
     let mqtt_link = health::MqttLink::default();
     // The setup page (docs/setup-page.md): off unless it has its own token.
     let mut setup = None;
-    if let Some(file) = &config.setup.token_file {
-        let token = source::load_secret(file).context("setup.token_file")?;
-        let built = Setup::new(
-            &config,
-            &token,
-            mqtt_link.clone(),
-            store.clone(),
-            Some(supervisor.clone()),
-        );
+    if config.setup.enabled || config.setup.token_file.is_some() {
+        let built = match &config.setup.token_file {
+            Some(file) => {
+                let token = source::load_secret(file).context("setup.token_file")?;
+                warn!(
+                    "setup.token_file is deprecated; the setup page needs no login any more. \
+                     It still asks for its token while the setting is there"
+                );
+                Setup::new(
+                    &config,
+                    &token,
+                    mqtt_link.clone(),
+                    store.clone(),
+                    Some(supervisor.clone()),
+                )
+            }
+            None => Setup::open(
+                &config,
+                mqtt_link.clone(),
+                store.clone(),
+                Some(supervisor.clone()),
+            ),
+        };
         hooks.add("/setup", built.router());
-        info!("setup page on /setup (its own token; kiosk.trusted_networks does not apply)");
-        if !config.http.listen.ip().is_loopback() {
+        info!("setup page on /setup");
+        if config.setup.token_file.is_none() && !config.http.listen.ip().is_loopback() {
             warn!(
-                "the setup page is reachable from the network on {} over plain HTTP; \
-                 put a TLS reverse proxy in front before using it from another machine",
+                "the setup page on {} has no login: anyone who can reach this port can read how the bridge is set up \
+                 and, with a data folder, change sources and store tokens. Use it on a trusted network only; never \
+                 expose the port to the internet or publish it through a proxy or tunnel without a login",
                 config.http.listen
             );
         }

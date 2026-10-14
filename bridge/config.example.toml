@@ -44,10 +44,11 @@ listen = "0.0.0.0:8787"
 
 # The setup page (/setup): shows sources, credentials (never their values), the
 # broker and live source health, and (with a data folder) adds, changes and
-# removes sources and changes the broker settings. Off unless it has its own
-# token, separate from [kiosk]; trusted_networks never applies. Guide: docs/setup-page.md
+# removes sources and changes the broker settings. Off by default. It has NO
+# login: trusted network only, never exposed to the internet. Guide: docs/setup-page.md
 # [setup]
-# token_file = "setup-token"
+# enabled = true
+# # token_file = "setup-token"  # DEPRECATED: still puts a login in front of the page, and warns
 # allow_restart = true          # a "Restart now" button; only when Docker or systemd starts the bridge again
 
 # Dashboard page for a big screen (a Raspberry Pi with a monitor, a wall

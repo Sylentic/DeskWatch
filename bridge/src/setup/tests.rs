@@ -763,3 +763,40 @@ async fn restarting_needs_the_option_a_login_and_the_same_origin() {
     let (_, _, text) = send(&router, "GET", "/api/setup/status", &ok, "").await;
     assert!(text.contains("\"can_restart\":true"), "{text}");
 }
+
+fn open_setup(temp: &Temp) -> Setup {
+    Setup::open(&config(&temp.0), MqttLink::default(), None, None)
+}
+
+#[tokio::test]
+async fn without_a_token_the_page_needs_no_login_and_still_hides_secrets() {
+    let temp = Temp::new("open");
+    let router = open_setup(&temp).router();
+    let (status, _, body) = send(&router, "GET", "/api/setup/status", &[], "").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(!body.contains(SECRET), "a secret reached the browser");
+    assert!(body.contains("github:main"));
+    // Login has nothing to do and sets no cookie.
+    let (status, headers, _) =
+        send(&router, "POST", "/api/setup/login", &[], &login_body("x")).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(headers.get(header::SET_COOKIE).is_none());
+}
+
+#[tokio::test]
+async fn without_a_token_another_site_still_cannot_change_anything() {
+    let temp = Temp::new("open-origin");
+    let router = open_setup(&temp).router();
+    let (status, ..) = send(
+        &router,
+        "POST",
+        "/api/setup/test",
+        &[
+            ("host", "bridge.lan:8787"),
+            ("origin", "https://evil.example"),
+        ],
+        r#"{"id":"mqtt"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}

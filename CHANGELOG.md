@@ -15,10 +15,16 @@ may change if the firmware work needs it; any such change is listed here.
   once and a Raspberry Pi kiosk needs nothing typed. The bridge logs one clear warning when the page has no login and
   listens on the network: keep it on your home network, never expose it to the internet or publish it through a proxy
   or tunnel without a login. `token_file` and the cookie login stay for anyone who wants them (nothing about them
-  changed). The setup page is unaffected: it still needs its own token and still writes secrets only behind it.
+  changed).
+- **The setup page needs no login either.** It is turned on with `[setup] enabled = true` and is open to whoever can
+  reach the port, so use it on a trusted network only (the bridge warns at startup). Secrets still never reach the
+  browser, token fields stay write-only and a page from another website still cannot make changes (the `Origin`
+  check). Authentication for the ESP panel's setup mode is left for when that exists.
 
 ### Deprecated
 
+- **`[setup] token_file`** still works (it keeps a login in front of the page and turns the page on) but the bridge
+  warns; use `[setup] enabled = true`.
 - **`[kiosk] trusted_networks`** still works but the bridge now warns at startup and the docs advise removing it: the
   peer address it relies on is not the real client behind Docker or a reverse proxy.
 
