@@ -15,6 +15,7 @@ pub mod hooks;
 pub mod kiosk;
 pub mod model;
 pub mod mqtt;
+pub mod probe;
 pub mod prometheus;
 pub mod setup;
 pub mod source;

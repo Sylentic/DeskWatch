@@ -25,3 +25,8 @@ form { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .75rem; }
 input { flex: 1 1 14rem; padding: .5rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; }
 button { padding: .5rem 1rem; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
 .err { color: var(--bad); margin: .5rem 0 0; }
+button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+button:disabled { opacity: .6; cursor: default; }
+.test { margin-top: .75rem; }
+ul.checks { margin: .5rem 0 0; padding: 0; list-style: none; }
+ul.checks li { margin: .25rem 0; overflow-wrap: anywhere; }

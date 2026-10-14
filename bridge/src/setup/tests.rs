@@ -286,3 +286,80 @@ fn setup_is_off_without_a_token_file() {
     let cfg = Config::from_toml("[setup]\ntoken_file = \"setup-token\"\n").unwrap();
     assert_eq!(cfg.setup.token_file.as_deref(), Some("setup-token"));
 }
+
+#[tokio::test]
+async fn connection_tests_need_login_origin_and_a_known_source() {
+    let temp = Temp::new("probe");
+    let router = setup(&temp).router();
+    let body = json!({ "id": "github:main" }).to_string();
+    let (status, ..) = send(&router, "POST", "/api/setup/test", &[], &body).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let cookie = logged_in(&router).await;
+    let evil = [
+        ("cookie", cookie.as_str()),
+        ("host", "b.lan"),
+        ("origin", "http://evil.example"),
+    ];
+    assert_eq!(
+        send(&router, "POST", "/api/setup/test", &evil, &body)
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    let ok = [("cookie", cookie.as_str())];
+    assert_eq!(
+        send(&router, "POST", "/api/setup/test", &ok, "{}").await.0,
+        StatusCode::BAD_REQUEST
+    );
+    let unknown = json!({ "id": "github:nope" }).to_string();
+    assert_eq!(
+        send(&router, "POST", "/api/setup/test", &ok, &unknown)
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn a_connection_test_runs_the_real_checks_and_one_runs_at_a_time() {
+    use crate::probe::tests::{Temp as ProbeTemp, gitea_mock, serve};
+    let temp = ProbeTemp::new("endpoint");
+    let base = serve(gitea_mock()).await;
+    let text = format!(
+        "[[source.gitea]]\nname = \"home\"\nbase_url = {base:?}\nwebhook_secret_file = {}\n\
+         token_file = {}\nrepos = [\"o/r\"]\n",
+        temp.token("hook", "h"),
+        temp.token("tok", "good-token-value")
+    );
+    let config = Config::from_toml(&text).unwrap();
+    let setup = Setup::new(&config, &Secret::new("setup-token"), MqttLink::default());
+    let router = setup.router();
+    let cookie = logged_in(&router).await;
+    let headers = [("cookie", cookie.as_str())];
+    let body = json!({ "id": "gitea:home" }).to_string();
+
+    let (status, _, text) = send(&router, "POST", "/api/setup/test", &headers, &body).await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["ok"], true);
+    assert!(
+        v["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["name"] == "repository o/r")
+    );
+    assert!(!text.contains("good-token-value"));
+
+    // While a test holds the permit, a second one is refused, not queued.
+    let _held = setup.shared.testing.try_acquire().unwrap();
+    let (status, ..) = send(&router, "POST", "/api/setup/test", &headers, &body).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[test]
+fn the_page_can_test_a_connection() {
+    assert!(SETUP_JS.contains("api/setup/test"));
+    assert!(SETUP_JS.contains("Test connection"));
+}

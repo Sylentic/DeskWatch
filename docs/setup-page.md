@@ -1,8 +1,8 @@
 # The setup page
 
 A page in the browser that shows how the bridge is set up: sources, their credentials, the MQTT broker, the data
-folder, and whether every source works right now. **This version is read-only.** Adding and editing sources, replacing
-tokens and a "test connection" button come in later releases; the plan is in the project's setup-page advice.
+folder, and whether every source works right now. Every source and the broker have a **Test connection** button.
+**It does not change anything yet.** Adding and editing sources and replacing tokens come in later releases.
 
 It is **off by default**. Turn it on by giving it its own token:
 
@@ -25,6 +25,26 @@ Restart the bridge and open `http://<host>:8787/setup`. The page asks for the to
 - Per credential: its **name** and whether it is `found` (mounted file or data folder) or `missing`. **Never the value,
   not even masked.** Nothing in the status response contains a secret, and a test guards that.
 - The MQTT broker: address, TLS, login name, whether the password is set, and whether the bridge is connected.
+
+## Test connection
+
+The button makes the bridge itself try the connection, with the real credentials and the same client code as the real
+source, and lists every check with a plain message. A test is read-only and makes a few cheap requests:
+
+| Source | Checks |
+| --- | --- |
+| GitHub | the token can see each repository (up to 10); each `runners` scope, with a hint about the extra rights it needs |
+| Gitea | the server answers; the token is accepted; each repository; each `runners` scope; the webhook secret exists (its value cannot be checked from here) |
+| Azure DevOps | builds of each project; pull requests if enabled (Code: Read); each `agent_pools` entry exists (Agent Pools: Read) |
+| Prometheus | the server answers a query; each host's `instance` is a known target |
+| MQTT broker | connects and logs in (see below) |
+
+A refused token says what to look at (a missing scope, an expired PAT). Messages are shortened and never contain a
+credential. Only one test runs at a time and one takes at most 45 seconds.
+
+The MQTT test uses its own client id (`<client_id>-setup-test`) so it does not kick the bridge off the broker, and sets
+no Last Will. It proves that host, port, TLS and the login work; it does **not** check what the login may publish or
+subscribe to, so an ACL mistake still shows up as a source of trouble in the broker log.
 
 ## Security
 

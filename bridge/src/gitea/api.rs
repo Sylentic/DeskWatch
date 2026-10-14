@@ -74,6 +74,27 @@ impl HttpApi {
         })
     }
 
+    /// Does the server answer? No login needed (the setup page's connection test).
+    pub async fn version(&self) -> Result<()> {
+        self.get("/version").send().await?.error_for_status()?;
+        Ok(())
+    }
+
+    /// Does the server accept the token? Fails without a token.
+    pub async fn user(&self) -> Result<()> {
+        self.get("/user").send().await?.error_for_status()?;
+        Ok(())
+    }
+
+    /// Can the token (or anonymous access) see `owner/name`?
+    pub async fn repo(&self, repo: &str) -> Result<()> {
+        self.get(&format!("/repos/{repo}"))
+            .send()
+            .await?
+            .error_for_status()?;
+        Ok(())
+    }
+
     fn get(&self, path: &str) -> reqwest::RequestBuilder {
         let request = self.client.get(format!("{}/api/v1{path}", self.base_url));
         match &self.token {
