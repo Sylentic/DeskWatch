@@ -668,11 +668,11 @@ async fn cross_origin_data_requests_are_refused_even_with_a_cookie() {
 
 #[test]
 fn changing_the_token_invalidates_sessions_and_expiry_is_enforced() {
-    let old = session::Sessions::new("old-token", 30);
+    let old = session::Sessions::new("kiosk", "old-token", 30 * 86_400);
     let cookie = old.issue(1_000);
     let value = |c: &str| c.to_string();
     assert!(old.valid(&value(&cookie), 1_001));
-    assert!(!session::Sessions::new("new-token", 30).valid(&cookie, 1_001));
+    assert!(!session::Sessions::new("kiosk", "new-token", 30 * 86_400).valid(&cookie, 1_001));
     assert!(!old.valid(&cookie, 1_000 + 30 * 86_400), "expired");
     assert!(old.valid(&cookie, 1_000 + 30 * 86_400 - 1));
     assert!(!old.valid("", 1));

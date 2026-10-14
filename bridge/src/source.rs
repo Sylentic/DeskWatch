@@ -292,6 +292,44 @@ pub fn load_secret(name: &str) -> Result<Secret> {
     Ok(Secret::new(value))
 }
 
+/// Where a credential named in the config can be found, without reading it.
+/// The setup page shows this instead of the value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CredentialStatus {
+    /// In the mounted credentials folder (or an absolute path): hand-managed.
+    Mounted,
+    /// In the data folder's `credentials/`: the bridge can replace it.
+    DataFolder,
+    /// Not found anywhere; the source cannot start (or runs without it, if optional).
+    Missing,
+}
+
+impl CredentialStatus {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Mounted => "mounted",
+            Self::DataFolder => "data_folder",
+            Self::Missing => "missing",
+        }
+    }
+}
+
+/// Look for credential `name` the way `load_secret` does, without reading it.
+pub fn credential_status(name: &str) -> CredentialStatus {
+    let mounted = std::env::var_os(CREDENTIALS_DIR_ENV)
+        .filter(|d| !d.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| cfg!(windows).then(|| crate::config::windows_data_dir().join("credentials")));
+    let own = crate::store::credentials_dir();
+    match resolve_credential(name, mounted, own) {
+        Ok(path) if path.is_file() => match own {
+            Some(dir) if path.starts_with(dir) => CredentialStatus::DataFolder,
+            _ => CredentialStatus::Mounted,
+        },
+        _ => CredentialStatus::Missing,
+    }
+}
+
 /// Where to read credential `name`: the mounted folder, or else the data
 /// folder's own credentials (store.rs) when the mounted one has no such file.
 /// A mounted file of the same name wins.

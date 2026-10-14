@@ -18,8 +18,9 @@ use axum::http::{HeaderMap, header};
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
 
-/// Name of the session cookie.
+/// Name of the dashboard's session cookie, and the setup page's.
 pub const COOKIE: &str = "deskwatch_session";
+pub const SETUP_COOKIE: &str = "deskwatch_setup";
 
 /// Wrong tokens allowed per `WINDOW_S` before logins are refused for a while.
 pub const MAX_FAILURES: usize = 5;
@@ -32,13 +33,18 @@ pub struct Sessions {
 }
 
 impl Sessions {
-    pub fn new(token: &str, days: u16) -> Self {
+    /// `purpose` keeps the keys of different pages apart: a cookie signed for
+    /// the dashboard is worthless on the setup page even if both used the
+    /// same token.
+    pub fn new(purpose: &str, token: &str, lifetime_s: u64) -> Self {
         let mut hasher = Sha256::new();
         hasher.update(b"deskwatch-session-v1\0");
+        hasher.update(purpose.as_bytes());
+        hasher.update(b"\0");
         hasher.update(token.as_bytes());
         Self {
             key: hasher.finalize().into(),
-            lifetime_s: u64::from(days) * 86_400,
+            lifetime_s,
         }
     }
 
@@ -72,22 +78,22 @@ impl Sessions {
     }
 }
 
-/// The session cookie's value in a request, if it has one.
-pub fn cookie_value(headers: &HeaderMap) -> Option<&str> {
+/// The value of cookie `name` in a request, if it has one.
+pub fn cookie_value<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers
         .get_all(header::COOKIE)
         .iter()
         .filter_map(|v| v.to_str().ok())
         .flat_map(|line| line.split(';'))
-        .find_map(|pair| pair.trim().strip_prefix(COOKIE)?.strip_prefix('='))
+        .find_map(|pair| pair.trim().strip_prefix(name)?.strip_prefix('='))
 }
 
 /// The `Set-Cookie` header for a new session. `Secure` only when the request
 /// came in over HTTPS (a proxy says so in `X-Forwarded-Proto`), because a
 /// Secure cookie would never come back over plain HTTP.
-pub fn set_cookie(value: &str, max_age_s: u64, secure: bool) -> String {
+pub fn set_cookie(name: &str, value: &str, max_age_s: u64, secure: bool) -> String {
     let secure = if secure { "; Secure" } else { "" };
-    format!("{COOKIE}={value}; Max-Age={max_age_s}; Path=/; HttpOnly; SameSite=Strict{secure}")
+    format!("{name}={value}; Max-Age={max_age_s}; Path=/; HttpOnly; SameSite=Strict{secure}")
 }
 
 /// Did the request come in over HTTPS, according to the proxy in front?

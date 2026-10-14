@@ -16,6 +16,7 @@ pub mod kiosk;
 pub mod model;
 pub mod mqtt;
 pub mod prometheus;
+pub mod setup;
 pub mod source;
 pub mod stats;
 pub mod store;

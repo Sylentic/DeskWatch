@@ -35,6 +35,7 @@ use deskwatch_bridge::kiosk::Kiosk;
 use deskwatch_bridge::model::{Badges, Screen};
 use deskwatch_bridge::mqtt::{self, Inbound, Publisher};
 use deskwatch_bridge::prometheus::Prometheus;
+use deskwatch_bridge::setup::Setup;
 use deskwatch_bridge::source::{self, Secret, unix_now};
 use deskwatch_bridge::stats::StatsCollector;
 use deskwatch_bridge::store::Store;
@@ -210,6 +211,22 @@ async fn main() -> Result<()> {
     // `/healthz` (the Docker health probe) reports the broker connection, so
     // the listener also opens for a bridge that only talks to an ESP panel.
     let mqtt_link = health::MqttLink::default();
+    // The setup page (docs/setup-page.md): off unless it has its own token.
+    let mut setup = None;
+    if let Some(file) = &config.setup.token_file {
+        let token = source::load_secret(file).context("setup.token_file")?;
+        let built = Setup::new(&config, &token, mqtt_link.clone());
+        hooks.add("/setup", built.router());
+        info!("setup page on /setup (its own token; kiosk.trusted_networks does not apply)");
+        if !config.http.listen.ip().is_loopback() {
+            warn!(
+                "the setup page is reachable from the network on {} over plain HTTP; \
+                 put a TLS reverse proxy in front before using it from another machine",
+                config.http.listen
+            );
+        }
+        setup = Some(built);
+    }
     if config.mqtt.enabled {
         hooks.add("/healthz", mqtt_link.route());
     }
@@ -281,6 +298,14 @@ async fn main() -> Result<()> {
         }
         if let Some(kiosk) = &mut kiosk {
             kiosk.update(&mut composer, unix_now());
+        }
+        if let Some(setup) = &setup {
+            setup.update_health(
+                composer
+                    .health
+                    .iter()
+                    .map(|(id, health)| (id.to_string(), health.name())),
+            );
         }
         if let Some(publisher) = &publisher {
             shown.publish(publisher, &mut composer, unix_now()).await;

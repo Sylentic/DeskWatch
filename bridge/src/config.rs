@@ -55,6 +55,15 @@ struct Overlay {
     source: Sources,
 }
 
+/// The setup page (`/setup`, docs/setup-page.md). Off unless it has its own token.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SetupConfig {
+    /// Credential holding the setup token. Separate from `kiosk.token_file`,
+    /// and `kiosk.trusted_networks` never applies to this page.
+    pub token_file: Option<String>,
+}
+
 /// Where the bridge may keep files it writes itself.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -89,6 +98,13 @@ pub struct Config {
     /// Folder the bridge may write to. Off unless set.
     #[serde(default)]
     pub data: DataConfig,
+    /// The setup page. Off unless `token_file` is set.
+    #[serde(default)]
+    pub setup: SetupConfig,
+    /// `kind:name` of the sources that came from `sources.toml` in the data
+    /// folder rather than `bridge.toml`. Filled by `with_overlay`.
+    #[serde(skip)]
+    pub overlay_sources: std::collections::BTreeSet<String>,
     /// Data sources, one array per adapter type.
     #[serde(default)]
     pub source: Sources,
@@ -863,6 +879,8 @@ impl Config {
                         stringify!($kind),
                         extra.name
                     );
+                    self.overlay_sources
+                        .insert(format!("{}:{}", stringify!($kind), extra.name));
                     self.source.$kind.push(extra);
                 }
             )+};
