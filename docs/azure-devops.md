@@ -21,6 +21,9 @@ Self-hosted agent pools can be shown on the kiosk `runners` widget (optional, ne
 [runners.md](runners.md#4-azure-devops-agent-pools-in-this-version)). Not in this version: classic release pipelines, Azure DevOps Server
 (on premises), and sign-in with Microsoft Entra instead of a token.
 
+This source has only been tested against mock answers. [azure-devops-verify.md](azure-devops-verify.md) is the checklist
+for the first run against a real organisation.
+
 ## Before you start
 
 A personal access token (PAT) acts as you. If this is your employer's organisation, check that your organisation
