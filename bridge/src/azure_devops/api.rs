@@ -16,7 +16,7 @@ use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use reqwest::{StatusCode, Url};
 use serde::de::DeserializeOwned;
 
-use super::payload::{Build, List, PullRequest, Record, Timeline};
+use super::payload::{Agent, Build, List, Pool, PullRequest, Record, Timeline};
 use crate::source::{AuthRefused, Secret};
 
 /// Azure DevOps Services.
@@ -88,6 +88,25 @@ impl HttpApi {
         )?;
         let pulls: List<PullRequest> = self.get_json(url).await.context("open pulls")?;
         Ok(pulls.value)
+    }
+
+    /// Every agent pool of the organisation (organisation level, not per
+    /// project). Needs the Agent Pools (Read) scope.
+    pub async fn pools(&self) -> Result<Vec<Pool>> {
+        let url = self.url(&["_apis", "distributedtask", "pools"], &[])?;
+        let pools: List<Pool> = self.get_json(url).await.context("agent pools")?;
+        Ok(pools.value)
+    }
+
+    /// The agents of one pool, with the job each one is running (if any).
+    pub async fn agents(&self, pool_id: u64) -> Result<Vec<Agent>> {
+        let id = pool_id.to_string();
+        let url = self.url(
+            &["_apis", "distributedtask", "pools", &id, "agents"],
+            &[("includeAssignedRequest", "true")],
+        )?;
+        let agents: List<Agent> = self.get_json(url).await.context("pool agents")?;
+        Ok(agents.value)
     }
 
     /// `{base}/{organization}/{path...}?api-version=7.1&{query}`, with every
@@ -202,6 +221,29 @@ pub(crate) mod tests {
                     },
                 ),
             )
+            .route(
+                "/your-org/_apis/distributedtask/pools",
+                get(
+                    |State(seen): State<Arc<Seen>>, RawQuery(q): RawQuery, h: HeaderMap| async move {
+                        answer(&seen, "pools", q, h, include_str!("testdata/pools.json"))
+                    },
+                ),
+            )
+            .route(
+                "/your-org/_apis/distributedtask/pools/{id}/agents",
+                get(
+                    |State(seen): State<Arc<Seen>>,
+                     Path(id): Path<u64>,
+                     RawQuery(q): RawQuery,
+                     h: HeaderMap| async move {
+                        let body = match id {
+                            12 => include_str!("testdata/agents_12.json"),
+                            _ => include_str!("testdata/agents_13.json"),
+                        };
+                        answer(&seen, "agents", q, h, body)
+                    },
+                ),
+            )
             .with_state(seen);
         serve(app).await
     }
@@ -287,6 +329,29 @@ pub(crate) mod tests {
         ] {
             assert_eq!(Health::from_error(&err), Health::AuthFailed);
         }
+    }
+
+    #[tokio::test]
+    async fn pools_and_agents() {
+        let seen = Arc::new(Seen::default());
+        let api = api(&mock_azure(seen.clone()).await);
+        let pools = api.pools().await.unwrap();
+        assert_eq!(pools.len(), 3);
+        assert!(pools[0].is_hosted && !pools[1].is_hosted);
+        let agents = api.agents(12).await.unwrap();
+        assert_eq!(agents.len(), 3);
+        assert!(agents[1].assigned_request.is_some());
+        assert_eq!(agents[2].enabled, Some(false));
+
+        let requests = seen.requests.lock().unwrap();
+        assert!(
+            requests
+                .iter()
+                .all(|(_, _, h)| h["authorization"] == BASIC_AUTH)
+        );
+        let agents_query = &requests.iter().find(|(n, ..)| n == "agents").unwrap().1;
+        assert!(agents_query.contains("includeAssignedRequest=true"));
+        assert!(agents_query.contains("api-version=7.1"));
     }
 
     #[tokio::test]

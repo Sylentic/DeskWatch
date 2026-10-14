@@ -12,3 +12,7 @@ are made up. Nothing here comes from a real organisation.
   (`Checkpoint.Approval`, in progress).
 - `timeline_failed.json`: a build whose `Run unit tests` task failed (single implicit stage `__default`).
 - `pulls.json`: `GET {project}/_apis/git/pullrequests`. Three active PRs in two repositories, one draft.
+- `pools.json`: `GET _apis/distributedtask/pools` (organisation level). One Microsoft-hosted pool and two self-hosted
+  ones. **Written from the documented shape, not recorded from a real organisation.**
+- `agents_12.json`, `agents_13.json`: `GET _apis/distributedtask/pools/{id}/agents?includeAssignedRequest=true`.
+  Pool 12 has an idle, a busy (`assignedRequest` set) and a disabled agent; pool 13 one offline agent.

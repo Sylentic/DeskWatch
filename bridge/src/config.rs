@@ -603,6 +603,14 @@ pub struct AzureDevopsConfig {
     /// repository by `project/repository`.
     #[serde(default)]
     pub alias: BTreeMap<String, String>,
+    /// Self-hosted agent pools to show on the kiosk `runners` widget, by pool
+    /// name (docs/runners.md). Empty means agents are not polled. Needs the
+    /// Agent Pools (Read) scope on the token.
+    #[serde(default)]
+    pub agent_pools: Vec<String>,
+    /// Seconds between agent pool polls.
+    #[serde(default = "default_azure_devops_agent_poll_s")]
+    pub agent_poll_s: u64,
 }
 
 /// One `[[source.prometheus]]` block: host stats from node_exporter and
@@ -712,6 +720,10 @@ fn default_host_name(instance: &str) -> String {
 
 fn default_github_base_url() -> String {
     crate::github::api::GITHUB_COM.into()
+}
+
+fn default_azure_devops_agent_poll_s() -> u64 {
+    60
 }
 
 fn default_azure_devops_base_url() -> String {
@@ -883,6 +895,14 @@ impl Config {
             anyhow::ensure!(
                 azure.poll_s > 0 && azure.job_poll_s > 0,
                 "source.azure_devops {name}: poll_s and job_poll_s must be above 0"
+            );
+            anyhow::ensure!(
+                azure.agent_poll_s > 0,
+                "source.azure_devops {name}: agent_poll_s must be above 0"
+            );
+            anyhow::ensure!(
+                azure.agent_pools.iter().all(|p| !p.trim().is_empty()),
+                "source.azure_devops {name}: agent_pools entries must be pool names"
             );
         }
         let mut names = HashSet::new();
@@ -1204,6 +1224,17 @@ mod tests {
         assert_eq!(azure.interrupt, Interrupt::All(false), "quiet by default");
         assert!(azure.pull_requests && azure.notify_new_prs);
         assert_eq!(azure.deploy_words, ["deploy", "terraform"]);
+        // Agent pools are off unless named.
+        assert!(azure.agent_pools.is_empty());
+        assert_eq!(azure.agent_poll_s, 60);
+
+        let pools = Config::from_toml(&block(
+            "agent_pools = [\"Homelab\", \"Build Farm\"]\nagent_poll_s = 30",
+        ))
+        .unwrap();
+        assert_eq!(pools.source.azure_devops[0].agent_pools.len(), 2);
+        assert!(Config::from_toml(&block("agent_pools = [\" \"]")).is_err());
+        assert!(Config::from_toml(&block("agent_poll_s = 0")).is_err());
 
         let some = Config::from_toml(&block("interrupt = [\"project-a\"]")).unwrap();
         assert!(some.source.azure_devops[0].interrupt.allows("project-a"));

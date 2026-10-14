@@ -1,13 +1,13 @@
 # Runners and agent pools
 
 Which of your CI runners are up, busy or down, on the kiosk dashboard. This page is the design for all three CI
-systems and the guide for the parts that exist today: **Gitea runners** and **GitHub self-hosted runners**.
+systems and the guide for the parts that exist today: **Gitea runners**, **GitHub self-hosted runners** and **Azure DevOps agent pools**.
 
 | Source | What it lists | State |
 |---|---|---|
 | Gitea | Runners of a user, organisation, repository or the whole instance | In this version |
 | GitHub, GitHub Enterprise | Self-hosted runners of a repository or organisation | In this version |
-| Azure DevOps | Agents of the self-hosted agent pools, plus queued jobs per pool | After that, mocks only until the token question is settled |
+| Azure DevOps | Agents of the self-hosted agent pools | In this version, built against mock responses only. Queued jobs per pool are not in yet |
 | ESP panel | A `runners` page and an offline count in the `warn` badge | Last PR, needs a schema change |
 
 ## 1. How it fits
@@ -125,7 +125,7 @@ costs 1 request per scope; conditional requests with an ETag do not count agains
 GitHub Enterprise Server and GHE.com use the same paths below their `base_url`. Mapping: `offline` is offline;
 `online` with `busy` is busy; `online` otherwise is idle.
 
-## 4. Azure DevOps agent pools (after GitHub)
+## 4. Azure DevOps agent pools (in this version)
 
 Azure DevOps calls them agents in pools. Only **self-hosted** pools matter (a Microsoft-hosted pool is `isHosted`
 and skipped).
@@ -136,20 +136,41 @@ and skipped).
 | Agents of a pool | `GET .../pools/{poolId}/agents?includeAssignedRequest=true` | `status` is `online` or `offline`, `enabled` is false when disabled, `assignedRequest` is set while the agent runs a job |
 | Queued jobs | `GET .../pools/{poolId}/jobrequests` | **Assumption:** a request with no `assignTime` and no `finishTime` is waiting for an agent. Verify before relying on it |
 
-- **Token:** the existing read-only PAT needs one more scope, **Agent Pools (Read)**. That is a change to the
-  token, and the work organisation's policy on tokens is not settled, so this source is developed against recorded
-  mock responses only, the same as the rest of the Azure DevOps source. Skipping `agent_pools` needs no new rights.
+- **Token:** the existing read-only PAT needs one more scope, **Agent Pools (Read)**. In the PAT screen it sits
+  under *Show all scopes*. That is a change to the token, and the work organisation's policy on tokens is not
+  settled, so this source is developed against hand-written mock responses only, the same as the rest of the Azure
+  DevOps source. Skipping `agent_pools` needs no new rights.
 - Mapping: `offline` is offline; `online` with an `assignedRequest` is busy; `online` otherwise is idle; `enabled:
-  false` is disabled.
-- Scope key: one per pool, `azure_devops:<name>:runners:pool:<pool>`, with an optional `queued` count added to the
-  fact then.
-- Polling every 60 seconds is plenty; it is one request per pool plus the pool list.
+  false` is disabled. Agents have no labels, so the pool name is shown in their place.
+- Scope key: one per pool, `azure_devops:<name>:runners:pool:<pool>`.
+- Polling every 60 seconds is plenty; it is one request for the pool list plus one per configured pool.
+
+```toml
+[[source.azure_devops]]
+name = "work"
+organization = "your-org"
+projects = ["project-a"]
+token_file = "azdo-work"
+agent_pools = ["Homelab"]     # names of self-hosted pools; off when empty or missing
+agent_poll_s = 60
+```
+
+Pools are picked by exact name, because an organisation can have many pools and showing all of them is rarely
+wanted. A name that matches no self-hosted pool is logged (`no self-hosted agent pool with this name`) and
+skipped; Microsoft-hosted pools are never shown. Like the other runner polls, a failure here (for example a
+`403` because the token lacks **Agent Pools (Read)**) is logged as `cannot poll agent pools` and **does not
+change the source's health**, so the pipeline and PR widgets stay fresh.
+
+**Not verified against a real organisation:** the shapes of the pool and agent answers were written from the
+documented API. Check on first use that `status` is `online`/`offline` and that `assignedRequest` appears only
+while an agent runs a job. The queued-jobs count (`jobrequests`) is left out until that is checked, so there is no
+"waiting for an agent" signal yet.
 
 ## 5. Order of the work
 
 1. **This PR:** the `Runner` fact and the kiosk widget, Gitea as the first source, config, docs, tests.
 2. **GitHub runners (done):** its own PR, because it brings a second token scope and its own API tests.
-3. **Azure DevOps pools:** its own PR, mocks only, after the token scope is agreed.
+3. **Azure DevOps pools (done):** its own PR, mocks only. Queued jobs per pool follow once the shapes are checked.
 4. **ESP panel:** the `runners` page, the offline count in the `warn` badge and "waiting for runner" on the
    pipelines page, together with one amendment of the MQTT schema.
 

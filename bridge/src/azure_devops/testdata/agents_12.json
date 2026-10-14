@@ -1,0 +1,9 @@
+{
+  "count": 3,
+  "value": [
+    { "id": 101, "name": "agent-1", "status": "online", "enabled": true },
+    { "id": 102, "name": "agent-2", "status": "online", "enabled": true,
+      "assignedRequest": { "requestId": 9001, "planType": "Build" } },
+    { "id": 103, "name": "agent-3", "status": "online", "enabled": false }
+  ]
+}

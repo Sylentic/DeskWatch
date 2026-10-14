@@ -122,3 +122,27 @@ mod tests {
         assert!(record.state.is_none());
     }
 }
+
+/// One item of `GET _apis/distributedtask/pools`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Pool {
+    pub id: u64,
+    pub name: String,
+    /// Microsoft-hosted pools are never listed: they cannot be down.
+    pub is_hosted: bool,
+}
+
+/// One item of `GET _apis/distributedtask/pools/{id}/agents`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Agent {
+    pub name: String,
+    /// `online` or `offline`.
+    pub status: String,
+    /// `false` when an administrator disabled the agent. Missing counts as enabled.
+    pub enabled: Option<bool>,
+    /// Present (with `includeAssignedRequest=true`) while the agent runs a job.
+    /// Only its presence matters, so the content is not read.
+    pub assigned_request: Option<serde::de::IgnoredAny>,
+}

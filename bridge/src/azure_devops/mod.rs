@@ -13,6 +13,11 @@
 //!   build's timeline, for the step progress bar. Projects that may not
 //!   interrupt are polled too; their job shows on the kiosk page only.
 //!
+//! - every `agent_poll_s` (60 s), only when `agent_pools` is set: the agents
+//!   of those self-hosted pools, as runners for the kiosk. This does not
+//!   touch the source's health, because a token without the Agent Pools
+//!   right gets a plain 403 on this list only.
+//!
 //! Failures back off (60 s, 2 min, 5 min).
 //!
 //! Terraform pipelines are YAML pipelines with stages such as `plan` and
@@ -31,13 +36,13 @@ use anyhow::{Context, Result};
 use tokio::time::{Instant, MissedTickBehavior};
 use tracing::{debug, info, warn};
 
-use crate::ci::{OpenPull, RepoPulls, Run, RunStatus, RunningJob, Update};
+use crate::ci::{OpenPull, RepoPulls, Run, RunStatus, Runner, RunnerStatus, RunningJob, Update};
 use crate::config::AzureDevopsConfig;
 use crate::gitea::payload::unix_seconds;
 use crate::model::{JobData, JobKind, MAX_TITLE_CHARS, NoticeData, truncate};
 use crate::source::{self, FactSink, Health, Interrupt, Source, SourceId, unix_now};
 use api::HttpApi;
-use payload::{Build, PullRequest, Record};
+use payload::{Agent, Build, PullRequest, Record};
 use timeline::View;
 
 /// Adapter type: `[[source.azure_devops]]` in the config and `source` on panel pages.
@@ -92,9 +97,15 @@ impl Source for AzureDevops {
         let mut failures = 0;
         let mut job_ticker = tokio::time::interval(Duration::from_secs(config.job_poll_s));
         job_ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        let mut agent_ticker = tokio::time::interval(Duration::from_secs(config.agent_poll_s));
+        agent_ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
         let mut reported = None;
         loop {
             let updates = tokio::select! {
+                // Skipped altogether when no agent pools are configured.
+                _ = agent_ticker.tick(), if !config.agent_pools.is_empty() => {
+                    poll_agent_pools(&api, &id, &config.agent_pools).await
+                }
                 _ = tokio::time::sleep_until(next_poll) => {
                     let mut updates = Vec::new();
                     for project in &config.projects {
@@ -128,6 +139,57 @@ impl Source for AzureDevops {
             }
         }
         Ok(())
+    }
+}
+
+/// Poll the agents of the configured self-hosted pools. A failure keeps the
+/// last list (the kiosk greys it out when it gets old); a 403 usually means
+/// the token lacks Agent Pools (Read), see docs/runners.md.
+async fn poll_agent_pools(api: &HttpApi, id: &SourceId, names: &[String]) -> Vec<Update> {
+    let pools = match api.pools().await {
+        Ok(pools) => pools,
+        Err(err) => {
+            warn!("cannot poll agent pools: {err:#}");
+            return Vec::new();
+        }
+    };
+    let mut out = Vec::new();
+    for name in names {
+        // Microsoft-hosted pools cannot be down, so they never match.
+        let Some(pool) = pools.iter().find(|p| !p.is_hosted && p.name == *name) else {
+            warn!(pool = %name, "no self-hosted agent pool with this name");
+            continue;
+        };
+        match api.agents(pool.id).await {
+            Ok(agents) => {
+                debug!(pool = %name, count = agents.len(), "polled agents");
+                out.push(Update::Runners {
+                    key: format!("{id}:runners:pool:{name}"),
+                    runners: agents.into_iter().map(|a| agent_fact(a, name)).collect(),
+                });
+            }
+            Err(err) => warn!(pool = %name, "cannot poll agents: {err:#}"),
+        }
+    }
+    out
+}
+
+/// The shared runner fact for one agent. A status nobody knows counts as
+/// offline: showing an agent as idle when we cannot tell would hide an outage.
+/// Agents have no labels; the pool name stands in, so the widget shows where
+/// an agent lives.
+fn agent_fact(agent: Agent, pool: &str) -> Runner {
+    let status = match agent.status.as_str() {
+        "online" if agent.assigned_request.is_some() => RunnerStatus::Busy,
+        "online" => RunnerStatus::Idle,
+        _ => RunnerStatus::Offline,
+    };
+    Runner {
+        source: KIND.into(),
+        name: truncate(&agent.name, MAX_TITLE_CHARS),
+        status,
+        disabled: agent.enabled == Some(false),
+        labels: vec![truncate(pool, MAX_TITLE_CHARS)],
     }
 }
 

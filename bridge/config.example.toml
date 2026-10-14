@@ -171,6 +171,10 @@ max_active = 10                 # least urgent, oldest alert is dropped first
 # pull_requests = true          # count open PRs (needs Code: Read)
 # notify_new_prs = true         # flash "New PR" for new non-draft PRs
 # deploy_words = ["deploy", "terraform"]  # pipeline names with these are deploys
+# # Self-hosted agent pools for the kiosk `runners` widget (docs/runners.md). Off unless named.
+# # Needs the extra token scope Agent Pools (Read).
+# # agent_pools = ["Homelab"]
+# # agent_poll_s = 60
 # alias = { "project-a" = "infra", "project-a/repo-a" = "A" }  # short labels
 
 # Idle pages, in order. Pages with nothing to show are skipped when
