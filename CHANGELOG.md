@@ -8,6 +8,8 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+## [0.9.14]
+
 ### Changed
 
 - Kiosk default layout: Running now is now the large panel (2 by 2, top right) and Pipelines the smaller one below it (2 wide, bottom right; it shows the 4 latest runs, more with a `rows` setting of your own), instead of the Pipelines-first order of 0.9.13 (PR 69). Your own `[[kiosk.panel]]` order is untouched.
