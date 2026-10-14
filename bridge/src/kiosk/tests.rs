@@ -178,7 +178,7 @@ async fn get(router: &Router, uri: &str, bearer: Option<&str>) -> (StatusCode, H
 }
 
 /// The Pipelines panel shows the latest run first, across sources, even when
-/// an older run failed.
+/// an older run failed. A running run counts from its start.
 #[test]
 fn runs_are_listed_newest_first() {
     let mut kiosk = kiosk_with(None);
@@ -203,6 +203,13 @@ fn runs_are_listed_newest_first() {
             "a:mid",
             at("azure_devops", "mid.yml", RunStatus::Success, NOW - 300),
         ),
+        (
+            "g:run",
+            Run {
+                finished: None,
+                ..at("gitea", "live.yml", RunStatus::Running, NOW - 60)
+            },
+        ),
     ] {
         c.ci.apply(
             Update::Run {
@@ -220,7 +227,7 @@ fn runs_are_listed_newest_first() {
         .iter()
         .map(|r| r["pipeline"].as_str().unwrap())
         .collect();
-    assert_eq!(order, ["new.yml", "mid.yml", "old.yml"]);
+    assert_eq!(order, ["new.yml", "live.yml", "mid.yml", "old.yml"]);
 }
 
 #[test]

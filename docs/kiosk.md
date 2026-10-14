@@ -23,7 +23,7 @@ A grid of cards, 4 columns by 3 rows by default:
 | `hosts` | A compact table of every host (the bridge's own machine and every host a Prometheus source reports) |
 | `jobs` | Jobs running now, with step, progress bar and a live elapsed time |
 | `prs` | Open pull requests per repository, newest first, with the total |
-| `pipelines` | The latest run of every pipeline, newest first across all sources (a running run counts from its start, a finished one from its end), so the top rows are always the most recent activity |
+| `pipelines` | The latest run of every pipeline, newest first across all sources (a running run counts from its start, a finished one from its end), so the top rows are always the most recent activity; the default layout has room for the 4 latest runs at 1080p |
 | `alerts` | Active alerts (Home Assistant, scripts), most urgent first |
 | `containers` | Containers and hosts that are down (needs the Prometheus source) |
 | `health` | Whether every source is working, or why not (token refused, not reachable) |
