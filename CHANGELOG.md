@@ -13,7 +13,6 @@ may change if the firmware work needs it; any such change is listed here.
 - **Azure DevOps checks other than approvals** (branch control, business hours, invoked functions): a stage held by a
   `Checkpoint.*` record for two timeline polls in a row shows "Check pending" and a `review` row instead of looking like
   it runs. The record names are not verified against a real run.
-
 - **Azure DevOps agent pools** on the kiosk `runners` widget. `[[source.azure_devops]]` gets `agent_pools = ["<pool name>"]`
   and `agent_poll_s` (default 60). Off unless `agent_pools` is set. Needs one more token scope, **Agent Pools (Read)**;
   a refused list is logged and does not change the source's health. Built against mock responses only.
