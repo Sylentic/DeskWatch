@@ -24,7 +24,9 @@
 //! Terraform pipelines are YAML pipelines with stages such as `plan` and
 //! `apply`, so a run shows as "apply: terraform apply". A stage waiting for an
 //! approval raises one "Approval needed" notice and a `review` row on the
-//! pipelines page; it does not hold the screen.
+//! pipelines page; it does not hold the screen. Another check on the stage
+//! (branch control, business hours) does the same with "Check pending", but
+//! only after two timeline polls in a row saw it, because most pass at once.
 
 pub mod api;
 pub mod payload;
@@ -48,6 +50,12 @@ use timeline::View;
 
 /// Adapter type: `[[source.azure_devops]]` in the config and `source` on panel pages.
 pub const KIND: &str = "azure_devops";
+
+/// A check other than an approval (branch control, business hours) has to be
+/// seen in progress by this many timeline polls in a row before the build
+/// counts as waiting. Most of them pass within seconds, and a flash of
+/// "Check pending" on every deploy would be noise.
+const CHECK_POLLS: u8 = 2;
 
 /// Poll delays after 1, 2, and 3 or more failed rounds in a row.
 const BACKOFF: [Duration; 3] = [
@@ -308,8 +316,11 @@ struct LiveBuild {
     kind: JobKind,
     /// May this build take over the screen?
     interrupt: bool,
-    /// A stage waits for an approval.
+    /// A stage waits for an approval, or for another check that has held for
+    /// `CHECK_POLLS` timeline polls in a row.
     waiting: bool,
+    /// Timeline polls in a row that saw a non-approval check in progress.
+    check_polls: u8,
     /// A job screen for this build was sent and not yet withdrawn.
     job_shown: bool,
 }
@@ -545,6 +556,7 @@ impl AzdoState {
                 pipeline,
                 interrupt: may_interrupt,
                 waiting: false,
+                check_polls: 0,
                 job_shown: false,
             });
         }
@@ -591,7 +603,12 @@ impl AzdoState {
         };
 
         let was_waiting = live.waiting;
-        live.waiting = view.waiting_approval;
+        live.check_polls = if view.waiting_check && !view.waiting_approval {
+            live.check_polls.saturating_add(1)
+        } else {
+            0
+        };
+        live.waiting = view.waiting_approval || live.check_polls >= CHECK_POLLS;
         if live.waiting != was_waiting {
             let status = if live.waiting {
                 RunStatus::Waiting
@@ -599,10 +616,15 @@ impl AzdoState {
                 RunStatus::Running
             };
             if live.waiting {
-                info!(source = %self.id, %project, pipeline = %live.pipeline, "waiting for approval");
+                info!(source = %self.id, %project, pipeline = %live.pipeline, approval = view.waiting_approval, "waiting");
                 out.push(Update::Notice {
                     notice: NoticeData {
-                        text: "Approval needed".into(),
+                        text: if view.waiting_approval {
+                            "Approval needed"
+                        } else {
+                            "Check pending"
+                        }
+                        .into(),
                         sub: truncate(
                             &format!("{project_label} {}", live.pipeline),
                             MAX_TITLE_CHARS,

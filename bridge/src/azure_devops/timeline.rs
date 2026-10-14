@@ -7,7 +7,10 @@
 //!
 //! For a Terraform pipeline the stages are typically `plan` and `apply`, so
 //! the panel shows "apply: terraform apply" and a bar that moves with the
-//! stages, and "Approval needed" while the apply waits for a person.
+//! stages, and "Approval needed" while the apply waits for a person. Other
+//! checks on the same stage (branch control, business hours, an invoked
+//! function or REST call) appear as sibling `Checkpoint.*` records; those are
+//! reported separately, because most of them pass within seconds.
 
 use std::collections::HashMap;
 
@@ -18,6 +21,11 @@ use super::payload::Record;
 pub struct View {
     /// A stage is waiting for an approval.
     pub waiting_approval: bool,
+    /// A check other than an approval is in progress on a stage. It may
+    /// clear in a moment or hold the stage for hours; the caller decides
+    /// when to believe it. The record names are not verified against a real
+    /// run (see docs/azure-devops.md).
+    pub waiting_check: bool,
     /// Current task, with its stage in front unless the stage is the implicit
     /// default one: `apply: terraform apply`.
     pub step: Option<String>,
@@ -87,6 +95,12 @@ pub fn analyse(records: &[Record]) -> View {
         .iter()
         .any(|r| r.kind == "Checkpoint.Approval" && is_state(r, "inProgress"));
 
+    let waiting_check = records.iter().any(|r| {
+        r.kind.starts_with("Checkpoint.")
+            && r.kind != "Checkpoint.Approval"
+            && is_state(r, "inProgress")
+    });
+
     // Current stage: the one running, else the first one not finished.
     let current = stages
         .iter()
@@ -133,6 +147,7 @@ pub fn analyse(records: &[Record]) -> View {
 
     View {
         waiting_approval,
+        waiting_check,
         step: position.map(|i| label(current, &tasks[i].name)),
         step_no: position.map(|i| i as u32 + 1),
         step_count: position.map(|_| tasks.len() as u32),
@@ -168,6 +183,18 @@ mod tests {
         assert!(v.waiting_approval);
         assert!((v.fraction.unwrap() - 0.5).abs() < 1e-6);
         assert!(v.step.is_none(), "the stage has no tasks yet");
+    }
+
+    #[test]
+    fn another_check_is_not_an_approval() {
+        let v = view(include_str!("testdata/timeline_check.json"));
+        assert!(v.waiting_check && !v.waiting_approval);
+        // A finished check is nothing to wait for.
+        let done = include_str!("testdata/timeline_check.json").replace("inProgress", "completed");
+        assert!(!view(&done).waiting_check);
+        // An approval alone is not "another check".
+        let v = view(include_str!("testdata/timeline_approval.json"));
+        assert!(v.waiting_approval && !v.waiting_check);
     }
 
     #[test]

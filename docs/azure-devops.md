@@ -12,7 +12,7 @@ What you get:
   `terraform` show as deploys.
 - A failed run raises the usual red alert naming the failed task; a good run flashes green. Both leave a count in
   the header badge until you press the button.
-- A stage that waits for an approval raises one "Approval needed" notice and a `review` row on the pipelines page.
+- A stage that waits for an approval raises one "Approval needed" notice (another check, such as business hours, "Check pending") and a `review` row on the pipelines page.
   It does not hold the screen, because an approval can take hours.
 - Open pull requests count in the PR badge and appear on the `prs` page.
 - A refused or expired token, or an unreachable service, lights the `warn` badge.
@@ -119,7 +119,11 @@ project may take over the ESP screen).
   50 does not show.
 - Open PRs are capped at 100 per project.
 - An approval is recognised from a `Checkpoint.Approval` record in the build timeline. Other checks that gate a
-  stage (branch control, business hours) are not shown as "Approval needed".
+  stage (branch control, business hours, invoked functions) are recognised from any other `Checkpoint.*` record
+  that is in progress. They show as "Check pending" and a `review` row, but only when two timeline polls in a
+  row (about 10 seconds) saw them, because most checks pass at once. **Both record names are written from the
+  documented timeline shape and not yet verified against a real run:** if a check type is named differently the
+  build simply keeps showing as running.
 - Runs that finished before the bridge started show on the pipelines page and count in the red badge, but do not
   take over the screen.
 
@@ -131,4 +135,4 @@ project may take over the ESP screen).
 | `warn` badge only with `pull_requests = true` | Token lacks **Code: Read**; add it or set `pull_requests = false` |
 | `warn` badge, journal says `404` | Wrong `organization` or project name (spaces are fine, the bridge encodes them) |
 | Pipeline never appears | It has not run among the newest 50 builds of the project |
-| Deploy shows "running" while it waits for an approval | The wait is a kind of check other than an approval |
+| Deploy shows "running" while it waits for an approval or check | The record type is not one the bridge knows. Run with `RUST_LOG=debug`, or look at the build timeline (`.../builds/{id}/timeline`) for the `type` of the record that is `inProgress`, and open an issue |

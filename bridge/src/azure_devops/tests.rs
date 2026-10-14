@@ -334,6 +334,45 @@ fn deploy_waiting_for_approval_is_a_notice_and_a_review_row() {
 }
 
 #[test]
+fn another_check_counts_only_after_two_polls_in_a_row() {
+    let mut source = state("interrupt = true", NOW);
+    let mut facts = CiFacts::default();
+    apply(
+        &mut facts,
+        source.on_builds(PROJECT, fixture_builds(), NOW),
+        NOW,
+    );
+    let running = records(include_str!("testdata/timeline_running.json"));
+    let check = records(include_str!("testdata/timeline_check.json"));
+
+    // Seen once: probably passes in a moment, nothing changes.
+    let (updates, _) = source.on_timeline(PROJECT, 3004, &check, NOW + 5);
+    apply(&mut facts, updates, NOW + 5);
+    assert_eq!(row_status(&facts, "deploy-infra"), RowStatus::Running);
+
+    // Gone again, then seen once more: the streak starts over.
+    let (updates, _) = source.on_timeline(PROJECT, 3004, &running, NOW + 10);
+    apply(&mut facts, updates, NOW + 10);
+    let (updates, _) = source.on_timeline(PROJECT, 3004, &check, NOW + 15);
+    apply(&mut facts, updates, NOW + 15);
+    assert_eq!(row_status(&facts, "deploy-infra"), RowStatus::Running);
+
+    // Seen twice in a row: one "Check pending" notice, review row, no job screen.
+    let (updates, _) = source.on_timeline(PROJECT, 3004, &check, NOW + 20);
+    apply(&mut facts, updates, NOW + 20);
+    let Some((Level::Notice, ScreenData::Notice(notice))) = top(&facts, NOW + 20) else {
+        panic!("expected a check notice");
+    };
+    assert_eq!(notice.text, "Check pending");
+    assert_eq!(row_status(&facts, "deploy-infra"), RowStatus::Review);
+
+    // Cleared: running again.
+    let (updates, _) = source.on_timeline(PROJECT, 3004, &running, NOW + 25);
+    apply(&mut facts, updates, NOW + 25);
+    assert_eq!(row_status(&facts, "deploy-infra"), RowStatus::Running);
+}
+
+#[test]
 fn approval_is_seen_even_when_the_pipeline_may_not_interrupt() {
     let mut source = state("", 0);
     let mut facts = CiFacts::default();
