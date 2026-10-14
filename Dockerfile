@@ -73,7 +73,8 @@ RUN find bridge/src sim/src ui/src -name '*.rs' -exec touch {} + \
 # The runtime image's user entry (uid 10001, no shell, no home).
 RUN mkdir /out \
     && { cat /etc/passwd; echo 'deskwatch:x:10001:10001::/nonexistent:/usr/sbin/nologin'; } > /out/passwd \
-    && { cat /etc/group; echo 'deskwatch:x:10001:'; } > /out/group
+    && { cat /etc/group; echo 'deskwatch:x:10001:'; } > /out/group \
+    && mkdir -p /out/var/lib/deskwatch
 
 # ---- runtime stage ---------------------------------------------------------
 FROM debian:bookworm-slim
@@ -85,6 +86,12 @@ FROM debian:bookworm-slim
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /out/passwd /etc/passwd
 COPY --from=build /out/group /etc/group
+
+# An empty data folder owned by the deskwatch user (docs/data-dir.md). Docker
+# copies this ownership into a new, empty named volume mounted here, so the
+# setup page can save without a manual chown. A bind mount hides it and keeps
+# the host folder's owner.
+COPY --from=build --chown=10001:10001 /out/var/lib/deskwatch /var/lib/deskwatch
 
 COPY --from=build /deskwatch-bridge /usr/local/bin/deskwatch-bridge
 COPY bridge/config.example.toml /usr/share/deskwatch/config.example.toml

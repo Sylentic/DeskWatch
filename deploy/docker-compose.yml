@@ -36,6 +36,7 @@ services:
     # Hardening: the root filesystem is read-only and the bridge needs no privileges.
     # For the optional setup page, add a writable data folder (docs/data-dir.md):
     #   volumes: - ./data:/var/lib/deskwatch      (sudo chown 10001 data)
+    #   or a named volume, `data:/var/lib/deskwatch`, which needs no chown
     #   environment: DESKWATCH_DATA_DIR: /var/lib/deskwatch
     read_only: true
     cap_drop: [ALL]

@@ -30,14 +30,32 @@ Create a secret by hand the same way the bridge will:
 
 ## Docker
 
-The image runs as uid 10001 with a read-only root. Mount a writable volume for the folder and make that user the
-owner:
+The image runs as uid 10001 with a read-only root. Mount a writable volume for the folder. A **named volume** is the
+simplest: the image contains an empty `/var/lib/deskwatch` owned by uid 10001, and Docker gives a new, empty named
+volume that owner, so nothing needs a `chown`:
 
 ```yaml
 services:
   deskwatch:
     environment:
       DESKWATCH_DATA_DIR: /var/lib/deskwatch
+    volumes:
+      - data:/var/lib/deskwatch
+
+volumes:
+  data:
+```
+
+This is also the right choice under a stack manager that deploys from git (Komodo, Portainer): there `.` is the
+manager's checkout of your repository, so a relative bind mount such as `./data` puts the data folder inside a git
+working tree, where an update can wipe it or conflict with it. A named volume lives outside it. (A volume that already
+existed and is owned by root is not changed. Fix it once with
+`docker run --rm -v <volume>:/d busybox chown 10001:10001 /d`; this applies to a volume created with an image older than
+0.9.14 too.)
+
+A **bind mount** works as well, but then the host folder decides the owner and you make uid 10001 the owner yourself:
+
+```yaml
     volumes:
       - ./dashboard/data:/var/lib/deskwatch      # sudo chown 10001 dashboard/data
 ```
