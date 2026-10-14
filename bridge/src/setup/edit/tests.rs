@@ -226,3 +226,103 @@ fn removing_returns_the_credentials_and_leaves_other_sources() {
     assert_eq!(text.trim(), "");
     assert!(remove(&text, "github", "b").is_err());
 }
+
+#[test]
+fn mqtt_settings_are_written_as_a_patch_the_config_applies() {
+    let plan = set_mqtt(
+        "",
+        &fields(json!({
+            "host": " broker.lan ", "port": 8883, "tls": true, "enabled": true,
+            "username": "deskwatch-bridge",
+        })),
+        &secrets(&[("password", "  s3cret  ")]),
+    )
+    .unwrap();
+    assert!(plan.text.contains("[mqtt]"), "{}", plan.text);
+    assert!(plan.text.contains("password_file = \"mqtt-password\""));
+    assert!(
+        !plan.text.contains("s3cret"),
+        "the password must not be in the file"
+    );
+    assert_eq!(plan.secrets.len(), 1);
+    assert_eq!(plan.secrets[0].0, "mqtt-password");
+    assert_eq!(plan.secrets[0].1.expose(), "s3cret");
+
+    // Keys the base config set and the patch leaves alone stay.
+    let base = Config::from_toml(
+        "[mqtt]\nclient_id = \"mine\"\ntopic_prefix = \"desk\"\nkeep_alive_s = 60\n",
+    )
+    .unwrap();
+    let config = base.with_overlay(&plan.text).unwrap();
+    assert_eq!(config.mqtt.host, "broker.lan");
+    assert_eq!(config.mqtt.port, 8883);
+    assert!(config.mqtt.tls);
+    assert_eq!(config.mqtt.username.as_deref(), Some("deskwatch-bridge"));
+    assert_eq!(config.mqtt.password_file.as_deref(), Some("mqtt-password"));
+    assert_eq!(config.mqtt.client_id, "mine");
+    assert_eq!(config.mqtt.topic_prefix, "desk");
+    assert_eq!(config.mqtt.keep_alive_s, 60);
+
+    // Without the overlay it is bridge.toml again.
+    let back = config.without_overlay();
+    assert_eq!(back.mqtt.host, "localhost");
+    assert!(back.mqtt_before_overlay.is_none());
+}
+
+#[test]
+fn mqtt_edits_keep_sources_and_a_blank_password_and_can_clear_the_login() {
+    let first = set_mqtt(
+        "",
+        &fields(json!({ "username": "u" })),
+        &secrets(&[("password", "p")]),
+    )
+    .unwrap();
+    let with_source = github(
+        &first.text,
+        true,
+        json!({ "repos": ["o/a"] }),
+        &[("token", "t")],
+    )
+    .unwrap()
+    .text;
+    let second = set_mqtt(
+        &with_source,
+        &fields(json!({ "username": "" })),
+        &secrets(&[("password", "  ")]),
+    )
+    .unwrap();
+    assert!(
+        second.secrets.is_empty(),
+        "a blank password keeps the saved one"
+    );
+    assert!(second.text.contains("password_file = \"mqtt-password\""));
+    assert!(second.text.contains("[[source.github]]"));
+    let config = Config::from_toml("[mqtt]\nusername = \"old\"\n")
+        .unwrap()
+        .with_overlay(&second.text)
+        .unwrap();
+    assert_eq!(
+        config.mqtt.username, None,
+        "an empty name switches the login off"
+    );
+}
+
+#[test]
+fn bad_mqtt_requests_are_refused() {
+    let no_secrets = secrets(&[]);
+    for bad in [
+        json!({ "port": 0 }),
+        json!({ "port": 70000 }),
+        json!({ "port": "1883" }),
+        json!({ "host": "  " }),
+        json!({ "tls": "yes" }),
+        json!({ "client_id": "x" }),
+        json!({ "password_file": "/etc/passwd" }),
+    ] {
+        assert!(
+            set_mqtt("", &fields(bad.clone()), &no_secrets).is_err(),
+            "{bad}"
+        );
+    }
+    assert!(set_mqtt("", &fields(json!({})), &secrets(&[("token", "x")])).is_err());
+}

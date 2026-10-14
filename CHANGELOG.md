@@ -10,6 +10,11 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Added
 
+- **Setup page: MQTT broker settings.** With a data folder the page changes `enabled`, `host`, `port`, `tls`, the login
+  name and the password, tests the connection first (nothing is written when it fails, unless "Save anyway") and
+  stores the password as a 0600 credential. The settings are applied on top of `bridge.toml` through an `[mqtt]` table
+  in `sources.toml`; they apply after a restart, because the broker connection is made at startup. New
+  `[setup] allow_restart` adds a "Restart now" button (clean shutdown, exit code 75, for Docker or systemd).
 - **Sources reload without a restart.** Adding, editing, removing a source or replacing its token on the setup page
   takes effect at once: the bridge starts, replaces or stops that source's task, drops what a stopped source reported
   (pages, badges, warnings) and adds or removes its Gitea webhook route. A source that cannot start leaves the old

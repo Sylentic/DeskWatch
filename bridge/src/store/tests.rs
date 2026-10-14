@@ -145,8 +145,8 @@ fn overlay_cannot_replace_a_source_or_change_other_settings() {
             .unwrap_err()
     );
     assert!(err.contains("both bridge.toml"), "{err}");
-    // Only [[source.*]] belongs in the overlay.
-    for bad in ["[kiosk]\nenabled = true\n", "[mqtt]\nhost = \"x\"\n"] {
+    // Only [[source.*]] and the few [mqtt] keys the page sets belong in the overlay.
+    for bad in ["[kiosk]\nenabled = true\n", "[mqtt]\nclient_id = \"x\"\n"] {
         assert!(
             Config::from_toml("").unwrap().with_overlay(bad).is_err(),
             "{bad}"

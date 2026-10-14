@@ -355,13 +355,27 @@ fn credential_present(overrides: &Overrides, name: &str) -> Result<(), String> {
 
 /// Test the broker connection and login.
 pub async fn mqtt(config: &MqttConfig) -> Report {
+    mqtt_with(config, &Overrides::new()).await
+}
+
+/// `mqtt`, with a password typed in the form but not saved yet taking the
+/// place of the one in the credential file it will be saved to.
+pub async fn mqtt_with(config: &MqttConfig, overrides: &Overrides) -> Report {
     let mut report = Report::default();
     if !config.enabled {
         report.fail("broker", "MQTT is switched off in the config");
         return report.done();
     }
-    let password = match crate::mqtt::password(config) {
-        Ok(password) => password,
+    let typed = config
+        .password_file
+        .as_deref()
+        .and_then(|name| overrides.get(name))
+        .cloned();
+    let password = match typed.map(Ok).unwrap_or_else(|| {
+        crate::mqtt::password(config).map(|p| p.unwrap_or_else(|| Secret::new("")))
+    }) {
+        Ok(password) if password.expose().is_empty() => None,
+        Ok(password) => Some(password),
         Err(err) => {
             report.fail("password", format!("{err:#}"));
             return report.done();

@@ -67,6 +67,30 @@ With a data folder configured ([data-dir.md](data-dir.md)) the page can change s
   restart will show the same error. Settings outside `[[source.*]]` (the MQTT broker, the listen address, the rotation)
   are still read at startup.
 
+## MQTT broker settings
+
+With a data folder, **Change broker settings** edits `enabled`, `host`, `port`, `tls`, the login name and the
+password. It works like a source: **Test and save** tries the connection with the new values first (the same test as
+the Test connection button) and writes nothing if it fails, unless you press **Save anyway**.
+
+- The settings go in an `[mqtt]` table in `sources.toml` and are applied **on top of** `bridge.toml`: only the keys
+  the page sets are replaced. Everything else (`client_id`, `topic_prefix`, `ca_file`, client certificates) keeps
+  coming from `bridge.toml`, and the page does not edit those. The page shows where the settings come from.
+- The password is stored as the credential `mqtt-password` (0600) in the data folder and is never sent back. Leave the
+  field empty to keep the saved one. A mounted credential with that name would win over it, so the page refuses to
+  save a password while one exists. A login name that is emptied switches the login off.
+- **The MQTT connection is made once at startup, so a saved change needs a restart.** The page says so. Restart the
+  bridge yourself (`docker compose restart`, `systemctl restart deskwatch-bridge`), or turn on the button below.
+- The test does not check what the login may publish or subscribe to (see Test connection).
+
+### Restart now
+
+With `[setup] allow_restart = true` the banner gets a **Restart now** button. The bridge then shuts down cleanly (it
+tells the broker it is going offline) and exits with code 75. That only helps when something starts it again:
+Docker with `restart: unless-stopped` (the compose files in `deploy/` have it) or the systemd unit in
+`deploy/deskwatch-bridge.service` (`Restart=on-failure`). A bridge started by hand just stops, so the button is off by
+default. It needs the setup login and the same origin like every change.
+
 ## Security
 
 - **Its own token**, separate from the dashboard's. A dashboard login is useless here even with the same token text.

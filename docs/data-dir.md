@@ -46,8 +46,14 @@ services:
 config; it is the only state the bridge keeps. On a systemd install, give the unit `StateDirectory=deskwatch` and set
 `dir = "/var/lib/deskwatch"`.
 
+## The `[mqtt]` table
+
+`sources.toml` can also hold an `[mqtt]` table with `enabled`, `host`, `port`, `tls`, `username` and `password_file`.
+Those keys replace the ones from `bridge.toml` (an empty `username` means no login); every other `[mqtt]` setting stays
+as `bridge.toml` has it. The setup page writes this table (see setup-page.md). The broker is connected once at
+startup, so a change needs a restart.
+
 ## Not covered yet
 
 `sources.toml` is read at startup and whenever the setup page saves a change; a hand edit of the file is picked up at the
-next save or restart. Only `[[source.*]]` blocks can live here, so the MQTT broker, the listen address and the rotation
-stay in `bridge.toml` (the setup page gets MQTT settings in a later step).
+next save or restart. The listen address, the rotation and the kiosk settings stay in `bridge.toml`.
