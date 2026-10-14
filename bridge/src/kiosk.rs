@@ -12,17 +12,21 @@
 //!   can tell "nothing new" from "the bridge is gone". At most
 //!   `kiosk.max_ws_clients` at a time (more get 503, the page then polls), and
 //!   a client that does not take a frame within `WRITE_TIMEOUT_S` is dropped;
-//! - `GET /`, `/kiosk.css`, `/kiosk.js`: the page.
+//! - `GET /`, `/kiosk.css`, `/kiosk.js`: the page;
+//! - `POST /api/login`: trades the token for a session cookie (below).
 //!
 //! The snapshot is built from the same facts the composer uses for the ESP
 //! panel, so both screens always agree. Nothing here changes any state. If
-//! `kiosk.token_file` is set, the two `/api/kiosk` routes need the token as
-//! `?token=` or as a bearer token, unless the TCP peer is inside
-//! `kiosk.trusted_networks` (see `net.rs`).
+//! `kiosk.token_file` is set, the two `/api/kiosk` routes need a session
+//! cookie (from `POST /api/login`, see `session.rs`) or the token as a bearer
+//! token, unless the TCP peer is inside `kiosk.trusted_networks` (see
+//! `net.rs`). `?token=` still works but is deprecated and logs a warning.
+//! The WebSocket also refuses an `Origin` that is not this host.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -30,7 +34,7 @@ use axum::extract::{ConnectInfo, State};
 use axum::http::{HeaderMap, HeaderValue, Request, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
@@ -41,7 +45,9 @@ use crate::model::{Badges, Level, Screen};
 use crate::source::Secret;
 
 pub mod net;
+pub mod session;
 use net::Network;
+use session::{Limiter, Sessions};
 
 /// Version of the snapshot layout, the `"v"` field. Separate from the MQTT
 /// schema version: the two outputs evolve on their own.
@@ -78,6 +84,10 @@ pub struct Kiosk {
     trusted: Arc<[Network]>,
     /// One permit per allowed WebSocket client.
     slots: Arc<Semaphore>,
+    /// Lifetime of a login cookie.
+    session_days: u16,
+    /// Recent wrong tokens at `/api/login`.
+    limiter: Arc<Limiter>,
     /// The last snapshot without its timestamp, to see what changed.
     last: Option<Value>,
     /// Unix seconds when the last snapshot went out.
@@ -99,6 +109,8 @@ impl Kiosk {
                 .unwrap_or_default()
                 .into(),
             slots: Arc::new(Semaphore::new(config.max_ws_clients.into())),
+            session_days: config.session_days,
+            limiter: Arc::new(Limiter::default()),
             last: None,
             sent_at: 0,
         }
@@ -109,6 +121,11 @@ impl Kiosk {
         let state = AppState {
             rx: self.tx.subscribe(),
             token: self.token.as_ref().map(|t| digest(t.expose())),
+            sessions: self
+                .token
+                .as_ref()
+                .map(|t| Arc::new(Sessions::new(t.expose(), self.session_days))),
+            limiter: self.limiter.clone(),
             trusted: self.trusted.clone(),
             slots: self.slots.clone(),
         };
@@ -130,6 +147,7 @@ impl Kiosk {
                 "/kiosk.js",
                 get(|| asset("text/javascript; charset=utf-8", KIOSK_JS)),
             )
+            .route("/api/login", post(login_handler))
             .merge(api)
             .with_state(state)
     }
@@ -301,8 +319,17 @@ struct AppState {
     rx: watch::Receiver<Frame>,
     /// SHA-256 of the token, so comparing never branches on its content.
     token: Option<[u8; 32]>,
+    /// Signs and checks login cookies; present exactly when `token` is.
+    sessions: Option<Arc<Sessions>>,
+    limiter: Arc<Limiter>,
     trusted: Arc<[Network]>,
     slots: Arc<Semaphore>,
+}
+
+fn unix_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
 
 fn digest(text: &str) -> [u8; 32] {
@@ -331,19 +358,27 @@ async fn asset(content_type: &'static str, body: &'static str) -> Response {
     response
 }
 
-/// Does the request carry the token, as `?token=` or `Authorization: Bearer`?
-fn authorized(expected: &[u8; 32], headers: &HeaderMap, query: Option<&str>) -> bool {
+/// Does the request carry the token as `Authorization: Bearer`, or (deprecated)
+/// as `?token=`? Returns which way, so the caller can warn about the old one.
+fn token_given(expected: &[u8; 32], headers: &HeaderMap, query: Option<&str>) -> Option<TokenVia> {
     let bearer = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "));
+    if bearer.is_some_and(|t| same(expected, &digest(t))) {
+        return Some(TokenVia::Bearer);
+    }
     let from_query = query.and_then(|q| {
         q.split('&')
             .find_map(|pair| pair.strip_prefix("token="))
             .map(percent_decode)
-    });
-    let given = bearer.map(str::to_string).or(from_query);
-    given.is_some_and(|token| same(expected, &digest(&token)))
+    })?;
+    same(expected, &digest(&from_query)).then_some(TokenVia::Query)
+}
+
+enum TokenVia {
+    Bearer,
+    Query,
 }
 
 /// Undo `%xx` escapes, which `encodeURIComponent` adds in the page's requests.
@@ -376,6 +411,16 @@ async fn require_token(
     request: Request<axum::body::Body>,
     next: Next,
 ) -> Response {
+    // A cookie goes along with every request a page makes, also one that
+    // another site's page started. A WebSocket is not covered by the browser's
+    // same-origin rules, so it has to refuse a foreign Origin itself.
+    if !session::same_origin(request.headers()) {
+        tracing::warn!(
+            path = request.uri().path(),
+            "kiosk request refused: Origin does not match Host"
+        );
+        return (StatusCode::FORBIDDEN, "cross-origin request refused").into_response();
+    }
     // The TCP peer, set by the listener. Missing (unit tests) means untrusted.
     let peer = request
         .extensions()
@@ -383,17 +428,87 @@ async fn require_token(
         .map(|info| info.0.ip());
     let trusted = peer.is_some_and(|ip| state.trusted.iter().any(|net| net.contains(ip)));
     tracing::debug!(?peer, trusted, path = request.uri().path(), "kiosk request");
-    if !trusted
-        && let Some(expected) = &state.token
-        && !authorized(expected, request.headers(), request.uri().query())
-    {
-        tracing::debug!(
-            ?peer,
-            "kiosk request refused: no token and peer not trusted"
-        );
-        return (StatusCode::UNAUTHORIZED, "token missing or wrong").into_response();
+    if !trusted && let (Some(expected), Some(sessions)) = (&state.token, &state.sessions) {
+        let has_session = session::cookie_value(request.headers())
+            .is_some_and(|value| sessions.valid(value, unix_now()));
+        if !has_session {
+            match token_given(expected, request.headers(), request.uri().query()) {
+                Some(TokenVia::Bearer) => {}
+                Some(TokenVia::Query) => warn_query_token_once(),
+                None => {
+                    tracing::debug!(
+                        ?peer,
+                        "kiosk request refused: no session, no token, peer not trusted"
+                    );
+                    return (StatusCode::UNAUTHORIZED, "token missing or wrong").into_response();
+                }
+            }
+        }
     }
     next.run(request).await
+}
+
+/// `?token=` puts the secret in logs and history; say so once per run.
+fn warn_query_token_once() {
+    static WARNED: AtomicBool = AtomicBool::new(false);
+    if !WARNED.swap(true, Ordering::Relaxed) {
+        tracing::warn!(
+            "a client sent the token as ?token=; this is deprecated (it ends up in access logs and browser history). \
+             Open the page and enter the token once instead, or use an Authorization: Bearer header in scripts"
+        );
+    }
+}
+
+/// `POST /api/login` with `{"token": "..."}`: on the right token, set the
+/// session cookie. Wrong tokens are delayed and, after a few, refused for a minute.
+async fn login_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    if !session::same_origin(&headers) {
+        return (StatusCode::FORBIDDEN, "cross-origin request refused").into_response();
+    }
+    // Without a token nothing needs a login; answer like a success so a page can carry on.
+    let (Some(expected), Some(sessions)) = (&state.token, &state.sessions) else {
+        return StatusCode::NO_CONTENT.into_response();
+    };
+    let now = unix_now();
+    if let Some(wait) = state.limiter.blocked(now) {
+        tracing::warn!("dashboard login refused: too many wrong tokens lately");
+        let mut response = (StatusCode::TOO_MANY_REQUESTS, "too many wrong tokens").into_response();
+        if let Ok(value) = HeaderValue::from_str(&wait.to_string()) {
+            response.headers_mut().insert(header::RETRY_AFTER, value);
+        }
+        return response;
+    }
+    let given = (body.len() <= 4096)
+        .then(|| serde_json::from_slice::<Value>(&body).ok())
+        .flatten()
+        .and_then(|v| v.get("token")?.as_str().map(str::to_string));
+    let Some(given) = given else {
+        return (StatusCode::BAD_REQUEST, "expected {\"token\": \"...\"}").into_response();
+    };
+    if !same(expected, &digest(&given)) {
+        state.limiter.record_failure(now);
+        tracing::warn!("dashboard login with a wrong token");
+        // Slows a guesser down even before the limit kicks in.
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        return (StatusCode::UNAUTHORIZED, "token wrong").into_response();
+    }
+    let cookie = session::set_cookie(
+        &sessions.issue(now),
+        sessions.lifetime_s(),
+        session::is_https(&headers),
+    );
+    let mut response = StatusCode::NO_CONTENT.into_response();
+    if let Ok(value) = HeaderValue::from_str(&cookie) {
+        response.headers_mut().insert(header::SET_COOKIE, value);
+    }
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
 }
 
 async fn snapshot_handler(State(state): State<AppState>) -> Response {

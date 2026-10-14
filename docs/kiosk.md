@@ -178,8 +178,10 @@ echo '~/deskwatch-kiosk.sh &' >> ~/.config/labwc/autostart                # Book
 
 [`deploy/kiosk/deskwatch-kiosk.sh`](../deploy/kiosk/deskwatch-kiosk.sh) opens `http://localhost:8787/`. For a bridge on
 another machine, set the address with an environment variable, for example
-`DESKWATCH_KIOSK_URL='http://bridge.example.lan:8787/?token=...' ~/deskwatch-kiosk.sh &` (the token is only needed when
-the bridge has a [kiosk token](#5-security)). Older releases, or Bookworm switched to X11 with LXDE, read
+`DESKWATCH_KIOSK_URL='http://bridge.example.lan:8787/' ~/deskwatch-kiosk.sh &`. If the bridge has a
+[kiosk token](#5-security), the page asks for it once on first boot (use a keyboard or the touch screen); Chromium keeps
+the login cookie in its profile (`~/.cache/deskwatch-kiosk`), so later boots need nothing. Deleting that folder logs the
+Pi out. Older releases, or Bookworm switched to X11 with LXDE, read
 `~/.config/lxsession/LXDE-pi/autostart` instead; see
 [`deploy/kiosk/lxde-autostart`](../deploy/kiosk/lxde-autostart), which also turns the X11 screen blanking off.
 If there is no checkout on the Pi, the script is short enough to copy from the repository page.
@@ -227,13 +229,16 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
   ```
 
   Add `LoadCredential=kiosk-token:/etc/deskwatch/credentials/kiosk-token` to the unit, restart, and open
-  `http://<host>:8787/?token=<the token>`. The page file itself has no data and loads without the token; the data
-  routes answer 401 without it. Use hex or letters and digits for the token. The page removes `?token=...` from the
-  address bar as soon as it loads (so it stays out of the browser history, bookmarks made afterwards and Referer
-  headers) and keeps it for that browser tab only. It is still in the address you open first, so in your autostart
-  file and possibly in a reverse proxy's access log, and the connection is plain HTTP unless you put a reverse proxy
-  with TLS in front. The token keeps casual visitors out, not someone who can watch your network traffic. A one-time
-  login that sets an `HttpOnly` cookie would avoid the address altogether; that is not built yet.
+  `http://<host>:8787/`. The page file itself has no data and loads without the token; the data routes answer 401
+  without a login. Use hex or letters and digits for the token. The page asks for the token once and the bridge then
+  sets a session cookie (`HttpOnly`, `SameSite=Strict`, `Secure` behind an HTTPS proxy that sends
+  `X-Forwarded-Proto`), valid `session_days` days (default 30, `[kiosk]`). The token is therefore not in any address,
+  history or access log. Replacing the token file logs every browser out. Wrong tokens are delayed, and five in a
+  minute pause logins for a minute for everybody (the client address cannot be trusted behind Docker or a proxy);
+  open sessions are unaffected. The WebSocket refuses an `Origin` that is not the page's own host. Scripts send
+  `Authorization: Bearer <token>`; `?token=` in an address still works but is deprecated and logs a warning. The
+  connection is plain HTTP unless you put a reverse proxy with TLS in front, and the token keeps casual visitors out,
+  not someone who can watch your network traffic.
 - **In a container**, `0.0.0.0:8787` inside is correct and the published port decides who can reach the page:
   `"8787:8787"` is the whole network (keep the token), `"127.0.0.1:8787:8787"` is the Docker host only, for a reverse
   proxy that adds TLS and a login. Do not expose the port to the internet; use a VPN or an authenticating proxy.
@@ -287,8 +292,8 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
 
   | Header chip | Meaning | What to do |
   | --- | --- | --- |
-  | `token required` | The bridge has `kiosk.token_file` set and this tab has no token (401). | Type the token into the box, or open the page once as `/?token=<token>`. |
-  | `token rejected` | The token is wrong, or it changed when the bridge restarted. | Enter the current token. The page forgets the refused one. |
+  | `token required` | The bridge has `kiosk.token_file` set and this tab has no token (401). | Type the token into the box once; the browser then stays logged in. |
+  | `token rejected` | The token is wrong, or it changed when the bridge restarted. | Enter the current token (changing the token file logs every browser out). |
   | `bridge unreachable` | The request did not get an answer. | Check the container or service is running, the address and port, the firewall, the proxy. |
   | `bridge error 502` (any HTTP status) | Something answered, but with an error. | Usually a reverse proxy that cannot reach the bridge; see its log and the bridge log. |
   | `polling, no live socket` | The WebSocket is blocked (a proxy without WebSocket support) but the page still gets data by polling every 5 s. | Works as is. To get instant updates, let the proxy forward `Upgrade` headers on `/api/kiosk/ws`. |
