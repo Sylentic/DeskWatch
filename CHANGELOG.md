@@ -15,6 +15,26 @@ may change if the firmware work needs it; any such change is listed here.
   all". Dismissed failures stop counting; a new failure of the same pipeline shows up again. The choice is kept in the
   browser (localStorage), so a second screen has its own list. The snapshot has a new `failed` field.
 
+## [0.9.17]
+
+### Changed
+
+- **The setup page uses the whole screen.** A menu on the left (Sources, MQTT broker, Dashboard, Bridge and restart,
+  Stored secrets) instead of one long list, with the cards in several columns on a wide screen. **Add a source** is now
+  the first thing on the page. Confirmations are boxes on the page instead of browser dialogs.
+
+### Added
+
+- **Restart button on the setup page** ("Bridge and restart", and in the banner after a change). It asks for a
+  confirm click, then waits until the bridge answers again and says so if nothing started it again. Still opt-in with
+  `[setup] allow_restart = true`; while it is off the page explains how to turn it on. It relies on a restart policy
+  (see [setup-page.md](docs/setup-page.md#restart)).
+- **Everything can be removed from the setup page.** Sources from `bridge.toml` can be switched off (and on again)
+  without editing that file (`hidden` in `sources.toml`); the MQTT login and the saved broker settings can be
+  removed, including the stored password; stored secrets that nothing uses can be deleted. Each asks for confirmation.
+- `GET /api/setup/status` has `boot`, `secrets`, `hidden` and `hideable` on sources, and `removable` and `has_login`
+  on `mqtt`. New routes: `POST /api/setup/source/hide`, `/api/setup/mqtt/delete`, `/api/setup/secret/delete`.
+
 ## [0.9.16]
 
 ### Changed

@@ -15,6 +15,9 @@
   var running = {};      // source id -> true while its test runs
   var notice = null;     // message after the last save that could not be applied
   var form = null;       // the open add/edit form, or null (see openForm)
+  var confirming = null; // key of the action waiting for its confirm click, or null
+  var restarting = null; // { boot, since } while the page waits for a restart to finish
+  var SECTIONS = ['sources', 'mqtt', 'dashboard', 'bridge', 'secrets'];
 
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -184,28 +187,6 @@
     return 'Saved, but ' + j.id + ' could not be started: ' + (j.apply_error || 'unknown reason') + '. Restart the bridge to try again.';
   }
 
-  function removeSource(s) {
-    if (!window.confirm('Remove ' + s.name + ' and the tokens saved for it?')) return;
-    post('api/setup/source/delete', { kind: s.kind, name: s.name }).then(function (j) {
-      if (!j) return;
-      if (j.error) window.alert(j.error);
-      else notice = applyNotice(j);
-      load();
-    });
-  }
-
-  // Ask the bridge to restart itself (only offered when [setup] allow_restart
-  // is on), then wait for it to answer again.
-  function restartBridge() {
-    if (!window.confirm('Restart the bridge now? The dashboard and panel are offline for a few seconds.')) return;
-    post('api/setup/restart', {}).then(function (j) {
-      if (!j || j.error) { window.alert(j && j.error || 'The restart failed.'); return; }
-      clearTimeout(timer);
-      app.textContent = '';
-      app.appendChild(el('p', 'banner', 'Restarting the bridge…'));
-      timer = setTimeout(load, 4000);
-    });
-  }
 
   function field(labelText, control) {
     var label = el('label', 'field');
@@ -278,23 +259,82 @@
     return card;
   }
 
-  function addCard() {
-    var card = el('section', 'card');
-    card.appendChild(el('h2', null, 'Add a source'));
+  // ---- Confirm step: an inline box instead of a browser dialog ----
+
+  function ask(key) { confirming = key; if (last) render(last); }
+  function cancelAsk() { confirming = null; if (last) render(last); }
+
+  // A box with a question and Yes/Cancel, drawn in place of the action's button.
+  function confirmBox(key, question, detail, yes, onYes) {
+    var box = el('div', 'confirm');
+    box.setAttribute('role', 'alertdialog');
+    box.appendChild(el('b', null, question));
+    if (detail) box.appendChild(el('p', 'muted', detail));
+    var b = el('div', 'buttons');
+    var y = el('button', 'secondary danger', yes);
+    y.type = 'button';
+    y.addEventListener('click', function () { confirming = null; onYes(); });
+    var n = el('button', 'secondary', 'Cancel');
+    n.type = 'button'; n.addEventListener('click', cancelAsk);
+    b.appendChild(y); b.appendChild(n);
+    box.appendChild(b);
+    return box;
+  }
+
+  // Do a change on the bridge, show what went wrong, then reload the status.
+  function change(url, body) {
+    post(url, body).then(function (j) {
+      notice = null;
+      if (j && j.error) notice = j.error;
+      else if (j) notice = applyNotice(j);
+      load();
+    });
+  }
+
+  function removeSource(s) {
+    change('api/setup/source/delete', { kind: s.kind, name: s.name });
+  }
+
+  // ---- Restart ----
+
+  // Ask the bridge to restart itself, then wait until a new process answers
+  // (its `boot` differs). It only comes back when Docker or systemd starts it
+  // again; after a minute the page says so.
+  function restartBridge() {
+    post('api/setup/restart', {}).then(function (j) {
+      if (!j || j.error) { notice = (j && j.error) || 'The restart failed.'; if (last) render(last); return; }
+      restarting = { boot: last && last.boot, since: Date.now() };
+      clearTimeout(timer);
+      render(last);
+      timer = setTimeout(load, 2000);
+    });
+  }
+
+  function restartButton(label) {
+    var b = el('button', 'restart', label || 'Restart bridge');
+    b.type = 'button';
+    b.addEventListener('click', function () { ask('restart'); });
+    return b;
+  }
+
+  // ---- Pieces of the page ----
+
+  function addBar(d) {
+    var bar = el('section', 'card addbar');
+    bar.appendChild(el('h2', null, 'Add a source'));
     var kind = el('select');
-    Object.keys(FORMS).forEach(function (k) { var o = el('option', null, KIND[k]); o.value = k; kind.appendChild(o); });
+    Object.keys(FORMS).forEach(function (k) { if (k === 'mqtt') return; var o = el('option', null, KIND[k]); o.value = k; kind.appendChild(o); });
     var go = el('button', null, 'Add');
     go.type = 'button'; go.addEventListener('click', function () { openForm(kind.value, null); });
-    var line = el('div', 'buttons');
-    line.appendChild(kind); line.appendChild(go);
-    card.appendChild(line);
-    return card;
+    bar.appendChild(kind); bar.appendChild(go);
+    bar.appendChild(el('span', 'muted', 'A new source starts working right away, no restart needed.'));
+    return bar;
   }
 
   function sourceCard(s) {
-    var card = el('section', 'card');
+    var card = el('section', 'card' + (s.hidden ? ' off' : ''));
     var h = el('h2', null, (KIND[s.kind] || s.kind) + ': ' + s.name + ' ');
-    var hs = HEALTH[s.health] || [s.health, 'warn'];
+    var hs = HEALTH[s.health] || (s.hidden ? ['switched off', 'muted'] : [s.health, 'warn']);
     h.appendChild(pill(hs[0], hs[1]));
     card.appendChild(h);
     var dl = el('dl');
@@ -308,24 +348,115 @@
       row(dl, c.label, v);
     });
     card.appendChild(dl);
-    if (!s.running) card.appendChild(el('p', 'muted', 'Saved, but not running. Fix the details and save again, or restart the bridge.'));
-    card.appendChild(testBlock(s.id));
+    if (s.hidden) {
+      card.appendChild(el('p', 'muted', 'Switched off from this page. It is not running and not on the dashboard. bridge.toml is untouched.'));
+    } else {
+      if (!s.running) card.appendChild(el('p', 'muted', 'Saved, but not running. Fix the details and save again, or restart the bridge.'));
+      card.appendChild(testBlock(s.id));
+    }
+    var key = 'source:' + s.id;
+    var b = el('div', 'buttons');
     if (s.editable) {
-      var b = el('div', 'buttons');
       var edit = el('button', 'secondary', 'Edit');
       edit.type = 'button'; edit.addEventListener('click', function () { openForm(s.kind, s); });
       var rm = el('button', 'secondary danger', 'Remove');
-      rm.type = 'button'; rm.addEventListener('click', function () { removeSource(s); });
+      rm.type = 'button'; rm.addEventListener('click', function () { ask(key); });
       b.appendChild(edit); b.appendChild(rm);
       card.appendChild(b);
+      if (confirming === key) card.appendChild(confirmBox(key, 'Remove ' + s.name + '?',
+        'The source stops and its tokens saved in the data folder are deleted. This cannot be undone.', 'Yes, remove',
+        function () { removeSource(s); }));
+    } else if (s.hideable) {
+      var off = el('button', s.hidden ? 'secondary' : 'secondary danger', s.hidden ? 'Switch on again' : 'Switch off here');
+      off.type = 'button';
+      off.addEventListener('click', function () {
+        if (s.hidden) change('api/setup/source/hide', { kind: s.kind, name: s.name, hidden: false });
+        else ask(key);
+      });
+      b.appendChild(off);
+      card.appendChild(b);
+      if (!s.hidden) card.appendChild(el('p', 'muted', 'This source is defined in bridge.toml, which this page never edits. Switching it off stops it here and keeps bridge.toml as it is; to delete it for good, remove its block from bridge.toml.'));
+      if (confirming === key) card.appendChild(confirmBox(key, 'Switch off ' + s.name + '?',
+        'It stops and leaves the dashboard. Its token file belongs to bridge.toml and stays. You can switch it on again here.', 'Yes, switch off',
+        function () { change('api/setup/source/hide', { kind: s.kind, name: s.name, hidden: true }); }));
+    } else if (!s.hidden) {
+      card.appendChild(el('p', 'muted', 'This source is defined in bridge.toml. Give the bridge a data folder to switch it off from here; to delete it, remove its block from bridge.toml.'));
     }
     return card;
   }
 
+  function sourcesSection(d) {
+    var box = el('div');
+    if (form && form.mode === 'add') box.appendChild(formCard());
+    else if (d.can_edit) box.appendChild(addBar(d));
+    else box.appendChild(el('p', 'muted', 'To add and change sources here, give the bridge a data folder ([data] dir, see docs/data-dir.md).'));
+    if (!d.sources.length) box.appendChild(el('p', 'muted', 'No sources configured.'));
+    var grid = el('div', 'srcgrid');
+    d.sources.forEach(function (s) {
+      var editing = form && form.mode === 'edit' && form.kind === s.kind && form.name === s.name;
+      grid.appendChild(editing ? formCard() : sourceCard(s));
+    });
+    box.appendChild(grid);
+    box.appendChild(el('p', 'muted', 'Tokens are never sent to the browser.'));
+    return box;
+  }
+
+  function mqttSection(d) {
+    var m = d.mqtt, box = el('div');
+    if (form && form.kind === 'mqtt') { box.appendChild(formCard()); return box; }
+    var info = el('section', 'card');
+    var h = el('h2', null, 'MQTT broker ');
+    if (m.enabled) h.appendChild(pill(m.connected ? 'connected' : 'not connected', m.connected ? 'ok' : 'bad'));
+    else h.appendChild(pill('off', 'muted'));
+    info.appendChild(h);
+    var dl = el('dl');
+    if (m.enabled) {
+      row(dl, 'Broker', m.host + ':' + m.port + (m.tls ? ' (TLS)' : ''));
+      row(dl, 'Login', (m.username || 'anonymous') + (m.username ? ', password ' + (CRED[m.password] || [m.password])[0] : ''));
+    } else {
+      row(dl, 'Broker', 'off');
+    }
+    row(dl, 'Settings from', m.origin === 'data_folder' ? 'data folder (changed here)' : 'bridge.toml');
+    info.appendChild(dl);
+    if (m.enabled) info.appendChild(testBlock('mqtt'));
+    if (m.editable) {
+      var b = el('div', 'buttons');
+      var chg = el('button', 'secondary', 'Change broker settings');
+      chg.type = 'button';
+      chg.addEventListener('click', function () { openForm('mqtt', { name: 'mqtt', fields: m }); });
+      b.appendChild(chg);
+      if (d.mqtt.has_login) {
+        var rl = el('button', 'secondary danger', 'Remove login');
+        rl.type = 'button'; rl.addEventListener('click', function () { ask('mqtt:login'); });
+        b.appendChild(rl);
+      }
+      if (m.removable) {
+        var rs = el('button', 'secondary danger', 'Reset to bridge.toml');
+        rs.type = 'button'; rs.addEventListener('click', function () { ask('mqtt:settings'); });
+        b.appendChild(rs);
+      }
+      info.appendChild(b);
+      if (confirming === 'mqtt:login') info.appendChild(confirmBox('mqtt:login', 'Remove the broker login?',
+        'The login name is cleared and the password saved in the data folder is deleted. Applies after a restart.', 'Yes, remove login',
+        function () { change('api/setup/mqtt/delete', { what: 'login' }); }));
+      if (confirming === 'mqtt:settings') info.appendChild(confirmBox('mqtt:settings', 'Remove everything saved here for the broker?',
+        'Host, port, TLS, login and the saved password go; bridge.toml decides again. Applies after a restart.', 'Yes, reset',
+        function () { change('api/setup/mqtt/delete', { what: 'settings' }); }));
+    } else {
+      info.appendChild(el('p', 'muted', 'Give the bridge a data folder to change the broker settings here.'));
+    }
+    box.appendChild(info);
+    return box;
+  }
+
   // How the dashboard's built-in layout shows the hosts. Applies after a restart.
-  function hostViewCard(d) {
+  function dashboardSection(d) {
     var card = el('section', 'card');
     card.appendChild(el('h2', null, 'Dashboard hosts'));
+    if (!d.kiosk) {
+      card.appendChild(el('p', 'muted', 'The dashboard is off ([kiosk] enabled in bridge.toml).'));
+      return card;
+    }
     var choice = el('select');
     [['detailed', 'Detailed: one host in detail on top, every host as a list below (tap to switch)'],
      ['compact', 'Compact: only the list of hosts, with network rates']].forEach(function (o) {
@@ -339,12 +470,7 @@
     if (d.host_view_editable) {
       var save = el('button', 'secondary', 'Save');
       save.type = 'button';
-      save.addEventListener('click', function () {
-        post('api/setup/kiosk', { host_view: choice.value }).then(function (j) {
-          if (j && j.error) window.alert(j.error);
-          load();
-        });
-      });
+      save.addEventListener('click', function () { change('api/setup/kiosk', { host_view: choice.value }); });
       var line = el('div', 'buttons'); line.appendChild(save); card.appendChild(line);
     }
     card.appendChild(el('p', 'muted', 'Only for the built-in layout; panels set in bridge.toml stay as they are. '
@@ -352,71 +478,148 @@
     return card;
   }
 
+  function bridgeSection(d) {
+    var box = el('div', 'two');
+    var info = el('section', 'card');
+    info.appendChild(el('h2', null, 'Bridge'));
+    var dl = el('dl');
+    row(dl, 'Version', d.build);
+    row(dl, 'Web listener', d.http_listen);
+    row(dl, 'Data folder', d.data_folder || 'not set (nothing can be saved from here yet)');
+    info.appendChild(dl);
+    box.appendChild(info);
+
+    var card = el('section', 'card');
+    card.appendChild(el('h2', null, 'Restart'));
+    if (d.can_restart) {
+      var line = el('div', 'buttons'); line.appendChild(restartButton()); card.appendChild(line);
+      if (confirming === 'restart') card.appendChild(confirmBox('restart', 'Restart the bridge now?',
+        'The dashboard and the panel are offline for a few seconds.', 'Yes, restart', restartBridge));
+      card.appendChild(el('p', 'muted', 'The bridge says goodbye to the broker and exits; the container or service manager has to start it again '
+        + '(Docker with restart: unless-stopped or on-failure, as in the compose files in deploy/; systemd with Restart=on-failure). '
+        + 'Without a restart policy it stays stopped and has to be started by hand. This page cannot restart the Docker host or pull a new image.'));
+    } else {
+      var off = el('button', null, 'Restart bridge'); off.disabled = true; off.type = 'button';
+      var line2 = el('div', 'buttons'); line2.appendChild(off); card.appendChild(line2);
+      var p = el('p', 'muted');
+      p.appendChild(document.createTextNode('Restarting from this page is off. To turn it on, put '));
+      p.appendChild(el('code', null, 'allow_restart = true'));
+      p.appendChild(document.createTextNode(' under '));
+      p.appendChild(el('code', null, '[setup]'));
+      p.appendChild(document.createTextNode(' in bridge.toml and restart once by hand (for Docker: docker compose restart deskwatch-bridge). It is off by default because it stops the bridge.'));
+      card.appendChild(p);
+    }
+    box.appendChild(card);
+    return box;
+  }
+
+  function secretsSection(d) {
+    var card = el('section', 'card');
+    card.appendChild(el('h2', null, 'Stored secrets'));
+    if (!d.can_edit) {
+      card.appendChild(el('p', 'muted', 'Without a data folder nothing is stored by the bridge.'));
+      return card;
+    }
+    card.appendChild(el('p', 'muted', 'Files in the data folder\'s credentials folder. Values are never shown. A secret that is in use goes away when you remove its source or login; one that nothing uses can be deleted here.'));
+    if (!d.secrets.length) card.appendChild(el('p', 'muted', 'Nothing is stored.'));
+    d.secrets.forEach(function (s) {
+      var line = el('div', 'secret');
+      var left = el('span');
+      left.appendChild(document.createTextNode(s.name));
+      left.appendChild(el('br'));
+      left.appendChild(el('small', null, s.used_by ? 'used by ' + s.used_by : 'not used by anything'));
+      line.appendChild(left);
+      if (s.used_by) {
+        line.appendChild(el('small', null, 'in use'));
+      } else {
+        var del = el('button', 'secondary danger', 'Delete');
+        del.type = 'button'; del.addEventListener('click', function () { ask('secret:' + s.name); });
+        line.appendChild(del);
+      }
+      card.appendChild(line);
+      if (confirming === 'secret:' + s.name) card.appendChild(confirmBox('secret:' + s.name, 'Delete ' + s.name + '?',
+        'The file is deleted from the data folder. This cannot be undone.', 'Yes, delete',
+        function () { change('api/setup/secret/delete', { name: s.name }); }));
+    });
+    return card;
+  }
+
+  var TITLES = { sources: 'Sources', mqtt: 'MQTT broker', dashboard: 'Dashboard', bridge: 'Bridge and restart', secrets: 'Stored secrets' };
+
+  function currentSection() {
+    var id = (location.hash || '').replace('#', '');
+    return SECTIONS.indexOf(id) >= 0 ? id : 'sources';
+  }
+
   function render(d) {
     last = d;
     document.getElementById('build').textContent = 'version ' + d.build;
     document.getElementById('dashboard-link').hidden = !d.kiosk;
     app.textContent = '';
-    var info = el('section', 'card');
-    info.appendChild(el('h2', null, 'Bridge'));
-    var dl = el('dl');
-    row(dl, 'Web listener', d.http_listen);
-    row(dl, 'Data folder', d.data_folder || 'not set (nothing can be saved from here yet)');
-    var m = d.mqtt;
-    if (m.enabled) {
-      var link = el('span');
-      link.appendChild(pill(m.connected ? 'connected' : 'not connected', m.connected ? 'ok' : 'bad'));
-      link.appendChild(document.createTextNode(' ' + m.host + ':' + m.port + (m.tls ? ' (TLS)' : '')));
-      row(dl, 'MQTT broker', link);
-      row(dl, 'MQTT login', (m.username || 'anonymous') + (m.username ? ', password ' + (CRED[m.password] || [m.password])[0] : ''));
-    } else {
-      row(dl, 'MQTT broker', 'off');
-    }
-    row(dl, 'MQTT settings from', m.origin === 'data_folder' ? 'data folder (changed here)' : 'bridge.toml');
-    info.appendChild(dl);
-    if (m.enabled) info.appendChild(testBlock('mqtt'));
-    if (m.editable && !form) {
-      var change = el('button', 'secondary', 'Change broker settings');
-      change.type = 'button';
-      change.addEventListener('click', function () { openForm('mqtt', { name: 'mqtt', fields: m }); });
-      var line = el('div', 'buttons'); line.appendChild(change); info.appendChild(line);
-    }
-    app.appendChild(info);
-    if (d.kiosk) app.appendChild(hostViewCard(d));
-    if (form && form.kind === 'mqtt') app.appendChild(formCard());
+    var section = currentSection();
 
-    if (d.restart_needed || notice) {
-      var banner = el('p', 'banner', notice || 'Changes are saved. Restart the bridge to apply them.');
-      banner.setAttribute('role', 'status');
-      if (d.restart_needed && d.can_restart) {
-        var again = el('button', null, 'Restart now');
-        again.type = 'button';
-        again.addEventListener('click', restartBridge);
+    var banner = null;
+    if (restarting) {
+      var waited = Date.now() - restarting.since;
+      banner = el('p', 'banner', waited < 60000 ? 'Restarting the bridge… this page continues by itself when it answers again.'
+        : 'The bridge has not come back after a minute. Nothing started it again: the container probably has no restart policy. Start it by hand (docker compose up -d).');
+    } else if (d.restart_needed || notice) {
+      banner = el('p', 'banner', notice || 'Changes are saved. Restart the bridge to apply them.');
+      if (d.restart_needed && d.can_restart && !notice) {
         banner.appendChild(document.createTextNode(' '));
-        banner.appendChild(again);
+        banner.appendChild(restartButton('Restart now'));
+      } else if (d.restart_needed && !d.can_restart && !notice) {
+        banner.appendChild(document.createTextNode(' (Restart it yourself, or see Bridge and restart.)'));
       }
-      app.insertBefore(banner, app.firstChild);
     }
-    app.appendChild(el('h2', null, 'Sources'));
-    if (!d.sources.length) app.appendChild(el('p', 'muted', 'No sources configured.'));
-    d.sources.forEach(function (s) {
-      var editing = form && form.mode === 'edit' && form.kind === s.kind && form.name === s.name;
-      app.appendChild(editing ? formCard() : sourceCard(s));
+    if (banner) { banner.setAttribute('role', 'status'); app.appendChild(banner); }
+    if (confirming === 'restart' && section !== 'bridge') {
+      app.appendChild(confirmBox('restart', 'Restart the bridge now?', 'The dashboard and the panel are offline for a few seconds.', 'Yes, restart', restartBridge));
+    }
+
+    var layout = el('div', 'sidebar');
+    var nav = el('nav', 'side');
+    nav.setAttribute('aria-label', 'sections');
+    SECTIONS.forEach(function (id) {
+      var a = el('a', id === section ? 'on' : null, TITLES[id]);
+      a.href = '#' + id;
+      var count = id === 'sources' ? d.sources.length : id === 'secrets' && d.can_edit ? d.secrets.length : null;
+      if (count != null) a.appendChild(el('span', 'n', String(count)));
+      if (id === section) a.setAttribute('aria-current', 'page');
+      nav.appendChild(a);
     });
-    if (d.can_edit) app.appendChild(form && form.mode === 'add' ? formCard() : addCard());
-    app.appendChild(el('p', 'muted', d.can_edit
-      ? 'Tokens are never sent to the browser. Sources from bridge.toml are changed in that file; the ones added here live in the data folder and start, change or stop right away.'
-      : 'Tokens are never sent to the browser. To add and change sources here, give the bridge a data folder ([data] dir, see docs/data-dir.md).'));
+    layout.appendChild(nav);
+    var content = el('div', 'content');
+    content.appendChild(el('h2', 'sectiontitle', TITLES[section]));
+    content.appendChild(({ sources: sourcesSection, mqtt: mqttSection, dashboard: dashboardSection,
+                           bridge: bridgeSection, secrets: secretsSection })[section](d));
+    layout.appendChild(content);
+    app.appendChild(layout);
   }
+
+  window.addEventListener('hashchange', function () { form = null; confirming = null; if (last) render(last); });
 
   function load() {
     clearTimeout(timer);
     // A refresh would redraw (and lose the focus of) a form being filled in.
-    if (form && !form.busy) { timer = setTimeout(load, REFRESH_MS); return Promise.resolve(); }
+    if (form && !form.busy && !restarting) { timer = setTimeout(load, REFRESH_MS); return Promise.resolve(); }
     return fetch('api/setup/status', { cache: 'no-store', credentials: 'same-origin' }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json().then(function (d) { render(d); timer = setTimeout(load, REFRESH_MS); });
+      return r.json().then(function (d) {
+        if (restarting && d.boot === restarting.boot) {
+          // Still the old process: it has not exited yet.
+          last = d; render(d); timer = setTimeout(load, 2000); return;
+        }
+        if (restarting) { restarting = null; notice = null; }
+        render(d); timer = setTimeout(load, REFRESH_MS);
+      });
     }).catch(function (e) {
+      if (restarting) {
+        // Expected while the bridge is down; keep asking.
+        if (last) render(last);
+        timer = setTimeout(load, 2000);
+        return;
+      }
       app.textContent = '';
       app.appendChild(el('p', 'err', 'Cannot load the setup: ' + e.message));
       timer = setTimeout(load, REFRESH_MS);

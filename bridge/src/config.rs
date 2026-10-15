@@ -60,6 +60,10 @@ struct Overlay {
     /// Dashboard settings the setup page changed.
     #[serde(default)]
     kiosk: Option<KioskPatch>,
+    /// `kind:name` of `bridge.toml` sources the setup page switched off.
+    /// `bridge.toml` itself is never edited; the source is just left out.
+    #[serde(default)]
+    hidden: Vec<String>,
 }
 
 /// The `[kiosk]` key the setup page can change: how the default layout shows
@@ -168,6 +172,13 @@ pub struct Config {
     /// `kiosk.host_view` as `bridge.toml` had it, when the data folder changed it.
     #[serde(skip)]
     pub host_view_before_overlay: Option<HostView>,
+    /// `kind:name` of the `bridge.toml` sources the data folder switched off.
+    /// Filled by `with_overlay`.
+    #[serde(skip)]
+    pub hidden_sources: std::collections::BTreeSet<String>,
+    /// The sources as `bridge.toml` had them, when some were switched off.
+    #[serde(skip)]
+    pub sources_before_overlay: Option<Sources>,
     /// Data sources, one array per adapter type.
     #[serde(default)]
     pub source: Sources,
@@ -578,6 +589,28 @@ impl AlertsConfig {
     }
 }
 
+/// Take source `kind:name` out of `sources`. `Ok(false)` when there is none
+/// (the entry is then harmless); an id that is not `kind:name` is an error.
+fn hide_source(sources: &mut Sources, id: &str) -> Result<bool> {
+    let (kind, name) = id
+        .split_once(':')
+        .with_context(|| format!("hidden source {id:?} is not kind:name"))?;
+    macro_rules! drop_from {
+        ($list:expr) => {{
+            let before = $list.len();
+            $list.retain(|s| s.name != name);
+            $list.len() != before
+        }};
+    }
+    Ok(match kind {
+        "gitea" => drop_from!(sources.gitea),
+        "github" => drop_from!(sources.github),
+        "azure_devops" => drop_from!(sources.azure_devops),
+        "prometheus" => drop_from!(sources.prometheus),
+        _ => anyhow::bail!("hidden source {id:?} has an unknown type"),
+    })
+}
+
 /// All configured sources, by adapter type.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -961,7 +994,17 @@ impl Config {
             source,
             mqtt,
             kiosk,
+            hidden,
         } = toml::from_str(overlay).context("invalid sources overlay")?;
+        if !hidden.is_empty() {
+            self.sources_before_overlay = Some(self.source.clone());
+            for id in &hidden {
+                let found = hide_source(&mut self.source, id)?;
+                if found {
+                    self.hidden_sources.insert(id.clone());
+                }
+            }
+        }
         if let Some(patch) = mqtt {
             self.mqtt_before_overlay = Some(self.mqtt.clone());
             let m = &mut self.mqtt;
@@ -1016,6 +1059,10 @@ impl Config {
             .prometheus
             .retain(|s| keep("prometheus", &s.name));
         base.overlay_sources.clear();
+        base.hidden_sources.clear();
+        if let Some(original) = base.sources_before_overlay.take() {
+            base.source = original;
+        }
         if let Some(original) = base.mqtt_before_overlay.take() {
             base.mqtt = original;
         }
@@ -1648,6 +1695,30 @@ title = "Reviews"
         let ok = Config::from_toml("[kiosk]\nenabled = true\n[setup]\nenabled = true\n").unwrap();
         assert!(ok.setup.is_on() && ok.kiosk.enabled);
         assert!(!Config::from_toml("").unwrap().setup.is_on());
+    }
+
+    #[test]
+    fn hidden_sources_leave_the_config_and_come_back_without_the_overlay() {
+        let text = "[[source.github]]\nname = \"main\"\ntoken_file = \"t\"\nrepos = [\"o/a\"]\n\
+                [[source.github]]\nname = \"other\"\ntoken_file = \"t\"\nrepos = [\"o/b\"]\n";
+        let base = Config::from_toml(text).unwrap();
+        let hidden = base
+            .clone()
+            .with_overlay("hidden = [\"github:main\", \"gitea:gone\"]\n")
+            .unwrap();
+        assert_eq!(hidden.source.github.len(), 1);
+        assert_eq!(hidden.source.github[0].name, "other");
+        // Only what was really there counts as hidden.
+        assert_eq!(
+            hidden.hidden_sources.iter().collect::<Vec<_>>(),
+            ["github:main"]
+        );
+        assert_eq!(hidden.without_overlay().source.github.len(), 2);
+        assert!(
+            base.clone()
+                .with_overlay("hidden = [\"nonsense\"]\n")
+                .is_err()
+        );
     }
 
     #[test]
