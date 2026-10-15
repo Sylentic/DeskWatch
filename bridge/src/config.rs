@@ -594,8 +594,8 @@ pub struct AlertsConfig {
     pub ticker_speed: TickerSpeed,
     /// Show "via <source>" behind each alert in the ticker.
     pub show_source: bool,
-    /// Let the kiosk page dismiss an alert (a small x in the ticker). It
-    /// clears the alert for every screen, like a clear message would.
+    /// Let the kiosk page dismiss an alert (Dismiss buttons in the Alerts
+    /// menu). It clears the alert for every screen, like a clear message would.
     pub dismiss: bool,
     /// Accept alerts as `POST /api/alert` on the shared HTTP listener, with
     /// the same JSON as on MQTT. Off by default: like the dashboard it has no
