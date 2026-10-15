@@ -94,7 +94,7 @@ jobs:
         run: cargo test --workspace --locked
 
   # Builds the bridge image and starts it in demo mode. Nothing is pushed
-  # anywhere; see docs/docker.md for how to publish an image.
+  # anywhere. The release workflow publishes the image (docs/releasing.md).
   docker:
     name: docker image
     runs-on: ubuntu-latest

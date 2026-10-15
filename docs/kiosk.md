@@ -272,8 +272,7 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
 - **Which token is this?** (Only if you set `token_file`.) The dashboard access token: the text stored in the file named by `token_file` under
   `[kiosk]` in the bridge config (in Docker, the `kiosk-token` file in the credentials folder). It is not a Gitea,
   GitHub or Azure DevOps token; those stay on the bridge and are never typed into the page.
-- **The page says why it has no data.** An empty page with `connecting` used to be all you saw. Now the header chip
-  and a box in the page body name the cause:
+- **The page says why it has no data.** The header chip and a box in the page body name the cause:
 
   | Header chip | Meaning | What to do |
   | --- | --- | --- |
