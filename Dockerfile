@@ -1,3 +1,6 @@
+# check=skip=SecretsUsedInArgOrEnv
+# (CREDENTIALS_DIRECTORY below is a folder path, the systemd convention for
+# credential files, not a secret; the linter only reacts to the name.)
 # DeskWatch bridge image. Guide: docs/docker.md
 #
 #   docker build -t deskwatch-bridge .

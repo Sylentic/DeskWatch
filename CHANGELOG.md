@@ -8,6 +8,10 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Changed
+
+- CI and release workflows use current major versions of the Docker and artifact actions (Node 24), and the Dockerfile skips the `SecretsUsedInArgOrEnv` lint for `CREDENTIALS_DIRECTORY`, which is a path and not a secret (issue 74).
+
 ## [0.9.14]
 
 ### Changed
