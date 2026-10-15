@@ -476,27 +476,95 @@
     if (chip) pop.style.left = Math.max(8, Math.min(chip.getBoundingClientRect().left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
   }
 
+  // ---- alerts: badge, list and dismiss -------------------------------------
+
+  // The Alerts badge works like the Failed badge: click for the list. Dismiss
+  // is different in one way: it asks the bridge to clear the alert, so it goes
+  // away on every screen (the same as a `clear` message on MQTT). With
+  // `[alerts] dismiss = false` the list is read-only.
+  var alertsOpen = false;
+  var SEV_NAME = { critical: 'Critical', warn: 'Warning', info: 'Info' };
+  function alertList() {
+    return snap.alerts || [];
+  }
+  function canDismiss() {
+    var cfg = (snap.layout && snap.layout.alerts) || {};
+    return !!cfg.dismiss;
+  }
+  function dismissAlerts(ids) {
+    // One after the other, so the bridge never has more than one clear in flight.
+    return ids.reduce(function (chain, id) {
+      return chain.then(function () {
+        return fetch('api/kiosk/alert/dismiss', {
+          method: 'POST', cache: 'no-store', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id })
+        });
+      });
+    }, Promise.resolve()).catch(function () { /* the next snapshot shows what is left */ });
+  }
+  function alertRow(a) {
+    var cfg = (snap.layout && snap.layout.alerts) || {};
+    var sub = [a.message ? esc(a.message) : '', a.source && cfg.show_source !== false ? 'via ' + esc(a.source) : '', a.since ? ago(nowS() - a.since) : '']
+      .filter(Boolean).join(' &middot; ');
+    return '<li><span class="what"><span class="dot ' + esc(a.severity) + '"></span><b>' + esc(a.title) + '</b>' +
+      '<span class="sev ' + esc(a.severity) + '">' + esc(SEV_NAME[a.severity] || a.severity) + '</span><span class="sub">' + sub + '</span></span>' +
+      (canDismiss() ? '<button type="button" class="x" data-dismiss-alert="' + esc(a.id) + '" aria-label="Dismiss alert">Dismiss</button>' : '') + '</li>';
+  }
+  function renderAlertsPop() {
+    var pop = $('alerts-pop'), list = alertList();
+    if (!alertsOpen || !list.length) { alertsOpen = alertsOpen && list.length > 0; pop.hidden = true; pop.innerHTML = ''; return; }
+    var html = '<div class="head"><b>Alerts</b>' +
+      (canDismiss() ? '<button type="button" class="x all" data-dismiss-all-alerts="1">Dismiss all</button>' : '') + '</div><ul>' +
+      list.map(alertRow).join('') + '</ul>' +
+      (canDismiss() ? '<div class="foot">Dismissing clears the alert on every screen.</div>' : '');
+    if (pop.innerHTML !== html) pop.innerHTML = html;
+    pop.hidden = false;
+    var chip = document.querySelector('[data-alerts-toggle]');
+    if (chip) pop.style.left = Math.max(8, Math.min(chip.getBoundingClientRect().left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
+  }
+
   function renderBadges() {
     var el = $('badges'), html = '';
     var names = { pr: 'open PRs', pipeline: 'failed', server: 'down', warn: 'with a problem', home: 'alerts' };
     pruneDismissed();
-    (snap.badges || []).forEach(function (b) {
+    // Order: Open PRs, Failed runs, Alerts, then any other badge.
+    var rank = { pr: 0, pipeline: 1 };
+    var list = (snap.badges || []).slice().sort(function (x, y) {
+      return (x.id === 'failed' ? 1 : rank[x.icon] === undefined ? 5 : rank[x.icon]) - (y.id === 'failed' ? 1 : rank[y.icon] === undefined ? 5 : rank[y.icon]);
+    });
+    list.forEach(function (b) {
+      if (b.id === 'alerts') return; // the Alerts chip below replaces it
       if (b.id === 'failed' && snap.failed) {
-        // The count follows what is not dismissed; the chip opens the list.
+        // The count follows what is not dismissed; the chip opens the list and is gone at 0.
         var n = visibleFailed().length;
-        html += '<button type="button" class="chip ' + (n ? 'failed' : 'ok') + ' action" data-failed-toggle="1" aria-expanded="' + (failedOpen && n ? 'true' : 'false') +
-          '" title="' + (n ? 'Show the failed runs' : 'No failed runs') + '"' + (n ? '' : ' disabled') + '>' + n + ' failed</button>';
+        if (!n) { failedOpen = false; return; }
+        html += '<button type="button" class="chip failed action" data-failed-toggle="1" aria-expanded="' + (failedOpen ? 'true' : 'false') +
+          '" title="Show the failed runs">' + n + ' failed</button>';
         return;
       }
+      if (b.icon === 'pr' && !b.count) return; // no open PRs: no badge
       html += '<span class="chip ' + esc(b.status) + '">' + b.count + ' ' + (names[b.icon] || '') + '</span>';
     });
+    // The Alerts chip: every active alert, worst colour wins. Gone at 0, like Failed and Open PRs.
+    var alerts = alertList(), worst = alerts.some(function (a) { return a.severity === 'critical'; }) ? 'failed'
+      : alerts.some(function (a) { return a.severity === 'warn'; }) ? 'review' : alerts.length ? 'open' : 'ok';
+    if (alerts.length) html += '<button type="button" class="chip ' + worst + ' action" data-alerts-toggle="1" aria-expanded="' + (alertsOpen ? 'true' : 'false') +
+      '" title="Show the alerts">' + alerts.length + ' alerts</button>';
+    if (!alerts.length) alertsOpen = false;
     if (el.innerHTML !== html) el.innerHTML = html;
     renderFailedPop();
+    renderAlertsPop();
   }
 
   // One listener each: the badge row and the popover are rebuilt on every snapshot.
   $('badges').addEventListener('click', function (e) {
-    if (e.target.closest && e.target.closest('[data-failed-toggle]')) { failedOpen = !failedOpen; renderBadges(); }
+    if (e.target.closest && e.target.closest('[data-failed-toggle]')) { failedOpen = !failedOpen; alertsOpen = false; renderBadges(); }
+    if (e.target.closest && e.target.closest('[data-alerts-toggle]')) { alertsOpen = !alertsOpen; failedOpen = false; renderBadges(); }
+  });
+  $('alerts-pop').addEventListener('click', function (e) {
+    var one = e.target.closest ? e.target.closest('[data-dismiss-alert]') : null;
+    if (one) { dismissAlerts([one.getAttribute('data-dismiss-alert')]); return; }
+    if (e.target.closest && e.target.closest('[data-dismiss-all-alerts]')) dismissAlerts(alertList().map(function (a) { return a.id; }));
   });
   $('failed-pop').addEventListener('click', function (e) {
     var one = e.target.closest ? e.target.closest('[data-dismiss]') : null;
@@ -507,16 +575,19 @@
     if (failedOpen && document.contains(e.target) && e.target.closest && !e.target.closest('#failed-pop') && !e.target.closest('[data-failed-toggle]')) {
       failedOpen = false; renderBadges();
     }
+    if (alertsOpen && document.contains(e.target) && e.target.closest && !e.target.closest('#alerts-pop') && !e.target.closest('[data-alerts-toggle]')) {
+      alertsOpen = false; renderBadges();
+    }
   });
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && failedOpen) { failedOpen = false; renderBadges(); }
+    if (e.key === 'Escape' && (failedOpen || alertsOpen)) { failedOpen = false; alertsOpen = false; renderBadges(); }
   });
 
   // ---- alert ticker in the header -----------------------------------------
 
-  // Active alerts, most urgent first, scroll left to right between the badges
-  // and the free space. No alerts: the area is empty. With reduced motion the
-  // newest alert stands still instead. The key leaves out the age, so the
+  // Active alerts, most urgent first, scroll right to left between the badges
+  // and the free space, like a news ticker. No alerts: the area is empty. With
+  // reduced motion the most urgent alert stands still instead. The key leaves out the age, so the
   // ticker does not restart on every snapshot.
   var tickerKey = '';
   var SEVERITY = { critical: 'critical', warn: 'warning', info: 'info' };
@@ -526,13 +597,12 @@
     var alerts = cfg.ticker === false ? [] : snap.alerts || [];
     var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (still) alerts = alerts.slice(0, 1);
-    // The track moves right, so its last item leads: reverse, to let the most urgent come in first.
-    var html = alerts.slice().reverse().map(function (a) {
+    // The track moves left, so its first item leads: the most urgent comes in first.
+    var html = alerts.map(function (a) {
       var msg = a.message ? ' <span class="m">' + esc(a.message) + '</span>' : '';
       return '<span class="alert ' + esc(a.severity) + '"><span class="dot ' + esc(a.severity) + '"></span>' +
         '<b class="sev">' + esc(SEVERITY[a.severity] || a.severity) + '</b> <span class="t">' + esc(a.title) + '</span>' + msg +
         (a.source && cfg.show_source !== false ? ' <span class="s">' + esc(a.source) + '</span>' : '') +
-        (cfg.dismiss ? ' <button type="button" class="x" data-id="' + esc(a.id) + '" title="Dismiss this alert" aria-label="Dismiss alert: ' + esc(a.title) + '">&times;</button>' : '') +
         '</span>';
     }).join('');
     var speed = cfg.speed > 0 ? cfg.speed : 1;
@@ -543,27 +613,16 @@
     track.innerHTML = html;
     el.classList.toggle('still', still);
     if (!html || still) { track.style.animation = 'none'; return; }
-    // Slide from just outside the left edge to just outside the right edge at
+    // Slide from just outside the right edge to just outside the left edge at
     // a steady speed (about 5 rem a second), however long the text is.
     var rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-    var from = -track.scrollWidth, to = el.clientWidth;
+    var from = el.clientWidth, to = -track.scrollWidth;
     track.style.setProperty('--from', from + 'px');
     track.style.setProperty('--to', to + 'px');
     track.style.animation = 'none';
     void track.offsetWidth;
-    track.style.animation = 'ticker ' + Math.max(8, (to - from) / (5 * rem * speed)).toFixed(1) + 's linear infinite';
+    track.style.animation = 'ticker ' + Math.max(8, (from - to) / (5 * rem * speed)).toFixed(1) + 's linear infinite';
   }
-
-  // The small x on an alert: ask the bridge to clear it, for every screen.
-  $('track').addEventListener('click', function (e) {
-    var b = e.target.closest && e.target.closest('button.x');
-    if (!b) return;
-    b.disabled = true;
-    fetch('api/kiosk/alert/dismiss', {
-      method: 'POST', cache: 'no-store', credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: b.getAttribute('data-id') })
-    }).catch(function () { b.disabled = false; });
-  });
 
   function renderBanner() {
     var el = $('banner'), bar = $('progress');

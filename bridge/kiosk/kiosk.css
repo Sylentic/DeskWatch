@@ -130,8 +130,10 @@ button.chip.action:not(:disabled):hover, button.chip.action[aria-expanded="true"
 .failed-pop .sub { flex-basis: 100%; color: var(--dim); font-size: .9rem; }
 .failed-pop .x { font: inherit; font-size: .9rem; color: var(--text); background: var(--header); border: 1px solid var(--card-edge); border-radius: .5rem; padding: .3rem .7rem; cursor: pointer; }
 .failed-pop .x:hover { border-color: var(--dim); }
+.failed-pop .sev { font-size: .75rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--c, var(--dim)); }
+.failed-pop .sev.critical { --c: var(--red); } .failed-pop .sev.warn { --c: var(--amber); } .failed-pop .sev.info { --c: var(--blue); }
 .failed-pop .foot { margin-top: .5rem; color: var(--dim); font-size: .85rem; }
-/* Alert ticker: between the badges and the free space, text moves left to right. */
+/* Alert ticker: between the badges and the free space, text moves right to left. */
 .ticker { position: relative; flex: 0 1 46rem; min-width: 0; height: 2.2rem; overflow: hidden;
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 1.2rem, #000 calc(100% - 1.2rem), transparent);
   mask-image: linear-gradient(90deg, transparent, #000 1.2rem, #000 calc(100% - 1.2rem), transparent); }
@@ -145,8 +147,6 @@ button.chip.action:not(:disabled):hover, button.chip.action[aria-expanded="true"
 .ticker .t { font-weight: 600; }
 .ticker .m, .ticker .s { color: var(--dim); }
 .ticker .s::before { content: "via "; }
-.ticker .x { all: unset; cursor: pointer; font-size: 1.3rem; line-height: 1; padding: 0 .4rem; color: var(--dim); border-radius: .3rem; }
-.ticker .x:hover, .ticker .x:focus-visible { color: var(--text); background: var(--line, #333a48); }
 .ticker.still .track { position: static; transform: none; width: auto; }
 .ticker.still { -webkit-mask-image: none; mask-image: none; }
 .clock { text-align: right; line-height: 1.05; }

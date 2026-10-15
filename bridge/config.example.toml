@@ -119,7 +119,7 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 # ticker = true                 # alert ticker in the kiosk header
 # ticker_speed = "normal"       # "slow", "normal" or "fast"
 # show_source = true            # "via homeassistant" behind each alert in the ticker
-# dismiss = true                # a small x on each ticker alert clears it for every screen
+# dismiss = true                # Dismiss buttons in the Alerts menu clear an alert for every screen
 # http_input = false            # accept alerts as POST /api/alert (same JSON as MQTT); no login, trusted network only
 # critical_ids = ["leak", "smoke"]  # only these ids may be critical, others become warnings
 

@@ -8,6 +8,17 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Changed
+
+- **The Alerts badge works like the Failed badge**: it folds out a menu with all alerts, each with a Dismiss button, plus
+  Dismiss all. The small x in the moving ticker text is gone; the `dismiss` setting now controls these buttons.
+- **Header badge order** is Open PRs, Failed runs, Alerts. The Open PRs, Failed and Alerts badges disappear when their count is 0.
+
+### Fixed
+
+- **The alert ticker in the header moves from right to left**, like a news ticker, instead of left to right. The most
+  urgent alert still comes in first, and pausing on hover, the speed setting and "reduce motion" work as before.
+
 ## [0.9.18]
 
 ### Changed

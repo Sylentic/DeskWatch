@@ -535,7 +535,7 @@
     card.appendChild(settingRow('Speed', 'How fast the text moves', speed));
     card.appendChild(settingRow('Show the source', 'Adds "via homeassistant" behind each alert', source));
     card.appendChild(settingRow('Most alerts kept', 'When there are more, the least urgent and oldest drops first (1 to 50)', max));
-    card.appendChild(settingRow('Dismiss on the dashboard', 'A small x on each alert in the ticker. It clears the alert on every screen', dismiss));
+    card.appendChild(settingRow('Dismiss on the dashboard', 'A Dismiss button per alert in the Alerts menu. It clears the alert on every screen', dismiss));
     card.appendChild(settingRow('Accept alerts on the web address', 'POST /api/alert with the same JSON as MQTT. No login: for a trusted network only', httpInput));
     if (a.editable) {
       var save = el('button', null, 'Save');

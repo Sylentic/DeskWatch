@@ -83,18 +83,20 @@ closes it. With nothing left the counter shows `0 failed` with a green dot.
 
 ### Alerts in the header
 
-Active alerts scroll through the header between the badges and the free space, from left to right, one after the other:
+Active alerts scroll through the header between the badges and the free space, from right to left like a news ticker, one after the other:
 the severity in colour (INFO blue, WARNING amber, CRITICAL red), what is wrong, the message and the source ("via
 homeassistant"). The most urgent comes in first. With no alerts the area is empty. The ticker pauses while the pointer is
 over it or it is touched, and with "reduce motion" switched on in the system it does not move: the most urgent alert stands
-still instead. The `alerts` badge (warnings and critical) stays next to the other counters.
+still instead. The header badges run Open PRs, Failed runs, Alerts; each is gone at 0.
 
 While a warning or critical alert is on screen, the header bar itself turns yellow (warning) or red (critical) instead
 of a banner under it; it goes back when the alert is dismissed or has been on screen for its time (a warning for ten
 minutes). Failed runs and info alerts keep their banner.
 
-Each alert has a small **x**. It clears the alert for every screen (the same as a `clear` message on MQTT) and works
-without MQTT. It can only clear, never raise or change an alert. Switch it off with `dismiss = false` in `[alerts]`.
+The **Alerts** badge counts every active alert, coloured by the worst one, and is gone when there are none (the Open PRs and Failed badges vanish at 0 too). Click it
+to fold out a menu with all alerts, each with a **Dismiss** button, plus **Dismiss all**. Dismissing clears the alert for
+every screen (the same as a `clear` message on MQTT, unlike Failed runs, which are hidden per browser) and works
+without MQTT. The ticker itself has no buttons. It can only clear, never raise or change an alert. Switch it off with `dismiss = false` in `[alerts]`.
 Ticker on or off, speed and "via source" are `[alerts]` settings too (`ticker`, `ticker_speed`, `show_source`), also
 changeable on the [setup page](setup-page.md#alerts).
 
