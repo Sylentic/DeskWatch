@@ -206,6 +206,21 @@ async fn main() -> Result<()> {
     // `/healthz` (the Docker health probe) reports the broker connection, so
     // the listener also opens for a bridge that only talks to an ESP panel.
     let mqtt_link = health::MqttLink::default();
+    // Alerts over HTTP: off unless `[alerts] http_input`.
+    if config.alerts.enabled && config.alerts.http_input {
+        hooks.add(
+            deskwatch_bridge::alerts::HTTP_PATH,
+            deskwatch_bridge::alerts::http_router(inbound_tx.clone()),
+        );
+        if !config.http.listen.ip().is_loopback() {
+            warn!(
+                "POST {} on {} has no login: anyone who can reach this port can put alerts on the dashboard. \
+                 That is fine on a home network. Do not expose the port to the internet",
+                deskwatch_bridge::alerts::HTTP_PATH,
+                config.http.listen
+            );
+        }
+    }
     // The setup page (docs/setup-page.md): off unless `[setup] enabled`.
     let mut setup = None;
     if config.setup.is_on() {

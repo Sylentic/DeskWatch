@@ -87,6 +87,7 @@ struct AlertsPatch {
     show_source: Option<bool>,
     dismiss: Option<bool>,
     max_active: Option<usize>,
+    http_input: Option<bool>,
 }
 
 /// The `[mqtt]` keys the setup page can change (docs/setup-page.md). Anything
@@ -596,6 +597,10 @@ pub struct AlertsConfig {
     /// Let the kiosk page dismiss an alert (a small x in the ticker). It
     /// clears the alert for every screen, like a clear message would.
     pub dismiss: bool,
+    /// Accept alerts as `POST /api/alert` on the shared HTTP listener, with
+    /// the same JSON as on MQTT. Off by default: like the dashboard it has no
+    /// login, so it is for a trusted network only.
+    pub http_input: bool,
 }
 
 /// How fast the header ticker moves.
@@ -633,6 +638,7 @@ impl Default for AlertsConfig {
             ticker_speed: TickerSpeed::Normal,
             show_source: true,
             dismiss: true,
+            http_input: false,
         }
     }
 }
@@ -1089,6 +1095,7 @@ impl Config {
             a.show_source = patch.show_source.unwrap_or(a.show_source);
             a.dismiss = patch.dismiss.unwrap_or(a.dismiss);
             a.max_active = patch.max_active.unwrap_or(a.max_active);
+            a.http_input = patch.http_input.unwrap_or(a.http_input);
         }
         macro_rules! merge {
             ($($kind:ident),+) => {$(
@@ -1381,17 +1388,23 @@ mod tests {
         let config = Config::from_toml("").unwrap();
         let a = &config.alerts;
         assert!(a.ticker && a.show_source && a.dismiss);
+        assert!(
+            !a.http_input,
+            "the web address is off until it is switched on"
+        );
         assert_eq!(a.ticker_speed, TickerSpeed::Normal);
 
-        let overlay = "[alerts]\nticker = false\nticker_speed = \"fast\"\nmax_active = 3\n";
+        let overlay = "[alerts]\nticker = false\nticker_speed = \"fast\"\nmax_active = 3\nhttp_input = true\n";
         let with = config.clone().with_overlay(overlay).unwrap();
         assert!(!with.alerts.ticker && with.alerts.show_source);
         assert_eq!(with.alerts.ticker_speed, TickerSpeed::Fast);
         assert_eq!(with.alerts.max_active, 3);
+        assert!(with.alerts.http_input);
         // Taking the overlay away gives bridge.toml's own values back.
         let base = with.without_overlay();
         assert!(base.alerts.ticker);
         assert_eq!(base.alerts.max_active, 10);
+        assert!(!base.alerts.http_input);
     }
 
     #[test]

@@ -523,7 +523,7 @@
     var card = el('section', 'card');
     card.appendChild(el('h2', null, 'Ticker in the header'));
     var ticker = checkbox(a.ticker, !a.editable), source = checkbox(a.show_source, !a.editable);
-    var dismiss = checkbox(a.dismiss, !a.editable);
+    var dismiss = checkbox(a.dismiss, !a.editable), httpInput = checkbox(a.http_input, !a.editable);
     var speed = el('select');
     [['slow', 'Slow'], ['normal', 'Normal'], ['fast', 'Fast']].forEach(function (o) {
       var opt = el('option', null, o[1]); opt.value = o[0]; opt.selected = a.ticker_speed === o[0]; speed.appendChild(opt);
@@ -536,13 +536,14 @@
     card.appendChild(settingRow('Show the source', 'Adds "via homeassistant" behind each alert', source));
     card.appendChild(settingRow('Most alerts kept', 'When there are more, the least urgent and oldest drops first (1 to 50)', max));
     card.appendChild(settingRow('Dismiss on the dashboard', 'A small x on each alert in the ticker. It clears the alert on every screen', dismiss));
+    card.appendChild(settingRow('Accept alerts on the web address', 'POST /api/alert with the same JSON as MQTT. No login: for a trusted network only', httpInput));
     if (a.editable) {
       var save = el('button', null, 'Save');
       save.type = 'button';
       save.addEventListener('click', function () {
         post('api/setup/alerts', {
           ticker: ticker.checked, ticker_speed: speed.value, show_source: source.checked,
-          dismiss: dismiss.checked, max_active: parseInt(max.value, 10) || 0
+          dismiss: dismiss.checked, http_input: httpInput.checked, max_active: parseInt(max.value, 10) || 0
         }).then(function (j) { notice = (j && j.error) || null; load(); });
       });
       var line = el('div', 'buttons'); line.appendChild(save); card.appendChild(line);
@@ -582,6 +583,8 @@
     else mqtt = pill(a.mqtt_connected ? 'broker connected' : 'no broker connection', a.mqtt_connected ? 'ok' : 'warn');
     row(dl, 'MQTT', mqtt);
     row(dl, 'Topic', 'deskpanel/alert (Home Assistant blueprints or any script, see docs/home-assistant.md)');
+    row(dl, 'Web address', a.enabled ? pill(a.http_input ? 'on: POST /api/alert' : 'off', a.http_input ? 'ok' : 'muted') : pill('alerts off ([alerts] enabled in bridge.toml)', 'muted'));
+    row(dl, 'Example', 'curl -X POST http://<bridge>:8787/api/alert -d \'{"v":2,"id":"x","severity":"warning","title":"Hello"}\' (see docs/home-assistant.md)');
     src.appendChild(dl);
     src.appendChild(el('p', 'muted', 'Failed pipeline runs are not alerts: they count in the Failed badge.'));
     box.appendChild(src);
