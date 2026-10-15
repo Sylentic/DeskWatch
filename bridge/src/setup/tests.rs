@@ -595,3 +595,170 @@ async fn status_says_whether_the_dashboard_is_there_to_link_back_to() {
     let status: Value = serde_json::from_str(&body).unwrap();
     assert_eq!(status["kiosk"], false);
 }
+
+/// A setup router whose `bridge.toml` has one GitHub source (pointing nowhere)
+/// and a data folder, plus the folder's path.
+async fn with_toml_source(tag: &str) -> (Router, Temp) {
+    let temp = Temp::new(tag);
+    let store = Store::open(&temp.0.join("data")).unwrap();
+    let token = temp.0.join("github-token");
+    std::fs::write(&token, SECRET).unwrap();
+    let text = format!(
+        "[[source.github]]\nname = \"main\"\nbase_url = \"http://127.0.0.1:1\"\n\
+         token_file = {:?}\nrepos = [\"o/a\"]\n[mqtt]\nusername = \"from-toml\"\n",
+        token.to_str().unwrap()
+    );
+    let config = Config::from_toml(&text).unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+    tokio::spawn(async move { while rx.recv().await.is_some() {} });
+    let supervisor = Supervisor::new(tx, crate::hooks::Webhooks::default());
+    let router = Setup::new(&config, MqttLink::default(), Some(store), Some(supervisor)).router();
+    (router, temp)
+}
+
+async fn status_json(router: &Router) -> Value {
+    let (_, _, text) = send(router, "GET", "/api/setup/status", &[], "").await;
+    serde_json::from_str(&text).unwrap()
+}
+
+#[tokio::test]
+async fn switching_a_bridge_toml_source_off_and_on_leaves_bridge_toml_alone() {
+    let (router, temp) = with_toml_source("hide").await;
+    let v = status_json(&router).await;
+    assert_eq!(v["sources"][0]["id"], "github:main");
+    assert_eq!(v["sources"][0]["editable"], false);
+    assert_eq!(v["sources"][0]["hideable"], true);
+    assert_eq!(v["sources"][0]["hidden"], false);
+
+    let off = json!({ "kind": "github", "name": "main", "hidden": true }).to_string();
+    let (status, _, text) = send(&router, "POST", "/api/setup/source/hide", &[], &off).await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    let saved = std::fs::read_to_string(temp.0.join("data/sources.toml")).unwrap();
+    assert!(saved.contains("github:main"), "{saved}");
+    // Still listed (so it can come back), but not running and not editable.
+    let v = status_json(&router).await;
+    assert_eq!(v["sources"].as_array().unwrap().len(), 1);
+    assert_eq!(v["sources"][0]["hidden"], true);
+    assert_eq!(v["sources"][0]["running"], false);
+    assert_eq!(v["sources"][0]["editable"], false);
+    // The token stays: it belongs to bridge.toml's source, not to the page.
+    assert!(temp.0.join("github-token").exists());
+    assert!(!status_json(&router).await.to_string().contains(SECRET));
+
+    let on = json!({ "kind": "github", "name": "main", "hidden": false }).to_string();
+    let (status, ..) = send(&router, "POST", "/api/setup/source/hide", &[], &on).await;
+    assert_eq!(status, StatusCode::OK);
+    let v = status_json(&router).await;
+    assert_eq!(v["sources"][0]["hidden"], false);
+    let saved = std::fs::read_to_string(temp.0.join("data/sources.toml")).unwrap();
+    assert!(!saved.contains("github:main"), "{saved}");
+
+    // Only bridge.toml sources can be switched off, and only from the same origin.
+    let nope = json!({ "kind": "github", "name": "unknown" }).to_string();
+    let (status, ..) = send(&router, "POST", "/api/setup/source/hide", &[], &nope).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let evil = [("host", "b.lan"), ("origin", "http://evil.example")];
+    let (status, ..) = send(&router, "POST", "/api/setup/source/hide", &evil, &off).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn saved_broker_settings_can_be_removed_with_their_password() {
+    let (router, temp) = with_toml_source("mqtt-remove").await;
+    let data = temp.0.join("data");
+    assert_eq!(status_json(&router).await["mqtt"]["removable"], false);
+    std::fs::write(
+        data.join("sources.toml"),
+        "[mqtt]\nhost = \"b.lan\"\nusername = \"me\"\npassword_file = \"mqtt-password\"\n",
+    )
+    .unwrap();
+    Store::open(&data)
+        .unwrap()
+        .write_secret("mqtt-password", "pw-value")
+        .unwrap();
+    let v = status_json(&router).await;
+    assert_eq!(v["mqtt"]["removable"], true);
+    assert_eq!(v["mqtt"]["has_login"], true);
+
+    // The login goes, the host stays, the password file is deleted.
+    let body = json!({ "what": "login" }).to_string();
+    let (status, _, text) = send(&router, "POST", "/api/setup/mqtt/delete", &[], &body).await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    assert!(!data.join("credentials/mqtt-password").exists());
+    let v = status_json(&router).await;
+    assert_eq!(v["mqtt"]["host"], "b.lan");
+    assert_eq!(v["mqtt"]["username"], Value::Null);
+    assert_eq!(v["restart_needed"], true);
+
+    // Everything saved goes: back to bridge.toml (the name it has).
+    let body = json!({ "what": "settings" }).to_string();
+    let (status, ..) = send(&router, "POST", "/api/setup/mqtt/delete", &[], &body).await;
+    assert_eq!(status, StatusCode::OK);
+    let v = status_json(&router).await;
+    assert_eq!(v["mqtt"]["username"], "from-toml");
+    assert_eq!(v["mqtt"]["removable"], false);
+
+    let (status, ..) = send(&router, "POST", "/api/setup/mqtt/delete", &[], "{}").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let evil = [("host", "b.lan"), ("origin", "http://evil.example")];
+    let (status, ..) = send(&router, "POST", "/api/setup/mqtt/delete", &evil, &body).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn only_stored_secrets_nothing_uses_can_be_deleted() {
+    use crate::probe::tests::{gitea_mock, serve};
+    let (router, temp) = with_data("secrets").await;
+    let data = temp.0.join("data");
+    let base = serve(gitea_mock()).await;
+    let add = json!({
+        "kind": "gitea", "name": "home", "create": true,
+        "fields": { "base_url": base, "repos": ["o/r"] },
+        "secrets": { "token": "good-token-value", "webhook_secret": "h" },
+    })
+    .to_string();
+    send(&router, "POST", "/api/setup/source", &[], &add).await;
+    // Left behind by hand or by an older version.
+    Store::open(&data)
+        .unwrap()
+        .write_secret("old-token", "x")
+        .unwrap();
+
+    let v = status_json(&router).await;
+    let secrets = v["secrets"].as_array().unwrap();
+    let used = |name: &str| {
+        secrets
+            .iter()
+            .find(|s| s["name"] == name)
+            .map(|s| s["used_by"].clone())
+    };
+    assert_eq!(used("gitea-home-token"), Some(json!("gitea:home")));
+    assert_eq!(used("old-token"), Some(Value::Null));
+    assert!(!v.to_string().contains("good-token-value"));
+
+    let in_use = json!({ "name": "gitea-home-token" }).to_string();
+    let (status, _, text) = send(&router, "POST", "/api/setup/secret/delete", &[], &in_use).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{text}");
+    assert!(data.join("credentials/gitea-home-token").exists());
+
+    let orphan = json!({ "name": "old-token" }).to_string();
+    let (status, ..) = send(&router, "POST", "/api/setup/secret/delete", &[], &orphan).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(!data.join("credentials/old-token").exists());
+    let (status, ..) = send(&router, "POST", "/api/setup/secret/delete", &[], &orphan).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    // A name that tries to leave the credentials folder is not a secret.
+    let sneaky = json!({ "name": "../sources" }).to_string();
+    let (status, ..) = send(&router, "POST", "/api/setup/secret/delete", &[], &sneaky).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(data.join("sources.toml").exists());
+}
+
+#[tokio::test]
+async fn status_carries_a_boot_id_so_the_page_can_tell_a_restart_happened() {
+    let temp = Temp::new("boot");
+    let a = status_json(&setup(&temp).router()).await;
+    let b = status_json(&setup(&temp).router()).await;
+    assert!(a["boot"].as_str().is_some_and(|s| !s.is_empty()));
+    assert_ne!(a["boot"], b["boot"]);
+}

@@ -305,6 +305,67 @@ pub fn set_kiosk(current: &str, host_view: &str) -> Result<String> {
     toml::to_string(&root).context("cannot write sources.toml")
 }
 
+/// Switch a `bridge.toml` source off (`hide`) or on again. The source stays in
+/// `bridge.toml`; `sources.toml` only lists its id under `hidden`.
+pub fn set_hidden(current: &str, kind: &str, name: &str, hide: bool) -> Result<String> {
+    anyhow::ensure!(spec(kind).is_some(), "unknown source type {kind:?}");
+    let id = format!("{kind}:{name}");
+    let mut root = parse(current)?;
+    let mut list: Vec<toml::Value> = match root.remove("hidden") {
+        Some(toml::Value::Array(list)) => list,
+        Some(_) => bail!("`hidden` in sources.toml is not a list"),
+        None => Vec::new(),
+    };
+    list.retain(|v| v.as_str() != Some(id.as_str()));
+    if hide {
+        list.push(toml::Value::String(id));
+    }
+    if !list.is_empty() {
+        root.insert("hidden".into(), toml::Value::Array(list));
+    }
+    toml::to_string(&root).context("cannot write sources.toml")
+}
+
+/// What to take away from the saved broker settings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MqttRemoval {
+    /// Only the login: the name is emptied, the stored password goes.
+    Login,
+    /// Everything the page saved: back to what `bridge.toml` says.
+    Settings,
+}
+
+/// Remove saved broker settings. Returns the new file text and the credentials
+/// the page stored for the broker (the caller deletes those files).
+pub fn remove_mqtt(current: &str, what: MqttRemoval) -> Result<(String, Vec<String>)> {
+    let mut root = parse(current)?;
+    let used = root
+        .get("mqtt")
+        .and_then(toml::Value::as_table)
+        .and_then(|t| t.get("password_file")?.as_str())
+        .filter(|name| *name == MQTT_PASSWORD)
+        .map(str::to_string);
+    match what {
+        MqttRemoval::Settings => {
+            root.remove("mqtt");
+        }
+        MqttRemoval::Login => {
+            let table = root
+                .entry("mqtt")
+                .or_insert_with(|| toml::Value::Table(Table::new()))
+                .as_table_mut()
+                .context("`mqtt` in sources.toml is not a table")?;
+            // An empty name switches the login off, even if bridge.toml has one.
+            table.insert("username".into(), toml::Value::String(String::new()));
+            table.remove("password_file");
+        }
+    }
+    Ok((
+        toml::to_string(&root).context("cannot write sources.toml")?,
+        used.into_iter().collect(),
+    ))
+}
+
 /// Remove source `kind`/`name`. Returns the new file text and the names of the
 /// credentials the source used (the caller deletes those that are the page's own).
 pub fn remove(current: &str, kind: &str, name: &str) -> Result<(String, Vec<String>)> {
