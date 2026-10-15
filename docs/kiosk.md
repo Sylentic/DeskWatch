@@ -89,6 +89,10 @@ homeassistant"). The most urgent comes in first. With no alerts the area is empt
 over it or it is touched, and with "reduce motion" switched on in the system it does not move: the most urgent alert stands
 still instead. The `alerts` badge (warnings and critical) stays next to the other counters.
 
+While a warning or critical alert is on screen, the header bar itself turns yellow (warning) or red (critical) instead
+of a banner under it; it goes back when the alert is dismissed or has been on screen for its time (a warning for ten
+minutes). Failed runs and info alerts keep their banner.
+
 Each alert has a small **x**. It clears the alert for every screen (the same as a `clear` message on MQTT) and works
 without MQTT. It can only clear, never raise or change an alert. Switch it off with `dismiss = false` in `[alerts]`.
 Ticker on or off, speed and "via source" are `[alerts]` settings too (`ticker`, `ticker_speed`, `show_source`), also

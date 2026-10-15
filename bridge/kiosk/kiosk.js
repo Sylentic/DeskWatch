@@ -567,7 +567,7 @@
 
   function renderBanner() {
     var el = $('banner'), bar = $('progress');
-    var s = snap.screen, html = '', cls = '';
+    var s = snap.screen, html = '', cls = '', tint = '';
     bar.hidden = true;
     if (s && s.level === 1 && s.data) {
       // A running job: the jobs widget has the detail, the header shows progress.
@@ -576,7 +576,11 @@
       bar.style.setProperty('--p', Math.round((s.data.progress || 0) * 100) + '%');
     } else if (s && s.level < 5 && s.data) {
       var d = s.data;
-      if (s.template === 'alert') {
+      if (s.template === 'alert' && d.title) {
+        // An alert from Home Assistant or a script: no banner, the header bar
+        // itself turns yellow (warning) or red (critical) while it is on screen.
+        tint = s.level === 0 ? 'critical' : 'warn';
+      } else if (s.template === 'alert') {
         var tag = d.status === 'success' ? 'Success' : d.status === 'warn' ? 'Warning' : s.level === 0 ? 'Critical' : 'Failed';
         cls = s.level === 0 ? 'critical' : d.status === 'success' ? 'success' : d.status === 'warn' ? 'warn' : '';
         var title = d.title || ((d.project || '') + (d.pipeline ? ' / ' + d.pipeline : ''));
@@ -588,6 +592,7 @@
         html = '<span class="tag">Notice</span><span>' + esc(d.text) + '</span><span class="msg">' + esc(d.sub) + '</span><span class="meta">' + esc(SOURCES[d.source] || d.source) + '</span>';
       }
     }
+    $('top').className = tint ? 'alerting ' + tint : '';
     el.hidden = !html;
     el.className = 'banner ' + cls;
     if (el.innerHTML !== html) el.innerHTML = html;

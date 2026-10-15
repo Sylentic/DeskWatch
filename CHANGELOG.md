@@ -10,6 +10,8 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Changed
 
+- **A warning or critical alert tints the header** yellow or red instead of showing a banner under it, while it is on
+  screen. Failed runs and info alerts keep their banner.
 - **The setup page is dark by default** and no longer follows the system's light or dark setting. A "Light mode" button in
   the header switches to light and is remembered in the browser.
 

@@ -21,6 +21,7 @@
   --alert-red: #9e1616;
   --alert-critical: #c80000;
   --alert-amber: #9a5c00;
+  --alert-yellow: #b38600;
   --alert-green: #127a45;
   font-size: min(calc(100vw / 120), calc(100vh / 67.5));
 }
@@ -46,6 +47,7 @@
   --alert-red: #6e1010;
   --alert-critical: #8c0000;
   --alert-amber: #6b4100;
+  --alert-yellow: #7a5f00;
   --alert-green: #0c5430;
 }
 :root[data-theme="night"] .offline { background: #1f180b; }
@@ -86,6 +88,12 @@ body.idle, body.idle * { cursor: none !important; }
   padding: 0 1.4rem;
   background: var(--header);
 }
+/* An active alert from Home Assistant or a script tints the header itself. */
+#top.alerting { --dim: rgba(255, 255, 255, .88); color: #fff; }
+#top.alerting.warn { background: var(--alert-yellow); }
+#top.alerting.critical { background: var(--alert-critical); }
+#top.alerting .ticker .sev { color: #fff; }
+#top.alerting .ticker .dot { background: #fff; }
 .brand { font-weight: 700; font-size: 1.5rem; letter-spacing: .02em; display: flex; align-items: center; gap: .7rem; }
 .logo { width: 1.5rem; height: 1.5rem; border-radius: .4rem; background: linear-gradient(135deg, var(--blue), var(--green)); }
 .spacer { flex: 1; }
