@@ -3,7 +3,7 @@
 Rust firmware for the panel: an ESP32-S3 SuperMini with a 4" ST7796S SPI display. It is a dumb MQTT client. It joins
 Wi-Fi, connects to the broker, subscribes to the bridge's retained topics (`screen`, `badges`, `bridge/status`) and
 draws whatever arrives with the shared [`ui/`](../ui) crate. The contract is [docs/mqtt-schema.md](../docs/mqtt-schema.md),
-the wiring is Part 6 of the project's wiring notes (pins below).
+the pins are listed below.
 
 Stack (decided, see the firmware stack notes in the project files): `esp-hal` 1.1 + `esp-rtos` (embassy), `esp-radio`
 Wi-Fi, `embassy-net`, `rust-mqtt` (MQTT 5), `mipidsi`, `embedded-graphics`.
@@ -280,7 +280,7 @@ Anything that failed (paste the lines with ERROR or WARN):
 
 ## Pins
 
-From Part 6 of the wiring notes (display and touch share SPI2; touch is not wired into the firmware yet):
+Display and touch share SPI2 (touch is not wired into the firmware yet):
 
 | GPIO | Use |
 |---|---|

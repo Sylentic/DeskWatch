@@ -32,7 +32,7 @@ const OFFLINE: &str = "offline";
 /// Wait before retrying after a broker connection error.
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
-/// Topic names under the configured prefix (schema section 5).
+/// Topic names under the configured prefix (schema section 4).
 #[derive(Debug, Clone)]
 pub struct Topics {
     prefix: String,

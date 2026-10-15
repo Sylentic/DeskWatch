@@ -8,7 +8,7 @@ systems and the guide for the parts that exist today: **Gitea runners**, **GitHu
 | Gitea | Runners of a user, organisation, repository or the whole instance | In this version |
 | GitHub, GitHub Enterprise | Self-hosted runners of a repository or organisation | In this version |
 | Azure DevOps | Agents of the self-hosted agent pools | In this version, built against mock responses only, with the number of jobs waiting per pool |
-| ESP panel | A `runners` page and an offline count in the `warn` badge | Last PR, needs a schema change |
+| ESP panel | A `runners` page and an offline count in the `warn` badge | Not built, needs a schema change |
 
 ## 1. How it fits
 
@@ -31,14 +31,14 @@ Runner { source, name, status: offline | busy | idle, disabled, labels }
   hide an outage.
 - Scopes that overlap (the `admin` list plus an organisation) list the same runner twice. Pick one.
 
-The kiosk snapshot has a new top-level `runners` list (version stays 1, a page that does not know it ignores it):
+The kiosk snapshot has a top-level `runners` list (version stays 1, a page that does not know it ignores it):
 
 ```json
 { "source": "gitea", "name": "runner-1", "status": "busy", "disabled": false,
   "labels": ["ubuntu-latest"], "updated": 1760088000 }
 ```
 
-### What is not in the first version
+### What is not built
 
 - **The ESP panel.** A `runners` page and an offline count in the `warn` badge change the MQTT schema, which has a
   contract with the firmware. That waits until the three sources are in, so the schema is changed once.
@@ -143,7 +143,7 @@ and skipped).
 - Mapping: `offline` is offline; `online` with an `assignedRequest` is busy; `online` otherwise is idle; `enabled:
   false` is disabled. Agents have no labels, so the pool name is shown in their place.
 - Scope key: one per pool, `azure_devops:<name>:runners:pool:<pool>`.
-- Polling every 60 seconds is plenty; it is one request for the pool list plus one per configured pool.
+- Polling every 60 seconds is plenty; it is one request for the pool list plus two per configured pool (agents and job requests, see below).
 
 ```toml
 [[source.azure_devops]]
@@ -177,13 +177,11 @@ by label) is still left to the ESP panel step.
 
 ## 5. Order of the work
 
-1. **This PR:** the `Runner` fact and the kiosk widget, Gitea as the first source, config, docs, tests.
-2. **GitHub runners (done):** its own PR, because it brings a second token scope and its own API tests.
-3. **Azure DevOps pools (done):** its own PR, mocks only. Queued jobs per pool are in too; the shapes still need checking against a real organisation.
-4. **ESP panel:** the `runners` page, the offline count in the `warn` badge and "waiting for runner" on the
+1. **Done:** the `Runner` fact and the kiosk widget, with Gitea as the first source.
+2. **Done:** GitHub runners, with their own token scope.
+3. **Done:** Azure DevOps pools and queued jobs per pool, against mock answers only; the shapes still need checking against a real organisation.
+4. **Open:** the ESP panel `runners` page, the offline count in the `warn` badge and "waiting for runner" on the
    pipelines page, together with one amendment of the MQTT schema.
-
-Steps 2 and 3 share nothing with each other except the fact, so they can be built in either order or in parallel.
 
 ## 6. Try it without any CI
 

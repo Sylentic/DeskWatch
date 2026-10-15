@@ -51,8 +51,8 @@ usage: deskwatch-bridge [--demo] [--kiosk] [--no-mqtt] [--healthcheck] [CONFIG]
 
 CONFIG defaults to $DESKWATCH_CONFIG, then /etc/deskwatch/bridge.toml
 (on Windows %ProgramData%\\DeskWatch\\bridge.toml).
---demo  play a loop of fake data instead of running the sources; only the
-        [mqtt] and [alerts] settings are used, and CONFIG is optional
+--demo  play a loop of fake data instead of running the sources; the sources
+        and rotation of CONFIG are ignored, and CONFIG is optional
 --kiosk serve the browser dashboard even if [kiosk] enabled is not set
         (see docs/kiosk.md)
 --no-mqtt  do not connect to a broker (same as [mqtt] enabled = false), for a
@@ -211,7 +211,7 @@ async fn main() -> Result<()> {
     // `/healthz` (the Docker health probe) reports the broker connection, so
     // the listener also opens for a bridge that only talks to an ESP panel.
     let mqtt_link = health::MqttLink::default();
-    // The setup page (docs/setup-page.md): off unless it has its own token.
+    // The setup page (docs/setup-page.md): off unless `[setup] enabled` (or the deprecated token_file).
     let mut setup = None;
     if config.setup.is_on() {
         let built = match &config.setup.token_file {

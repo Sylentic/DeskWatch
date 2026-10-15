@@ -330,7 +330,7 @@ pub struct Screen {
     pub v: u8,
     pub seq: u64,
     pub template: Template,
-    /// 0 to 5, see schema section 3. Only used for styling.
+    /// 0 to 5, see schema section 2. Only used for styling.
     pub level: u8,
     pub page: Short,
     pub pinned: bool,

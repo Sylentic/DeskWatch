@@ -24,7 +24,7 @@ pub const MAX_LIST_ROWS: usize = 5;
 // Priority
 // ---------------------------------------------------------------------------
 
-/// Screen priority level from schema section 3. A lower number wins.
+/// Screen priority level from schema section 2. A lower number wins.
 ///
 /// The derived `Ord` follows declaration order, so `Level::Job < Level::Rotation`
 /// and the "best" screen is simply the minimum.

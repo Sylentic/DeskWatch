@@ -21,8 +21,10 @@ Self-hosted agent pools can be shown on the kiosk `runners` widget (optional, ne
 [runners.md](runners.md#4-azure-devops-agent-pools-in-this-version)). Not in this version: classic release pipelines, Azure DevOps Server
 (on premises), and sign-in with Microsoft Entra instead of a token.
 
-This source has only been tested against mock answers. [azure-devops-verify.md](azure-devops-verify.md) is the checklist
-for the first run against a real organisation.
+The data shapes were written from the documentation and tested against mock answers. A first connection to a real
+organisation has been made (it exposed the address problem fixed in 0.9.13), but nobody has yet confirmed that builds,
+pull requests, approvals, checks and agent pools show correct data there.
+[azure-devops-verify.md](azure-devops-verify.md) is the checklist for that.
 
 ## Before you start
 
@@ -43,7 +45,6 @@ is never written to the config, the logs or MQTT.
    |---|---|---|
    | **Build** | **Read** | Pipeline runs and their stages and tasks |
    | **Code** | **Read** | Open pull requests (leave out and set `pull_requests = false` if you do not want PRs) |
-
    | **Agent Pools** | **Read** | Optional: self-hosted agents on the kiosk `runners` widget (`agent_pools`) |
 
    Nothing else is needed. Do not give **Full access**, and do not tick any Write, Manage or Execute access.

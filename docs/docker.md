@@ -411,7 +411,7 @@ ca_file = "/etc/deskwatch/ca.pem"
 
 ## 7. Webhooks (Gitea)
 
-Only a Gitea source opens the webhook listener (`[http] listen`, default `0.0.0.0:8787`). Publish it in Compose with
+Only a Gitea source needs an incoming connection from outside. The listener it uses (`[http] listen`, default `0.0.0.0:8787`) is shared with the dashboard, the setup page and `/healthz` (section 9). Publish it in Compose with
 `ports: ["8787:8787"]`, and use `http://<docker host>:8787/webhook/gitea/<name>` as the webhook URL in Gitea (the
 rest, including `ALLOWED_HOST_LIST`, is in [install.md](install.md#gitea-actions-and-pull-requests)). Allow that port in the firewall from the Gitea host only. GitHub, Azure DevOps and
 Prometheus sources only make outgoing requests and need no published port.
@@ -447,8 +447,10 @@ loopback every 30 seconds. The page file carries no data and needs no token, and
   publish no port for it, or set `[http] listen = "127.0.0.1:8787"` outside a container. With `[mqtt] enabled =
   false` there is no such check. For a few seconds after a start the connection is not up yet; the image's
   start period covers that.
+- **Setup page only** (`[setup] enabled = true`, no dashboard, MQTT off): healthy when `/setup` answers 200. A
+  dead or missing listener shows `unhealthy`, where the old check passed.
 - **Gitea source only**: healthy when the listener answers HTTP at all.
-- **None of these** (a dashboard-less, broker-less bridge with only GitHub or Azure DevOps sources): there is no
+- **None of these** (a dashboard-less, setup-less, broker-less bridge with only GitHub or Azure DevOps sources): there is no
   listener, so the check passes trivially.
 - **Demo started with flags** (`--demo --kiosk`): the check cannot see command line flags. Set the matching
   environment variables instead (`DESKWATCH_DEMO=1`, `DESKWATCH_KIOSK=1`, `DESKWATCH_NO_MQTT=1`), which the bridge
@@ -466,7 +468,7 @@ monitor such as Uptime Kuma pointed at the page can act on it.
 
 ## 10. The published image
 
-Every version tag (from 0.9.6 on) is built for amd64 and arm64 by the `docker` job in
+Every version tag (from 0.9.6 on, except 0.9.8, which was never built) is built for amd64 and arm64 by the `docker` job in
 [`release.yml`](../.github/workflows/release.yml) and pushed to GitHub's registry:
 
 ```sh
