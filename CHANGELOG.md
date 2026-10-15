@@ -8,6 +8,13 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Added
+
+- **The "failed" badge in the kiosk header can be dealt with.** Click it for a list of the failed runs (source,
+  project and pipeline, branch, failing step, age; each opens the run on its source) with "Dismiss" per run and "Dismiss
+  all". Dismissed failures stop counting; a new failure of the same pipeline shows up again. The choice is kept in the
+  browser (localStorage), so a second screen has its own list. The snapshot has a new `failed` field.
+
 ## [0.9.17]
 
 ### Changed
