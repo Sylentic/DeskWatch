@@ -9,7 +9,8 @@
 //! - `POST /api/setup/test` with `{"id": "github:main"}` or `{"id": "mqtt"}`:
 //!   tries the connection with the real credentials and reports each check
 //!   (`probe.rs`). One test at a time;
-//! - `POST /api/setup/source` and `POST /api/setup/source/delete`: add, change
+//! - `POST /api/setup/source`, `.../source/delete`, `.../source/hide`, `/api/setup/mqtt/delete`
+//!   and `/api/setup/secret/delete`: add, change
 //!   or remove a source kept in the data folder's `sources.toml` (`edit.rs`),
 //!   and store its tokens there. Needs a data folder. A change is tested first
 //!   and only saved when the test passes (or the person insists). It takes
@@ -71,6 +72,9 @@ struct Shared {
     allow_restart: bool,
     /// Signalled by the restart button; the main loop shuts down cleanly.
     restart: Arc<Notify>,
+    /// Differs on every start of the process, so a page that asked for a
+    /// restart can tell the bridge it is talking to is the new one.
+    boot: u128,
     /// One save at a time.
     saving: tokio::sync::Mutex<()>,
     /// One connection test at a time: each one makes real requests.
@@ -100,6 +104,9 @@ impl Setup {
                 changed: AtomicBool::new(false),
                 allow_restart: config.setup.allow_restart,
                 restart: Arc::new(Notify::new()),
+                boot: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_nanos()),
                 saving: tokio::sync::Mutex::new(()),
                 testing: Semaphore::new(1),
                 mqtt_enabled: config.mqtt.enabled,
@@ -139,7 +146,10 @@ impl Setup {
             .route("/api/setup/test", post(test))
             .route("/api/setup/source", post(save_source))
             .route("/api/setup/source/delete", post(delete_source))
+            .route("/api/setup/source/hide", post(hide_source))
             .route("/api/setup/mqtt", post(save_mqtt))
+            .route("/api/setup/mqtt/delete", post(delete_mqtt))
+            .route("/api/setup/secret/delete", post(delete_secret))
             .route("/api/setup/kiosk", post(save_kiosk))
             .route("/api/setup/restart", post(restart))
             .with_state(self.shared.clone())
@@ -168,12 +178,49 @@ async fn status(State(shared): State<Arc<Shared>>) -> Response {
             source["editable"] = json!(can_edit && source["origin"] == "data_folder");
         }
     }
+    // Sources of `bridge.toml` that were switched off from the page: still
+    // listed, so they can be switched on again.
+    if let Some(sources) = out["sources"].as_array_mut() {
+        for source in sources.iter_mut() {
+            let from_toml = source["origin"] == "bridge_toml";
+            source["hideable"] = json!(can_edit && from_toml);
+            source["hidden"] = json!(false);
+        }
+        for mut source in describe(&shared.base)["sources"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+        {
+            let id = source["id"].as_str().unwrap_or_default().to_string();
+            if effective.hidden_sources.contains(&id) {
+                source["hidden"] = json!(true);
+                source["hideable"] = json!(can_edit);
+                source["editable"] = json!(false);
+                source["running"] = json!(false);
+                source["health"] = json!("hidden");
+                sources.push(source);
+            }
+        }
+    }
+    out["secrets"] = json!(stored_secrets(&shared, &effective));
+    out["boot"] = json!(shared.boot.to_string());
     out["can_edit"] = json!(can_edit);
     // The dashboard is served too, so the page can link back to it.
     out["kiosk"] = json!(shared.config.kiosk.enabled);
     out["restart_needed"] = json!(shared.changed.load(Ordering::Relaxed));
     out["can_restart"] = json!(shared.allow_restart);
     out["mqtt"]["editable"] = json!(can_edit);
+    // Is there anything saved by the page that can be taken away again?
+    let saved_mqtt = shared
+        .store
+        .as_ref()
+        .and_then(|store| store.read_sources().ok())
+        .is_some_and(|text| {
+            text.parse::<toml::Table>()
+                .is_ok_and(|t| t.contains_key("mqtt"))
+        });
+    out["mqtt"]["removable"] = json!(can_edit && saved_mqtt);
+    out["mqtt"]["has_login"] = json!(effective.mqtt.username.is_some());
     out["host_view_editable"] = json!(can_edit);
     out["mqtt"]["connected"] = json!(shared.mqtt_enabled && shared.mqtt.is_up());
     let mut response = out.to_string().into_response();
@@ -638,6 +685,210 @@ async fn restart(
     // `notify_one` keeps the signal if the main loop is busy for a moment.
     shared.restart.notify_one();
     json_response(StatusCode::ACCEPTED, json!({ "restarting": true }))
+}
+
+/// Who uses which credential: a source (also one that is switched off), the
+/// broker login.
+fn credential_owners(shared: &Shared, effective: &Config) -> BTreeMap<String, String> {
+    let mut owners = BTreeMap::new();
+    let mut add = |config: &Config, hidden_only: bool| {
+        let described = describe(config);
+        for source in described["sources"].as_array().into_iter().flatten() {
+            let id = source["id"].as_str().unwrap_or_default();
+            if hidden_only && !effective.hidden_sources.contains(id) {
+                continue;
+            }
+            for c in source["credentials"].as_array().into_iter().flatten() {
+                if let Some(name) = c["name"].as_str() {
+                    let who = if hidden_only {
+                        format!("{id} (switched off)")
+                    } else {
+                        id.to_string()
+                    };
+                    owners.insert(name.to_string(), who);
+                }
+            }
+        }
+    };
+    add(effective, false);
+    add(&shared.base, true);
+    if let Some(file) = &effective.mqtt.password_file {
+        owners.insert(file.clone(), "the MQTT login".to_string());
+    }
+    owners
+}
+
+/// The secrets in the data folder with what uses each one. Names only.
+fn stored_secrets(shared: &Shared, effective: &Config) -> Vec<Value> {
+    let Some(store) = &shared.store else {
+        return Vec::new();
+    };
+    let owners = credential_owners(shared, effective);
+    store
+        .list_secrets()
+        .into_iter()
+        .map(|name| {
+            let used_by = owners.get(&name).cloned();
+            json!({ "name": name, "used_by": used_by })
+        })
+        .collect()
+}
+
+/// Read `kind` and `name` from a request.
+fn kind_and_name(request: &Value) -> (String, String) {
+    let text = |key: &str| {
+        request
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
+    (text("kind"), text("name"))
+}
+
+/// Switch a `bridge.toml` source off or on again. `bridge.toml` is never
+/// touched: the data folder only remembers that the source is left out.
+async fn hide_source(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let request = match change_request(&shared, &headers, &body) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    let store = shared.store.as_ref().expect("checked above");
+    let (kind, name) = kind_and_name(&request);
+    let hide = request
+        .get("hidden")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let id = format!("{kind}:{name}");
+    if !source_ids(&shared.base).contains(&id) {
+        return refuse(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "{id} is not a source from bridge.toml (sources from the data folder are removed instead)"
+            ),
+        );
+    }
+    let _saving = shared.saving.lock().await;
+    let current = match store.read_sources() {
+        Ok(current) => current,
+        Err(err) => return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}")),
+    };
+    let text = match edit::set_hidden(&current, &kind, &name, hide) {
+        Ok(text) => text,
+        Err(err) => return refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
+    };
+    let candidate = match shared.base.clone().with_overlay(&text) {
+        Ok(candidate) => candidate,
+        Err(err) => return refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
+    };
+    if let Err(err) = store.write_sources(&text) {
+        return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}"));
+    }
+    let applied = apply(&shared, &candidate, &id).await;
+    tracing::info!(
+        ?id,
+        hidden = hide,
+        applied = applied.is_ok(),
+        "setup: source switched {}",
+        if hide { "off" } else { "on" }
+    );
+    json_response(
+        StatusCode::OK,
+        json!({
+            "saved": true, "id": id,
+            "applied": applied.is_ok(), "apply_error": applied.err(),
+            "restart_needed": shared.changed.load(Ordering::Relaxed),
+        }),
+    )
+}
+
+/// Take saved broker settings away: `{"what": "login"}` or `{"what": "settings"}`.
+async fn delete_mqtt(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let request = match change_request(&shared, &headers, &body) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    let store = shared.store.as_ref().expect("checked above");
+    let what = match request.get("what").and_then(Value::as_str) {
+        Some("login") => edit::MqttRemoval::Login,
+        Some("settings") => edit::MqttRemoval::Settings,
+        _ => {
+            return refuse(
+                StatusCode::BAD_REQUEST,
+                "expected {\"what\": \"login\"} or {\"what\": \"settings\"}",
+            );
+        }
+    };
+    let _saving = shared.saving.lock().await;
+    let current = match store.read_sources() {
+        Ok(current) => current,
+        Err(err) => return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}")),
+    };
+    let (text, credentials) = match edit::remove_mqtt(&current, what) {
+        Ok(done) => done,
+        Err(err) => return refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
+    };
+    if let Err(err) = shared.base.clone().with_overlay(&text) {
+        return refuse(StatusCode::BAD_REQUEST, format!("{err:#}"));
+    }
+    if let Err(err) = store.write_sources(&text) {
+        return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}"));
+    }
+    let mut removed = Vec::new();
+    for credential in credentials {
+        if store.has_secret(&credential) && store.remove_secret(&credential).is_ok() {
+            removed.push(credential);
+        }
+    }
+    // The broker connection is made once at startup.
+    shared.changed.store(true, Ordering::Relaxed);
+    tracing::info!(?what, secrets_removed = ?removed, "setup: saved MQTT settings removed (apply after a restart)");
+    json_response(
+        StatusCode::OK,
+        json!({ "saved": true, "id": "mqtt", "restart_needed": true }),
+    )
+}
+
+/// Delete a stored secret that nothing uses any more.
+async fn delete_secret(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let request = match change_request(&shared, &headers, &body) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    let store = shared.store.as_ref().expect("checked above");
+    let name = request
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let _saving = shared.saving.lock().await;
+    if !store.has_secret(&name) {
+        return refuse(StatusCode::NOT_FOUND, "no such stored secret");
+    }
+    let effective = effective_config(&shared);
+    if let Some(owner) = credential_owners(&shared, &effective).get(&name) {
+        return refuse(
+            StatusCode::CONFLICT,
+            format!("{name} is still used by {owner}; remove or change that first"),
+        );
+    }
+    if let Err(err) = store.remove_secret(&name) {
+        return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}"));
+    }
+    tracing::info!(secret = %name, "setup: unused stored secret removed");
+    json_response(StatusCode::OK, json!({ "removed": true, "name": name }))
 }
 
 /// The part of the status that depends only on the config. Holds names and

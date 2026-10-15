@@ -102,6 +102,20 @@ impl Store {
         check_name(name).is_ok() && self.credentials().join(name).is_file()
     }
 
+    /// The names of the stored secrets, sorted. Never their values.
+    pub fn list_secrets(&self) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(self.credentials())
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter(|e| e.path().is_file())
+            .filter_map(|e| e.file_name().into_string().ok())
+            .filter(|n| check_name(n).is_ok())
+            .collect();
+        names.sort();
+        names
+    }
+
     /// Delete a secret. A missing one is fine.
     pub fn remove_secret(&self, name: &str) -> Result<()> {
         check_name(name)?;

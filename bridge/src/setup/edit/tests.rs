@@ -326,3 +326,54 @@ fn bad_mqtt_requests_are_refused() {
     }
     assert!(set_mqtt("", &fields(json!({})), &secrets(&[("token", "x")])).is_err());
 }
+
+#[test]
+fn a_bridge_toml_source_can_be_switched_off_and_on_without_losing_other_settings() {
+    let kept = "[kiosk]\nhost_view = \"compact\"\n";
+    let off = set_hidden(kept, "github", "main", true).unwrap();
+    assert!(off.contains("hidden = [\"github:main\"]"), "{off}");
+    assert!(off.contains("host_view"), "{off}");
+    // Twice is still once.
+    let twice = set_hidden(&off, "github", "main", true).unwrap();
+    assert_eq!(twice.matches("github:main").count(), 1, "{twice}");
+    let other = set_hidden(&off, "gitea", "home", true).unwrap();
+    assert!(other.contains("gitea:home") && other.contains("github:main"));
+    let on = set_hidden(&off, "github", "main", false).unwrap();
+    assert!(!on.contains("hidden"), "{on}");
+    assert!(on.contains("host_view"));
+    assert!(set_hidden("", "nope", "x", true).is_err());
+}
+
+#[test]
+fn removing_the_broker_login_or_all_saved_broker_settings() {
+    let saved = "[mqtt]\nhost = \"b.lan\"\nusername = \"me\"\npassword_file = \"mqtt-password\"\n\
+                 [kiosk]\nhost_view = \"compact\"\n";
+    let (text, creds) = remove_mqtt(saved, MqttRemoval::Login).unwrap();
+    assert_eq!(creds, ["mqtt-password"]);
+    assert!(
+        text.contains("username = \"\"") && text.contains("host = \"b.lan\""),
+        "{text}"
+    );
+    assert!(!text.contains("password_file"), "{text}");
+    let overlay = Config::from_toml("[mqtt]\nusername = \"x\"\n")
+        .unwrap()
+        .with_overlay(&text)
+        .unwrap();
+    assert_eq!(overlay.mqtt.username, None);
+
+    let (text, creds) = remove_mqtt(saved, MqttRemoval::Settings).unwrap();
+    assert_eq!(creds, ["mqtt-password"]);
+    assert!(
+        !text.contains("mqtt") && text.contains("host_view"),
+        "{text}"
+    );
+
+    // A password file that is not the page's own is never named for deletion.
+    let mounted = "[mqtt]\npassword_file = \"mounted-name\"\n";
+    assert!(
+        remove_mqtt(mounted, MqttRemoval::Settings)
+            .unwrap()
+            .1
+            .is_empty()
+    );
+}
