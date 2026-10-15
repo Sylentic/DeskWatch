@@ -1,7 +1,8 @@
 # Checking Azure DevOps against a real organisation
 
-The Azure DevOps source was written and tested against hand-written mock answers. Nobody has run it against a real
-organisation yet, so a few names and shapes are assumptions. This page is the checklist for the first real run: what
+The Azure DevOps source was written and tested against hand-written mock answers. It has connected to a real
+organisation once, which only exposed an address problem (fixed in 0.9.13); the data it reads has not been checked
+against real records yet, so a few names and shapes are assumptions. This page is the checklist for the first real run: what
 to look at, what the bridge expects, and what to do when it differs. Setting up the token and the config is in
 [azure-devops.md](azure-devops.md); this page assumes that is done.
 

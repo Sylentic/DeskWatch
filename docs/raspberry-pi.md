@@ -25,7 +25,7 @@ Contents: [1. Before you start](#1-before-you-start) · [2. Route A: systemd](#2
   Pi OS (`armv7l`) is not supported by the release; re-flash with the 64-bit image (Raspberry Pi Imager lists it
   as "Raspberry Pi OS (64-bit)"). Pi 3, 4, 5, Zero 2 W and 400 all support it.
 - **A broker.** Mosquitto on the Pi itself, or another machine, see [section 4](#4-mosquitto-on-the-pi).
-- **Storage wear.** The bridge writes nothing to disk, so an SD card is fine. Journald logs are the only writes.
+- **Storage wear.** The bridge writes nothing to disk unless you turn on the [data folder](data-dir.md), so an SD card is fine. Journald logs are the main writes.
 - **A fixed address.** Give the Pi a DHCP reservation on your router (or a static address) so the panel and Gitea
   webhooks keep finding it.
 
@@ -85,10 +85,13 @@ cd DeskWatch
 docker build -t deskwatch-bridge .               # builds natively for arm64
 ```
 
+Every release also publishes a multi-arch image, so the Pi can simply pull it and skip the build:
+`docker pull ghcr.io/sylentic/deskwatch-bridge:<version>` ([docker.md section 10](docker.md#10-the-published-image)).
+
 The `Dockerfile` has no CPU-specific lines, so the same file builds for the Pi and for an x86_64 server. CI builds
-it for both `linux/amd64` and `linux/arm64` on every change, but **no image is published** to any registry, so you
-build it yourself (a first build compiles every dependency and takes a while on a Pi; later ones reuse the layers). To
-build the arm64 image on a faster PC and copy it over:
+it for both `linux/amd64` and `linux/arm64` on every change. To build it yourself (a first build compiles every
+dependency and takes a while on a Pi; later ones reuse the layers), or to build the arm64 image on a faster PC and
+copy it over:
 
 ```sh
 docker buildx build --platform linux/arm64 -t deskwatch-bridge:arm64 --load .
@@ -140,15 +143,16 @@ so the bridge does not keep trying to reach one.
 ## 6. Update and remove
 
 Route A: download the new tarball as in section 2, `sudo install -m 755 deskwatch-bridge /usr/local/bin/`, then
-`sudo systemctl restart deskwatch-bridge`. Route B: `git pull`, `docker build -t deskwatch-bridge .`, then
-`docker compose up -d`. Removal and rollback are the same as in
+`sudo systemctl restart deskwatch-bridge`. Route B: with the published image change the version in the `image:` line,
+then `docker compose pull && docker compose up -d`; when you build yourself, `git pull`, `docker build -t deskwatch-bridge .`,
+then `docker compose up -d`. Removal and rollback are the same as in
 [install.md section 9](install.md#9-update-roll-back-remove) and [docker.md section 11](docker.md#11-update-and-remove).
 
 ## 7. What was and was not tested
 
 - The aarch64 binary was cross-compiled and checked as a valid ARM aarch64 ELF, and the release workflow builds
   it natively on GitHub's arm64 Ubuntu 22.04 runner.
-- The multi-arch image build runs in CI (build only, nothing pushed).
+- The multi-arch image build runs in CI (build only, nothing pushed); the release workflow publishes it. The published arm64 image has not been pulled or run on a Pi.
 - The kiosk dashboard ([kiosk.md](kiosk.md)) has its own list of what was and was not tested.
 - **Nothing here has run on real Raspberry Pi hardware yet.** The commands in this page follow the Linux guide and
   are expected to work as written; if one does not, please open an issue with the Pi model and OS version.

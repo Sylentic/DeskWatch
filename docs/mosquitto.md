@@ -69,6 +69,18 @@ Point each client at port 1884 with its login, check that it works, and when not
 usual port, and update the clients' port once more. If you prefer one step, edit the existing listener instead and
 keep the old `mosquitto.conf` around so you can roll back.
 
+### Things to know before you start
+
+- **Once an `acl_file` is set, a user that is not in it may do nothing.** Every other client on the broker (Zigbee,
+  Tasmota, scripts, Home Assistant's own MQTT features) needs its own login and ACL lines. The `homeassistant` user in
+  `acl.example` only writes `deskpanel/alert`: that is all DeskWatch needs, since the blueprints only publish to that
+  topic. Home Assistant's own use of the broker (MQTT discovery under `homeassistant/#`, other devices) is a separate
+  thing: give it rules of its own, for example `topic readwrite homeassistant/#`, or use a different broker user for it.
+- **Docker often publishes the port on every interface.** `ports: ["1883:1883"]` listens on all network cards of the
+  host and can bypass the host firewall. Check with `docker ps`: `0.0.0.0:1883` is reachable from the whole network,
+  `127.0.0.1:1883` only from the host itself.
+- With the broker in Docker, section 7 has the same switch-over as commands.
+
 ## 3. Create the logins
 
 `mosquitto_passwd` asks for the password twice; use long random ones (`openssl rand -base64 24`). `-c` creates the
@@ -142,3 +154,49 @@ mosquitto_pub -h <broker> -u homeassistant -P '...' -t deskpanel/screen -m '{}'
 Mosquitto drops ACL-denied publishes without telling the publisher at QoS 0, so confirm with
 `mosquitto_sub -u deskwatch-bridge -P '...' -t 'deskpanel/#' -v` in another terminal: the alert shows up, the
 screen message does not.
+
+## 7. Switching over a broker in Docker
+
+The same two-listener plan as in section 2, for Mosquitto in a container. Container names and paths are
+placeholders: use your own. In this example `./mosquitto/` is the folder you mount as `/mosquitto/config`.
+
+1. **Back up.** `cp -a mosquitto mosquitto.bak`, and note the current `ports:` line of the Compose file.
+2. **Find the clients.** Add `connection_messages true`, reload with `docker kill -s HUP <container>`, and read
+   `docker logs -f <container>`. Behind a published port the address in the log is often the Docker gateway
+   (`172.x`), so go by the client id. Wait a day or two and list every id.
+3. **Create the logins** in a throwaway container, so the password file ends up on the host:
+
+   ```sh
+   docker run --rm -it -v "$PWD/mosquitto:/mosquitto/config" eclipse-mosquitto:2 \
+     mosquitto_passwd -c /mosquitto/config/passwd deskwatch-bridge          # -c only for the first user
+   docker run --rm -it -v "$PWD/mosquitto:/mosquitto/config" eclipse-mosquitto:2 \
+     mosquitto_passwd /mosquitto/config/passwd homeassistant
+   ```
+
+   Add `deskwatch-panel` the same way, and a login for every other client from step 2. Copy `acl.example` to
+   `mosquitto/acl` and add lines for those clients too.
+4. **Add a second listener** to `mosquitto.conf` and keep the old one unchanged:
+
+   ```
+   per_listener_settings true
+
+   listener 1883
+   allow_anonymous true
+
+   listener 1884
+   allow_anonymous false
+   password_file /mosquitto/config/passwd
+   acl_file /mosquitto/config/acl
+   ```
+
+   The files must be readable by the broker user inside the container (`chmod 644`, or owned by uid 1883 for the
+   image's default user). A new listener needs a restart, not just a reload: add `"1884:1884"` to the Compose `ports:`
+   and run `docker compose up -d`. A broker that does not start shows the reason in `docker logs`.
+5. **Test the new port** before moving anything: `mosquitto_pub -h <broker> -p 1884 -t test -m x` must be refused, and
+   with `-u homeassistant -P '...'` the alert example from section 6 (with `-p 1884`) must work.
+6. **Move the clients one at a time** to port 1884 with their login. For the bridge set `port = 1884`, `username` and
+   `password_file` in `[mqtt]`. Watch the log of the old listener: when nobody connects to 1883 any more, you are done.
+7. **Close the old port.** Remove the `listener 1883` block (or set `allow_anonymous false` there), restart the
+   container, and publish the new port as `127.0.0.1:...` if only containers on the host need it.
+8. **Roll back** at any point by pointing the clients back at 1883 or restoring the backup folder and the old `ports:`
+   line and running `docker compose up -d`.

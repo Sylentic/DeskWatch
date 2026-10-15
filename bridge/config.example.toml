@@ -2,7 +2,8 @@
 #
 # Copy to /etc/deskwatch/bridge.toml (Linux) or
 # C:\ProgramData\DeskWatch\bridge.toml (Windows) and adjust. Every key is
-# optional; the values below are the defaults unless noted. Never put
+# optional; the values below are the defaults unless noted (the [[rotation]]
+# blocks at the end are an example: without any, only the stats page rotates). Never put
 # passwords or tokens in this file. Keys ending in `_file` name a credential:
 # a plain name is read from systemd's credentials folder (LoadCredential= in
 # deploy/deskwatch-bridge.service) or, on Windows, from
@@ -32,8 +33,9 @@ interval_s = 5                  # stats sample and publish interval
 # net_iface = "eth0"            # defaults to the busiest non-loopback interface
 disk_path = "/"                 # filesystem for disk_pct (local stats are Linux only)
 
-# Shared listener for webhooks and the kiosk page. Only opened when a source or
-# the kiosk needs it.
+# Shared listener for the Gitea webhook, the kiosk page, the setup page and the
+# Docker health check (/healthz, whenever MQTT is on). It stays closed only when
+# none of those is in use.
 [http]
 listen = "0.0.0.0:8787"
 
