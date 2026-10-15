@@ -8,6 +8,16 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Added
+
+- **Kiosk page: click through to the source.** Open PRs, pipeline runs, running jobs and runner lists are links that
+  open the item on Gitea, GitHub (also Enterprise) or Azure DevOps in a new tab. The bridge now carries a web address
+  for each (`url` in the kiosk snapshot), built from the source's own address, organisation and project, and only
+  `http(s)` addresses become links. See [docs/kiosk.md](docs/kiosk.md#click-through-and-scroll).
+- **Kiosk page: cards scroll.** Every card scrolls inside itself (wheel, touch, keys) with a fade instead of a
+  scrollbar. Open PRs and Running now no longer cut off after 3 jobs: they show everything unless `rows` is set. A card
+  is not redrawn while you scroll it and goes back to the top after 30 seconds.
+
 ## [0.9.15]
 
 ### Removed

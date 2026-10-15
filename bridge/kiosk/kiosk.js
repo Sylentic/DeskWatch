@@ -30,6 +30,8 @@
   var cards = {};              // card key -> { el, html }
   var problem = null;          // why no data arrives, see describe(); null when all is well
   var wsFailed = false;        // the WebSocket is down, the page polls instead
+  var HOLD_MS = 8000;          // a card someone is scrolling is not redrawn for this long
+  var RETURN_MS = 30000;       // a scrolled card goes back to the top after this long untouched
   var noticeKey = null;        // which notice is on screen, to redraw it only on a change
 
   var $ = function (id) { return document.getElementById(id); };
@@ -73,6 +75,15 @@
   function src(kind) {
     return kind ? '<span class="src ' + esc(kind) + '">' + esc(SOURCES[kind] || kind) + '</span>' : '';
   }
+  // A row or card that opens its page on the source. The bridge only sends
+  // http(s) addresses, and this checks again, so nothing else can become a
+  // link. It opens in a new tab: the dashboard itself stays where it is.
+  function href(url) { return typeof url === 'string' && /^https?:\/\//i.test(url) ? url : null; }
+  function linkOpen(url, cls) {
+    var h = href(url);
+    return h ? '<a class="' + cls + ' link" href="' + esc(h) + '" target="_blank" rel="noopener noreferrer">' : '<div class="' + cls + '">';
+  }
+  function linkClose(url) { return href(url) ? '</a>' : '</div>'; }
   function dot(status) { return '<span class="dot ' + esc(status) + '"></span>'; }
 
   // ---- widgets ------------------------------------------------------------
@@ -173,18 +184,18 @@
     jobs: function (p) {
       var jobs = (snap.jobs || []).filter(function (j) { return matches(p, j.source, j.project); });
       if (!jobs.length) return { title: 'Running now', body: '<div class="empty">No jobs running</div>', stale: false, plain: true };
-      var max = p.rows || 3, shown = jobs.slice(0, max);
+      var max = p.rows, shown = max ? jobs.slice(0, max) : jobs;
       var html = shown.map(function (j) {
         var step = j.step ? esc(j.step) + (j.step_no && j.step_count ? ' <span>(' + j.step_no + '/' + j.step_count + ')</span>' : '') : 'starting';
         var bar = j.progress == null ? '<div class="pbar spin"><i></i></div>' :
           '<div class="pbar"><i style="--p:' + Math.round(j.progress * 100) + '%"></i></div>';
-        return '<div class="job"><div class="l1"><span class="kind ' + esc(j.kind) + '">' + esc(j.kind) + '</span>' +
+        return linkOpen(j.url, 'job') + '<div class="l1"><span class="kind ' + esc(j.kind) + '">' + esc(j.kind) + '</span>' +
           '<span class="name">' + esc(j.project) + ' / ' + esc(j.pipeline) + '</span>' +
           '<span class="el" data-since="' + j.started + '">' + clock(nowS() - j.started) + '</span></div>' +
           '<div class="l2"><span>' + esc(j.ref) + (j.commit ? ' @ ' + esc(j.commit) : '') + '</span>' + src(j.source) + '<span class="step">' + step + '</span></div>' +
-          bar + (j.progress == null ? '' : '<div class="pct">' + Math.round(j.progress * 100) + '%</div>') + '</div>';
+          bar + (j.progress == null ? '' : '<div class="pct">' + Math.round(j.progress * 100) + '%</div>') + linkClose(j.url);
       }).join('');
-      if (jobs.length > max) html += '<div class="more">+' + (jobs.length - max) + ' more running</div>';
+      if (max && jobs.length > max) html += '<div class="more">+' + (jobs.length - max) + ' more running</div>';
       return { title: 'Running now', count: jobs.length, stale: ciStale(), body: html };
     },
 
@@ -192,8 +203,8 @@
       var runs = (snap.runs || []).filter(function (r) { return matches(p, r.source, r.project); });
       var rows = runs.map(function (r) {
         var when = r.status === 'running' ? 'running' : ago(nowS() - (r.finished || r.started));
-        return '<div class="row">' + dot(runStatus(r.status)) + '<span class="main">' + esc(r.project) + ' / ' + esc(r.pipeline) + '</span>' +
-          '<span class="when">' + when + '</span><span class="sub">' + esc(r.ref) + src(r.source) + (r.step ? ' &middot; failed at ' + esc(r.step) : '') + '</span></div>';
+        return linkOpen(r.url, 'row') + dot(runStatus(r.status)) + '<span class="main">' + esc(r.project) + ' / ' + esc(r.pipeline) + '</span>' +
+          '<span class="when">' + when + '</span><span class="sub">' + esc(r.ref) + src(r.source) + (r.step ? ' &middot; failed at ' + esc(r.step) : '') + '</span>' + linkClose(r.url);
       });
       return { title: 'Pipelines', count: runs.length, stale: ciStale(), body: list(rows, p.rows, '<div class="empty">No runs yet</div>') };
     },
@@ -205,8 +216,8 @@
       repos.forEach(function (r) {
         rows.push('<div class="group"><b>' + esc(r.project) + '</b>' + src(r.source) + '<span>' + r.total + ' open</span></div>');
         (r.items || []).forEach(function (pr) {
-          rows.push('<div class="row pr compact">' + dot('open') + '<span class="main"><span class="num">#' + pr.number + '</span>' + esc(pr.title) + '</span>' +
-            '<span class="when">' + ago(nowS() - pr.created) + '</span></div>');
+          rows.push(linkOpen(pr.url, 'row pr compact') + dot('open') + '<span class="main"><span class="num">#' + pr.number + '</span>' + esc(pr.title) + '</span>' +
+            '<span class="when">' + ago(nowS() - pr.created) + '</span>' + linkClose(pr.url));
         });
       });
       return { title: 'Open PRs', count: total, stale: ciStale(), body: list(rows, p.rows, '<div class="empty good">No open PRs</div>') };
@@ -230,9 +241,9 @@
         var state = r.disabled ? 'disabled' : r.status;
         var dotState = r.disabled ? 'neutral' : r.status === 'busy' ? 'running' : r.status === 'idle' ? 'ok' : 'failed';
         var labels = (r.labels || []).join(', ');
-        return '<div class="row' + (r.disabled ? ' off' : '') + '">' + dot(dotState) + '<span class="main">' + esc(r.name) + '</span>' +
+        return linkOpen(r.url, 'row' + (r.disabled ? ' off' : '')) + dot(dotState) + '<span class="main">' + esc(r.name) + '</span>' +
           '<span class="when ' + (r.status === 'offline' && !r.disabled ? 'crit-text' : '') + '">' + esc(state) + '</span>' +
-          '<span class="sub">' + (labels ? esc(labels) : 'no labels') + src(r.source) + '</span></div>';
+          '<span class="sub">' + (labels ? esc(labels) : 'no labels') + src(r.source) + '</span>' + linkClose(r.url);
       });
       // Jobs waiting for an agent (Azure DevOps pools), busiest pool first.
       var queued = snap.queued_jobs || [];
@@ -282,14 +293,61 @@
     var entry = cards[key];
     if (!entry) {
       var el = document.createElement('section');
+      el.setAttribute('data-key', key);
       var span = panel.span || [1, 1];
       el.style.gridColumn = 'span ' + span[0];
       el.style.gridRow = 'span ' + span[1];
       grid.appendChild(el);
-      entry = cards[key] = { el: el, html: '' };
+      entry = cards[key] = { el: el, html: '', touched: 0 };
     }
     entry.el.className = 'card w-' + panel.widget + (out.stale ? ' stale' : '');
-    if (entry.html !== html) { entry.el.innerHTML = html; entry.html = html; }
+    // A redraw replaces the card's contents. It keeps the scroll position, and
+    // waits while someone is scrolling the card (the next snapshot, at most
+    // 5 s later, catches up) so a touch gesture is not cut off.
+    if (entry.html !== html && Date.now() - entry.touched >= HOLD_MS) {
+      var old = entry.el.querySelector('.body');
+      var top = old ? old.scrollTop : 0;
+      entry.el.innerHTML = html;
+      entry.html = html;
+      var fresh = entry.el.querySelector('.body');
+      if (fresh && top) fresh.scrollTop = top;
+    }
+    hint(entry.el);
+  }
+
+  // A card with more below shows a fade at its bottom edge (there is no
+  // scrollbar). Wheel, touch and keys scroll it.
+  function hint(el) {
+    var body = el.querySelector('.body');
+    var more = !!body && body.scrollHeight - body.clientHeight - body.scrollTop > 4;
+    if (el.classList.contains('more-below') !== more) el.classList.toggle('more-below', more);
+  }
+
+  // Remember when a card was last touched, wheeled or keyed.
+  function touched(ev) {
+    var el = ev.target && ev.target.closest ? ev.target.closest('.card') : null;
+    var entry = el && cards[el.getAttribute('data-key')];
+    if (entry) entry.touched = Date.now();
+  }
+  ['wheel', 'touchstart', 'touchmove', 'pointerdown', 'keydown'].forEach(function (name) {
+    document.addEventListener(name, touched, { passive: true, capture: true });
+  });
+  // Scroll events do not bubble; listen on the way down to update the fade.
+  document.addEventListener('scroll', function (ev) {
+    var el = ev.target && ev.target.closest ? ev.target.closest('.card') : null;
+    if (el) hint(el);
+  }, { passive: true, capture: true });
+
+  // A card that was scrolled and then left alone goes back to the top, so a
+  // wall display shows the newest items again.
+  function returnToTop() {
+    Object.keys(cards).forEach(function (key) {
+      var entry = cards[key], body = entry.el.querySelector('.body');
+      if (entry.touched && Date.now() - entry.touched > RETURN_MS) {
+        entry.touched = 0;
+        if (body && body.scrollTop > 0) body.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    });
   }
 
   function renderBadges() {
@@ -451,6 +509,7 @@
     var two = function (n) { return n < 10 ? '0' + n : '' + n; };
     applyTheme(d);
     applyShift(d.getTime());
+    returnToTop();
     $('time').textContent = two(d.getHours()) + ':' + two(d.getMinutes());
     $('date').textContent = d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
     Array.prototype.forEach.call(document.querySelectorAll('[data-since]'), function (el) {

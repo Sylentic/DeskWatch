@@ -82,6 +82,7 @@ fn ci_alert_screen(
         started: STARTED,
         finished: Some(finished),
         interrupt: true,
+        url: None,
     };
     ci.apply(
         Update::Run {

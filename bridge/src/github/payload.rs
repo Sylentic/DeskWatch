@@ -18,6 +18,8 @@ pub struct PullRequest {
     pub title: String,
     pub draft: bool,
     pub created_at: Option<String>,
+    /// Web page of the pull request.
+    pub html_url: Option<String>,
 }
 
 /// `GET /repos/{owner}/{repo}/actions/runs`.
@@ -47,6 +49,8 @@ pub struct WorkflowRun {
     pub run_started_at: Option<String>,
     /// For a completed run, when it finished.
     pub updated_at: Option<String>,
+    /// Web page of the run.
+    pub html_url: Option<String>,
 }
 
 /// `GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs` (latest attempt).
@@ -70,6 +74,8 @@ pub struct Job {
     pub status: String,
     pub conclusion: Option<String>,
     pub started_at: Option<String>,
+    /// Web page of the job.
+    pub html_url: Option<String>,
     pub steps: Vec<Step>,
 }
 

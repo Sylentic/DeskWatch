@@ -29,6 +29,28 @@ A grid of cards, 4 columns by 3 rows by default:
 | `health` | Whether every source is working, or why not (token refused, not reachable) |
 | `runners` | Runners and agents: offline first, then busy, then idle. Not in the default layout; see [runners.md](runners.md) |
 
+### Click through, and scroll
+
+Open PRs, pipeline runs, running jobs and runners are links: a click (or tap) opens the item on its own site in a new
+tab, so the dashboard stays where it is. A row only becomes a link when the source gave an address the bridge could
+trust; otherwise it stays plain text.
+
+| Source | PR | Run and running job | Runner |
+|---|---|---|---|
+| Gitea | the pull request | the run (Gitea's own address when its webhook sends one, else the run by its number, else the repository's Actions page); a job opens its job page or the Actions page | the runners page of the configured scope (`admin`, `user`, `org:<name>`, `repo:<owner>/<name>`) |
+| GitHub and GitHub Enterprise | the pull request | the workflow run; a job opens its job page | the runner settings of the repository or organisation (none for `admin` and `user`, GitHub has no such page) |
+| Azure DevOps | the pull request in its repository | the build results page | the agent pool in the organisation settings (a link per pool, not per agent) |
+
+Addresses are built from the source's own configured address, never hard coded, and only `http` and `https` addresses
+are used. The runner list links go to the page that lists the runners, because the APIs do not give a page per runner.
+
+Every card scrolls inside itself when its list is longer than the card: mouse wheel, touch drag or the arrow keys. There
+is no scrollbar (it clashes with the card edge and the night theme); a fade at the bottom edge shows that there is more.
+Open PRs and Running now show everything unless you set `rows`, so a long list scrolls instead of being cut off with
+"+N more". While you scroll a card, its contents are not redrawn (a redraw would throw your place away); about 8 seconds
+after you let go it catches up, and a card you left scrolled goes back to the top after 30 seconds, so a wall display
+shows the newest items again.
+
 Interrupts do not take over the whole screen as they do on the ESP panel, because the other widgets are still
 useful. The bridge's normal priority decides (critical alert, running job, failed, warning, success, notice), and
 the page shows the winner as a coloured **banner** under the header: red for a failure, deep red for a critical
@@ -264,7 +286,7 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
 and at least every 5 seconds (a heartbeat, so the page can tell quiet from gone). Snapshots are versioned with `"v"`
 (1), separately from the MQTT schema. Fields: `build` (bridge version; the page reloads when it changes), `now`
 (Unix seconds), `layout` (the grid, the widgets with their filters, `theme` and `pixel_shift_s` from the config), `screen` (the composer's pick as an MQTT v2
-screen payload, or `null` when idle), `badges`, `hosts`, `down`, `jobs`, `runs`, `pulls`, `alerts` and `sources`.
+screen payload, or `null` when idle), `badges`, `hosts`, `down`, `jobs`, `runs`, `pulls`, `runners`, `queued_jobs`, `alerts` and `sources`. `jobs`, `runs`, `pulls[].items[]` and `runners` each carry a `url` (an `http(s)` address, or `null`).
 Lists are not capped to the ESP panel's five rows. The structure is in `bridge/src/kiosk.rs` (`snapshot`) and
 covered by the tests next to it. Treat it as unstable until 1.0.
 
@@ -288,6 +310,13 @@ against the live `--demo` bridge: `theme = "auto"` picked night and day by the c
 03:00, 06:59, 07:00 and 12:00, with the window crossing midnight), `?theme=` overrode the config, a `source` plus
 prefix `repo` filter kept the matching runs and emptied the others, and the pixel shift walked the nine positions in
 order and stayed at the centre when off. Not checked: how the night theme looks on a real OLED or in a dark room.
+
+The links and scrolling were run in headless Chromium at 1280x720, 1920x1080 and 3840x2160 against the `--demo` bridge
+and a hand-built snapshot: wheel scrolling in a long Open PRs list, the position kept across redraws and while a card is
+held, the return to the top after 30 seconds, and a `javascript:` address staying plain text. Not checked: touch
+scrolling on a real touchscreen, and the links of every source against a real server. The addresses are built from
+documented URL patterns and covered by unit tests with sample data; see
+[azure-devops-verify.md](azure-devops-verify.md) for what to click when you try Azure DevOps.
 
 **Not tested on real Raspberry Pi hardware**: Chromium on Raspberry Pi OS, the `labwc` and LXDE autostart snippets,
 Wayland and X11 behaviour, screen blanking, 4K at 30 or 60 Hz, memory use at 4K, the pointer hiding, and touch

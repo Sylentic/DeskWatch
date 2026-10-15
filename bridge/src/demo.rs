@@ -32,6 +32,10 @@ pub const LOOP_S: u64 = 130;
 
 /// Source label on all demo facts.
 const SOURCE: &str = "gitea";
+
+/// Where the demo's links point. `.example` never resolves, so a click in
+/// demo mode goes nowhere, which is the point.
+const WEB: &str = "https://git.example/demo/deskwatch";
 const PROJECT: &str = "webshop";
 
 /// One scripted event.
@@ -154,6 +158,7 @@ fn fake_fleet(composer: &mut Composer, now: u64) {
         status,
         disabled,
         labels: labels.iter().map(|l| l.to_string()).collect(),
+        url: Some(format!("{WEB}/settings/actions/runners")),
     };
     let busy = if wave(13.0, 0.0) > 0.5 {
         RunnerStatus::Busy
@@ -269,6 +274,7 @@ fn job(
             },
             interrupt: true,
             updated: started,
+            url: Some(format!("{WEB}/actions/{pipeline}")),
         },
     }
 }
@@ -299,6 +305,7 @@ fn run(
             started,
             finished,
             interrupt,
+            url: Some(format!("{WEB}/actions/{pipeline}")),
         },
     }
 }
@@ -334,6 +341,7 @@ fn pull(number: u64, title: &str) -> OpenPull {
         number,
         title: title.into(),
         created: number,
+        url: Some(format!("{WEB}/pulls/{number}")),
     }
 }
 

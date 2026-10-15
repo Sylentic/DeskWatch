@@ -430,9 +430,73 @@ pub fn valid_name(name: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
+/// Longest web address the kiosk page is given.
+const MAX_URL_LEN: usize = 2048;
+
+/// A web address for the kiosk page: `base` plus `path`, each part
+/// percent-encoded (a part holding `/` is split, so `owner/repo` works), then
+/// the `query` pairs. `None` when `base` is empty, not http(s) or has no host,
+/// so a source without a usable address simply shows no link.
+pub fn web_url(base: &str, path: &[&str], query: &[(&str, &str)]) -> Option<String> {
+    let mut url = reqwest::Url::parse(base.trim()).ok()?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+        return None;
+    }
+    url.set_query(None);
+    url.set_fragment(None);
+    url.path_segments_mut().ok()?.pop_if_empty().extend(
+        path.iter()
+            .flat_map(|p| p.split('/'))
+            .filter(|p| !p.is_empty()),
+    );
+    if !query.is_empty() {
+        url.query_pairs_mut().extend_pairs(query);
+    }
+    let text = String::from(url);
+    (text.len() <= MAX_URL_LEN).then_some(text)
+}
+
+/// An address a source API handed over (`html_url`), kept only when it is a
+/// plain http(s) address. Anything else (`javascript:`, `data:`, junk) is dropped.
+pub fn safe_url(text: &str) -> Option<String> {
+    let url = reqwest::Url::parse(text.trim()).ok()?;
+    let ok = matches!(url.scheme(), "http" | "https") && url.host_str().is_some();
+    (ok && url.as_str().len() <= MAX_URL_LEN).then(|| url.into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn web_urls_are_encoded_and_http_only() {
+        assert_eq!(
+            web_url("https://git.example/", &["owner/repo", "pulls", "7"], &[]).as_deref(),
+            Some("https://git.example/owner/repo/pulls/7")
+        );
+        // A base with a sub path keeps it; names with spaces are encoded.
+        assert_eq!(
+            web_url(
+                "https://host.example/ado",
+                &["My Project", "_build"],
+                &[("buildId", "5")]
+            )
+            .as_deref(),
+            Some("https://host.example/ado/My%20Project/_build?buildId=5")
+        );
+        assert_eq!(web_url("", &["x"], &[]), None);
+        assert_eq!(web_url("ftp://host/", &["x"], &[]), None);
+        assert_eq!(web_url("javascript:alert(1)", &["x"], &[]), None);
+    }
+
+    #[test]
+    fn api_addresses_must_be_http() {
+        assert!(safe_url("https://github.com/a/b/pull/1").is_some());
+        assert!(safe_url("javascript:alert(1)").is_none());
+        assert!(safe_url("data:text/html,x").is_none());
+        assert!(safe_url("/relative").is_none());
+        assert!(safe_url("").is_none());
+    }
 
     #[test]
     fn secret_never_prints() {

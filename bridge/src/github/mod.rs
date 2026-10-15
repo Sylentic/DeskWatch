@@ -92,7 +92,8 @@ impl Source for Github {
             config.alias,
             config.notify_new_prs,
             unix_now(),
-        );
+        )
+        .with_api_base(&config.base_url);
 
         let mut next_poll = Instant::now();
         let mut failures = 0;
@@ -105,7 +106,7 @@ impl Source for Github {
             let updates = tokio::select! {
                 // Skipped altogether when no runner scopes are configured.
                 _ = runner_ticker.tick(), if !runner_scopes.is_empty() => {
-                    poll_runners(&api, &id, &runner_scopes).await
+                    poll_runners(&api, &id, &state, &runner_scopes).await
                 }
                 _ = tokio::time::sleep_until(next_poll) => {
                     let mut updates = Vec::new();
@@ -201,7 +202,12 @@ async fn poll_repo(api: &HttpApi, state: &mut GithubState, repo: &str) -> Vec<Up
 /// Poll the self-hosted runners of each scope. A scope that fails keeps its
 /// last list (the kiosk greys it out when it gets old); a 403 usually means
 /// the token lacks the runner right, see docs/runners.md.
-async fn poll_runners(api: &HttpApi, id: &SourceId, scopes: &[RunnerScope]) -> Vec<Update> {
+async fn poll_runners(
+    api: &HttpApi,
+    id: &SourceId,
+    state: &GithubState,
+    scopes: &[RunnerScope],
+) -> Vec<Update> {
     let mut out = Vec::new();
     for scope in scopes {
         match api.runners(scope).await {
@@ -209,13 +215,36 @@ async fn poll_runners(api: &HttpApi, id: &SourceId, scopes: &[RunnerScope]) -> V
                 debug!(%scope, count = runners.len(), "polled runners");
                 out.push(Update::Runners {
                     key: format!("{id}:runners:{scope}"),
-                    runners: runners.into_iter().map(|r| r.into_fact(KIND)).collect(),
+                    runners: runners
+                        .into_iter()
+                        .map(|r| r.into_fact(KIND, state.runners_url(scope)))
+                        .collect(),
                 });
             }
             Err(err) => warn!(%scope, "cannot poll runners: {err:#}"),
         }
     }
     out
+}
+
+/// The site address that goes with an API address: `api.github.com` is
+/// `github.com`, `api.<name>.ghe.com` is `<name>.ghe.com`, and Enterprise
+/// Server's `https://host/api/v3` is `https://host`. `None` for anything
+/// else, so no wrong link is made.
+fn web_base(api_base: &str) -> Option<String> {
+    let url = reqwest::Url::parse(api_base.trim()).ok()?;
+    let host = url.host_str()?;
+    let site = if let Some(rest) = host.strip_prefix("api.")
+        && (rest == "github.com" || rest.ends_with(".ghe.com"))
+    {
+        rest.to_string()
+    } else if url.path().trim_end_matches('/').ends_with("/api/v3") {
+        host.to_string()
+    } else {
+        return None;
+    };
+    let port = url.port().map(|p| format!(":{p}")).unwrap_or_default();
+    Some(format!("{}://{site}{port}", url.scheme()))
 }
 
 /// Poll the jobs of every run in progress. Returns the updates and whether
@@ -248,6 +277,8 @@ struct WatchedRun {
     pipeline: String,
     /// Jobs on screen right now.
     jobs: HashSet<u64>,
+    /// Web page of the run, the link of a job that has none of its own.
+    url: Option<String>,
 }
 
 /// State the GitHub source keeps between polls.
@@ -273,6 +304,9 @@ pub struct GithubState {
     finished: Vec<(String, u64)>,
     /// First failing step per failed run (`None`: looked up, none found).
     failed_steps: HashMap<(String, u64), Option<String>>,
+    /// Web address of the site (github.com, the Enterprise host), for links
+    /// to runner settings. Empty: no such links.
+    web: String,
     /// Result of the last poll per repository.
     health: BTreeMap<String, Health>,
 }
@@ -296,8 +330,26 @@ impl GithubState {
             watched: BTreeMap::new(),
             finished: Vec::new(),
             failed_steps: HashMap::new(),
+            web: String::new(),
             health: BTreeMap::new(),
         }
+    }
+
+    /// Give the kiosk links to runner settings, from the API address.
+    pub fn with_api_base(mut self, api_base: &str) -> Self {
+        self.web = web_base(api_base).unwrap_or_default();
+        self
+    }
+
+    /// Page with the runners of one scope. The administrator and user
+    /// scopes have no page on GitHub.
+    pub fn runners_url(&self, scope: &RunnerScope) -> Option<String> {
+        let path: Vec<&str> = match scope {
+            RunnerScope::Org(org) => vec!["organizations", org, "settings", "actions", "runners"],
+            RunnerScope::Repo(repo) => vec![repo, "settings", "actions", "runners"],
+            RunnerScope::Admin | RunnerScope::User => return None,
+        };
+        source::web_url(&self.web, &path, &[])
     }
 
     /// Health from the polls: the worst repository wins. `None` before the
@@ -403,6 +455,7 @@ impl GithubState {
                 started,
                 finished,
                 interrupt: fresh && self.interrupt.allows(repo),
+                url: run.html_url.as_deref().and_then(source::safe_url),
             };
             let key = format!("{}:{repo}:{pipeline}", self.id);
             if self.runs.get(&key) != Some(&fact) {
@@ -429,6 +482,7 @@ impl GithubState {
                 .or_insert_with(|| WatchedRun {
                     pipeline: pipeline_name(run),
                     jobs: HashSet::new(),
+                    url: run.html_url.as_deref().and_then(source::safe_url),
                 });
         }
         let over: Vec<(String, u64)> = self
@@ -484,6 +538,11 @@ impl GithubState {
                             data,
                             interrupt,
                             updated: now,
+                            url: job
+                                .html_url
+                                .as_deref()
+                                .and_then(source::safe_url)
+                                .or_else(|| watched.url.clone()),
                         },
                     });
                 }
@@ -539,6 +598,7 @@ fn open_pull(pull: &PullRequest, now: u64) -> OpenPull {
         number: pull.number,
         title: pull.title.clone(),
         created: unix_seconds(pull.created_at.as_deref()).unwrap_or(now),
+        url: pull.html_url.as_deref().and_then(source::safe_url),
     }
 }
 

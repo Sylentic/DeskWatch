@@ -40,6 +40,7 @@ fn job(project: &str, started: u64, interrupt: bool) -> RunningJob {
         },
         interrupt,
         updated: NOW,
+        url: None,
     }
 }
 
@@ -54,6 +55,7 @@ fn run(pipeline: &str, status: RunStatus) -> Run {
         started: NOW - 100,
         finished: Some(NOW - 50),
         interrupt: false,
+        url: None,
     }
 }
 
@@ -106,11 +108,13 @@ fn busy() -> Composer {
                         number: 1,
                         title: "Old".into(),
                         created: 10,
+                        url: None,
                     },
                     OpenPull {
                         number: 2,
                         title: "New".into(),
                         created: 20,
+                        url: None,
                     },
                 ],
                 total: 5,
@@ -171,6 +175,87 @@ async fn get(router: &Router, uri: &str) -> (StatusCode, HeaderMap, String) {
         .await
         .unwrap();
     (status, headers, String::from_utf8(body.to_vec()).unwrap())
+}
+
+/// Pull requests, runs, running jobs and runner lists carry the web address
+/// the source gave them, so the page can link to it; `null` when there is none.
+#[test]
+fn snapshot_carries_the_links_of_prs_runs_jobs_and_runners() {
+    let mut kiosk = kiosk();
+    let mut c = composer();
+    let mut job = job("webshop", NOW - 60, true);
+    job.url = Some("https://git.example/me/webshop/actions/runs/3".into());
+    let mut done = run("ci.yml", RunStatus::Success);
+    done.url = Some("https://git.example/me/webshop/actions/runs/2".into());
+    let runner = Runner {
+        source: "gitea".into(),
+        name: "r1".into(),
+        status: RunnerStatus::Idle,
+        disabled: false,
+        labels: vec![],
+        url: Some("https://git.example/-/admin/actions/runners".into()),
+    };
+    let pull = |number, url: Option<&str>| OpenPull {
+        number,
+        title: "t".into(),
+        created: 1,
+        url: url.map(String::from),
+    };
+    c.ci.apply(
+        Update::JobRunning {
+            key: "j".into(),
+            job,
+        },
+        NOW,
+    );
+    c.ci.apply(
+        Update::Run {
+            key: "r".into(),
+            run: done,
+        },
+        NOW,
+    );
+    c.ci.apply(
+        Update::Runners {
+            key: "x".into(),
+            runners: vec![runner],
+        },
+        NOW,
+    );
+    c.ci.apply(
+        Update::Pulls {
+            key: "p".into(),
+            repo: RepoPulls {
+                project: "webshop".into(),
+                source: "gitea".into(),
+                pulls: vec![
+                    pull(2, Some("https://git.example/me/webshop/pulls/2")),
+                    pull(1, None),
+                ],
+                total: 2,
+            },
+        },
+        NOW,
+    );
+    kiosk.update(&mut c, NOW);
+    let v = json_of(&kiosk);
+    assert_eq!(
+        v["jobs"][0]["url"],
+        "https://git.example/me/webshop/actions/runs/3"
+    );
+    assert_eq!(
+        v["runs"][0]["url"],
+        "https://git.example/me/webshop/actions/runs/2"
+    );
+    assert_eq!(
+        v["runners"][0]["url"],
+        "https://git.example/-/admin/actions/runners"
+    );
+    assert_eq!(
+        v["pulls"][0]["items"][0]["url"],
+        "https://git.example/me/webshop/pulls/2"
+    );
+    assert_eq!(v["pulls"][0]["items"][1]["url"], Value::Null);
 }
 
 /// The Pipelines panel shows the latest run first, across sources, even when
@@ -300,6 +385,7 @@ fn snapshot_lists_runners_offline_first() {
         status,
         disabled,
         labels: vec!["ubuntu-latest".into()],
+        url: None,
     };
     c.ci.apply(
         Update::Runners {

@@ -809,3 +809,53 @@ async fn refused_pool_list_does_not_hurt_source_health() {
     }
     assert_eq!(health, Some(Health::Ok));
 }
+
+#[test]
+fn kiosk_links_are_built_from_the_address_organisation_and_project() {
+    let mut source = state("", 0);
+    // PRs: project / _git / repository / pullrequest / id.
+    let updates = source.on_pulls("my project", fixture_pulls(), NOW);
+    let urls: Vec<String> = updates
+        .iter()
+        .filter_map(|u| match u {
+            Update::Pulls { repo, .. } => Some(repo.pulls.iter().filter_map(|p| p.url.clone())),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    assert!(urls.contains(
+        &"https://dev.azure.com/your-org/my%20project/_git/repo-a/pullrequest/42".to_string()
+    ));
+    assert!(
+        urls.iter()
+            .all(|u| u.starts_with("https://dev.azure.com/your-org/"))
+    );
+
+    // Builds: project / _build / results ? buildId.
+    let updates = source.on_builds(PROJECT, fixture_builds(), NOW);
+    let run = updates.iter().find_map(|u| match u {
+        Update::Run { run, .. } if run.pipeline == "deploy-infra" => Some(run.clone()),
+        _ => None,
+    });
+    let url = run.unwrap().url.unwrap();
+    assert!(
+        url.starts_with(&format!(
+            "https://dev.azure.com/your-org/{PROJECT}/_build/results?buildId="
+        )),
+        "{url}"
+    );
+}
+
+#[test]
+fn agent_pool_page_is_in_the_organisation_settings() {
+    let api = api::HttpApi::new(
+        "https://dev.azure.com",
+        "your-org",
+        crate::source::Secret::new("t"),
+    )
+    .unwrap();
+    assert_eq!(
+        api.pool_url(7).as_deref(),
+        Some("https://dev.azure.com/your-org/_settings/agentpools?poolId=7")
+    );
+}

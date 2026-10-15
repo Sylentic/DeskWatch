@@ -140,7 +140,8 @@ impl Source for Gitea {
             api, polling, jobs_rx, events_tx,
         )));
 
-        let mut state = GiteaState::new(id, config.interrupt, config.alias);
+        let mut state =
+            GiteaState::new(id, config.interrupt, config.alias).with_web(&config.base_url);
         let mut reported = None;
         while let Some(event) = events_rx.recv().await {
             if !sink.facts(state.apply(event, unix_now())).await {
@@ -182,6 +183,8 @@ pub struct GiteaState {
     running: HashMap<JobRef, u64>,
     /// First failing step per run, from `workflow_job` events, for the red alert.
     failed_steps: HashMap<u64, String>,
+    /// Web address of the instance, for links on the kiosk. Empty: no links.
+    web: String,
     /// Result of the last PR poll per repository.
     polls: BTreeMap<String, Health>,
 }
@@ -195,8 +198,35 @@ impl GiteaState {
             run_files: HashMap::new(),
             running: HashMap::new(),
             failed_steps: HashMap::new(),
+            web: String::new(),
             polls: BTreeMap::new(),
         }
+    }
+
+    /// Give the kiosk links to this instance's web pages (`base_url`).
+    pub fn with_web(mut self, base_url: &str) -> Self {
+        self.web = base_url.to_string();
+        self
+    }
+
+    /// Web page of a repository: `{web}/{owner/repo}/{tail...}`.
+    fn repo_url(&self, repo: &str, tail: &[&str]) -> Option<String> {
+        let mut path = vec![repo];
+        path.extend_from_slice(tail);
+        source::web_url(&self.web, &path, &[])
+    }
+
+    /// Page with the runners of one scope (settings of the repo, org or
+    /// user, or the admin area).
+    fn runners_url(&self, scope: &runners::RunnerScope) -> Option<String> {
+        use runners::RunnerScope::*;
+        let path: Vec<&str> = match scope {
+            Admin => vec!["-", "admin", "actions", "runners"],
+            User => vec!["user", "settings", "actions", "runners"],
+            Org(org) => vec!["org", org, "settings", "actions", "runners"],
+            Repo(repo) => vec![repo, "settings", "actions", "runners"],
+        };
+        source::web_url(&self.web, &path, &[])
     }
 
     /// Jobs to poll for step progress, in a stable order.
@@ -239,7 +269,7 @@ impl GiteaState {
                 key: format!("{}:runners:{scope}", self.id),
                 runners: runners
                     .into_iter()
-                    .map(|runner| runner.into_fact(KIND))
+                    .map(|runner| runner.into_fact(KIND, self.runners_url(&scope)))
                     .collect(),
             }),
             GiteaEvent::PullsPolled { repo, pulls } => match pulls {
@@ -293,6 +323,16 @@ impl GiteaState {
             self.run_files.insert(run.id, pipeline.clone());
         }
 
+        // Gitea's own address when it sends one, else the run by its number,
+        // else the repository's Actions list.
+        let run_url = run
+            .html_url
+            .as_deref()
+            .and_then(source::safe_url)
+            .or_else(|| match run.run_number {
+                0 => self.repo_url(&repo.full_name, &["actions"]),
+                n => self.repo_url(&repo.full_name, &["actions", "runs", &n.to_string()]),
+            });
         out.push(Update::Run {
             key: format!("{}:{}:{pipeline}", self.id, repo.full_name),
             run: Run {
@@ -306,6 +346,7 @@ impl GiteaState {
                 finished: finished
                     .then(|| unix_seconds(run.completed_at.as_deref()).unwrap_or(now)),
                 interrupt: self.interrupt.allows(&repo.full_name),
+                url: run_url,
             },
         });
     }
@@ -322,10 +363,16 @@ impl GiteaState {
                 self.running.insert(job_ref, job.run_id);
                 let data = self.job_data(repo, &job, now);
                 debug!(%key, step = ?data.step, progress = ?data.progress, "job running");
+                let url = job
+                    .html_url
+                    .as_deref()
+                    .and_then(source::safe_url)
+                    .or_else(|| self.repo_url(repo, &["actions"]));
                 let job = RunningJob {
                     data,
                     interrupt: self.interrupt.allows(repo),
                     updated: now,
+                    url,
                 };
                 out.push(Update::JobRunning { key, job });
             }
@@ -380,6 +427,7 @@ impl GiteaState {
                     number: pull.number,
                     title: pull.title.clone(),
                     created: unix_seconds(pull.created_at.as_deref()).unwrap_or(now),
+                    url: self.repo_url(&repo.full_name, &["pulls", &pull.number.to_string()]),
                 },
                 // Flash only for brand-new PRs, not reopens.
                 notify: event.action == "opened",
@@ -410,6 +458,7 @@ impl GiteaState {
                 number: p.number,
                 title: p.title,
                 created: unix_seconds(p.created_at.as_deref()).unwrap_or(0),
+                url: self.repo_url(full_name, &["pulls", &p.number.to_string()]),
             })
             .collect();
         RepoPulls {
@@ -841,6 +890,119 @@ mod tests {
         assert!(facts.candidates().is_empty());
         assert_eq!(facts.failed_count(), 1);
         assert_eq!(facts.pipelines_page().rows[0].sub, "Demo main");
+    }
+
+    #[test]
+    fn kiosk_links_point_at_the_instance() {
+        let mut source = state(true).with_web("https://git.example/");
+        let run = |extra: serde_json::Value| {
+            let mut run = json!({
+                "id": 2, "path": "deploy.yml@refs/heads/main", "head_branch": "main",
+                "status": "in_progress", "started_at": "2026-10-08T18:00:00Z"
+            });
+            run.as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            let value =
+                json!({ "action": "in_progress", "workflow_run": run, "repository": repo() });
+            GiteaEvent::WorkflowRun(serde_json::from_value(value).unwrap())
+        };
+        let url_of = |updates: Vec<Update>| match updates.into_iter().next() {
+            Some(Update::Run { run, .. }) => run.url,
+            other => panic!("expected a run, got {other:?}"),
+        };
+        // No address from Gitea: the repository's Actions page.
+        assert_eq!(
+            url_of(source.apply(run(json!({})), 100)).as_deref(),
+            Some("https://git.example/me/demo/actions")
+        );
+        // With the run number: that run.
+        assert_eq!(
+            url_of(source.apply(run(json!({ "run_number": 12 })), 100)).as_deref(),
+            Some("https://git.example/me/demo/actions/runs/12")
+        );
+        // Gitea's own address wins, but only when it is http(s).
+        assert_eq!(
+            url_of(source.apply(
+                run(json!({ "html_url": "https://git.example/me/demo/actions/runs/9" })),
+                100
+            ))
+            .as_deref(),
+            Some("https://git.example/me/demo/actions/runs/9")
+        );
+        assert_eq!(
+            url_of(source.apply(
+                run(json!({ "html_url": "javascript:alert(1)", "run_number": 3 })),
+                100
+            ))
+            .as_deref(),
+            Some("https://git.example/me/demo/actions/runs/3")
+        );
+
+        // A running job links to its job page, else the Actions page.
+        let updates = source.apply(job_event("in_progress", None, json!([])), 100);
+        let Some(Update::JobRunning { job, .. }) = updates.first() else {
+            panic!("expected a running job");
+        };
+        assert_eq!(
+            job.url.as_deref(),
+            Some("https://git.example/me/demo/actions")
+        );
+
+        // PRs, from a webhook and from a poll.
+        let pr = GiteaEvent::PullRequest(
+            serde_json::from_value(json!({
+                "action": "opened",
+                "pull_request": { "number": 43, "title": "x" },
+                "repository": repo()
+            }))
+            .unwrap(),
+        );
+        let updates = source.apply(pr, 100);
+        let Some(Update::PullOpened { pull, .. }) = updates.first() else {
+            panic!("expected a PR");
+        };
+        assert_eq!(
+            pull.url.as_deref(),
+            Some("https://git.example/me/demo/pulls/43")
+        );
+        let polled = api::OpenPulls {
+            pulls: vec![serde_json::from_value(json!({ "number": 7, "title": "y" })).unwrap()],
+            total: 1,
+        };
+        assert_eq!(
+            source.repo_pulls("me/demo", polled).pulls[0].url.as_deref(),
+            Some("https://git.example/me/demo/pulls/7")
+        );
+
+        // Runner pages per scope.
+        let scope = |text: &str| source.runners_url(&runners::RunnerScope::parse(text).unwrap());
+        assert_eq!(
+            scope("admin").as_deref(),
+            Some("https://git.example/-/admin/actions/runners")
+        );
+        assert_eq!(
+            scope("user").as_deref(),
+            Some("https://git.example/user/settings/actions/runners")
+        );
+        assert_eq!(
+            scope("org:team").as_deref(),
+            Some("https://git.example/org/team/settings/actions/runners")
+        );
+        assert_eq!(
+            scope("repo:me/demo").as_deref(),
+            Some("https://git.example/me/demo/settings/actions/runners")
+        );
+    }
+
+    #[test]
+    fn without_a_web_address_there_are_no_links() {
+        let mut source = state(true);
+        let updates = source.apply(run_event("in_progress", None), 100);
+        let Some(Update::Run { run, .. }) = updates.first() else {
+            panic!("expected a run");
+        };
+        assert_eq!(run.url, None);
     }
 
     #[test]

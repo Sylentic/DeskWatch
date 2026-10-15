@@ -45,6 +45,10 @@ pub struct WorkflowRun {
     pub conclusion: Option<String>,
     pub started_at: Option<String>,
     pub completed_at: Option<String>,
+    /// Web page of the run, when Gitea sends it.
+    pub html_url: Option<String>,
+    /// The run's number in its repository, which Gitea's web address uses.
+    pub run_number: u64,
 }
 
 /// `X-Gitea-Event: workflow_job`. One per job of a run, on each state change.
@@ -72,6 +76,8 @@ pub struct Job {
     /// `success`, `failure`, `cancelled`, `skipped` once completed.
     pub conclusion: Option<String>,
     pub started_at: Option<String>,
+    /// Web page of the job, when Gitea sends it.
+    pub html_url: Option<String>,
     /// Gitea sends `null` instead of `[]` for a job that has not started.
     pub steps: Option<Vec<Step>>,
 }
