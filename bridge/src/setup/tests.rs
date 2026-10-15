@@ -762,3 +762,25 @@ async fn status_carries_a_boot_id_so_the_page_can_tell_a_restart_happened() {
     assert!(a["boot"].as_str().is_some_and(|s| !s.is_empty()));
     assert_ne!(a["boot"], b["boot"]);
 }
+
+#[test]
+fn the_page_has_the_sections_the_confirm_boxes_and_the_restart_wait() {
+    for needle in [
+        "api/setup/source/hide",
+        "api/setup/mqtt/delete",
+        "api/setup/secret/delete",
+        "api/setup/restart",
+        "confirmBox",
+        "restarting.boot",
+        "allow_restart = true",
+    ] {
+        assert!(SETUP_JS.contains(needle), "the page lacks {needle}");
+    }
+    // Deleting never goes through a browser dialog that could be blocked or skipped.
+    assert!(!SETUP_JS.contains("window.confirm") && !SETUP_JS.contains("window.alert"));
+    // Add a source is the first thing in the first section.
+    let sources = SETUP_JS.find("function sourcesSection").unwrap();
+    let add = SETUP_JS[sources..].find("addBar(d)").unwrap();
+    let grid = SETUP_JS[sources..].find("srcgrid").unwrap();
+    assert!(add < grid);
+}

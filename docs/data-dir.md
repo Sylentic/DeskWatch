@@ -76,6 +76,19 @@ startup, so a change needs a restart.
 `sources.toml` can also hold `[kiosk]` with `host_view = "detailed"` or `"compact"` (set on the setup page). It
 replaces `[kiosk] host_view` from `bridge.toml`; nothing else of `[kiosk]` can be set here.
 
+## The `hidden` list
+
+`sources.toml` can also hold a top-level `hidden = ["github:work", "gitea:home"]`: sources from `bridge.toml`
+(`type:name`) that the bridge leaves out. The setup page writes it with **Switch off here** and removes the entry with
+**Switch on again**. `bridge.toml` and the token files it names are never touched. An id that matches no source is
+ignored; an id that is not `type:name` makes the file invalid.
+
+## Secrets the page stores
+
+`credentials/<name>` files are written for sources and the broker password the page saved. Removing the source (or
+the login) deletes its files; the page can also delete a file that nothing uses any more. A mounted credential of the
+same name is never deleted by the page.
+
 ## Not covered yet
 
 `sources.toml` is read at startup and whenever the setup page saves a change; a hand edit of the file is picked up at the

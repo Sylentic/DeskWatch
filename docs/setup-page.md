@@ -18,6 +18,11 @@ the internet**, and do not publish it through a reverse proxy or tunnel unless t
 shows a secret (only whether a credential exists), token fields are write-only, and a page from another website cannot
 make changes in your browser (the `Origin` check, below).
 
+The page uses the whole screen: a menu on the left (**Sources**, **MQTT broker**, **Dashboard**, **Bridge and
+restart**, **Stored secrets**) and the chosen section next to it, in several columns on a wide screen and one column on
+a phone. **Add a source** is the first thing in the first section. The menu entry is kept in the address
+(`/setup#mqtt`), so a link opens that section.
+
 When the dashboard is on too, it shows a small **Setup** link in its header that opens this page, and this page has a
 **Dashboard** link back.
 
@@ -60,8 +65,14 @@ With a data folder configured ([data-dir.md](data-dir.md)) the page can change s
   new values. If the test fails nothing is written and the failing checks are shown; **Save anyway** writes it
   regardless (for a server that is down right now).
 - Settings the page does not know (hand-added keys in `sources.toml`) are kept on an edit.
-- Sources from `bridge.toml` are shown but not editable; change those by hand. A mounted credential with the same name
+- Sources from `bridge.toml` are shown but cannot be edited or deleted from the page, because the page never writes
+  `bridge.toml` (it can be a read-only mount, and it is yours). Instead they get **Switch off here**: the source
+  stops, leaves the dashboard and the panel, and its id is listed under `hidden = [...]` in `sources.toml`. Its
+  token file belongs to `bridge.toml` and stays. **Switch on again** undoes it. To delete such a source for good,
+  remove its block from `bridge.toml` and restart. A mounted credential with the same name
   as a page-managed one is refused, because the mounted one would win and hide the change.
+- **Everything that deletes asks first**, in a box on the page (not a browser dialog): removing a source, switching
+  one off, removing the broker login, resetting the broker settings, deleting a stored secret and restarting.
 - Every save or removal is logged (source id, which secret files were written; never a value).
 - **No restart needed.** A saved source starts at once, an edited one is replaced (its facts and warnings are dropped
   first), a removed one stops and disappears from the dashboard, the panel and the `warn` badge. A new Gitea source
@@ -94,13 +105,37 @@ the Test connection button) and writes nothing if it fails, unless you press **S
   bridge yourself (`docker compose restart`, `systemctl restart deskwatch-bridge`), or turn on the button below.
 - The test does not check what the login may publish or subscribe to (see Test connection).
 
-### Restart now
+### Removing the broker login or the saved settings
 
-With `[setup] allow_restart = true` the banner gets a **Restart now** button. The bridge then shuts down cleanly (it
-tells the broker it is going offline) and exits with code 75. That only helps when something starts it again:
-Docker with `restart: unless-stopped` (the compose files in `deploy/` have it) or the systemd unit in
-`deploy/deskwatch-bridge.service` (`Restart=on-failure`). A bridge started by hand just stops, so the button is off by
-default. It needs the same origin like every change.
+On the **MQTT broker** section, **Remove login** clears the login name and deletes the saved password;
+**Reset to bridge.toml** removes everything the page saved for the broker (host, port, TLS, login, password), so
+`bridge.toml` decides again. A password file that is not the page's own (`mqtt-password`) is never deleted. Both
+apply after a restart.
+
+## Stored secrets
+
+The **Stored secrets** section lists the files in the data folder's `credentials/` with what uses each one (a source,
+the MQTT login, or nothing). Values are never shown. Removing a source or the login deletes its secrets; a secret
+that nothing uses any more (left over from a hand edit or an older version) can be deleted here. One that is in use
+is refused.
+
+## Restart
+
+The **Bridge and restart** section has a **Restart bridge** button, and the banner after a change that needs a
+restart has a **Restart now** button. Both ask for a confirm click, then the bridge shuts down cleanly (it tells the
+broker it is going offline) and exits with code 75. The page waits until a new process answers (the status carries a
+`boot` id that differs after a start) and carries on by itself; after a minute without an answer it says that nothing
+started the bridge again.
+
+**What it relies on.** The bridge only exits; something else must start it again: Docker with `restart:
+unless-stopped` (or `always`, or `on-failure`; the compose files in `deploy/` have `unless-stopped`) or the systemd
+unit in `deploy/deskwatch-bridge.service` (`Restart=on-failure`). A container without a restart policy (Docker's
+default is `no`) or a bridge started by hand just stops. **What it cannot do:** restart the Docker host, pull a newer
+image, or change the compose file; for an update you still run `docker compose pull && docker compose up -d`.
+
+**It is opt-in.** `[setup] allow_restart` is off by default because it stops the bridge. While it is off, the page
+shows a disabled button and says how to turn it on: add `allow_restart = true` under `[setup]` in `bridge.toml` and
+restart once by hand (`docker compose restart deskwatch-bridge`). It needs the same origin like every change.
 
 ## Not yet
 
