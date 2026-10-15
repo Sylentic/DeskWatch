@@ -21,10 +21,8 @@ enabled = true
 # No login: open http://<docker host>:8787/ and it works. Fine on a home
 # network. Do not expose the port to the internet, and do not publish it through
 # a proxy or tunnel without a login (docs/docker.md, "Protecting the page").
-# To ask for an access token (not a Gitea, GitHub or Azure DevOps token), create
-# the file and uncomment the line (docs/docker.md):
-#   openssl rand -hex 24 > credentials/kiosk-token ; chmod 644 credentials/kiosk-token
-# token_file = "kiosk-token"
+# The bridge has no login of its own (the old `token_file` is refused at
+# startup); put a proxy with a login in front if you need one.
 
 # Optional: manage sources and tokens from the browser (docs/setup-page.md). Needs
 # the writable data volume in docker-compose.dashboard.yml (docs/data-dir.md). The

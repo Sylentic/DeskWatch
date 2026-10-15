@@ -1,5 +1,5 @@
 use axum::body::Body;
-use axum::http::{Request, StatusCode, header};
+use axum::http::{HeaderMap, Request, StatusCode, header};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tower::ServiceExt;
@@ -152,22 +152,18 @@ fn busy() -> Composer {
     c
 }
 
-fn kiosk_with(token: Option<&str>) -> Kiosk {
-    Kiosk::new(&KioskConfig::default(), token.map(Secret::new))
+fn kiosk() -> Kiosk {
+    Kiosk::new(&KioskConfig::default())
 }
 
 fn json_of(kiosk: &Kiosk) -> Value {
     serde_json::from_str(&kiosk.tx.borrow()).unwrap()
 }
 
-async fn get(router: &Router, uri: &str, bearer: Option<&str>) -> (StatusCode, HeaderMap, String) {
-    let mut request = Request::get(uri);
-    if let Some(token) = bearer {
-        request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
-    }
+async fn get(router: &Router, uri: &str) -> (StatusCode, HeaderMap, String) {
     let response = router
         .clone()
-        .oneshot(request.body(Body::empty()).unwrap())
+        .oneshot(Request::get(uri).body(Body::empty()).unwrap())
         .await
         .unwrap();
     let (status, headers) = (response.status(), response.headers().clone());
@@ -181,7 +177,7 @@ async fn get(router: &Router, uri: &str, bearer: Option<&str>) -> (StatusCode, H
 /// an older run failed. A running run counts from its start.
 #[test]
 fn runs_are_listed_newest_first() {
-    let mut kiosk = kiosk_with(None);
+    let mut kiosk = kiosk();
     let mut c = composer();
     let at = |source: &str, pipeline: &str, status: RunStatus, finished: u64| {
         let mut r = run(pipeline, status);
@@ -232,7 +228,7 @@ fn runs_are_listed_newest_first() {
 
 #[test]
 fn snapshot_carries_every_fact() {
-    let mut kiosk = kiosk_with(None);
+    let mut kiosk = kiosk();
     let mut c = busy();
     kiosk.update(&mut c, NOW);
     let snap = json_of(&kiosk);
@@ -296,7 +292,7 @@ fn snapshot_carries_every_fact() {
 
 #[test]
 fn snapshot_lists_runners_offline_first() {
-    let mut kiosk = kiosk_with(None);
+    let mut kiosk = kiosk();
     let mut c = composer();
     let runner = |name: &str, status, disabled| Runner {
         source: "gitea".into(),
@@ -348,7 +344,7 @@ fn snapshot_lists_runners_offline_first() {
 #[test]
 fn layout_carries_theme_pixel_shift_and_panel_filters() {
     // Defaults leave the look unchanged: day theme, no pixel shift, no filters.
-    let mut kiosk = kiosk_with(None);
+    let mut kiosk = kiosk();
     kiosk.update(&mut busy(), NOW);
     let layout = &json_of(&kiosk)["layout"];
     assert_eq!(layout["theme"]["mode"], "day");
@@ -371,7 +367,7 @@ repo = "acme/*"
 "#,
     )
     .unwrap();
-    let mut kiosk = Kiosk::new(&config.kiosk, None);
+    let mut kiosk = Kiosk::new(&config.kiosk);
     kiosk.update(&mut busy(), NOW);
     let layout = &json_of(&kiosk)["layout"];
     assert_eq!(layout["theme"]["mode"], "auto");
@@ -393,7 +389,7 @@ fn page_has_a_night_theme_and_pixel_shift() {
 
 #[test]
 fn idle_snapshot_has_no_screen() {
-    let mut kiosk = kiosk_with(None);
+    let mut kiosk = kiosk();
     let mut c = composer();
     kiosk.update(&mut c, NOW);
     let snap = json_of(&kiosk);
@@ -405,7 +401,7 @@ fn idle_snapshot_has_no_screen() {
 
 #[test]
 fn snapshot_is_sent_on_change_and_on_the_heartbeat_only() {
-    let mut kiosk = kiosk_with(None);
+    let mut kiosk = kiosk();
     let mut rx = kiosk.tx.subscribe();
     let mut c = composer();
 
@@ -436,8 +432,8 @@ fn snapshot_is_sent_on_change_and_on_the_heartbeat_only() {
 
 #[tokio::test]
 async fn serves_the_page_and_its_files() {
-    let router = kiosk_with(None).router();
-    let (status, headers, body) = get(&router, "/", None).await;
+    let router = kiosk().router();
+    let (status, headers, body) = get(&router, "/").await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("<title>DeskWatch</title>"));
     assert_eq!(headers[header::CONTENT_TYPE], "text/html; charset=utf-8");
@@ -448,7 +444,7 @@ async fn serves_the_page_and_its_files() {
             .contains("script-src 'self'")
     );
 
-    let (status, headers, body) = get(&router, "/kiosk.js", None).await;
+    let (status, headers, body) = get(&router, "/kiosk.js").await;
     assert_eq!(status, StatusCode::OK);
     assert!(
         headers[header::CONTENT_TYPE]
@@ -457,7 +453,7 @@ async fn serves_the_page_and_its_files() {
             .starts_with("text/javascript")
     );
     assert!(body.contains("DeskWatchKiosk"));
-    let (status, _, body) = get(&router, "/kiosk.css", None).await;
+    let (status, _, body) = get(&router, "/kiosk.css").await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("--bg"));
 }
@@ -477,86 +473,51 @@ fn page_files_load_nothing_from_other_hosts() {
         assert!(!text.contains("//cdn"), "{name} mentions a CDN");
     }
 }
-
-#[test]
-fn page_script_takes_the_token_out_of_the_address_bar() {
-    // Guard for the ?token= hardening: the script must rewrite the address
-    // (replaceState) and must not put the token back into a page link.
-    assert!(KIOSK_JS.contains("history.replaceState"));
-    assert!(KIOSK_JS.contains("params.delete('token')"));
-    assert!(!INDEX_HTML.contains("token="));
-}
-
 #[test]
 fn page_explains_why_it_has_no_data() {
-    // Guard for the failure states: the page must ask for a token on a 401
-    // (the HTTP fetch is what sees the status, a WebSocket error has none),
-    // and the notice box and its field must exist in the page.
+    // Guard for the failure states: the notice box must exist in the page and
+    // the script must have a message for each of them.
     assert!(INDEX_HTML.contains("id=\"notice\""));
-    assert!(KIOSK_JS.contains("r.status === 401"));
-    for pill in [
-        "token required",
-        "Not a Gitea, GitHub or Azure DevOps token",
-        "token rejected",
-        "bridge unreachable",
-        "polling, no live socket",
-    ] {
+    for pill in ["bridge unreachable", "polling, no live socket"] {
         assert!(KIOSK_JS.contains(pill), "page never says '{pill}'");
     }
     assert!(KIOSK_JS.contains("Waiting for the first data"));
     // The page fetches once at start instead of only after the socket fails.
-    assert!(KIOSK_JS.contains("{ poll(); connect(); }"));
-    // The token field must not need a form, the CSP has form-action 'none'.
-    assert!(!INDEX_HTML.contains("<form"));
+    // (Compared without line breaks: a Windows checkout has CRLF.)
+    let flat: String = KIOSK_JS.split_whitespace().collect();
+    assert!(flat.contains("poll();connect();"));
+}
+
+#[test]
+fn page_has_no_login() {
+    // The dashboard is open on the trusted network: no token field, no
+    // login request, no token in the address bar.
+    for text in [KIOSK_JS, INDEX_HTML, KIOSK_CSS] {
+        for word in [
+            "api/login",
+            "token-input",
+            "tokenbox",
+            "takeToken",
+            "?token=",
+        ] {
+            assert!(!text.contains(word), "the page still mentions {word}");
+        }
+    }
 }
 
 #[tokio::test]
 async fn snapshot_endpoint_returns_the_latest_json() {
-    let mut kiosk = kiosk_with(None);
+    let mut kiosk = kiosk();
     let router = kiosk.router();
     let mut c = busy();
     kiosk.update(&mut c, NOW);
-    let (status, headers, body) = get(&router, "/api/kiosk", None).await;
+    let (status, headers, body) = get(&router, "/api/kiosk").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(headers[header::CONTENT_TYPE], "application/json");
     assert_eq!(headers[header::CACHE_CONTROL], "no-store");
     let snap: Value = serde_json::from_str(&body).unwrap();
     assert_eq!(snap["jobs"].as_array().unwrap().len(), 2);
 }
-
-#[tokio::test]
-async fn token_protects_the_data_but_not_the_page() {
-    let router = kiosk_with(Some("s3cret/+")).router();
-    assert_eq!(get(&router, "/", None).await.0, StatusCode::OK);
-    assert_eq!(
-        get(&router, "/api/kiosk", None).await.0,
-        StatusCode::UNAUTHORIZED
-    );
-    assert_eq!(
-        get(&router, "/api/kiosk?token=nope", None).await.0,
-        StatusCode::UNAUTHORIZED
-    );
-    assert_eq!(
-        get(&router, "/api/kiosk/ws", None).await.0,
-        StatusCode::UNAUTHORIZED
-    );
-    assert_eq!(
-        get(&router, "/api/kiosk", Some("nope")).await.0,
-        StatusCode::UNAUTHORIZED
-    );
-    assert_eq!(
-        get(&router, "/api/kiosk", Some("s3cret/+")).await.0,
-        StatusCode::OK
-    );
-    // The deprecated ?token= still works, also the way encodeURIComponent writes it.
-    assert_eq!(
-        get(&router, "/api/kiosk?x=1&token=s3cret%2F%2B", None)
-            .await
-            .0,
-        StatusCode::OK
-    );
-}
-
 /// A request with free choice of method, headers and body.
 async fn send(
     router: &Router,
@@ -576,190 +537,6 @@ async fn send(
         .unwrap();
     (response.status(), response.headers().clone())
 }
-
-fn login_body(token: &str) -> String {
-    json!({ "token": token }).to_string()
-}
-
-/// The `name=value` part of a `Set-Cookie` header, as a browser sends it back.
-fn cookie_of(headers: &HeaderMap) -> String {
-    let set = headers[header::SET_COOKIE].to_str().unwrap();
-    set.split(';').next().unwrap().to_string()
-}
-
-#[tokio::test]
-async fn login_sets_a_cookie_that_replaces_the_token() {
-    let router = kiosk_with(Some("s3cret")).router();
-    let (status, headers) = send(&router, "POST", "/api/login", &[], &login_body("s3cret")).await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-    let set = headers[header::SET_COOKIE].to_str().unwrap().to_string();
-    for part in ["HttpOnly", "SameSite=Strict", "Path=/", "Max-Age=2592000"] {
-        assert!(set.contains(part), "cookie lacks {part}: {set}");
-    }
-    assert!(!set.contains("Secure"), "plain HTTP must not get Secure");
-    assert!(
-        !set.contains("s3cret"),
-        "the token must not be in the cookie"
-    );
-
-    let cookie = cookie_of(&headers);
-    let (status, _) = send(&router, "GET", "/api/kiosk", &[("cookie", &cookie)], "").await;
-    assert_eq!(status, StatusCode::OK);
-    // Among other cookies, too.
-    let both = format!("a=b; {cookie}; c=d");
-    assert_eq!(
-        send(&router, "GET", "/api/kiosk", &[("cookie", &both)], "")
-            .await
-            .0,
-        StatusCode::OK
-    );
-    // A forged or expired cookie does not count.
-    for bad in [
-        "deskwatch_session=1.2",
-        "deskwatch_session=99999999999.00",
-        "deskwatch_session=",
-    ] {
-        assert_eq!(
-            send(&router, "GET", "/api/kiosk", &[("cookie", bad)], "")
-                .await
-                .0,
-            StatusCode::UNAUTHORIZED,
-            "{bad}"
-        );
-    }
-}
-
-#[tokio::test]
-async fn login_cookie_is_secure_behind_an_https_proxy() {
-    let router = kiosk_with(Some("s3cret")).router();
-    let (_, headers) = send(
-        &router,
-        "POST",
-        "/api/login",
-        &[("x-forwarded-proto", "https")],
-        &login_body("s3cret"),
-    )
-    .await;
-    assert!(
-        headers[header::SET_COOKIE]
-            .to_str()
-            .unwrap()
-            .contains("; Secure")
-    );
-}
-
-#[tokio::test]
-async fn wrong_login_is_refused_and_then_rate_limited() {
-    let router = kiosk_with(Some("s3cret")).router();
-    for _ in 0..session::MAX_FAILURES {
-        let (status, headers) = send(&router, "POST", "/api/login", &[], &login_body("nope")).await;
-        assert_eq!(status, StatusCode::UNAUTHORIZED);
-        assert!(!headers.contains_key(header::SET_COOKIE));
-    }
-    // Now even the right token waits.
-    let (status, headers) = send(&router, "POST", "/api/login", &[], &login_body("s3cret")).await;
-    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
-    assert!(headers.contains_key(header::RETRY_AFTER));
-    // Bad bodies are not a way around the check.
-    let router = kiosk_with(Some("s3cret")).router();
-    assert_eq!(
-        send(&router, "POST", "/api/login", &[], "not json").await.0,
-        StatusCode::BAD_REQUEST
-    );
-}
-
-#[tokio::test]
-async fn login_from_another_site_is_refused() {
-    let router = kiosk_with(Some("s3cret")).router();
-    let headers = [("host", "dash.lan:8787"), ("origin", "http://evil.example")];
-    let (status, _) = send(
-        &router,
-        "POST",
-        "/api/login",
-        &headers,
-        &login_body("s3cret"),
-    )
-    .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    let same = [
-        ("host", "dash.lan:8787"),
-        ("origin", "http://dash.lan:8787"),
-    ];
-    let (status, _) = send(&router, "POST", "/api/login", &same, &login_body("s3cret")).await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-}
-
-#[tokio::test]
-async fn cross_origin_data_requests_are_refused_even_with_a_cookie() {
-    let router = kiosk_with(Some("s3cret")).router();
-    let (_, headers) = send(&router, "POST", "/api/login", &[], &login_body("s3cret")).await;
-    let cookie = cookie_of(&headers);
-    let foreign = [
-        ("cookie", cookie.as_str()),
-        ("host", "dash.lan:8787"),
-        ("origin", "https://evil.example"),
-    ];
-    assert_eq!(
-        send(&router, "GET", "/api/kiosk/ws", &foreign, "").await.0,
-        StatusCode::FORBIDDEN
-    );
-    let own = [
-        ("cookie", cookie.as_str()),
-        ("host", "dash.lan:8787"),
-        ("origin", "http://dash.lan:8787"),
-    ];
-    // Passes the Origin and cookie checks (then fails only for lack of an upgrade).
-    assert_ne!(
-        send(&router, "GET", "/api/kiosk/ws", &own, "").await.0,
-        StatusCode::FORBIDDEN
-    );
-    assert_ne!(
-        send(&router, "GET", "/api/kiosk/ws", &own, "").await.0,
-        StatusCode::UNAUTHORIZED
-    );
-}
-
-#[test]
-fn changing_the_token_invalidates_sessions_and_expiry_is_enforced() {
-    let old = session::Sessions::new("kiosk", "old-token", 30 * 86_400);
-    let cookie = old.issue(1_000);
-    let value = |c: &str| c.to_string();
-    assert!(old.valid(&value(&cookie), 1_001));
-    assert!(!session::Sessions::new("kiosk", "new-token", 30 * 86_400).valid(&cookie, 1_001));
-    assert!(!old.valid(&cookie, 1_000 + 30 * 86_400), "expired");
-    assert!(old.valid(&cookie, 1_000 + 30 * 86_400 - 1));
-    assert!(!old.valid("", 1));
-    assert!(!old.valid("nodot", 1));
-}
-
-#[test]
-fn failure_limit_forgets_old_failures() {
-    let limiter = session::Limiter::default();
-    for _ in 0..session::MAX_FAILURES {
-        limiter.record_failure(100);
-    }
-    assert_eq!(limiter.blocked(101), Some(session::WINDOW_S - 1));
-    assert_eq!(limiter.blocked(100 + session::WINDOW_S), None);
-}
-
-#[test]
-fn page_trades_the_token_for_a_cookie() {
-    assert!(KIOSK_JS.contains("api/login"));
-    assert!(
-        !KIOSK_JS.contains("sessionStorage"),
-        "no token kept in storage"
-    );
-    assert!(!KIOSK_JS.contains("withToken"), "no token in request URLs");
-    assert!(!KIOSK_JS.contains("open this page once as"));
-}
-
-#[test]
-fn percent_decoding_handles_odd_input() {
-    assert_eq!(percent_decode("a%2Fb%2b"), "a/b+");
-    assert_eq!(percent_decode("100%"), "100%");
-    assert_eq!(percent_decode("%zz"), "%zz");
-}
-
 /// Read one unmasked server frame header and payload from a WebSocket.
 async fn read_frame(stream: &mut TcpStream) -> (u8, Vec<u8>) {
     let mut head = [0u8; 2];
@@ -784,7 +561,7 @@ async fn read_frame(stream: &mut TcpStream) -> (u8, Vec<u8>) {
 
 #[tokio::test]
 async fn websocket_sends_the_current_snapshot_and_then_changes() {
-    let mut kiosk = kiosk_with(Some("tok"));
+    let mut kiosk = kiosk();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(axum::serve(listener, kiosk.router()).into_future());
@@ -793,7 +570,7 @@ async fn websocket_sends_the_current_snapshot_and_then_changes() {
     kiosk.update(&mut c, NOW);
 
     let mut stream = TcpStream::connect(addr).await.unwrap();
-    let request = "GET /api/kiosk/ws?token=tok HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\n\
+    let request = "GET /api/kiosk/ws HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\n\
                    Upgrade: websocket\r\nSec-WebSocket-Version: 13\r\n\
                    Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n";
     stream.write_all(request.as_bytes()).await.unwrap();
@@ -849,7 +626,7 @@ async fn websocket_count_is_capped_and_a_closed_client_frees_its_slot() {
         max_ws_clients: 2,
         ..KioskConfig::default()
     };
-    let kiosk = Kiosk::new(&config, None);
+    let kiosk = Kiosk::new(&config);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(axum::serve(listener, kiosk.router()).into_future());
@@ -860,10 +637,7 @@ async fn websocket_count_is_capped_and_a_closed_client_frees_its_slot() {
     assert!(refused.contains("503"), "{refused}");
 
     // The page still works without the socket: polling is not limited.
-    assert_eq!(
-        get(&kiosk.router(), "/api/kiosk", None).await.0,
-        StatusCode::OK
-    );
+    assert_eq!(get(&kiosk.router(), "/api/kiosk").await.0, StatusCode::OK);
 
     // Closing a client gives its slot back (the bridge notices on its next read).
     drop(first);
@@ -877,74 +651,9 @@ async fn websocket_count_is_capped_and_a_closed_client_frees_its_slot() {
     }
     assert!(reopened.is_ok(), "slot was not freed: {reopened:?}");
 }
-
-/// Status code of `GET /api/kiosk` without any token, over a real socket so
-/// the listener supplies the peer address.
-async fn status_for_networks(trusted: &[&str]) -> u16 {
-    let config = KioskConfig {
-        trusted_networks: trusted.iter().map(|s| s.to_string()).collect(),
-        ..KioskConfig::default()
-    };
-    let kiosk = Kiosk::new(&config, Some(Secret::new("tok")));
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let app = kiosk
-        .router()
-        .into_make_service_with_connect_info::<std::net::SocketAddr>();
-    tokio::spawn(axum::serve(listener, app).into_future());
-    let mut stream = TcpStream::connect(addr).await.unwrap();
-    stream
-        .write_all(b"GET /api/kiosk HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
-        .await
-        .unwrap();
-    let mut reply = String::new();
-    stream.read_to_string(&mut reply).await.unwrap();
-    reply.split_whitespace().nth(1).unwrap().parse().unwrap()
-}
-
-#[tokio::test]
-async fn trusted_network_skips_the_token_and_others_do_not() {
-    assert_eq!(status_for_networks(&["127.0.0.0/8"]).await, 200);
-    assert_eq!(status_for_networks(&["::1", "127.0.0.1"]).await, 200);
-    assert_eq!(status_for_networks(&["192.168.0.0/16"]).await, 401);
-    assert_eq!(status_for_networks(&[]).await, 401);
-}
-
-#[test]
-fn network_ranges_match_ipv4_ipv6_and_mapped_addresses() {
-    use net::Network;
-    let ip = |s: &str| s.parse::<std::net::IpAddr>().unwrap();
-    let lan = Network::parse("192.168.0.0/16").unwrap();
-    assert!(lan.contains(ip("192.168.4.5")));
-    assert!(!lan.contains(ip("192.169.0.1")));
-    assert!(!lan.contains(ip("10.0.0.1")));
-    // An IPv4 client seen on a dual-stack socket.
-    assert!(lan.contains(ip("::ffff:192.168.4.5")));
-    assert!(!lan.contains(ip("::ffff:10.0.0.1")));
-    let v6 = Network::parse("fd00::/8").unwrap();
-    assert!(v6.contains(ip("fd12:3456::1")));
-    assert!(!v6.contains(ip("fe80::1")));
-    assert!(!v6.contains(ip("192.168.4.5")));
-    // Single host, everything, and bad input.
-    assert!(
-        Network::parse("203.0.113.7")
-            .unwrap()
-            .contains(ip("203.0.113.7"))
-    );
-    assert!(
-        !Network::parse("203.0.113.7")
-            .unwrap()
-            .contains(ip("203.0.113.8"))
-    );
-    assert!(Network::parse("0.0.0.0/0").unwrap().contains(ip("8.8.8.8")));
-    for bad in ["", "lan", "10.0.0.0/33", "10.0.0.0/x", "fd00::/129"] {
-        assert!(Network::parse(bad).is_err(), "{bad:?} should be refused");
-    }
-}
-
 #[test]
 fn queued_jobs_are_in_the_snapshot_busiest_pool_first() {
-    let mut kiosk = kiosk_with(None);
+    let mut kiosk = kiosk();
     let mut c = composer();
     for (pool, queued) in [("Small", 1), ("Big", 5), ("Empty", 0)] {
         c.ci.apply(
@@ -970,10 +679,60 @@ fn queued_jobs_are_in_the_snapshot_busiest_pool_first() {
 
 #[test]
 fn setup_link_is_in_the_layout_only_when_asked() {
-    let plain = kiosk_with(None);
+    let plain = kiosk();
     assert!(json_of(&plain)["layout"].get("setup").is_none());
-    let linked = kiosk_with(None).with_setup_link(true);
+    let linked = kiosk().with_setup_link(true);
     assert_eq!(json_of(&linked)["layout"]["setup"], true);
-    let off = kiosk_with(None).with_setup_link(false);
+    let off = kiosk().with_setup_link(false);
     assert!(json_of(&off)["layout"].get("setup").is_none());
+}
+
+#[tokio::test]
+async fn data_needs_no_login() {
+    let router = kiosk().router();
+    for uri in ["/", "/api/kiosk"] {
+        assert_eq!(get(&router, uri).await.0, StatusCode::OK, "{uri}");
+    }
+    // The old login route is gone, and a stray token or cookie changes nothing.
+    assert_eq!(
+        send(&router, "POST", "/api/login", &[], "{}").await.0,
+        StatusCode::NOT_FOUND
+    );
+    let with_extras = [
+        ("authorization", "Bearer whatever"),
+        ("cookie", "deskwatch_session=1.2"),
+    ];
+    assert_eq!(
+        send(&router, "GET", "/api/kiosk", &with_extras, "").await.0,
+        StatusCode::OK
+    );
+}
+
+#[tokio::test]
+async fn cross_origin_data_requests_are_refused() {
+    let router = kiosk().router();
+    let foreign = [
+        ("host", "dash.lan:8787"),
+        ("origin", "https://evil.example"),
+    ];
+    for uri in ["/api/kiosk", "/api/kiosk/ws"] {
+        assert_eq!(
+            send(&router, "GET", uri, &foreign, "").await.0,
+            StatusCode::FORBIDDEN,
+            "{uri}"
+        );
+    }
+    let own = [
+        ("host", "dash.lan:8787"),
+        ("origin", "http://dash.lan:8787"),
+    ];
+    assert_eq!(
+        send(&router, "GET", "/api/kiosk", &own, "").await.0,
+        StatusCode::OK
+    );
+    // Passes the Origin check (then fails only for lack of an upgrade).
+    assert_ne!(
+        send(&router, "GET", "/api/kiosk/ws", &own, "").await.0,
+        StatusCode::FORBIDDEN
+    );
 }

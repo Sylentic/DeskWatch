@@ -56,7 +56,7 @@ The mini display's UI in the desktop simulator:
 | Source: Azure DevOps Services (pipeline runs, approvals, PRs; [docs/azure-devops.md](docs/azure-devops.md)) | Done |
 | Windows x86_64 release zip (bridge and simulator), install and test guide | Done, see [docs/windows.md](docs/windows.md) |
 | Kiosk dashboard for big screens (browser page served by the bridge, autostart example for a Raspberry Pi) | Done in 0.9.5, not yet run on a Pi: [docs/kiosk.md](docs/kiosk.md) |
-| Kiosk extras: `runners` widget (Gitea and GitHub self-hosted runners, [docs/runners.md](docs/runners.md)), day/night theme, per-widget source and repo filters, OLED pixel shift, `trusted_networks` (since deprecated) | Done in 0.9.9, run in headless Chromium with demo data: [docs/kiosk.md](docs/kiosk.md) |
+| Kiosk extras: `runners` widget (Gitea and GitHub self-hosted runners, [docs/runners.md](docs/runners.md)), day/night theme, per-widget source and repo filters, OLED pixel shift | Done in 0.9.9, run in headless Chromium with demo data: [docs/kiosk.md](docs/kiosk.md) |
 | Setup page (`/setup`, off by default, opt in with `[setup] enabled = true`): see, test, add, edit and remove sources and tokens, change the MQTT broker, live source reload, optional restart button. No login, trusted network only. Needs a writable data folder to change anything | Done in 0.9.11 and 0.9.12, built against mock servers and a fake broker only: [docs/setup-page.md](docs/setup-page.md), [docs/data-dir.md](docs/data-dir.md) |
 | Azure DevOps extras: self-hosted agent pools and queued jobs on the `runners` widget, "Check pending" for non-approval checks | Done in 0.9.10, against mock answers only; [docs/azure-devops-verify.md](docs/azure-devops-verify.md) is the checklist for a real organisation |
 | Docker dashboard (no broker needed: `[mqtt] enabled = false`, Compose files, health check) | Done in 0.9.5, run in a container with demo data: [docs/docker.md](docs/docker.md) |
@@ -71,7 +71,8 @@ The mini display's UI in the desktop simulator:
   follow.
 - **Authentication.** Neither the dashboard nor the setup page asks for a login by default; both are for a trusted
   network and must not be exposed to the internet or published through a proxy or tunnel without its own login. The
-  older `[kiosk] token_file` and `[setup] token_file` still work but are deprecated (see the changelog). How the ESP
+  older `[kiosk] token_file`, `trusted_networks`, `session_days` and `[setup] token_file` were removed; a config that
+  still has them is refused at startup with the line to delete (see the changelog). How the ESP
   panel's own setup mode (step 8 of the setup plan) is protected is an open point for when the screen exists.
 - **TLS on the webhook listener.** Gitea talks plain HTTP to the bridge; put a reverse proxy in front if the path
   crosses an untrusted network.

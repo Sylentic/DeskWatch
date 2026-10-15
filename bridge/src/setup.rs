@@ -4,7 +4,6 @@
 //! This step is read-only. It serves:
 //!
 //! - `GET /setup`, `/setup.js`, `/setup.css`: the page;
-//! - `POST /api/setup/login`: trades the setup token for a session cookie;
 //! - `GET /api/setup/status`: sources, credentials (only whether each one
 //!   exists, never its value), MQTT, the data folder and live source health;
 //! - `POST /api/setup/test` with `{"id": "github:main"}` or `{"id": "mqtt"}`:
@@ -19,14 +18,12 @@
 //! The page is off unless `[setup] enabled = true`. It has no login: whoever
 //! can reach the port can use it, so it belongs on a trusted network only (the
 //! bridge warns at startup). Secrets are never sent to the browser and a page
-//! from another site cannot make changes (the `Origin` check). The deprecated
-//! `[setup] token_file` still turns a login on, with its own token, cookie
-//! (`SESSION_S`) and failure limit, apart from the dashboard's.
+//! from another site cannot make changes (the `Origin` check).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use tokio::sync::{Notify, Semaphore};
 
@@ -39,16 +36,13 @@ use serde_json::{Value, json};
 
 use crate::config::Config;
 use crate::health::MqttLink;
-use crate::kiosk::session::{self, Limiter, Sessions};
-use crate::kiosk::{asset, digest, same};
-use crate::source::{Secret, credential_status};
+use crate::kiosk::asset;
+use crate::kiosk::origin;
+use crate::source::credential_status;
 use crate::store::Store;
 use crate::supervisor::Supervisor;
 
 pub mod edit;
-
-/// How long a setup login lasts.
-pub const SESSION_S: u64 = 12 * 3600;
 
 const INDEX_HTML: &str = include_str!("../setup/index.html");
 const SETUP_CSS: &str = include_str!("../setup/setup.css");
@@ -60,15 +54,7 @@ pub struct Setup {
     shared: Arc<Shared>,
 }
 
-/// The optional login (the deprecated `[setup] token_file`).
-struct Auth {
-    token: [u8; 32],
-    sessions: Sessions,
-    limiter: Limiter,
-}
-
 struct Shared {
-    auth: Option<Auth>,
     /// The config the bridge runs with, for connection tests.
     config: Config,
     /// What `bridge.toml` alone says: the data folder's sources are added to it.
@@ -96,30 +82,9 @@ struct Shared {
 }
 
 impl Setup {
-    /// A setup page behind its own token (the deprecated `[setup] token_file`).
+    /// A setup page without a login: for a trusted network only.
     pub fn new(
         config: &Config,
-        token: &Secret,
-        mqtt: MqttLink,
-        store: Option<Store>,
-        supervisor: Option<Supervisor>,
-    ) -> Self {
-        Self::build(config, Some(token), mqtt, store, supervisor)
-    }
-
-    /// A setup page without a login: for a trusted network only.
-    pub fn open(
-        config: &Config,
-        mqtt: MqttLink,
-        store: Option<Store>,
-        supervisor: Option<Supervisor>,
-    ) -> Self {
-        Self::build(config, None, mqtt, store, supervisor)
-    }
-
-    fn build(
-        config: &Config,
-        token: Option<&Secret>,
         mqtt: MqttLink,
         store: Option<Store>,
         supervisor: Option<Supervisor>,
@@ -127,11 +92,6 @@ impl Setup {
         let started = source_ids(config);
         Self {
             shared: Arc::new(Shared {
-                auth: token.map(|token| Auth {
-                    token: digest(token.expose()),
-                    sessions: Sessions::new("setup", token.expose(), SESSION_S),
-                    limiter: Limiter::default(),
-                }),
                 config: config.clone(),
                 base: config.without_overlay(),
                 store,
@@ -175,7 +135,6 @@ impl Setup {
                 "/setup.js",
                 get(|| asset("text/javascript; charset=utf-8", SETUP_JS)),
             )
-            .route("/api/setup/login", post(login))
             .route("/api/setup/status", get(status))
             .route("/api/setup/test", post(test))
             .route("/api/setup/source", post(save_source))
@@ -186,67 +145,7 @@ impl Setup {
     }
 }
 
-fn unix_now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
-}
-
-async fn login(
-    State(shared): State<Arc<Shared>>,
-    headers: HeaderMap,
-    body: axum::body::Bytes,
-) -> Response {
-    if !session::same_origin(&headers) {
-        return (StatusCode::FORBIDDEN, "cross-origin request refused").into_response();
-    }
-    // Without a token there is nothing to log in to.
-    let Some(auth) = &shared.auth else {
-        return StatusCode::NO_CONTENT.into_response();
-    };
-    let now = unix_now();
-    if let Some(wait) = auth.limiter.blocked(now) {
-        tracing::warn!("setup login refused: too many wrong tokens lately");
-        let mut response = (StatusCode::TOO_MANY_REQUESTS, "too many wrong tokens").into_response();
-        if let Ok(value) = HeaderValue::from_str(&wait.to_string()) {
-            response.headers_mut().insert(header::RETRY_AFTER, value);
-        }
-        return response;
-    }
-    let given = (body.len() <= 4096)
-        .then(|| serde_json::from_slice::<Value>(&body).ok())
-        .flatten()
-        .and_then(|v| v.get("token")?.as_str().map(str::to_string));
-    let Some(given) = given else {
-        return (StatusCode::BAD_REQUEST, "expected {\"token\": \"...\"}").into_response();
-    };
-    if !same(&auth.token, &digest(&given)) {
-        auth.limiter.record_failure(now);
-        tracing::warn!("setup login with a wrong token");
-        tokio::time::sleep(Duration::from_millis(400)).await;
-        return (StatusCode::UNAUTHORIZED, "token wrong").into_response();
-    }
-    tracing::info!("setup login");
-    let cookie = session::set_cookie(
-        session::SETUP_COOKIE,
-        &auth.sessions.issue(now),
-        SESSION_S,
-        session::is_https(&headers),
-    );
-    let mut response = StatusCode::NO_CONTENT.into_response();
-    if let Ok(value) = HeaderValue::from_str(&cookie) {
-        response.headers_mut().insert(header::SET_COOKIE, value);
-    }
-    response
-        .headers_mut()
-        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    response
-}
-
-async fn status(State(shared): State<Arc<Shared>>, headers: HeaderMap) -> Response {
-    if !logged_in(&shared, &headers) {
-        return (StatusCode::UNAUTHORIZED, "login required").into_response();
-    }
+async fn status(State(shared): State<Arc<Shared>>) -> Response {
     let health = shared
         .health
         .lock()
@@ -341,11 +240,8 @@ async fn test(
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
-    if !session::same_origin(&headers) {
+    if !origin::same_origin(&headers) {
         return (StatusCode::FORBIDDEN, "cross-origin request refused").into_response();
-    }
-    if !logged_in(&shared, &headers) {
-        return (StatusCode::UNAUTHORIZED, "login required").into_response();
     }
     let id = (body.len() <= 1024)
         .then(|| serde_json::from_slice::<Value>(&body).ok())
@@ -387,14 +283,6 @@ async fn test(
     response
 }
 
-fn logged_in(shared: &Shared, headers: &HeaderMap) -> bool {
-    match &shared.auth {
-        None => true,
-        Some(auth) => session::cookie_value(headers, session::SETUP_COOKIE)
-            .is_some_and(|v| auth.sessions.valid(v, unix_now())),
-    }
-}
-
 /// A JSON answer with `no-store`.
 fn json_response(status: StatusCode, value: Value) -> Response {
     let mut response = (status, value.to_string()).into_response();
@@ -411,18 +299,15 @@ fn refuse(status: StatusCode, message: impl std::fmt::Display) -> Response {
     json_response(status, json!({ "error": message.to_string() }))
 }
 
-/// Checks shared by the routes that change something: same origin, logged in,
+/// Checks shared by the routes that change something: same origin
 /// and a data folder to write to. Gives back the parsed JSON body.
 #[allow(clippy::result_large_err)]
 fn change_request(shared: &Shared, headers: &HeaderMap, body: &[u8]) -> Result<Value, Response> {
-    if !session::same_origin(headers) {
+    if !origin::same_origin(headers) {
         return Err(refuse(
             StatusCode::FORBIDDEN,
             "cross-origin request refused",
         ));
-    }
-    if !logged_in(shared, headers) {
-        return Err(refuse(StatusCode::UNAUTHORIZED, "login required"));
     }
     if shared.store.is_none() {
         return Err(refuse(
@@ -696,11 +581,8 @@ async fn restart(
     headers: HeaderMap,
     _body: axum::body::Bytes,
 ) -> Response {
-    if !session::same_origin(&headers) {
+    if !origin::same_origin(&headers) {
         return refuse(StatusCode::FORBIDDEN, "cross-origin request refused");
-    }
-    if !logged_in(&shared, &headers) {
-        return refuse(StatusCode::UNAUTHORIZED, "login required");
     }
     if !shared.allow_restart {
         return refuse(

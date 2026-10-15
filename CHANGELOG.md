@@ -8,6 +8,18 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING: `[kiosk] token_file`, `[kiosk] trusted_networks`, `[kiosk] session_days` and `[setup] token_file` are gone,
+  together with the cookie login behind them.** Since 0.9.12 the dashboard and the setup page have no login (they are for
+  a trusted network); these settings only kept the old behaviour alive with a warning. A config that still has one of
+  them is now refused at startup with a message that names the section and key to delete, instead of quietly running
+  with (or without) a login you did not expect. To upgrade, delete those lines from `bridge.toml`. If you still want a
+  login, put a reverse proxy with its own in front ([docs/docker.md](docs/docker.md#protecting-the-page)).
+  What stays: the `Origin` check (a website in your browser cannot reach the WebSocket or change the setup) and write-only
+  secrets. Gone with it: `POST /api/login`, `POST /api/setup/login`, the `Authorization: Bearer` and `?token=` access to
+  `/api/kiosk`, and the token box on both pages.
+
 ### Added
 
 - **`deskwatch-bridge ado-capture`**: records what a real Azure DevOps organisation answers (builds, timelines, pull

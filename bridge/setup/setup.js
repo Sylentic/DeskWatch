@@ -82,7 +82,6 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: id })
     }).then(function (r) {
-      if (r.status === 401) { loginForm(); return null; }
       if (!r.ok) return { checks: [], error: r.status === 429 ? 'Another test is still running.' : r.status === 504 ? 'The test took too long.' : 'The test failed (HTTP ' + r.status + ').' };
       return r.json();
     }, function () { return { checks: [], error: 'Cannot reach the bridge.' }; })
@@ -134,7 +133,6 @@
       method: 'POST', cache: 'no-store', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
     }).then(function (r) {
-      if (r.status === 401) { loginForm(); return null; }
       return r.json().catch(function () { return {}; }).then(function (j) { j.status = r.status; return j; });
     }, function () { return { error: 'Cannot reach the bridge.' }; });
   }
@@ -380,45 +378,11 @@
       : 'Tokens are never sent to the browser. To add and change sources here, give the bridge a data folder ([data] dir, see docs/data-dir.md).'));
   }
 
-  function loginForm(message) {
-    clearTimeout(timer);
-    app.textContent = '';
-    var card = el('section', 'card');
-    card.appendChild(el('h2', null, 'Setup token'));
-    card.appendChild(el('p', 'muted', 'The text in the file named by [setup] token_file in the bridge config. It is not a CI token.'));
-    var form = el('form');
-    var input = el('input');
-    input.type = 'password'; input.autocomplete = 'off'; input.spellcheck = false;
-    input.setAttribute('aria-label', 'setup token');
-    var button = el('button', null, 'Log in');
-    button.type = 'submit';
-    form.appendChild(input); form.appendChild(button);
-    form.addEventListener('submit', function (ev) {
-      ev.preventDefault();
-      var given = input.value.trim();
-      if (!given) return;
-      fetch('api/setup/login', {
-        method: 'POST', cache: 'no-store', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: given })
-      }).then(function (r) {
-        if (r.ok) return load();
-        loginForm(r.status === 429 ? 'Too many wrong tokens. Wait a minute and try again.'
-          : r.status === 401 ? 'That token was not accepted.' : 'The bridge answered with an error (HTTP ' + r.status + ').');
-      }, function () { loginForm('Cannot reach the bridge.'); });
-    });
-    card.appendChild(form);
-    if (message) { var p = el('p', 'err', message); p.setAttribute('role', 'alert'); card.appendChild(p); }
-    app.appendChild(card);
-    input.focus();
-  }
-
   function load() {
     clearTimeout(timer);
     // A refresh would redraw (and lose the focus of) a form being filled in.
     if (form && !form.busy) { timer = setTimeout(load, REFRESH_MS); return Promise.resolve(); }
     return fetch('api/setup/status', { cache: 'no-store', credentials: 'same-origin' }).then(function (r) {
-      if (r.status === 401) { loginForm(); return; }
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json().then(function (d) { render(d); timer = setTimeout(load, REFRESH_MS); });
     }).catch(function (e) {
