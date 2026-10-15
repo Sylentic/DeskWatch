@@ -29,13 +29,15 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::{HeaderValue, Request, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use serde_json::{Map, Value, json};
-use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
 
+use crate::alerts::AlertMessage;
 use crate::composer::Composer;
-use crate::config::{KioskConfig, PanelConfig};
+use crate::config::{AlertsConfig, KioskConfig, PanelConfig};
 use crate::model::{Badges, Level, Screen};
+use crate::mqtt::Inbound;
 
 pub mod origin;
 
@@ -75,6 +77,8 @@ pub struct Kiosk {
     last: Option<Value>,
     /// Unix seconds when the last snapshot went out.
     sent_at: u64,
+    /// Where a dismissed alert goes, when `[alerts] dismiss` is on.
+    alert_tx: Option<mpsc::Sender<Inbound>>,
 }
 
 impl Kiosk {
@@ -89,7 +93,30 @@ impl Kiosk {
             slots: Arc::new(Semaphore::new(config.max_ws_clients.into())),
             last: None,
             sent_at: 0,
+            alert_tx: None,
         }
+    }
+
+    /// Put the ticker settings in the layout. With `dismiss` on, the page may
+    /// dismiss an alert; that goes to the main loop as a clear message.
+    pub fn with_alerts(mut self, config: &AlertsConfig, tx: mpsc::Sender<Inbound>) -> Self {
+        self.layout["alerts"] = json!({
+            "ticker": config.ticker, "speed": config.ticker_speed.factor(),
+            "show_source": config.show_source, "dismiss": config.dismiss,
+        });
+        if config.dismiss {
+            self.alert_tx = Some(tx);
+        }
+        self.send_layout();
+        self
+    }
+
+    /// Send the layout again as the first snapshot (before any real one).
+    fn send_layout(&self) {
+        let first = json!({
+            "v": SNAPSHOT_VERSION, "build": env!("CARGO_PKG_VERSION"), "layout": self.layout
+        });
+        self.tx.send_replace(Frame::from(first.to_string()));
     }
 
     /// Show a "Setup" link in the page header (when the setup page is served).
@@ -97,10 +124,7 @@ impl Kiosk {
     pub fn with_setup_link(mut self, on: bool) -> Self {
         if on {
             self.layout["setup"] = json!(true);
-            let first = json!({
-                "v": SNAPSHOT_VERSION, "build": env!("CARGO_PKG_VERSION"), "layout": self.layout
-            });
-            self.tx.send_replace(Frame::from(first.to_string()));
+            self.send_layout();
         }
         self
     }
@@ -110,10 +134,12 @@ impl Kiosk {
         let state = AppState {
             rx: self.tx.subscribe(),
             slots: self.slots.clone(),
+            alert_tx: self.alert_tx.clone(),
         };
         let api = Router::new()
             .route("/api/kiosk", get(snapshot_handler))
             .route("/api/kiosk/ws", get(ws_handler))
+            .route("/api/kiosk/alert/dismiss", post(dismiss_handler))
             .route_layer(middleware::from_fn(require_same_origin));
         Router::new()
             .route("/", get(|| asset("text/html; charset=utf-8", INDEX_HTML)))
@@ -325,6 +351,35 @@ pub fn snapshot(composer: &Composer, screen: &Screen, badges: &Badges, layout: &
 struct AppState {
     rx: watch::Receiver<Frame>,
     slots: Arc<Semaphore>,
+    alert_tx: Option<mpsc::Sender<Inbound>>,
+}
+
+/// `POST /api/kiosk/alert/dismiss {"id": "..."}`: remove one active alert, for
+/// every screen. It can only clear; it cannot raise or change an alert.
+async fn dismiss_handler(State(state): State<AppState>, body: axum::body::Bytes) -> Response {
+    let Some(tx) = &state.alert_tx else {
+        return (
+            StatusCode::CONFLICT,
+            "dismissing alerts is off ([alerts] dismiss)",
+        )
+            .into_response();
+    };
+    let id = (body.len() <= 1024)
+        .then(|| serde_json::from_slice::<Value>(&body).ok())
+        .flatten()
+        .and_then(|v| v.get("id")?.as_str().map(str::to_string))
+        .filter(|id| !id.trim().is_empty());
+    let Some(id) = id else {
+        return (StatusCode::BAD_REQUEST, "expected {\"id\": \"...\"}").into_response();
+    };
+    match tx.try_send(Inbound::Alert(AlertMessage::clear(&id))) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(_) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "the bridge is busy, try again",
+        )
+            .into_response(),
+    }
 }
 
 pub(crate) async fn asset(content_type: &'static str, body: &'static str) -> Response {

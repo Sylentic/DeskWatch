@@ -8,7 +8,21 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Changed
+
+- **A warning or critical alert tints the header** yellow or red instead of showing a banner under it, while it is on
+  screen. Failed runs and info alerts keep their banner.
+- **The setup page is dark by default** and no longer follows the system's light or dark setting. A "Light mode" button in
+  the header switches to light and is remembered in the browser.
+
 ### Added
+
+- **Alerts section on the setup page.** Ticker on or off, speed, "via source", the most alerts kept and an on/off
+  switch for dismissing (saved in the data folder, applied after a restart), and a **Send test alert** button that raises
+  one fixed test alert for a minute so the ticker can be seen working. The page can send no alert text of its own.
+- **Dismiss on the dashboard.** Each alert in the ticker has a small x that clears it for every screen. It works without
+  MQTT and can only clear. `[alerts]` gained `ticker`, `ticker_speed`, `show_source` and `dismiss`; `max_active` must be
+  between 1 and 50.
 
 - **The "failed" badge in the kiosk header can be dealt with.** Click it for a list of the failed runs (source,
   project and pipeline, branch, failing step, age; each opens the run on its source) with "Dismiss" per run and "Dismiss

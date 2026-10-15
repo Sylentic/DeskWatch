@@ -115,7 +115,11 @@ interrupt = true                # true, false, or a list such as ["owner/repo"]
 # stays in the header badge and on the alerts page until cleared.
 [alerts]
 enabled = true
-max_active = 10                 # least urgent, oldest alert is dropped first
+max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped first
+# ticker = true                 # alert ticker in the kiosk header
+# ticker_speed = "normal"       # "slow", "normal" or "fast"
+# show_source = true            # "via homeassistant" behind each alert in the ticker
+# dismiss = true                # a small x on each ticker alert clears it for every screen
 # critical_ids = ["leak", "smoke"]  # only these ids may be critical, others become warnings
 
 # Host stats and container health from a Prometheus server that scrapes

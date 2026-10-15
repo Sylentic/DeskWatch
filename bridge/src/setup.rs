@@ -26,7 +26,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use tokio::sync::{Notify, Semaphore};
+use tokio::sync::{Notify, Semaphore, mpsc};
 
 use axum::Router;
 use axum::extract::State;
@@ -35,10 +35,12 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use serde_json::{Value, json};
 
+use crate::alerts::{AlertMessage, TEST_ALERT_ID};
 use crate::config::Config;
 use crate::health::MqttLink;
 use crate::kiosk::asset;
 use crate::kiosk::origin;
+use crate::mqtt::Inbound;
 use crate::source::credential_status;
 use crate::store::Store;
 use crate::supervisor::Supervisor;
@@ -81,6 +83,8 @@ struct Shared {
     testing: Semaphore,
     mqtt_enabled: bool,
     mqtt: MqttLink,
+    /// Where the test alert goes: the main loop, like an alert from MQTT.
+    alert_tx: Option<mpsc::Sender<Inbound>>,
     /// Source id (`github:main`) to health name, kept current by the main loop.
     health: Mutex<BTreeMap<String, &'static str>>,
 }
@@ -111,9 +115,19 @@ impl Setup {
                 testing: Semaphore::new(1),
                 mqtt_enabled: config.mqtt.enabled,
                 mqtt,
+                alert_tx: None,
                 health: Mutex::new(BTreeMap::new()),
             }),
         }
+    }
+
+    /// Let the page's test button raise its fixed test alert. Call before
+    /// `router`.
+    pub fn with_alert_sender(mut self, tx: mpsc::Sender<Inbound>) -> Self {
+        if let Some(shared) = Arc::get_mut(&mut self.shared) {
+            shared.alert_tx = Some(tx);
+        }
+        self
     }
 
     /// Fires when the page asked for a restart (and `allow_restart` is on).
@@ -151,6 +165,8 @@ impl Setup {
             .route("/api/setup/mqtt/delete", post(delete_mqtt))
             .route("/api/setup/secret/delete", post(delete_secret))
             .route("/api/setup/kiosk", post(save_kiosk))
+            .route("/api/setup/alerts", post(save_alerts))
+            .route("/api/setup/alerts/test", post(test_alert))
             .route("/api/setup/restart", post(restart))
             .with_state(self.shared.clone())
     }
@@ -222,6 +238,18 @@ async fn status(State(shared): State<Arc<Shared>>) -> Response {
     out["mqtt"]["removable"] = json!(can_edit && saved_mqtt);
     out["mqtt"]["has_login"] = json!(effective.mqtt.username.is_some());
     out["host_view_editable"] = json!(can_edit);
+    out["alerts"] = json!({
+        "editable": can_edit,
+        "test_available": shared.alert_tx.is_some(),
+        "mqtt_enabled": shared.mqtt_enabled,
+        "mqtt_connected": shared.mqtt_enabled && shared.mqtt.is_up(),
+        "ticker": effective.alerts.ticker,
+        "ticker_speed": effective.alerts.ticker_speed,
+        "show_source": effective.alerts.show_source,
+        "dismiss": effective.alerts.dismiss,
+        "max_active": effective.alerts.max_active,
+        "enabled": effective.alerts.enabled,
+    });
     out["mqtt"]["connected"] = json!(shared.mqtt_enabled && shared.mqtt.is_up());
     let mut response = out.to_string().into_response();
     let h = response.headers_mut();
@@ -663,6 +691,82 @@ async fn save_kiosk(
         StatusCode::OK,
         json!({ "saved": true, "id": "kiosk", "restart_needed": true }),
     )
+}
+
+/// Save the ticker settings of `[alerts]`. The ticker is part of the layout
+/// and the limit lives in the composer, so it applies after a restart.
+async fn save_alerts(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let request = match change_request(&shared, &headers, &body) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    let Some(fields) = request.as_object() else {
+        return refuse(StatusCode::BAD_REQUEST, "expected a JSON object");
+    };
+    let store = shared.store.as_ref().expect("checked above");
+    let _saving = shared.saving.lock().await;
+    let current = match store.read_sources() {
+        Ok(current) => current,
+        Err(err) => return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}")),
+    };
+    let text = match edit::set_alerts(&current, fields) {
+        Ok(text) => text,
+        Err(err) => return refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
+    };
+    if let Err(err) = shared.base.clone().with_overlay(&text) {
+        return refuse(StatusCode::BAD_REQUEST, format!("{err:#}"));
+    }
+    if let Err(err) = store.write_sources(&text) {
+        return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}"));
+    }
+    shared.changed.store(true, Ordering::Relaxed);
+    tracing::info!("setup: alert settings saved (apply after a restart)");
+    json_response(
+        StatusCode::OK,
+        json!({ "saved": true, "id": "alerts", "restart_needed": true }),
+    )
+}
+
+/// The page's test button: raise the fixed test alert (`{"action":"send"}`) or
+/// take it away again (`{"action":"clear"}`). The page sends no alert text, so
+/// this cannot create any other alert. It needs no data folder.
+async fn test_alert(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    if !origin::same_origin(&headers) {
+        return refuse(StatusCode::FORBIDDEN, "cross-origin request refused");
+    }
+    let Some(tx) = &shared.alert_tx else {
+        return refuse(StatusCode::CONFLICT, "this bridge cannot raise alerts");
+    };
+    let action = (body.len() <= 256)
+        .then(|| serde_json::from_slice::<Value>(&body).ok())
+        .flatten()
+        .and_then(|v| v.get("action")?.as_str().map(str::to_string));
+    let message = match action.as_deref() {
+        Some("send") => AlertMessage::setup_test(),
+        Some("clear") => AlertMessage::clear(TEST_ALERT_ID),
+        _ => {
+            return refuse(
+                StatusCode::BAD_REQUEST,
+                "expected {\"action\": \"send\"} or {\"action\": \"clear\"}",
+            );
+        }
+    };
+    if tx.try_send(Inbound::Alert(message)).is_err() {
+        return refuse(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "the bridge is busy, try again",
+        );
+    }
+    tracing::info!(?action, "setup: test alert");
+    json_response(StatusCode::OK, json!({ "ok": true }))
 }
 
 /// Ask the bridge to shut down cleanly and exit, so its supervisor starts it

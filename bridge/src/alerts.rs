@@ -110,7 +110,42 @@ pub struct AlertMessage {
     pub clear: bool,
 }
 
+/// Id of the alert the setup page's test button raises.
+pub const TEST_ALERT_ID: &str = "setup-test";
+
+/// How long the test alert stays, in seconds.
+pub const TEST_ALERT_TTL_S: u64 = 60;
+
 impl AlertMessage {
+    /// A message that removes the alert with this id.
+    pub fn clear(id: &str) -> Self {
+        Self {
+            v: SCHEMA_VERSION,
+            id: Some(id.to_string()),
+            severity: None,
+            title: None,
+            message: None,
+            ttl_s: None,
+            source: None,
+            clear: true,
+        }
+    }
+
+    /// The fixed alert of the setup page's test button: a warning that
+    /// removes itself after a minute. Nothing the page sends can change it.
+    pub fn setup_test() -> Self {
+        Self {
+            v: SCHEMA_VERSION,
+            id: Some(TEST_ALERT_ID.to_string()),
+            severity: Some(Severity::Warning),
+            title: Some("Test alert".to_string()),
+            message: Some("sent from the setup page".to_string()),
+            ttl_s: Some(TEST_ALERT_TTL_S),
+            source: Some("setup".to_string()),
+            clear: false,
+        }
+    }
+
     /// Parse and check a payload: at most `MAX_PAYLOAD` bytes, schema v2.
     pub fn parse(payload: &[u8]) -> Result<Self> {
         if payload.len() > MAX_PAYLOAD {

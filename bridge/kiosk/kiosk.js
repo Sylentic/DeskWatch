@@ -522,7 +522,8 @@
   var SEVERITY = { critical: 'critical', warn: 'warning', info: 'info' };
   function renderTicker() {
     var el = $('ticker'), track = $('track');
-    var alerts = snap.alerts || [];
+    var cfg = (snap.layout && snap.layout.alerts) || {};
+    var alerts = cfg.ticker === false ? [] : snap.alerts || [];
     var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (still) alerts = alerts.slice(0, 1);
     // The track moves right, so its last item leads: reverse, to let the most urgent come in first.
@@ -530,9 +531,12 @@
       var msg = a.message ? ' <span class="m">' + esc(a.message) + '</span>' : '';
       return '<span class="alert ' + esc(a.severity) + '"><span class="dot ' + esc(a.severity) + '"></span>' +
         '<b class="sev">' + esc(SEVERITY[a.severity] || a.severity) + '</b> <span class="t">' + esc(a.title) + '</span>' + msg +
-        (a.source ? ' <span class="s">' + esc(a.source) + '</span>' : '') + '</span>';
+        (a.source && cfg.show_source !== false ? ' <span class="s">' + esc(a.source) + '</span>' : '') +
+        (cfg.dismiss ? ' <button type="button" class="x" data-id="' + esc(a.id) + '" title="Dismiss this alert" aria-label="Dismiss alert: ' + esc(a.title) + '">&times;</button>' : '') +
+        '</span>';
     }).join('');
-    var key = html + (still ? '|still' : '');
+    var speed = cfg.speed > 0 ? cfg.speed : 1;
+    var key = html + (still ? '|still' : '') + '|' + speed;
     el.hidden = !html;
     if (key === tickerKey) return;
     tickerKey = key;
@@ -547,12 +551,23 @@
     track.style.setProperty('--to', to + 'px');
     track.style.animation = 'none';
     void track.offsetWidth;
-    track.style.animation = 'ticker ' + Math.max(8, (to - from) / (5 * rem)).toFixed(1) + 's linear infinite';
+    track.style.animation = 'ticker ' + Math.max(8, (to - from) / (5 * rem * speed)).toFixed(1) + 's linear infinite';
   }
+
+  // The small x on an alert: ask the bridge to clear it, for every screen.
+  $('track').addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('button.x');
+    if (!b) return;
+    b.disabled = true;
+    fetch('api/kiosk/alert/dismiss', {
+      method: 'POST', cache: 'no-store', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: b.getAttribute('data-id') })
+    }).catch(function () { b.disabled = false; });
+  });
 
   function renderBanner() {
     var el = $('banner'), bar = $('progress');
-    var s = snap.screen, html = '', cls = '';
+    var s = snap.screen, html = '', cls = '', tint = '';
     bar.hidden = true;
     if (s && s.level === 1 && s.data) {
       // A running job: the jobs widget has the detail, the header shows progress.
@@ -561,7 +576,11 @@
       bar.style.setProperty('--p', Math.round((s.data.progress || 0) * 100) + '%');
     } else if (s && s.level < 5 && s.data) {
       var d = s.data;
-      if (s.template === 'alert') {
+      if (s.template === 'alert' && d.title) {
+        // An alert from Home Assistant or a script: no banner, the header bar
+        // itself turns yellow (warning) or red (critical) while it is on screen.
+        tint = s.level === 0 ? 'critical' : 'warn';
+      } else if (s.template === 'alert') {
         var tag = d.status === 'success' ? 'Success' : d.status === 'warn' ? 'Warning' : s.level === 0 ? 'Critical' : 'Failed';
         cls = s.level === 0 ? 'critical' : d.status === 'success' ? 'success' : d.status === 'warn' ? 'warn' : '';
         var title = d.title || ((d.project || '') + (d.pipeline ? ' / ' + d.pipeline : ''));
@@ -573,6 +592,7 @@
         html = '<span class="tag">Notice</span><span>' + esc(d.text) + '</span><span class="msg">' + esc(d.sub) + '</span><span class="meta">' + esc(SOURCES[d.source] || d.source) + '</span>';
       }
     }
+    $('top').className = tint ? 'alerting ' + tint : '';
     el.hidden = !html;
     el.className = 'banner ' + cls;
     if (el.innerHTML !== html) el.innerHTML = html;
