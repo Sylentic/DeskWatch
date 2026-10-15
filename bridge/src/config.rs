@@ -57,6 +57,17 @@ struct Overlay {
     /// the ones from `bridge.toml`.
     #[serde(default)]
     mqtt: Option<MqttPatch>,
+    /// Dashboard settings the setup page changed.
+    #[serde(default)]
+    kiosk: Option<KioskPatch>,
+}
+
+/// The `[kiosk]` key the setup page can change: how the default layout shows
+/// the hosts. The rest of `[kiosk]` stays in `bridge.toml`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct KioskPatch {
+    host_view: Option<HostView>,
 }
 
 /// The `[mqtt]` keys the setup page can change (docs/setup-page.md). Anything
@@ -154,6 +165,9 @@ pub struct Config {
     /// changed some of its keys. Filled by `with_overlay`.
     #[serde(skip)]
     pub mqtt_before_overlay: Option<MqttConfig>,
+    /// `kiosk.host_view` as `bridge.toml` had it, when the data folder changed it.
+    #[serde(skip)]
+    pub host_view_before_overlay: Option<HostView>,
     /// Data sources, one array per adapter type.
     #[serde(default)]
     pub source: Sources,
@@ -297,6 +311,19 @@ pub struct KioskConfig {
     pub pixel_shift_minutes: u16,
     /// The widgets. Empty means the built-in layout.
     pub panel: Vec<PanelConfig>,
+    /// How the built-in layout shows the hosts (ignored when `panel` is set).
+    pub host_view: HostView,
+}
+
+/// The host panel of the built-in layout. `detailed` is a stats card with
+/// bars for one host at a time, with arrows to switch host, next to a small
+/// table of all hosts. `compact` is one wider table of all hosts.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HostView {
+    #[default]
+    Detailed,
+    Compact,
 }
 
 /// Colour theme of the kiosk page.
@@ -324,6 +351,7 @@ impl Default for KioskConfig {
             pixel_shift: false,
             pixel_shift_minutes: 5,
             panel: Vec::new(),
+            host_view: HostView::Detailed,
         }
     }
 }
@@ -403,7 +431,7 @@ impl KioskConfig {
     /// 4x3 grid.
     pub fn panels(&self) -> Vec<PanelConfig> {
         if self.panel.is_empty() {
-            default_panels()
+            default_panels(self.host_view)
         } else {
             self.panel.clone()
         }
@@ -491,10 +519,14 @@ fn panel(widget: Widget, span: [u8; 2]) -> PanelConfig {
 }
 
 /// The layout used when `[[kiosk.panel]]` is not set, for the default 4x3 grid.
-pub fn default_panels() -> Vec<PanelConfig> {
-    vec![
-        panel(Widget::Stats, [1, 1]),
-        panel(Widget::Hosts, [1, 1]),
+pub fn default_panels(view: HostView) -> Vec<PanelConfig> {
+    let hosts = match view {
+        HostView::Detailed => vec![panel(Widget::Stats, [1, 1]), panel(Widget::Hosts, [1, 1])],
+        // One table over the two cells of both, so the rest of the grid stays where it is.
+        HostView::Compact => vec![panel(Widget::Hosts, [2, 1])],
+    };
+    let mut panels = hosts;
+    panels.extend([
         panel(Widget::Jobs, [2, 2]),
         panel(Widget::Prs, [1, 2]),
         panel(Widget::Alerts, [1, 1]),
@@ -504,7 +536,8 @@ pub fn default_panels() -> Vec<PanelConfig> {
             rows: Some(4),
             ..panel(Widget::Pipelines, [2, 1])
         },
-    ]
+    ]);
+    panels
 }
 
 /// The `[alerts]` table: alerts that arrive on `<topic_prefix>/alert`.
@@ -918,8 +951,11 @@ impl Config {
     /// holds only `[[source.*]]` blocks; a source name already used in the
     /// main config for the same type is refused instead of silently replaced.
     pub fn with_overlay(mut self, overlay: &str) -> Result<Self> {
-        let Overlay { source, mqtt } =
-            toml::from_str(overlay).context("invalid sources overlay")?;
+        let Overlay {
+            source,
+            mqtt,
+            kiosk,
+        } = toml::from_str(overlay).context("invalid sources overlay")?;
         if let Some(patch) = mqtt {
             self.mqtt_before_overlay = Some(self.mqtt.clone());
             let m = &mut self.mqtt;
@@ -933,6 +969,10 @@ impl Config {
             if let Some(file) = patch.password_file {
                 m.password_file = Some(file);
             }
+        }
+        if let Some(view) = kiosk.and_then(|k| k.host_view) {
+            self.host_view_before_overlay = Some(self.kiosk.host_view);
+            self.kiosk.host_view = view;
         }
         macro_rules! merge {
             ($($kind:ident),+) => {$(
@@ -972,6 +1012,9 @@ impl Config {
         base.overlay_sources.clear();
         if let Some(original) = base.mqtt_before_overlay.take() {
             base.mqtt = original;
+        }
+        if let Some(original) = base.host_view_before_overlay.take() {
+            base.kiosk.host_view = original;
         }
         base
     }
@@ -1522,7 +1565,7 @@ mod tests {
         assert!(!config.kiosk.enabled);
         assert_eq!((config.kiosk.columns, config.kiosk.rows), (4, 3));
         let panels = config.kiosk.panels();
-        assert_eq!(panels, default_panels());
+        assert_eq!(panels, default_panels(HostView::Detailed));
         // The default layout fills the default grid exactly.
         let cells: u32 = panels
             .iter()
@@ -1602,10 +1645,49 @@ title = "Reviews"
     }
 
     #[test]
+    fn compact_host_view_replaces_both_host_panels_with_one_table() {
+        let widgets =
+            |view| -> Vec<Widget> { default_panels(view).iter().map(|p| p.widget).collect() };
+        let detailed = widgets(HostView::Detailed);
+        assert!(detailed.contains(&Widget::Stats) && detailed.contains(&Widget::Hosts));
+        let compact = widgets(HostView::Compact);
+        assert!(!compact.contains(&Widget::Stats));
+        assert_eq!(compact.iter().filter(|w| **w == Widget::Hosts).count(), 1);
+        // The grid stays full: the same number of cells in both views.
+        let cells = |view| -> u32 {
+            default_panels(view)
+                .iter()
+                .map(|p| u32::from(p.span[0]) * u32::from(p.span[1]))
+                .sum()
+        };
+        assert_eq!(cells(HostView::Detailed), cells(HostView::Compact));
+
+        let config = Config::from_toml("[kiosk]\nhost_view = \"compact\"\n").unwrap();
+        assert_eq!(config.kiosk.panels(), default_panels(HostView::Compact));
+        // The setup page's overlay wins over bridge.toml and can be taken off again.
+        let with = Config::from_toml("")
+            .unwrap()
+            .with_overlay("[kiosk]\nhost_view = \"compact\"\n")
+            .unwrap();
+        assert_eq!(with.kiosk.host_view, HostView::Compact);
+        assert_eq!(with.without_overlay().kiosk.host_view, HostView::Detailed);
+        // Panels set by hand are never touched.
+        let custom = Config::from_toml(
+            "[kiosk]\nhost_view = \"compact\"\n[[kiosk.panel]]\nwidget = \"stats\"\n",
+        )
+        .unwrap();
+        assert_eq!(custom.kiosk.panels().len(), 1);
+    }
+
+    #[test]
     fn runners_widget_is_not_in_the_default_layout() {
-        assert!(default_panels().iter().all(|p| p.widget != Widget::Runners));
+        assert!(
+            default_panels(HostView::Detailed)
+                .iter()
+                .all(|p| p.widget != Widget::Runners)
+        );
         // The default Pipelines panel shows the 4 latest runs.
-        let pipelines = default_panels()
+        let pipelines = default_panels(HostView::Detailed)
             .into_iter()
             .find(|p| p.widget == Widget::Pipelines)
             .unwrap();

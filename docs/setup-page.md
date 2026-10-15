@@ -70,6 +70,14 @@ With a data folder configured ([data-dir.md](data-dir.md)) the page can change s
   restart will show the same error. Settings outside `[[source.*]]` (the MQTT broker, the listen address, the rotation)
   are still read at startup.
 
+## Dashboard hosts
+
+With a data folder, the **Dashboard hosts** card chooses how the built-in dashboard layout shows the hosts:
+**detailed** (a stats card with bars for one host at a time, with arrows to switch, next to the small table) or
+**compact** (one table with every host). It is stored as `host_view` in a `[kiosk]` table in `sources.toml` and
+applies after a restart, like the broker settings. Panels set with `[[kiosk.panel]]` in `bridge.toml` are not
+touched. See [kiosk.md](kiosk.md#hosts-detailed-or-compact).
+
 ## MQTT broker settings
 
 With a data folder, **Change broker settings** edits `enabled`, `host`, `port`, `tls`, the login name and the

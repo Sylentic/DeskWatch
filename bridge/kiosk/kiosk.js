@@ -83,6 +83,23 @@
     return name ? null : hosts[0] || null;
   }
 
+  // A stats panel without a fixed `host` has arrows to step through the hosts.
+  // The choice is kept in this browser, so a reload keeps it. A host that is
+  // gone (or never chosen) falls back to the first one.
+  var HOST_KEY = 'deskwatch.kiosk.host';
+  function chosenHost() {
+    try { return localStorage.getItem(HOST_KEY) || ''; } catch (e) { return ''; }
+  }
+  function stepHost(step) {
+    var hosts = snap.hosts || [];
+    if (hosts.length < 2) return;
+    var at = 0;
+    hosts.forEach(function (h, i) { if (h.name === chosenHost()) at = i; });
+    var next = hosts[(at + step + hosts.length) % hosts.length].name;
+    try { localStorage.setItem(HOST_KEY, next); } catch (e) { /* private mode: the choice lasts until reload */ }
+    render(snap);
+  }
+
   function ciStale() {
     // Only the CI sources: a Prometheus outage does not make the PR list old.
     return (snap.sources || []).some(function (s) { return s.health !== 'ok' && /^(gitea|github|azure_devops):/.test(s.id); });
@@ -129,7 +146,13 @@
 
   var widgets = {
     stats: function (p) {
-      var host = findHost(p.host);
+      var hosts = snap.hosts || [], nav = '';
+      var host = p.host ? findHost(p.host) : findHost(chosenHost()) || findHost('');
+      if (!p.host && hosts.length > 1 && host) {
+        nav = '<span class="hostnav"><button type="button" data-host-step="-1" aria-label="Previous host">&lsaquo;</button>' +
+          '<span class="pos">' + (hosts.indexOf(host) + 1) + '/' + hosts.length + '</span>' +
+          '<button type="button" data-host-step="1" aria-label="Next host">&rsaquo;</button></span>';
+      }
       if (!host) return { title: p.host || 'Server', stale: true, body: '<div class="empty">No data yet</div>' };
       var s = host.stats || {};
       var load = s.load ? s.load.map(function (x) { return x.toFixed(1); }).join(' ') : '--';
@@ -142,7 +165,7 @@
         '<div><span class="l">Uptime</span><span>' + uptime(s.uptime_s) + '</span></div>' +
         '<div><span class="l">Cores</span><span>' + (s.cpu_count == null ? '--' : s.cpu_count) + '</span></div>' +
         '</div>' + sparkline(history[host.name]);
-      return { title: p.title || host.name, tag: host.up ? '' : 'not answering', stale: host.stale || !host.up, body: html };
+      return { title: p.title || host.name, nav: nav, tag: host.up ? '' : 'not answering', stale: host.stale || !host.up, body: html };
     },
 
     hosts: function () {
@@ -275,7 +298,7 @@
   function renderCard(key, panel, grid) {
     var make = widgets[panel.widget];
     var out = make ? make(panel) : { title: panel.widget, body: '<div class="empty">Unknown widget</div>' };
-    var html = '<header><h2>' + esc(panel.title || out.title) + '</h2>' +
+    var html = '<header><h2>' + esc(panel.title || out.title) + '</h2>' + (out.nav || '') +
       (out.tag ? '<span class="tag">' + esc(out.tag) + '</span>' : '') +
       (out.count !== undefined && out.count !== '' ? '<span class="count">' + esc(out.count) + '</span>' : '') +
       '</header><div class="body">' + out.body + '</div>';
@@ -291,6 +314,12 @@
     entry.el.className = 'card w-' + panel.widget + (out.stale ? ' stale' : '');
     if (entry.html !== html) { entry.el.innerHTML = html; entry.html = html; }
   }
+
+  // One listener for the arrows: cards are rebuilt on every snapshot.
+  $('grid').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('[data-host-step]') : null;
+    if (b) stepHost(Number(b.getAttribute('data-host-step')));
+  });
 
   function renderBadges() {
     var el = $('badges'), html = '';
