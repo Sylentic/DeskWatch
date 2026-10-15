@@ -66,6 +66,21 @@ hosts", needs a data folder and a restart of the bridge); the setup page's choic
 plain table (two cells wide it gets network columns). A `stats` panel keeps working as before: with a fixed `host` it
 shows that host, without one it has arrows (`‹ 1/3 ›`) to step through the hosts.
 
+### Failed runs: look and dismiss
+
+The red **failed** counter in the header counts pipelines whose latest finished run failed. It used to stay until the
+pipeline turned green (or until the button on the ESP panel was pressed, which the kiosk does not have), so an old
+failure could sit there forever. Now the counter is a button: click or tap it for a list with, per failed run, the
+source, project and pipeline, branch, failing step and how long ago, each opening the run on its source in a new tab.
+**Dismiss** removes one run from the list and the counter, **Dismiss all** clears the list. Escape or a click outside
+closes it. With nothing left the counter shows `0 failed` with a green dot.
+
+- A *new* failure (a new run of the same pipeline) is not hidden by an earlier dismiss and shows up again.
+- A pipeline that later succeeds drops off by itself, as before.
+- The dismissals are stored in this browser (localStorage, under the pipeline and the start time of the failed run) and
+  forgotten once the failure leaves the data. Nothing is stored on the bridge and nothing needs a login, so a second
+  screen or another browser keeps its own list. Restarting the bridge also forgets failures (they are held in memory).
+
 ### Alerts in the header
 
 Active alerts scroll through the header between the badges and the free space, from left to right, one after the other:
@@ -320,7 +335,7 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
 and at least every 5 seconds (a heartbeat, so the page can tell quiet from gone). Snapshots are versioned with `"v"`
 (1), separately from the MQTT schema. Fields: `build` (bridge version; the page reloads when it changes), `now`
 (Unix seconds), `layout` (the grid, the widgets with their filters, `theme` and `pixel_shift_s` from the config), `screen` (the composer's pick as an MQTT v2
-screen payload, or `null` when idle), `badges`, `hosts`, `down`, `jobs`, `runs`, `pulls`, `runners`, `queued_jobs`, `alerts` and `sources`. `jobs`, `runs`, `pulls[].items[]` and `runners` each carry a `url` (an `http(s)` address, or `null`).
+screen payload, or `null` when idle), `badges`, `failed` (the failed runs behind the badge: `key`, `source`, `project`, `pipeline`, `ref`, `step`, `started`, `finished`, `url`), `hosts`, `down`, `jobs`, `runs`, `pulls`, `runners`, `queued_jobs`, `alerts` and `sources`. `jobs`, `runs`, `pulls[].items[]` and `runners` each carry a `url` (an `http(s)` address, or `null`).
 Lists are not capped to the ESP panel's five rows. The structure is in `bridge/src/kiosk.rs` (`snapshot`) and
 covered by the tests next to it. Treat it as unstable until 1.0.
 

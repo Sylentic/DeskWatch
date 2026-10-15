@@ -106,6 +106,23 @@ a.chip[href]:hover, a.chip[href]:focus-visible { background: var(--header); bord
 .chip.open { --c: var(--purple); color: var(--text); }
 .chip.bad { --c: var(--red); color: var(--text); }
 .badges .chip { color: var(--text); font-weight: 600; }
+/* The failed badge is a button: it opens the list of failed runs under it. */
+button.chip { font: inherit; font-size: 1.05rem; cursor: pointer; }
+button.chip:disabled { cursor: default; }
+button.chip.action:not(:disabled):hover, button.chip.action[aria-expanded="true"] { background: var(--header); border-color: var(--dim); }
+.failed-pop { position: absolute; z-index: 20; top: 3.8rem; left: 12rem; width: min(38rem, calc(100vw - 2rem));
+  max-height: 70vh; overflow-y: auto; background: var(--card); border: 1px solid var(--card-edge); border-radius: .8rem;
+  box-shadow: 0 .8rem 2rem rgba(0, 0, 0, .5); padding: .8rem 1rem; }
+.failed-pop[hidden] { display: none; }
+.failed-pop .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: .4rem; font-size: 1.1rem; }
+.failed-pop ul { list-style: none; margin: 0; padding: 0; }
+.failed-pop li { display: flex; align-items: center; gap: .8rem; padding: .5rem 0; border-top: 1px solid var(--card-edge); }
+.failed-pop .what { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: .1rem .6rem; color: var(--text); text-decoration: none; font-size: 1.05rem; }
+.failed-pop a.what:hover b { text-decoration: underline; }
+.failed-pop .sub { flex-basis: 100%; color: var(--dim); font-size: .9rem; }
+.failed-pop .x { font: inherit; font-size: .9rem; color: var(--text); background: var(--header); border: 1px solid var(--card-edge); border-radius: .5rem; padding: .3rem .7rem; cursor: pointer; }
+.failed-pop .x:hover { border-color: var(--dim); }
+.failed-pop .foot { margin-top: .5rem; color: var(--dim); font-size: .85rem; }
 /* Alert ticker: between the badges and the free space, text moves left to right. */
 .ticker { position: relative; flex: 0 1 46rem; min-width: 0; height: 2.2rem; overflow: hidden;
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 1.2rem, #000 calc(100% - 1.2rem), transparent);

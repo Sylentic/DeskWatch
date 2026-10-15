@@ -262,6 +262,25 @@ pub fn snapshot(composer: &Composer, screen: &Screen, badges: &Badges, layout: &
         })
         .collect();
 
+    // The failures behind the header badge. The browser lets the user
+    // dismiss them (it remembers which), so each one carries what makes a new
+    // failure different from an old one: the key of its pipeline and the
+    // start time of the failed run.
+    let failed: Vec<Value> = composer
+        .ci
+        .failed_runs()
+        .into_iter()
+        .map(|(key, alert, run)| {
+            json!({
+                "key": key, "source": alert.source,
+                "project": alert.project, "pipeline": alert.pipeline,
+                "ref": run.map(|r| r.git_ref.as_str()), "step": alert.step,
+                "started": alert.started, "finished": alert.finished,
+                "url": run.and_then(|r| r.url.as_deref()),
+            })
+        })
+        .collect();
+
     let runners: Vec<Value> = composer
         .ci
         .runners()
@@ -316,6 +335,7 @@ pub fn snapshot(composer: &Composer, screen: &Screen, badges: &Badges, layout: &
     out.insert("jobs".into(), Value::Array(jobs));
     out.insert("runs".into(), Value::Array(runs));
     out.insert("pulls".into(), Value::Array(pulls));
+    out.insert("failed".into(), Value::Array(failed));
     out.insert("runners".into(), Value::Array(runners));
     out.insert("queued_jobs".into(), Value::Array(queued));
     out.insert("alerts".into(), json!(composer.alerts.views()));
