@@ -8,6 +8,8 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+## [0.9.15]
+
 ### Removed
 
 - **BREAKING: `[kiosk] token_file`, `[kiosk] trusted_networks`, `[kiosk] session_days` and `[setup] token_file` are gone,
@@ -42,6 +44,7 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Changed
 
+- New integration test: the setup page saves a source on an empty writable data folder (the Docker named volume case) and the source and its secrets come back after a restart. The CI Xtensa toolchain install now gets a GitHub token so it no longer hits the rate limit.
 - CI and release workflows use current major versions of the Docker and artifact actions (Node 24), and the Dockerfile skips the `SecretsUsedInArgOrEnv` lint for `CREDENTIALS_DIRECTORY`, which is a path and not a secret (issue 74).
 
 ## [0.9.14]
