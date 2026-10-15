@@ -89,6 +89,20 @@ With a data folder, the **Dashboard hosts** card chooses how the built-in dashbo
 applies after a restart, like the broker settings. Panels set with `[[kiosk.panel]]` in `bridge.toml` are not
 touched. See [kiosk.md](kiosk.md#hosts-detailed-or-compact).
 
+## Alerts
+
+The **Alerts** section has three cards.
+
+- **Ticker in the header** (needs a data folder): show the ticker or not, its speed (slow, normal, fast), whether
+  "via <source>" is shown, the most alerts kept (1 to 50) and whether the dashboard may dismiss an alert. They are stored
+  under `[alerts]` in `sources.toml` (`ticker`, `ticker_speed`, `show_source`, `max_active`, `dismiss`) and apply
+  after a restart. `enabled` and `critical_ids` stay in `bridge.toml`.
+- **Try it**: **Send test alert** raises one fixed warning ("Test alert", source "setup") that goes away by itself after a
+  minute, and **Clear it now** removes it. The page sends no text of its own, only the action `send` or `clear`, so there
+  is no way to create any other alert from here (the setup page has no login). It needs no data folder.
+- **Where alerts come from**: whether MQTT is on and connected. Alerts arrive on the MQTT topic `deskpanel/alert`
+  ([home-assistant.md](home-assistant.md)). Failed pipeline runs are not alerts; they count in the Failed badge.
+
 ## MQTT broker settings
 
 With a data folder, **Change broker settings** edits `enabled`, `host`, `port`, `tls`, the login name and the

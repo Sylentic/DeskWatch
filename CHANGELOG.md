@@ -8,6 +8,15 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Added
+
+- **Alerts section on the setup page.** Ticker on or off, speed, "via source", the most alerts kept and an on/off
+  switch for dismissing (saved in the data folder, applied after a restart), and a **Send test alert** button that raises
+  one fixed test alert for a minute so the ticker can be seen working. The page can send no alert text of its own.
+- **Dismiss on the dashboard.** Each alert in the ticker has a small x that clears it for every screen. It works without
+  MQTT and can only clear. `[alerts]` gained `ticker`, `ticker_speed`, `show_source` and `dismiss`; `max_active` must be
+  between 1 and 50.
+
 ## [0.9.17]
 
 ### Changed

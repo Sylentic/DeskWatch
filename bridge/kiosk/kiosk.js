@@ -438,7 +438,8 @@
   var SEVERITY = { critical: 'critical', warn: 'warning', info: 'info' };
   function renderTicker() {
     var el = $('ticker'), track = $('track');
-    var alerts = snap.alerts || [];
+    var cfg = (snap.layout && snap.layout.alerts) || {};
+    var alerts = cfg.ticker === false ? [] : snap.alerts || [];
     var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (still) alerts = alerts.slice(0, 1);
     // The track moves right, so its last item leads: reverse, to let the most urgent come in first.
@@ -446,9 +447,12 @@
       var msg = a.message ? ' <span class="m">' + esc(a.message) + '</span>' : '';
       return '<span class="alert ' + esc(a.severity) + '"><span class="dot ' + esc(a.severity) + '"></span>' +
         '<b class="sev">' + esc(SEVERITY[a.severity] || a.severity) + '</b> <span class="t">' + esc(a.title) + '</span>' + msg +
-        (a.source ? ' <span class="s">' + esc(a.source) + '</span>' : '') + '</span>';
+        (a.source && cfg.show_source !== false ? ' <span class="s">' + esc(a.source) + '</span>' : '') +
+        (cfg.dismiss ? ' <button type="button" class="x" data-id="' + esc(a.id) + '" title="Dismiss this alert" aria-label="Dismiss alert: ' + esc(a.title) + '">&times;</button>' : '') +
+        '</span>';
     }).join('');
-    var key = html + (still ? '|still' : '');
+    var speed = cfg.speed > 0 ? cfg.speed : 1;
+    var key = html + (still ? '|still' : '') + '|' + speed;
     el.hidden = !html;
     if (key === tickerKey) return;
     tickerKey = key;
@@ -463,8 +467,19 @@
     track.style.setProperty('--to', to + 'px');
     track.style.animation = 'none';
     void track.offsetWidth;
-    track.style.animation = 'ticker ' + Math.max(8, (to - from) / (5 * rem)).toFixed(1) + 's linear infinite';
+    track.style.animation = 'ticker ' + Math.max(8, (to - from) / (5 * rem * speed)).toFixed(1) + 's linear infinite';
   }
+
+  // The small x on an alert: ask the bridge to clear it, for every screen.
+  $('track').addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('button.x');
+    if (!b) return;
+    b.disabled = true;
+    fetch('api/kiosk/alert/dismiss', {
+      method: 'POST', cache: 'no-store', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: b.getAttribute('data-id') })
+    }).catch(function () { b.disabled = false; });
+  });
 
   function renderBanner() {
     var el = $('banner'), bar = $('progress');

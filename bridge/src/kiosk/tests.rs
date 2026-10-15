@@ -774,6 +774,72 @@ fn setup_link_is_in_the_layout_only_when_asked() {
     assert!(json_of(&off)["layout"].get("setup").is_none());
 }
 
+#[test]
+fn ticker_settings_travel_in_the_layout() {
+    let (tx, _rx) = tokio::sync::mpsc::channel(4);
+    let alerts = crate::config::AlertsConfig {
+        ticker_speed: crate::config::TickerSpeed::Slow,
+        show_source: false,
+        ..Default::default()
+    };
+    let kiosk = kiosk().with_alerts(&alerts, tx);
+    let layout = &json_of(&kiosk)["layout"]["alerts"];
+    assert_eq!(layout["ticker"], true);
+    assert_eq!(layout["show_source"], false);
+    assert_eq!(layout["dismiss"], true);
+    assert!(layout["speed"].as_f64().unwrap() < 1.0);
+}
+
+#[tokio::test]
+async fn dismissing_an_alert_only_clears_it() {
+    use crate::mqtt::Inbound;
+    let (tx, mut rx) = tokio::sync::mpsc::channel(4);
+    let router = kiosk()
+        .with_alerts(&crate::config::AlertsConfig::default(), tx)
+        .router();
+    let uri = "/api/kiosk/alert/dismiss";
+    let (status, _) = send(&router, "POST", uri, &[], r#"{"id":"door"}"#).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let Some(Inbound::Alert(msg)) = rx.recv().await else {
+        panic!("expected a clear")
+    };
+    assert!(msg.clear);
+    assert_eq!(msg.id.as_deref(), Some("door"));
+
+    // No id, or a cross-origin page: nothing happens.
+    let (status, _) = send(&router, "POST", uri, &[], "{}").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let evil = [("origin", "https://evil.example"), ("host", "bridge.lan")];
+    let (status, _) = send(&router, "POST", uri, &evil, r#"{"id":"door"}"#).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert!(rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn dismissing_is_refused_when_switched_off() {
+    let (tx, mut rx) = tokio::sync::mpsc::channel(4);
+    let alerts = crate::config::AlertsConfig {
+        dismiss: false,
+        ..Default::default()
+    };
+    let router = kiosk().with_alerts(&alerts, tx).router();
+    let (status, _) = send(
+        &router,
+        "POST",
+        "/api/kiosk/alert/dismiss",
+        &[],
+        r#"{"id":"door"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert!(rx.try_recv().is_err());
+    assert_eq!(
+        json_of(&kiosk().with_alerts(&alerts, tokio::sync::mpsc::channel(1).0))["layout"]["alerts"]
+            ["dismiss"],
+        false
+    );
+}
+
 #[tokio::test]
 async fn data_needs_no_login() {
     let router = kiosk().router();

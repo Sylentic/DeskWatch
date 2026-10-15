@@ -182,6 +182,11 @@ async fn main() -> Result<()> {
     let (source_tx, mut source_rx) = mpsc::channel(64);
     let mut hooks = Hooks::default();
     let supervisor = Supervisor::new(source_tx.clone(), hooks.webhooks());
+    // Alerts and button presses reach the main loop here: from MQTT, and
+    // from the kiosk page (dismiss) and the setup page (test alert). The
+    // sender stays alive here either way, so with MQTT off the receiver just
+    // waits forever.
+    let (inbound_tx, mut inbound_rx) = mpsc::channel(16);
     let mut kiosk = None;
     if config.kiosk.enabled {
         if !config.http.listen.ip().is_loopback() {
@@ -192,7 +197,9 @@ async fn main() -> Result<()> {
                 config.http.listen
             );
         }
-        let built = Kiosk::new(&config.kiosk).with_setup_link(config.setup.is_on());
+        let built = Kiosk::new(&config.kiosk)
+            .with_setup_link(config.setup.is_on())
+            .with_alerts(&config.alerts, inbound_tx.clone());
         hooks.add("/", built.router());
         kiosk = Some(built);
     }
@@ -207,7 +214,8 @@ async fn main() -> Result<()> {
             mqtt_link.clone(),
             store.clone(),
             Some(supervisor.clone()),
-        );
+        )
+        .with_alert_sender(inbound_tx.clone());
         hooks.add("/setup", built.router());
         info!("setup page on /setup");
         if !config.http.listen.ip().is_loopback() {
@@ -235,9 +243,6 @@ async fn main() -> Result<()> {
     }
     hooks.start(config.http.listen).await?;
 
-    // The channel's sender stays alive here either way, so with MQTT off the
-    // receiver just waits forever.
-    let (inbound_tx, mut inbound_rx) = mpsc::channel(16);
     let publisher = if config.mqtt.enabled {
         let (publisher, eventloop) = mqtt::connect(&config.mqtt, mqtt::password(&config.mqtt)?)?;
         tokio::spawn(mqtt::run_event_loop(
