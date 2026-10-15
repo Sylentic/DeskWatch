@@ -632,6 +632,18 @@ impl CiFacts {
             .count() as u32
     }
 
+    /// The failed runs behind the `failed` badge, oldest key first: key, the
+    /// alert and the pipeline's latest run when it is still known (it carries
+    /// the branch and the web address). The kiosk lists them so they can be
+    /// looked at and dismissed.
+    pub fn failed_runs(&self) -> Vec<(&String, &AlertData, Option<&Run>)> {
+        self.alerts
+            .iter()
+            .filter(|(_, a)| a.data.status == AlertStatus::Failed)
+            .map(|(key, a)| (key, &a.data, self.runs.get(key).map(|(run, _)| run)))
+            .collect()
+    }
+
     /// Header badges from CI facts, in the plan's order: failures, then PRs.
     pub fn badges(&self) -> Vec<Badge> {
         vec![

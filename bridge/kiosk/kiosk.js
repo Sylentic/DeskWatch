@@ -419,14 +419,98 @@
     if (pick) chooseHost(pick.getAttribute('data-host-pick'));
   });
 
+  // ---- failed runs: badge, list and dismiss --------------------------------
+
+  // A failure is dismissed in this browser only: the choice is kept in
+  // localStorage under the pipeline key plus the start time of the failed run,
+  // so a NEW failure of the same pipeline shows up again. Entries whose
+  // failure has left the data are dropped. A second screen has its own list.
+  var DISMISS_KEY = 'deskwatch.kiosk.dismissed';
+  var failedOpen = false;
+  function loadDismissed() {
+    try {
+      var list = JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]');
+      return Array.isArray(list) ? list.filter(function (x) { return typeof x === 'string'; }) : [];
+    } catch (e) { return []; }
+  }
+  var dismissed = loadDismissed();
+  function failId(f) { return f.key + '@' + f.started; }
+  function saveDismissed() {
+    try { localStorage.setItem(DISMISS_KEY, JSON.stringify(dismissed)); } catch (e) { /* private mode: lasts until reload */ }
+  }
+  function visibleFailed() {
+    return (snap.failed || []).filter(function (f) { return dismissed.indexOf(failId(f)) < 0; });
+  }
+  function pruneDismissed() {
+    var live = {};
+    (snap.failed || []).forEach(function (f) { live[failId(f)] = true; });
+    var kept = dismissed.filter(function (id) { return live[id]; });
+    if (kept.length !== dismissed.length) { dismissed = kept; saveDismissed(); }
+  }
+  function dismissFailed(id) {
+    // id null: dismiss everything that is listed now.
+    var ids = id ? [id] : visibleFailed().map(failId);
+    ids.forEach(function (x) { if (dismissed.indexOf(x) < 0) dismissed.push(x); });
+    saveDismissed();
+    renderBadges();
+  }
+
+  function failedRow(f) {
+    var what = esc(f.project || '') + (f.pipeline ? ' / ' + esc(f.pipeline) : '');
+    var sub = [f.ref ? esc(f.ref) : '', f.step ? 'step ' + esc(f.step) : '', f.finished ? ago(nowS() - f.finished) : '']
+      .filter(Boolean).join(' · ');
+    var open = linkOpen(f.url, 'what') ;
+    return '<li>' + open + src(f.source) + ' <b>' + what + '</b><span class="sub">' + sub + '</span>' + linkClose(f.url) +
+      '<button type="button" class="x" data-dismiss="' + esc(failId(f)) + '" aria-label="Dismiss">Dismiss</button></li>';
+  }
+
+  function renderFailedPop() {
+    var pop = $('failed-pop'), list = visibleFailed();
+    if (!failedOpen || !list.length) { failedOpen = failedOpen && list.length > 0; pop.hidden = true; pop.innerHTML = ''; return; }
+    var html = '<div class="head"><b>Failed runs</b>' +
+      '<button type="button" class="x all" data-dismiss-all="1">Dismiss all</button></div><ul>' + list.map(failedRow).join('') + '</ul>' +
+      '<div class="foot">Dismissed on this screen only. A new failure shows up again.</div>';
+    if (pop.innerHTML !== html) pop.innerHTML = html;
+    pop.hidden = false;
+    var chip = document.querySelector('[data-failed-toggle]');
+    if (chip) pop.style.left = Math.max(8, Math.min(chip.getBoundingClientRect().left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
+  }
+
   function renderBadges() {
     var el = $('badges'), html = '';
     var names = { pr: 'open PRs', pipeline: 'failed', server: 'down', warn: 'with a problem', home: 'alerts' };
+    pruneDismissed();
     (snap.badges || []).forEach(function (b) {
+      if (b.id === 'failed' && snap.failed) {
+        // The count follows what is not dismissed; the chip opens the list.
+        var n = visibleFailed().length;
+        html += '<button type="button" class="chip ' + (n ? 'failed' : 'ok') + ' action" data-failed-toggle="1" aria-expanded="' + (failedOpen && n ? 'true' : 'false') +
+          '" title="' + (n ? 'Show the failed runs' : 'No failed runs') + '"' + (n ? '' : ' disabled') + '>' + n + ' failed</button>';
+        return;
+      }
       html += '<span class="chip ' + esc(b.status) + '">' + b.count + ' ' + (names[b.icon] || '') + '</span>';
     });
     if (el.innerHTML !== html) el.innerHTML = html;
+    renderFailedPop();
   }
+
+  // One listener each: the badge row and the popover are rebuilt on every snapshot.
+  $('badges').addEventListener('click', function (e) {
+    if (e.target.closest && e.target.closest('[data-failed-toggle]')) { failedOpen = !failedOpen; renderBadges(); }
+  });
+  $('failed-pop').addEventListener('click', function (e) {
+    var one = e.target.closest ? e.target.closest('[data-dismiss]') : null;
+    if (one) { dismissFailed(one.getAttribute('data-dismiss')); return; }
+    if (e.target.closest && e.target.closest('[data-dismiss-all]')) dismissFailed(null);
+  });
+  document.addEventListener('click', function (e) {
+    if (failedOpen && document.contains(e.target) && e.target.closest && !e.target.closest('#failed-pop') && !e.target.closest('[data-failed-toggle]')) {
+      failedOpen = false; renderBadges();
+    }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && failedOpen) { failedOpen = false; renderBadges(); }
+  });
 
   // ---- alert ticker in the header -----------------------------------------
 
