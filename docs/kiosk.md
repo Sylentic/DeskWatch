@@ -51,6 +51,21 @@ Open PRs and Running now show everything unless you set `rows`, so a long list s
 after you let go it catches up, and a card you left scrolled goes back to the top after 30 seconds, so a wall display
 shows the newest items again.
 
+### Hosts: detailed or compact
+
+A `stats` panel without a `host` shows one host at a time. When the bridge knows more than one host, small arrows
+(`‹ 1/3 ›`) in the panel header step through them, by mouse or by touch. The choice is kept in the browser
+(localStorage), so a reload keeps it; a host that has disappeared falls back to the first one. There is no automatic
+rotation. A `stats` panel with a fixed `host` has no arrows and stays as configured.
+
+For the built-in layout `[kiosk] host_view` chooses how hosts are shown:
+
+- `detailed` (the default): the `stats` card above, next to the small `hosts` table.
+- `compact`: only the `hosts` table, as big as the PR panel (1 cell wide, 2 tall) and placed next to it, so the grid keeps its 12 cells. It adds the network rates (a line with download and upload under each host). When you give a `hosts` panel your own `span` of 2 or more cells wide, the rates are extra columns instead.
+
+The choice can also be made on the [setup page](setup-page.md) ("Dashboard hosts", needs a data folder and a restart of
+the bridge). It is stored in `sources.toml` and wins over `bridge.toml`. It does not touch `[[kiosk.panel]]` blocks.
+
 Interrupts do not take over the whole screen as they do on the ESP panel, because the other widgets are still
 useful. The bridge's normal priority decides (critical alert, running job, failed, warning, success, notice), and
 the page shows the winner as a coloured **banner** under the header: red for a failure, deep red for a critical

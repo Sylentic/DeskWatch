@@ -467,6 +467,30 @@ async fn mqtt_settings_are_tested_then_saved_and_need_a_restart() {
 }
 
 #[tokio::test]
+async fn the_host_view_is_saved_and_needs_a_restart() {
+    let (router, temp) = with_data("hostview").await;
+    let (_, _, text) = send(&router, "GET", "/api/setup/status", &[], "").await;
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["host_view"], "detailed");
+    assert_eq!(v["host_view_editable"], true);
+
+    let compact = json!({ "host_view": "compact" }).to_string();
+    let (status, _, text) = send(&router, "POST", "/api/setup/kiosk", &[], &compact).await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    let saved = std::fs::read_to_string(temp.0.join("data/sources.toml")).unwrap();
+    assert!(saved.contains("host_view = \"compact\""), "{saved}");
+    let (_, _, text) = send(&router, "GET", "/api/setup/status", &[], "").await;
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["host_view"], "compact");
+    assert_eq!(v["host_view_origin"], "data_folder");
+    assert_eq!(v["restart_needed"], true);
+
+    let bad = json!({ "host_view": "huge" }).to_string();
+    let (status, ..) = send(&router, "POST", "/api/setup/kiosk", &[], &bad).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn a_source_added_from_the_page_can_be_tested_at_once() {
     use crate::probe::tests::{gitea_mock, serve};
     let (router, _temp) = with_data("test-new").await;

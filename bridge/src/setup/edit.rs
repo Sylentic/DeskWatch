@@ -289,6 +289,22 @@ pub fn set_mqtt(
     })
 }
 
+/// Set `host_view` in `[kiosk]` of `sources.toml`: `detailed` or `compact`.
+pub fn set_kiosk(current: &str, host_view: &str) -> Result<String> {
+    anyhow::ensure!(
+        matches!(host_view, "detailed" | "compact"),
+        "host_view must be \"detailed\" or \"compact\""
+    );
+    let mut root = parse(current)?;
+    let table = root
+        .entry("kiosk")
+        .or_insert_with(|| toml::Value::Table(Table::new()))
+        .as_table_mut()
+        .context("`kiosk` in sources.toml is not a table")?;
+    table.insert("host_view".into(), toml::Value::String(host_view.into()));
+    toml::to_string(&root).context("cannot write sources.toml")
+}
+
 /// Remove source `kind`/`name`. Returns the new file text and the names of the
 /// credentials the source used (the caller deletes those that are the page's own).
 pub fn remove(current: &str, kind: &str, name: &str) -> Result<(String, Vec<String>)> {
