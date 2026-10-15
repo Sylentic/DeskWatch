@@ -875,3 +875,14 @@ fn the_page_has_the_sections_the_confirm_boxes_and_the_restart_wait() {
     let grid = SETUP_JS[sources..].find("srcgrid").unwrap();
     assert!(add < grid);
 }
+
+/// The setup page is dark unless the person picks light with its button: the
+/// stylesheet must not follow the system's colour scheme.
+#[test]
+fn the_setup_page_is_dark_by_default_and_ignores_the_system_scheme() {
+    assert!(!SETUP_CSS.contains("prefers-color-scheme"));
+    assert!(SETUP_CSS.contains("color-scheme: dark"));
+    assert!(SETUP_CSS.contains(r#":root[data-theme="light"]"#));
+    assert!(INDEX_HTML.contains(r#"content="dark""#));
+    assert!(!INDEX_HTML.contains("light dark"));
+}

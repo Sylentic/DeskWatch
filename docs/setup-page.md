@@ -26,6 +26,9 @@ a phone. **Add a source** is the first thing in the first section. The menu entr
 When the dashboard is on too, it shows a small **Setup** link in its header that opens this page, and this page has a
 **Dashboard** link back.
 
+The page is dark. The **Light mode** button in the header switches to light and remembers the choice in that
+browser; the system's own light or dark setting is not followed.
+
 ## What it shows, and what it never shows
 
 - Per source: type, address, repositories or projects, whether it comes from `bridge.toml` or the data folder

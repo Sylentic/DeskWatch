@@ -1,16 +1,21 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
+  --bg: #0d1117; --fg: #e6edf3; --muted: #8b949e; --card: #161b22; --line: #30363d;
+  --ok: #3fb950; --warn: #d29922; --bad: #f85149; --accent: #58a6ff;
+}
+/* Dark is the default. Light is a choice made with the button in the header
+   (kept in the browser), never taken from the system setting. */
+:root[data-theme="light"] {
+  color-scheme: light;
   --bg: #f6f7f9; --fg: #1c2128; --muted: #5d6673; --card: #fff; --line: #d8dde3;
   --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e; --accent: #0969da;
-}
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #0d1117; --fg: #e6edf3; --muted: #8b949e; --card: #161b22; --line: #30363d;
-          --ok: #3fb950; --warn: #d29922; --bad: #f85149; --accent: #58a6ff; }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; }
 header { display: flex; align-items: baseline; gap: 1rem; padding: 1rem 16px; border-bottom: 1px solid var(--line); }
 #dashboard-link { margin-left: auto; color: var(--accent); }
+button.theme { padding: .15rem .6rem; font-size: .9rem; margin-left: .5rem; }
+#dashboard-link[hidden] + button.theme { margin-left: auto; }
 #dashboard-link[hidden] { display: none; }
 h1 { font-size: 1.25rem; margin: 0; }
 h2 { font-size: 1.05rem; margin: 0 0 .5rem; }

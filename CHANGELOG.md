@@ -8,6 +8,11 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Changed
+
+- **The setup page is dark by default** and no longer follows the system's light or dark setting. A "Light mode" button in
+  the header switches to light and is remembered in the browser.
+
 ### Added
 
 - **Alerts section on the setup page.** Ticker on or off, speed, "via source", the most alerts kept and an on/off
