@@ -8,18 +8,20 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+## [0.9.19]
+
 ### Changed
 
-- **Run results and notices sit in the header** as a coloured pill (Success green, Failed red, Critical deep red,
-  Warning amber, Notice blue, with the source) instead of a full-width banner under it.
-- **The Alerts badge works like the Failed badge**: it folds out a menu with all alerts, each with a Dismiss button, plus
-  Dismiss all. The small x in the moving ticker text is gone; the `dismiss` setting now controls these buttons.
-- **Header badge order** is Open PRs, Failed runs, Alerts. The Open PRs, Failed and Alerts badges disappear when their count is 0.
-
-### Fixed
-
-- **The alert ticker in the header moves from right to left**, like a news ticker, instead of left to right. The most
-  urgent alert still comes in first, and pausing on hover, the speed setting and "reduce motion" work as before.
+- **Alerts, run results and notices sit in the header as coloured pills** instead of moving text or a full-width banner
+  under it. The most urgent alert is a pill next to the badges (label, title, message, source and "+N more"); a run
+  result or notice (Success green, Failed red, Critical deep red, Warning amber, Notice blue) is a pill beside it.
+- **The Alerts badge works like the Failed badge**: it (and the alert pill) fold out a menu with all alerts, each with a
+  Dismiss button, plus Dismiss all. The `dismiss` setting now controls these buttons.
+- **Header badge order** is Open PRs, Failed runs, Alerts, and each badge disappears when its count is 0.
+- **The header no longer turns yellow or red** for an alert: the colour is in the pill, which would otherwise vanish
+  against a red bar.
+- **Setup, Alerts**: "Show the ticker" is now "Show the latest alert" (the header pill). The speed setting is gone;
+  `ticker_speed` in `[alerts]` is still accepted but has no effect.
 
 ## [0.9.18]
 

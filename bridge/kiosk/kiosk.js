@@ -561,6 +561,7 @@
     if (e.target.closest && e.target.closest('[data-failed-toggle]')) { failedOpen = !failedOpen; alertsOpen = false; renderBadges(); }
     if (e.target.closest && e.target.closest('[data-alerts-toggle]')) { alertsOpen = !alertsOpen; failedOpen = false; renderBadges(); }
   });
+  $('alert-pill').addEventListener('click', function () { alertsOpen = !alertsOpen; failedOpen = false; renderBadges(); });
   $('alerts-pop').addEventListener('click', function (e) {
     var one = e.target.closest ? e.target.closest('[data-dismiss-alert]') : null;
     if (one) { dismissAlerts([one.getAttribute('data-dismiss-alert')]); return; }
@@ -575,7 +576,7 @@
     if (failedOpen && document.contains(e.target) && e.target.closest && !e.target.closest('#failed-pop') && !e.target.closest('[data-failed-toggle]')) {
       failedOpen = false; renderBadges();
     }
-    if (alertsOpen && document.contains(e.target) && e.target.closest && !e.target.closest('#alerts-pop') && !e.target.closest('[data-alerts-toggle]')) {
+    if (alertsOpen && document.contains(e.target) && e.target.closest && !e.target.closest('#alerts-pop') && !e.target.closest('[data-alerts-toggle]') && !e.target.closest('#alert-pill')) {
       alertsOpen = false; renderBadges();
     }
   });
@@ -583,50 +584,30 @@
     if (e.key === 'Escape' && (failedOpen || alertsOpen)) { failedOpen = false; alertsOpen = false; renderBadges(); }
   });
 
-  // ---- alert ticker in the header -----------------------------------------
+  // ---- most urgent alert in the header --------------------------------------
 
-  // Active alerts, most urgent first, scroll right to left between the badges
-  // and the free space, like a news ticker. No alerts: the area is empty. With
-  // reduced motion the most urgent alert stands still instead. The key leaves out the age, so the
-  // ticker does not restart on every snapshot.
-  var tickerKey = '';
-  var SEVERITY = { critical: 'critical', warn: 'warning', info: 'info' };
+  // The most urgent active alert is a coloured pill next to the badges, with
+  // "+N" for the others; it opens the Alerts menu. No alerts: no pill. The
+  // `ticker` setting switches the pill off.
+  var SEV_CLASS = { critical: 'critical', warn: 'warn', info: 'note' };
   function renderTicker() {
-    var el = $('ticker'), track = $('track');
+    var el = $('alert-pill');
     var cfg = (snap.layout && snap.layout.alerts) || {};
     var alerts = cfg.ticker === false ? [] : snap.alerts || [];
-    var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (still) alerts = alerts.slice(0, 1);
-    // The track moves left, so its first item leads: the most urgent comes in first.
-    var html = alerts.map(function (a) {
-      var msg = a.message ? ' <span class="m">' + esc(a.message) + '</span>' : '';
-      return '<span class="alert ' + esc(a.severity) + '"><span class="dot ' + esc(a.severity) + '"></span>' +
-        '<b class="sev">' + esc(SEVERITY[a.severity] || a.severity) + '</b> <span class="t">' + esc(a.title) + '</span>' + msg +
-        (a.source && cfg.show_source !== false ? ' <span class="s">' + esc(a.source) + '</span>' : '') +
-        '</span>';
-    }).join('');
-    var speed = cfg.speed > 0 ? cfg.speed : 1;
-    var key = html + (still ? '|still' : '') + '|' + speed;
-    el.hidden = !html;
-    if (key === tickerKey) return;
-    tickerKey = key;
-    track.innerHTML = html;
-    el.classList.toggle('still', still);
-    if (!html || still) { track.style.animation = 'none'; return; }
-    // Slide from just outside the right edge to just outside the left edge at
-    // a steady speed (about 5 rem a second), however long the text is.
-    var rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-    var from = el.clientWidth, to = -track.scrollWidth;
-    track.style.setProperty('--from', from + 'px');
-    track.style.setProperty('--to', to + 'px');
-    track.style.animation = 'none';
-    void track.offsetWidth;
-    track.style.animation = 'ticker ' + Math.max(8, (from - to) / (5 * rem * speed)).toFixed(1) + 's linear infinite';
+    var a = alerts[0];
+    el.hidden = !a;
+    if (!a) { el.innerHTML = ''; return; }
+    var html = '<span class="tag">' + esc(SEV_NAME[a.severity] || a.severity) + '</span><span>' + esc(a.title) + '</span>' +
+      (a.message ? '<span class="msg">' + esc(a.message) + '</span>' : '') +
+      (alerts.length > 1 ? '<span class="more">+' + (alerts.length - 1) + ' more</span>' : '') +
+      (a.source && cfg.show_source !== false ? '<span class="meta">' + esc(a.source) + '</span>' : '');
+    el.className = 'banner pill ' + (SEV_CLASS[a.severity] || 'note');
+    if (el.innerHTML !== html) el.innerHTML = html;
   }
 
   function renderBanner() {
     var el = $('banner'), bar = $('progress');
-    var s = snap.screen, html = '', cls = '', tint = '';
+    var s = snap.screen, html = '', cls = '';
     bar.hidden = true;
     if (s && s.level === 1 && s.data) {
       // A running job: the jobs widget has the detail, the header shows progress.
@@ -636,9 +617,7 @@
     } else if (s && s.level < 5 && s.data) {
       var d = s.data;
       if (s.template === 'alert' && d.title) {
-        // An alert from Home Assistant or a script: no banner, the header bar
-        // itself turns yellow (warning) or red (critical) while it is on screen.
-        tint = s.level === 0 ? 'critical' : 'warn';
+        // An alert from Home Assistant or a script: the alert pill shows it, nothing here.
       } else if (s.template === 'alert') {
         var tag = d.status === 'success' ? 'Success' : d.status === 'warn' ? 'Warning' : s.level === 0 ? 'Critical' : 'Failed';
         cls = s.level === 0 ? 'critical' : d.status === 'success' ? 'success' : d.status === 'warn' ? 'warn' : '';
@@ -651,7 +630,6 @@
         html = '<span class="tag">Notice</span><span>' + esc(d.text) + '</span><span class="msg">' + esc(d.sub) + '</span><span class="meta">' + esc(SOURCES[d.source] || d.source) + '</span>';
       }
     }
-    $('top').className = tint ? 'alerting ' + tint : '';
     el.hidden = !html;
     el.className = 'banner ' + cls;
     if (el.innerHTML !== html) el.innerHTML = html;

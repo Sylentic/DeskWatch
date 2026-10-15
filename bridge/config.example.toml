@@ -116,9 +116,9 @@ interrupt = true                # true, false, or a list such as ["owner/repo"]
 [alerts]
 enabled = true
 max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped first
-# ticker = true                 # alert ticker in the kiosk header
-# ticker_speed = "normal"       # "slow", "normal" or "fast"
-# show_source = true            # "via homeassistant" behind each alert in the ticker
+# ticker = true                 # show the latest alert as a pill in the kiosk header
+# ticker_speed = "normal"       # no longer used (the header has no moving text)
+# show_source = true            # "via homeassistant" behind the alert in the header
 # dismiss = true                # Dismiss buttons in the Alerts menu clear an alert for every screen
 # http_input = false            # accept alerts as POST /api/alert (same JSON as MQTT); no login, trusted network only
 # critical_ids = ["leak", "smoke"]  # only these ids may be critical, others become warnings

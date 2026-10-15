@@ -83,21 +83,17 @@ closes it. With nothing left the counter shows `0 failed` with a green dot.
 
 ### Alerts in the header
 
-Active alerts scroll through the header between the badges and the free space, from right to left like a news ticker, one after the other:
-the severity in colour (INFO blue, WARNING amber, CRITICAL red), what is wrong, the message and the source ("via
-homeassistant"). The most urgent comes in first. With no alerts the area is empty. The ticker pauses while the pointer is
-over it or it is touched, and with "reduce motion" switched on in the system it does not move: the most urgent alert stands
-still instead. The header badges run Open PRs, Failed runs, Alerts; each is gone at 0.
+The most urgent active alert is a coloured pill in the header, next to the badges: the severity in colour (INFO blue,
+WARNING amber, CRITICAL red), what is wrong, the message and the source ("homeassistant"), with "+N more" when
+there are more. With no alerts there is no pill. Click it, or the **Alerts** badge, to fold out the menu with all alerts.
+The header badges run Open PRs, Failed runs, Alerts; each is gone at 0. Run results and notices (success, failed,
+notice) show as a pill beside it.
 
-While a warning or critical alert is on screen, the header bar itself turns yellow (warning) or red (critical) instead
-of a banner under it; it goes back when the alert is dismissed or has been on screen for its time (a warning for ten
-minutes). Run results and notices show as the pill in the header.
-
-The **Alerts** badge counts every active alert, coloured by the worst one, and is gone when there are none (the Open PRs and Failed badges vanish at 0 too). Click it
-to fold out a menu with all alerts, each with a **Dismiss** button, plus **Dismiss all**. Dismissing clears the alert for
-every screen (the same as a `clear` message on MQTT, unlike Failed runs, which are hidden per browser) and works
-without MQTT. The ticker itself has no buttons. It can only clear, never raise or change an alert. Switch it off with `dismiss = false` in `[alerts]`.
-Ticker on or off, speed and "via source" are `[alerts]` settings too (`ticker`, `ticker_speed`, `show_source`), also
+The **Alerts** badge counts every active alert, coloured by the worst one. In the menu every alert has a **Dismiss**
+button, plus **Dismiss all**. Dismissing clears the alert for every screen (the same as a `clear` message on MQTT,
+unlike Failed runs, which are hidden per browser) and works without MQTT. It can only clear, never raise or change an
+alert. Switch it off with `dismiss = false` in `[alerts]`.
+The header pill on or off and "via source" are `[alerts]` settings too (`ticker`, `show_source`), also
 changeable on the [setup page](setup-page.md#alerts).
 
 The "sources" chip on the right (all sources ok, or how many have a problem) opens the [setup page](setup-page.md) when it
@@ -105,7 +101,7 @@ is on, where every source and its status is listed.
 
 Interrupts do not take over the whole screen as they do on the ESP panel, because the other widgets are still
 useful. The bridge's normal priority decides (critical alert, running job, failed, warning, success, notice), and
-the page shows the winner as a coloured **pill in the header** (next to the badges, before the alert ticker): red for a failure, deep red for a critical
+the page shows the winner as a coloured **pill in the header** (next to the badges): red for a failure, deep red for a critical
 alert, amber for a warning, green for a success, blue for a notice. While a job runs, a thin orange progress line under
 the header follows it. The header also has the same counters as the panel badges (failed runs, open PRs, alerts,
 things down), a connection chip, and a clock.

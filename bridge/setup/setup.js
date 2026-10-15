@@ -521,18 +521,12 @@
     var a = d.alerts, box = el('div');
     var two = el('div', 'two');
     var card = el('section', 'card');
-    card.appendChild(el('h2', null, 'Ticker in the header'));
+    card.appendChild(el('h2', null, 'Alerts in the header'));
     var ticker = checkbox(a.ticker, !a.editable), source = checkbox(a.show_source, !a.editable);
     var dismiss = checkbox(a.dismiss, !a.editable), httpInput = checkbox(a.http_input, !a.editable);
-    var speed = el('select');
-    [['slow', 'Slow'], ['normal', 'Normal'], ['fast', 'Fast']].forEach(function (o) {
-      var opt = el('option', null, o[1]); opt.value = o[0]; opt.selected = a.ticker_speed === o[0]; speed.appendChild(opt);
-    });
-    speed.disabled = !a.editable;
     var max = el('input'); max.type = 'number'; max.min = '1'; max.max = '50'; max.value = String(a.max_active); max.disabled = !a.editable;
     max.className = 'narrow';
-    card.appendChild(settingRow('Show the ticker', 'Alerts scroll through the header bar of the dashboard', ticker));
-    card.appendChild(settingRow('Speed', 'How fast the text moves', speed));
+    card.appendChild(settingRow('Show the latest alert', 'The most urgent alert is a coloured pill in the header bar of the dashboard', ticker));
     card.appendChild(settingRow('Show the source', 'Adds "via homeassistant" behind each alert', source));
     card.appendChild(settingRow('Most alerts kept', 'When there are more, the least urgent and oldest drops first (1 to 50)', max));
     card.appendChild(settingRow('Dismiss on the dashboard', 'A Dismiss button per alert in the Alerts menu. It clears the alert on every screen', dismiss));
@@ -542,7 +536,7 @@
       save.type = 'button';
       save.addEventListener('click', function () {
         post('api/setup/alerts', {
-          ticker: ticker.checked, ticker_speed: speed.value, show_source: source.checked,
+          ticker: ticker.checked, show_source: source.checked,
           dismiss: dismiss.checked, http_input: httpInput.checked, max_active: parseInt(max.value, 10) || 0
         }).then(function (j) { notice = (j && j.error) || null; load(); });
       });
@@ -562,7 +556,7 @@
     function test(action) {
       post('api/setup/alerts/test', { action: action }).then(function (j) {
         alertNote = j && j.error ? j.error : (action === 'send'
-          ? 'Test alert sent. Look at the header of the dashboard (' + (a.ticker ? 'ticker' : 'the ticker is switched off') + ').' : 'Test alert cleared.');
+          ? 'Test alert sent. Look at the header of the dashboard (' + (a.ticker ? 'the pill next to the badges' : 'the header pill is switched off') + ').' : 'Test alert cleared.');
         if (last) render(last);
       });
     }
@@ -570,7 +564,7 @@
     clear.addEventListener('click', function () { test('clear'); });
     var buttons = el('div', 'buttons'); buttons.appendChild(send); buttons.appendChild(clear); tryIt.appendChild(buttons);
     if (alertNote) { var n = el('p', null, alertNote); n.setAttribute('role', 'status'); tryIt.appendChild(n); }
-    if (!d.kiosk) tryIt.appendChild(el('p', 'muted', 'The dashboard is off ([kiosk] enabled in bridge.toml), so there is no ticker to look at.'));
+    if (!d.kiosk) tryIt.appendChild(el('p', 'muted', 'The dashboard is off ([kiosk] enabled in bridge.toml), so there is no header to look at.'));
     two.appendChild(tryIt);
     box.appendChild(two);
 
