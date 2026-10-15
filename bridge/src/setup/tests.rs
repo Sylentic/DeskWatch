@@ -498,8 +498,11 @@ async fn alert_settings_are_saved_and_need_a_restart() {
     assert_eq!(v["alerts"]["ticker"], true);
     assert_eq!(v["alerts"]["editable"], true);
     assert_eq!(v["alerts"]["max_active"], 10);
+    assert_eq!(v["alerts"]["http_input"], false);
 
-    let body = json!({ "ticker": false, "ticker_speed": "fast", "max_active": 5 }).to_string();
+    let body =
+        json!({ "ticker": false, "ticker_speed": "fast", "max_active": 5, "http_input": true })
+            .to_string();
     let (status, _, text) = send(&router, "POST", "/api/setup/alerts", &[], &body).await;
     assert_eq!(status, StatusCode::OK, "{text}");
     let saved = std::fs::read_to_string(temp.0.join("data/sources.toml")).unwrap();
@@ -509,6 +512,7 @@ async fn alert_settings_are_saved_and_need_a_restart() {
     assert_eq!(v["alerts"]["ticker"], false);
     assert_eq!(v["alerts"]["ticker_speed"], "fast");
     assert_eq!(v["alerts"]["max_active"], 5);
+    assert_eq!(v["alerts"]["http_input"], true);
     assert_eq!(v["restart_needed"], true);
 
     for bad in [json!({ "max_active": 99 }), json!({ "enabled": false })] {

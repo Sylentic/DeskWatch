@@ -247,6 +247,7 @@ async fn status(State(shared): State<Arc<Shared>>) -> Response {
         "ticker_speed": effective.alerts.ticker_speed,
         "show_source": effective.alerts.show_source,
         "dismiss": effective.alerts.dismiss,
+        "http_input": effective.alerts.http_input,
         "max_active": effective.alerts.max_active,
         "enabled": effective.alerts.enabled,
     });

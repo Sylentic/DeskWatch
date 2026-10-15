@@ -384,7 +384,9 @@ fn alert_settings_are_written_checked_and_merged() {
     let fields = |v: serde_json::Value| v.as_object().unwrap().clone();
     let text = set_alerts(
         "",
-        &fields(json!({ "ticker": false, "ticker_speed": "slow", "max_active": 4 })),
+        &fields(
+            json!({ "ticker": false, "ticker_speed": "slow", "max_active": 4, "http_input": true }),
+        ),
     )
     .unwrap();
     // A second save keeps the keys it does not mention.
@@ -395,6 +397,7 @@ fn alert_settings_are_written_checked_and_merged() {
     assert_eq!(alerts["ticker_speed"].as_str(), Some("slow"));
     assert_eq!(alerts["max_active"].as_integer(), Some(4));
     assert_eq!(alerts["dismiss"].as_bool(), Some(false));
+    assert_eq!(alerts["http_input"].as_bool(), Some(true));
 
     for bad in [
         json!({ "ticker_speed": "warp" }),

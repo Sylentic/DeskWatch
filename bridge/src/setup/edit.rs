@@ -306,7 +306,7 @@ pub fn set_kiosk(current: &str, host_view: &str) -> Result<String> {
 }
 
 /// Set the ticker keys of `[alerts]` in `sources.toml`. `fields` may hold
-/// `ticker`, `show_source` and `dismiss` (booleans), `ticker_speed` (`slow`,
+/// `ticker`, `show_source`, `dismiss` and `http_input` (booleans), `ticker_speed` (`slow`,
 /// `normal` or `fast`) and `max_active` (1 to 50); keys it leaves out stay as
 /// they are. Anything else is refused.
 pub fn set_alerts(
@@ -322,7 +322,9 @@ pub fn set_alerts(
         .context("`alerts` in sources.toml is not a table")?;
     for (key, value) in fields {
         let new = match (key.as_str(), value) {
-            ("ticker" | "show_source" | "dismiss", Value::Bool(on)) => toml::Value::Boolean(*on),
+            ("ticker" | "show_source" | "dismiss" | "http_input", Value::Bool(on)) => {
+                toml::Value::Boolean(*on)
+            }
             ("ticker_speed", Value::String(speed))
                 if matches!(speed.as_str(), "slow" | "normal" | "fast") =>
             {

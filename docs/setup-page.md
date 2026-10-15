@@ -100,6 +100,8 @@ The **Alerts** section has three cards.
   "via <source>" is shown, the most alerts kept (1 to 50) and whether the dashboard may dismiss an alert. They are stored
   under `[alerts]` in `sources.toml` (`ticker`, `ticker_speed`, `show_source`, `max_active`, `dismiss`) and apply
   after a restart. `enabled` and `critical_ids` stay in `bridge.toml`.
+  The same card has **Accept alerts on the web address** (`http_input`): `POST /api/alert` with the MQTT JSON, off by
+  default, see [home-assistant.md](home-assistant.md#without-mqtt-the-web-address).
 - **Try it**: **Send test alert** raises one fixed warning ("Test alert", source "setup") that goes away by itself after a
   minute, and **Clear it now** removes it. The page sends no text of its own, only the action `send` or `clear`, so there
   is no way to create any other alert from here (the setup page has no login). It needs no data folder.
