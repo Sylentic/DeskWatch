@@ -447,10 +447,10 @@ loopback every 30 seconds. The page file carries no data and needs no token, and
   publish no port for it, or set `[http] listen = "127.0.0.1:8787"` outside a container. With `[mqtt] enabled =
   false` there is no such check. For a few seconds after a start the connection is not up yet; the image's
   start period covers that.
+- **Setup page only** (`[setup] enabled = true`, no dashboard, MQTT off): healthy when `/setup` answers 200. A
+  dead or missing listener shows `unhealthy`, where the old check passed.
 - **Gitea source only**: healthy when the listener answers HTTP at all.
-- **Setup page only** (`[setup] enabled`, no dashboard, MQTT off, no Gitea source): the listener is open but the
-  check does not look for it and passes; the page itself is not probed.
-- **None of these** (a dashboard-less, broker-less bridge with only GitHub or Azure DevOps sources): there is no
+- **None of these** (a dashboard-less, setup-less, broker-less bridge with only GitHub or Azure DevOps sources): there is no
   listener, so the check passes trivially.
 - **Demo started with flags** (`--demo --kiosk`): the check cannot see command line flags. Set the matching
   environment variables instead (`DESKWATCH_DEMO=1`, `DESKWATCH_KIOSK=1`, `DESKWATCH_NO_MQTT=1`), which the bridge

@@ -14,6 +14,7 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Fixed
 
+- The Docker healthcheck now covers a bridge that only serves the setup page (no dashboard, MQTT off): it checks `/setup` instead of passing without looking.
 - Documentation audit against 0.9.14, line by line. `docs/raspberry-pi.md` no longer says no image is published (the
   image is on ghcr.io); `docs/docker.md`, `docs/install.md`, the example config, the Dockerfile and the code comments no
   longer say the HTTP port only opens for a Gitea source or the dashboard (it also opens for the setup page and, with MQTT
