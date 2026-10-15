@@ -47,6 +47,7 @@ const BADGES_REFRESH_S: u64 = 60;
 
 const USAGE: &str = "\
 usage: deskwatch-bridge [--demo] [--kiosk] [--no-mqtt] [--healthcheck] [CONFIG]
+       deskwatch-bridge ado-capture --help
 
 CONFIG defaults to $DESKWATCH_CONFIG, then /etc/deskwatch/bridge.toml
 (on Windows %ProgramData%\\DeskWatch\\bridge.toml).
@@ -113,6 +114,13 @@ const RESTART_EXIT_CODE: i32 = 75;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // `deskwatch-bridge ado-capture ...` records sanitised Azure DevOps
+    // answers (docs/azure-devops-verify.md) and then exits; no config, no logs.
+    let mut raw_args = std::env::args().skip(1);
+    if raw_args.next().as_deref() == Some("ado-capture") {
+        return deskwatch_bridge::azure_devops::capture::run_cli(raw_args.collect()).await;
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
