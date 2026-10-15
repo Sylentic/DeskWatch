@@ -29,7 +29,9 @@
 //! only after two timeline polls in a row saw it, because most pass at once.
 
 pub mod api;
+pub mod capture;
 pub mod payload;
+mod sanitise;
 pub mod timeline;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};

@@ -157,8 +157,9 @@ the file; sources, rotation and alerts are the same on Windows. Two Windows deta
 
 - In TOML, a backslash starts an escape in a normal string. Write Windows paths in single quotes
   (`ca_file = 'C:\ProgramData\DeskWatch\ca.pem'`) or with forward slashes (`"C:/ProgramData/DeskWatch/ca.pem"`).
-- The webhook listener (`http.listen`, port 8787) is reachable from other machines only if Windows Defender
-  Firewall allows it, see [section 5](#5-run-the-bridge-as-a-service).
+- The listener (`http.listen`, port 8787: webhooks, the dashboard and the setup page) is reachable from other machines
+  only if Windows Defender Firewall allows it, see [section 5](#5-run-the-bridge-as-a-service). To use the bridge
+  only for the [dashboard](kiosk.md) set `[mqtt] enabled = false` and `[kiosk] enabled = true`; no broker is needed.
 
 ### Secrets
 
@@ -266,7 +267,7 @@ Unregister-ScheduledTask -TaskName DeskWatchBridge -Confirm:$false     # remove
 
 ### Webhook port
 
-Only needed if Gitea (or another sender) is on a different machine than the bridge:
+Needed if Gitea (or another sender) is on a different machine than the bridge, or if you open the dashboard or the setup page from another machine:
 
 ```powershell
 New-NetFirewallRule -DisplayName "DeskWatch webhooks" -Direction Inbound -Protocol TCP -LocalPort 8787 `
@@ -278,7 +279,7 @@ this to a trusted network (see the README).
 
 ## 6. The panel mock flow
 
-The real panel (ESP32-S3 firmware) is not built yet, so on Windows the simulator stands in for it. To rehearse
+The real panel firmware has never run on a board, so on Windows the simulator stands in for it. To rehearse
 the whole chain with your real bridge, not the demo:
 
 1. Run the bridge with your config (as in section 4, or as the service) against your broker.

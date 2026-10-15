@@ -1,4 +1,4 @@
-//! Alerts raised over MQTT on `deskpanel/alert` (schema section 5) by Home
+//! Alerts raised over MQTT on `deskpanel/alert` (schema section 4) by Home
 //! Assistant or any script on the LAN.
 //!
 //! The severity decides how loud an alert is:

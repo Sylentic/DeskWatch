@@ -249,7 +249,8 @@ impl Default for ServerConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct HttpConfig {
-    /// Address webhook routes listen on. Only opened when a source needs it.
+    /// Address the HTTP routes listen on: webhooks, the kiosk page, the setup page and
+    /// `/healthz`. Only opened when at least one of them exists.
     pub listen: SocketAddr,
 }
 

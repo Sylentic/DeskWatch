@@ -184,6 +184,17 @@ impl HttpApi {
         Ok(requests.value)
     }
 
+    /// Any `GET` as raw JSON, for `ado-capture`. The path is relative to the
+    /// organisation; the caller passes project names already decoded.
+    pub(super) async fn raw(
+        &self,
+        path: &[&str],
+        query: &[(&str, &str)],
+    ) -> Result<serde_json::Value> {
+        let url = self.url(path, query)?;
+        self.get_json(url).await
+    }
+
     /// `{base}/{organization}/{path...}?api-version=7.1&{query}`, with every
     /// segment percent-encoded (project names may contain spaces).
     fn url(&self, path: &[&str], query: &[(&str, &str)]) -> Result<Url> {

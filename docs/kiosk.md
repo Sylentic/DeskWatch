@@ -245,8 +245,7 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
   dashboard and the setup page are open on the trusted network. Delete the line the message names from the config.
   The bridge stops instead of ignoring the line, so nobody keeps a login they believe is still active. If you need a
   login, put a reverse proxy with its own in front ([docker.md](docker.md#protecting-the-page)).
-- **The page says why it has no data.** An empty page with `connecting` used to be all you saw. Now the header chip
-  and a box in the page body name the cause:
+- **The page says why it has no data.** The header chip and a box in the page body name the cause:
 
   | Header chip | Meaning | What to do |
   | --- | --- | --- |

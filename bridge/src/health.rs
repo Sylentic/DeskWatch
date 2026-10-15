@@ -5,8 +5,9 @@
 //! file carries no data and needs no token, and `/healthz` only says `ok` or
 //! `mqtt down`. With the kiosk page on, `/` must answer 200; with MQTT on,
 //! `/healthz` must answer 200, which it does only while the broker connection is
-//! up; with only a webhook source, any HTTP answer counts. A bridge with no
-//! listener at all (no kiosk, no Gitea source, no MQTT) has nothing to probe and
+//! up; with only the setup page on, `/setup` must answer 200; with only a
+//! webhook source, any HTTP answer counts. A bridge with no listener at all (no
+//! kiosk, no setup page, no Gitea source, no MQTT) has nothing to probe and
 //! is reported healthy; startup problems already end the process.
 
 use std::net::{IpAddr, SocketAddr};
@@ -70,7 +71,8 @@ pub enum Outcome {
 pub async fn check(config: &Config) -> Result<Outcome> {
     let kiosk = config.kiosk.enabled;
     let mqtt = config.mqtt.enabled;
-    if !kiosk && !mqtt && config.source.gitea.is_empty() {
+    let setup = config.setup.is_on();
+    if !kiosk && !setup && !mqtt && config.source.gitea.is_empty() {
         return Ok(Outcome::NoListener);
     }
     let listen = config.http.listen;
@@ -80,6 +82,16 @@ pub async fn check(config: &Config) -> Result<Outcome> {
         .context(timeout)??;
     if kiosk && status != 200 {
         bail!("the dashboard page answered HTTP {status}, expected 200");
+    }
+    // Without the dashboard `/` has nothing to answer, so a bridge that only
+    // serves the setup page is judged on `/setup` instead.
+    if setup && !kiosk {
+        let status = tokio::time::timeout(TIMEOUT, http_get(listen, "/setup"))
+            .await
+            .context(timeout)??;
+        if status != 200 {
+            bail!("the setup page answered HTTP {status}, expected 200");
+        }
     }
     if mqtt {
         let status = tokio::time::timeout(TIMEOUT, http_get(listen, "/healthz"))
@@ -178,6 +190,31 @@ mod tests {
         let config = config(addr, "[kiosk]\nenabled = true\n");
         let err = format!("{:#}", check(&config).await.unwrap_err());
         assert!(err.contains("404"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn setup_page_only_is_healthy_when_setup_answers_200() {
+        let addr = serve(Router::new().route("/setup", get(|| async { "page" }))).await;
+        let config = config(addr, "[setup]\nenabled = true\n");
+        assert_eq!(check(&config).await.unwrap(), Outcome::Healthy);
+    }
+
+    #[tokio::test]
+    async fn setup_page_only_is_unhealthy_when_setup_is_missing() {
+        // The listener answers (404 on /setup), so only the page check catches it.
+        let addr = serve(Router::new()).await;
+        let config = config(addr, "[setup]\nenabled = true\n");
+        let err = format!("{:#}", check(&config).await.unwrap_err());
+        assert!(err.contains("setup page") && err.contains("404"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn setup_page_only_with_a_dead_listener_is_unhealthy() {
+        let free = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = free.local_addr().unwrap();
+        drop(free);
+        let config = config(addr, "[setup]\nenabled = true\n");
+        assert!(check(&config).await.is_err());
     }
 
     #[tokio::test]
