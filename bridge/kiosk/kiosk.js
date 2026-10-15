@@ -168,16 +168,20 @@
       return { title: p.title || host.name, nav: nav, tag: host.up ? '' : 'not answering', stale: host.stale || !host.up, body: html };
     },
 
-    hosts: function () {
+    hosts: function (p) {
+      // A table two cells wide (the compact host view) also shows the network rates.
+      var wide = !!(p && p.span && p.span[0] >= 2);
       var hosts = snap.hosts || [];
       var html;
       if (!hosts.length) html = '<div class="empty">No hosts</div>';
       else {
-        html = '<div class="hosts"><span class="h">Host</span><span class="h">CPU</span><span class="h">RAM</span><span class="h">Disk</span>';
+        html = '<div class="hosts' + (wide ? ' wide' : '') + '"><span class="h">Host</span><span class="h">CPU</span><span class="h">RAM</span><span class="h">Disk</span>' +
+          (wide ? '<span class="h">Net in</span><span class="h">Net out</span>' : '');
         hosts.forEach(function (h) {
           var s = h.stats || {};
           var cell = function (v, w, c) { return '<span class="v ' + (v >= c ? 'crit-text' : v >= w ? 'warn-text' : '') + '">' + pct(v) + '</span>'; };
-          html += '<span class="n' + (h.up ? '' : ' off') + '">' + esc(h.name) + '</span>' + cell(s.cpu_pct, 70, 90) + cell(s.ram_pct, 80, 90) + cell(s.disk_pct, 80, 90);
+          html += '<span class="n' + (h.up ? '' : ' off') + '">' + esc(h.name) + '</span>' + cell(s.cpu_pct, 70, 90) + cell(s.ram_pct, 80, 90) + cell(s.disk_pct, 80, 90) +
+            (wide ? '<span class="v">' + (s.net ? rate(s.net.rx_bps) : '--') + '</span><span class="v">' + (s.net ? rate(s.net.tx_bps) : '--') + '</span>' : '');
         });
         html += '</div>';
       }
