@@ -39,7 +39,7 @@ rotation. A `stats` panel with a fixed `host` has no arrows and stays as configu
 For the built-in layout `[kiosk] host_view` chooses how hosts are shown:
 
 - `detailed` (the default): the `stats` card above, next to the small `hosts` table.
-- `compact`: only the `hosts` table, over the width of both cells (so the rest of the grid does not move), with the network rates (Net in, Net out) as extra columns.
+- `compact`: only the `hosts` table, as big as the PR panel (1 cell wide, 2 tall) and placed next to it, so the grid keeps its 12 cells. It adds the network rates (a line with download and upload under each host). When you give a `hosts` panel your own `span` of 2 or more cells wide, the rates are extra columns instead.
 
 The choice can also be made on the [setup page](setup-page.md) ("Dashboard hosts", needs a data folder and a restart of
 the bridge). It is stored in `sources.toml` and wins over `bridge.toml`. It does not touch `[[kiosk.panel]]` blocks.

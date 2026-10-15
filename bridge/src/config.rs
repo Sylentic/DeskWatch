@@ -317,7 +317,7 @@ pub struct KioskConfig {
 
 /// The host panel of the built-in layout. `detailed` is a stats card with
 /// bars for one host at a time, with arrows to switch host, next to a small
-/// table of all hosts. `compact` is one wider table of all hosts.
+/// table of all hosts. `compact` is one taller table of all hosts, as big as the PR panel.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum HostView {
@@ -520,24 +520,31 @@ fn panel(widget: Widget, span: [u8; 2]) -> PanelConfig {
 
 /// The layout used when `[[kiosk.panel]]` is not set, for the default 4x3 grid.
 pub fn default_panels(view: HostView) -> Vec<PanelConfig> {
-    let hosts = match view {
-        HostView::Detailed => vec![panel(Widget::Stats, [1, 1]), panel(Widget::Hosts, [1, 1])],
-        // One table over the two cells of both, so the rest of the grid stays where it is.
-        HostView::Compact => vec![panel(Widget::Hosts, [2, 1])],
-    };
-    let mut panels = hosts;
-    panels.extend([
-        panel(Widget::Jobs, [2, 2]),
-        panel(Widget::Prs, [1, 2]),
-        panel(Widget::Alerts, [1, 1]),
-        panel(Widget::Health, [1, 1]),
+    let pipelines = PanelConfig {
         // Newest first and capped at the 4 latest runs, which fit at 1080p.
-        PanelConfig {
-            rows: Some(4),
-            ..panel(Widget::Pipelines, [2, 1])
-        },
-    ]);
-    panels
+        rows: Some(4),
+        ..panel(Widget::Pipelines, [2, 1])
+    };
+    match view {
+        HostView::Detailed => vec![
+            panel(Widget::Stats, [1, 1]),
+            panel(Widget::Hosts, [1, 1]),
+            panel(Widget::Jobs, [2, 2]),
+            panel(Widget::Prs, [1, 2]),
+            panel(Widget::Alerts, [1, 1]),
+            panel(Widget::Health, [1, 1]),
+            pipelines,
+        ],
+        // One table as tall as the PR panel, next to it: the same 12 cells.
+        HostView::Compact => vec![
+            panel(Widget::Hosts, [1, 2]),
+            panel(Widget::Prs, [1, 2]),
+            panel(Widget::Jobs, [2, 2]),
+            panel(Widget::Alerts, [1, 1]),
+            panel(Widget::Health, [1, 1]),
+            pipelines,
+        ],
+    }
 }
 
 /// The `[alerts]` table: alerts that arrive on `<topic_prefix>/alert`.
@@ -1653,7 +1660,10 @@ title = "Reviews"
         let compact = widgets(HostView::Compact);
         assert!(!compact.contains(&Widget::Stats));
         assert_eq!(compact.iter().filter(|w| **w == Widget::Hosts).count(), 1);
-        // The grid stays full: the same number of cells in both views.
+        // The grid stays full: the same number of cells in both views, and the
+        // table is as big as the PR panel.
+        let hosts = default_panels(HostView::Compact)[0].clone();
+        assert_eq!(hosts.span, [1, 2]);
         let cells = |view| -> u32 {
             default_panels(view)
                 .iter()

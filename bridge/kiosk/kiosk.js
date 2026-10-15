@@ -169,8 +169,10 @@
     },
 
     hosts: function (p) {
-      // A table two cells wide (the compact host view) also shows the network rates.
-      var wide = !!(p && p.span && p.span[0] >= 2);
+      // The compact host view is a taller table: it adds the network rates, as
+      // columns when it is two cells wide, else as a small line under each host.
+      var span = (p && p.span) || [1, 1];
+      var wide = span[0] >= 2, tall = !wide && span[1] >= 2;
       var hosts = snap.hosts || [];
       var html;
       if (!hosts.length) html = '<div class="empty">No hosts</div>';
@@ -180,8 +182,9 @@
         hosts.forEach(function (h) {
           var s = h.stats || {};
           var cell = function (v, w, c) { return '<span class="v ' + (v >= c ? 'crit-text' : v >= w ? 'warn-text' : '') + '">' + pct(v) + '</span>'; };
+          var net = tall ? '<span class="net">&darr; ' + (s.net ? rate(s.net.rx_bps) : '--') + ' &nbsp; &uarr; ' + (s.net ? rate(s.net.tx_bps) : '--') + '</span>' : '';
           html += '<span class="n' + (h.up ? '' : ' off') + '">' + esc(h.name) + '</span>' + cell(s.cpu_pct, 70, 90) + cell(s.ram_pct, 80, 90) + cell(s.disk_pct, 80, 90) +
-            (wide ? '<span class="v">' + (s.net ? rate(s.net.rx_bps) : '--') + '</span><span class="v">' + (s.net ? rate(s.net.tx_bps) : '--') + '</span>' : '');
+            (wide ? '<span class="v">' + (s.net ? rate(s.net.rx_bps) : '--') + '</span><span class="v">' + (s.net ? rate(s.net.tx_bps) : '--') + '</span>' : '') + net;
         });
         html += '</div>';
       }
