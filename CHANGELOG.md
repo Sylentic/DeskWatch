@@ -8,6 +8,10 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Added
+
+- `docs/mosquitto.md`: a step-by-step switch-over for a broker in Docker (section 7), plus notes that an ACL leaves every unlisted client without access and that Docker often publishes the broker port on all interfaces.
+
 ### Fixed
 
 - Documentation audit against 0.9.14, line by line. `docs/raspberry-pi.md` no longer says no image is published (the
