@@ -10,6 +10,8 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Changed
 
+- **Run results and notices sit in the header** as a coloured pill (Success green, Failed red, Critical deep red,
+  Warning amber, Notice blue, with the source) instead of a full-width banner under it.
 - **The Alerts badge works like the Failed badge**: it folds out a menu with all alerts, each with a Dismiss button, plus
   Dismiss all. The small x in the moving ticker text is gone; the `dismiss` setting now controls these buttons.
 - **Header badge order** is Open PRs, Failed runs, Alerts. The Open PRs, Failed and Alerts badges disappear when their count is 0.

@@ -91,7 +91,7 @@ still instead. The header badges run Open PRs, Failed runs, Alerts; each is gone
 
 While a warning or critical alert is on screen, the header bar itself turns yellow (warning) or red (critical) instead
 of a banner under it; it goes back when the alert is dismissed or has been on screen for its time (a warning for ten
-minutes). Failed runs and info alerts keep their banner.
+minutes). Run results and notices show as the pill in the header.
 
 The **Alerts** badge counts every active alert, coloured by the worst one, and is gone when there are none (the Open PRs and Failed badges vanish at 0 too). Click it
 to fold out a menu with all alerts, each with a **Dismiss** button, plus **Dismiss all**. Dismissing clears the alert for
@@ -105,7 +105,7 @@ is on, where every source and its status is listed.
 
 Interrupts do not take over the whole screen as they do on the ESP panel, because the other widgets are still
 useful. The bridge's normal priority decides (critical alert, running job, failed, warning, success, notice), and
-the page shows the winner as a coloured **banner** under the header: red for a failure, deep red for a critical
+the page shows the winner as a coloured **pill in the header** (next to the badges, before the alert ticker): red for a failure, deep red for a critical
 alert, amber for a warning, green for a success, blue for a notice. While a job runs, a thin orange progress line under
 the header follows it. The header also has the same counters as the panel badges (failed runs, open PRs, alerts,
 things down), a connection chip, and a clock.

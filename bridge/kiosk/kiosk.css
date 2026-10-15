@@ -51,7 +51,7 @@
   --alert-green: #0c5430;
 }
 :root[data-theme="night"] .offline { background: #1f180b; }
-:root[data-theme="night"] .banner.notice { background: #1a2b45; }
+:root[data-theme="night"] .banner.note { background: #1a2b45; }
 :root[data-theme="night"] .card.stale { border-color: #3a2c14; }
 :root[data-theme="night"] .src.gitea { background: #1b3a19; }
 :root[data-theme="night"] .src.github { background: #22252d; }
@@ -97,7 +97,7 @@ body.idle, body.idle * { cursor: none !important; }
 .brand { font-weight: 700; font-size: 1.5rem; letter-spacing: .02em; display: flex; align-items: center; gap: .7rem; }
 .logo { width: 1.5rem; height: 1.5rem; border-radius: .4rem; background: linear-gradient(135deg, var(--blue), var(--green)); }
 .spacer { flex: 1; }
-.badges { display: flex; flex-wrap: wrap; gap: .5rem .8rem; min-width: 0; }
+.badges { display: flex; flex: none; gap: .5rem .8rem; min-width: 0; }
 .chip {
   display: inline-flex; align-items: center; gap: .5rem;
   padding: .25rem .8rem; border-radius: 999px;
@@ -160,8 +160,9 @@ button.chip.action:not(:disabled):hover, button.chip.action[aria-expanded="true"
 /* ---- attention banner and offline notice ------------------------------- */
 
 .banner {
-  flex: none; display: flex; align-items: baseline; gap: 1.4rem;
-  padding: .7rem 1.4rem; font-size: 1.7rem; font-weight: 600;
+  /* A run result or notice: a coloured pill in the header, before the ticker. */
+  flex: 0 1 auto; min-width: 0; max-width: 38rem; display: flex; align-items: center; gap: .8rem; line-height: 1.2;
+  padding: .35rem .9rem; border-radius: .5rem; font-size: 1.15rem; font-weight: 600; white-space: nowrap;
   background: var(--alert-red);
 }
 .banner[hidden], .offline[hidden], .notice[hidden], .topbar[hidden], .setup-link[hidden] { display: none; }
@@ -170,10 +171,10 @@ button.chip.action:not(:disabled):hover, button.chip.action[aria-expanded="true"
 .banner.critical { background: var(--alert-critical); }
 .banner.warn { background: var(--alert-amber); }
 .banner.success { background: var(--alert-green); }
-.banner.notice { background: #2d4a73; }
-.banner .tag { font-size: 1.1rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; opacity: .9; }
-.banner .msg { font-weight: 400; opacity: .95; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.banner .meta { font-size: 1.05rem; font-weight: 400; opacity: .85; }
+.banner.note { background: #2d4a73; }
+.banner .tag { font-size: .8rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; opacity: .9; }
+.banner .msg { font-weight: 400; opacity: .95; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.banner .meta { font-size: .9rem; font-weight: 400; opacity: .85; }
 .offline { flex: none; padding: .45rem 1.4rem; background: #3b2a12; color: var(--amber); font-size: 1.15rem; }
 
 /* A message that replaces the empty page: why there is no data. */
@@ -353,9 +354,9 @@ a.link:active { background: rgba(255, 255, 255, .1); }
   body { overflow: auto; }
   #top { flex-wrap: wrap; height: auto; padding: .6rem 1rem; gap: .6rem; }
   .spacer { display: none; }
-  .banner { flex-wrap: wrap; gap: .3rem 1rem; font-size: 1.2rem; }
-  .banner .msg { white-space: normal; flex-basis: 100%; }
-  .badges, .ticker { flex-basis: 100%; }
+  .banner { flex-basis: 100%; max-width: none; }
+  .badges { flex-wrap: wrap; }
+  .ticker { flex-basis: 100%; }
   .grid { display: flex; flex-direction: column; flex: none; }
   .card { min-height: 12rem; }
 }
