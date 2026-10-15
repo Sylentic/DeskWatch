@@ -38,13 +38,7 @@ impl Drop for Temp {
 }
 
 fn setup(temp: &Temp) -> Setup {
-    Setup::new(
-        &config(&temp.0),
-        &Secret::new("setup-token"),
-        MqttLink::default(),
-        None,
-        None,
-    )
+    Setup::new(&config(&temp.0), MqttLink::default(), None, None)
 }
 
 async fn send(
@@ -69,43 +63,11 @@ async fn send(
         .unwrap();
     (status, headers, String::from_utf8(body.to_vec()).unwrap())
 }
-
-fn login_body(token: &str) -> String {
-    json!({ "token": token }).to_string()
-}
-
-async fn logged_in(router: &Router) -> String {
-    let (status, headers, _) = send(
-        router,
-        "POST",
-        "/api/setup/login",
-        &[],
-        &login_body("setup-token"),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-    let set = headers[header::SET_COOKIE].to_str().unwrap();
-    assert!(set.starts_with("deskwatch_setup="), "{set}");
-    assert!(set.contains("HttpOnly") && set.contains("SameSite=Strict"));
-    set.split(';').next().unwrap().to_string()
-}
-
 #[tokio::test]
-async fn status_needs_a_login_and_never_carries_a_secret() {
+async fn status_needs_no_login_and_never_carries_a_secret() {
     let temp = Temp::new("status");
     let router = setup(&temp).router();
-    let (status, ..) = send(&router, "GET", "/api/setup/status", &[], "").await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-
-    let cookie = logged_in(&router).await;
-    let (status, headers, body) = send(
-        &router,
-        "GET",
-        "/api/setup/status",
-        &[("cookie", &cookie)],
-        "",
-    )
-    .await;
+    let (status, headers, body) = send(&router, "GET", "/api/setup/status", &[], "").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(headers[header::CACHE_CONTROL], "no-store");
     assert!(!body.contains(SECRET), "a token value reached the browser");
@@ -128,24 +90,10 @@ async fn status_needs_a_login_and_never_carries_a_secret() {
 async fn health_and_mqtt_state_are_live() {
     let temp = Temp::new("live");
     let link = MqttLink::default();
-    let setup = Setup::new(
-        &config(&temp.0),
-        &Secret::new("setup-token"),
-        link.clone(),
-        None,
-        None,
-    );
+    let setup = Setup::new(&config(&temp.0), link.clone(), None, None);
     let router = setup.router();
-    let cookie = logged_in(&router).await;
     let get = || async {
-        let (_, _, body) = send(
-            &router,
-            "GET",
-            "/api/setup/status",
-            &[("cookie", &cookie)],
-            "",
-        )
-        .await;
+        let (_, _, body) = send(&router, "GET", "/api/setup/status", &[], "").await;
         serde_json::from_str::<Value>(&body).unwrap()
     };
     let before = get().await;
@@ -165,101 +113,6 @@ async fn health_and_mqtt_state_are_live() {
     assert_eq!(health_of(&after, "github:main"), "auth_failed");
     assert_eq!(after["mqtt"]["connected"], true);
 }
-
-#[tokio::test]
-async fn wrong_tokens_are_refused_and_limited() {
-    let temp = Temp::new("limit");
-    let router = setup(&temp).router();
-    for _ in 0..session::MAX_FAILURES {
-        let (status, headers, _) = send(
-            &router,
-            "POST",
-            "/api/setup/login",
-            &[],
-            &login_body("nope"),
-        )
-        .await;
-        assert_eq!(status, StatusCode::UNAUTHORIZED);
-        assert!(!headers.contains_key(header::SET_COOKIE));
-    }
-    let (status, headers, _) = send(
-        &router,
-        "POST",
-        "/api/setup/login",
-        &[],
-        &login_body("setup-token"),
-    )
-    .await;
-    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
-    assert!(headers.contains_key(header::RETRY_AFTER));
-}
-
-#[tokio::test]
-async fn login_from_another_site_is_refused() {
-    let temp = Temp::new("origin");
-    let router = setup(&temp).router();
-    let evil = [
-        ("host", "bridge.lan:8787"),
-        ("origin", "http://evil.example"),
-    ];
-    let (status, ..) = send(
-        &router,
-        "POST",
-        "/api/setup/login",
-        &evil,
-        &login_body("setup-token"),
-    )
-    .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
-}
-
-#[tokio::test]
-async fn a_dashboard_session_is_worth_nothing_on_the_setup_page() {
-    // Even with the same token, the two pages sign their cookies differently.
-    let temp = Temp::new("purpose");
-    let router = setup(&temp).router();
-    let kiosk = Sessions::new("kiosk", "setup-token", 86_400);
-    let forged = format!("deskwatch_setup={}", kiosk.issue(unix_now()));
-    let (status, ..) = send(
-        &router,
-        "GET",
-        "/api/setup/status",
-        &[("cookie", &forged)],
-        "",
-    )
-    .await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-    let named_like_kiosk = format!("deskwatch_session={}", kiosk.issue(unix_now()));
-    let (status, ..) = send(
-        &router,
-        "GET",
-        "/api/setup/status",
-        &[("cookie", &named_like_kiosk)],
-        "",
-    )
-    .await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-}
-
-#[tokio::test]
-async fn trusted_networks_do_not_open_the_setup_page() {
-    // No peer address is consulted at all: a request from loopback with a
-    // trusted_networks range that covers it still needs the login.
-    let temp = Temp::new("trusted");
-    let mut cfg = config(&temp.0);
-    cfg.kiosk.trusted_networks = vec!["0.0.0.0/0".into()];
-    let router = Setup::new(
-        &cfg,
-        &Secret::new("setup-token"),
-        MqttLink::default(),
-        None,
-        None,
-    )
-    .router();
-    let (status, ..) = send(&router, "GET", "/api/setup/status", &[], "").await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-}
-
 #[test]
 fn sources_from_the_data_folder_are_marked() {
     let base = Config::from_toml("").unwrap();
@@ -294,42 +147,25 @@ async fn the_page_is_served_and_builds_text_safely() {
         StatusCode::OK
     );
 }
-
-#[test]
-fn setup_is_off_without_a_token_file() {
-    assert!(Config::from_toml("").unwrap().setup.token_file.is_none());
-    let cfg = Config::from_toml("[setup]\ntoken_file = \"setup-token\"\n").unwrap();
-    assert_eq!(cfg.setup.token_file.as_deref(), Some("setup-token"));
-}
-
 #[tokio::test]
-async fn connection_tests_need_login_origin_and_a_known_source() {
+async fn connection_tests_need_same_origin_and_a_known_source() {
     let temp = Temp::new("probe");
     let router = setup(&temp).router();
     let body = json!({ "id": "github:main" }).to_string();
-    let (status, ..) = send(&router, "POST", "/api/setup/test", &[], &body).await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-
-    let cookie = logged_in(&router).await;
-    let evil = [
-        ("cookie", cookie.as_str()),
-        ("host", "b.lan"),
-        ("origin", "http://evil.example"),
-    ];
+    let evil = [("host", "b.lan"), ("origin", "http://evil.example")];
     assert_eq!(
         send(&router, "POST", "/api/setup/test", &evil, &body)
             .await
             .0,
         StatusCode::FORBIDDEN
     );
-    let ok = [("cookie", cookie.as_str())];
     assert_eq!(
-        send(&router, "POST", "/api/setup/test", &ok, "{}").await.0,
+        send(&router, "POST", "/api/setup/test", &[], "{}").await.0,
         StatusCode::BAD_REQUEST
     );
     let unknown = json!({ "id": "github:nope" }).to_string();
     assert_eq!(
-        send(&router, "POST", "/api/setup/test", &ok, &unknown)
+        send(&router, "POST", "/api/setup/test", &[], &unknown)
             .await
             .0,
         StatusCode::NOT_FOUND
@@ -348,19 +184,11 @@ async fn a_connection_test_runs_the_real_checks_and_one_runs_at_a_time() {
         temp.token("tok", "good-token-value")
     );
     let config = Config::from_toml(&text).unwrap();
-    let setup = Setup::new(
-        &config,
-        &Secret::new("setup-token"),
-        MqttLink::default(),
-        None,
-        None,
-    );
+    let setup = Setup::new(&config, MqttLink::default(), None, None);
     let router = setup.router();
-    let cookie = logged_in(&router).await;
-    let headers = [("cookie", cookie.as_str())];
     let body = json!({ "id": "gitea:home" }).to_string();
 
-    let (status, _, text) = send(&router, "POST", "/api/setup/test", &headers, &body).await;
+    let (status, _, text) = send(&router, "POST", "/api/setup/test", &[], &body).await;
     assert_eq!(status, StatusCode::OK, "{text}");
     let v: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(v["ok"], true);
@@ -375,7 +203,7 @@ async fn a_connection_test_runs_the_real_checks_and_one_runs_at_a_time() {
 
     // While a test holds the permit, a second one is refused, not queued.
     let _held = setup.shared.testing.try_acquire().unwrap();
-    let (status, ..) = send(&router, "POST", "/api/setup/test", &headers, &body).await;
+    let (status, ..) = send(&router, "POST", "/api/setup/test", &[], &body).await;
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
 }
 
@@ -385,8 +213,8 @@ fn the_page_can_test_a_connection() {
     assert!(SETUP_JS.contains("Test connection"));
 }
 
-/// A setup router with a data folder, plus the folder's path and a login cookie.
-async fn with_data(tag: &str) -> (Router, Temp, String) {
+/// A setup router with a data folder, plus the folder's path.
+async fn with_data(tag: &str) -> (Router, Temp) {
     let temp = Temp::new(tag);
     let data = temp.0.join("data");
     let store = Store::open(&data).unwrap();
@@ -394,53 +222,35 @@ async fn with_data(tag: &str) -> (Router, Temp, String) {
     let (tx, mut rx) = tokio::sync::mpsc::channel(64);
     tokio::spawn(async move { while rx.recv().await.is_some() {} });
     let supervisor = Supervisor::new(tx, crate::hooks::Webhooks::default());
-    let router = Setup::new(
-        &config,
-        &Secret::new("setup-token"),
-        MqttLink::default(),
-        Some(store),
-        Some(supervisor),
-    )
-    .router();
-    let cookie = logged_in(&router).await;
-    (router, temp, cookie)
+    let router = Setup::new(&config, MqttLink::default(), Some(store), Some(supervisor)).router();
+    (router, temp)
 }
 
 #[tokio::test]
-async fn changes_need_login_same_origin_and_a_data_folder() {
+async fn changes_need_same_origin_and_a_data_folder() {
     let temp = Temp::new("change-guards");
     let body = json!({ "kind": "github", "name": "x", "create": true }).to_string();
-    // No data folder: refused even when logged in.
+    // No data folder: refused.
     let router = setup(&temp).router();
-    let cookie = logged_in(&router).await;
-    let ok = [("cookie", cookie.as_str())];
-    let (status, ..) = send(&router, "POST", "/api/setup/source", &ok, &body).await;
+    let (status, ..) = send(&router, "POST", "/api/setup/source", &[], &body).await;
     assert_eq!(status, StatusCode::CONFLICT);
 
-    let (router, _temp, cookie) = with_data("change-guards2").await;
-    let (status, ..) = send(&router, "POST", "/api/setup/source", &[], &body).await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-    let evil = [
-        ("cookie", cookie.as_str()),
-        ("host", "b.lan"),
-        ("origin", "http://evil.example"),
-    ];
+    let (router, _temp) = with_data("change-guards2").await;
+    let evil = [("host", "b.lan"), ("origin", "http://evil.example")];
     for uri in ["/api/setup/source", "/api/setup/source/delete"] {
         let (status, ..) = send(&router, "POST", uri, &evil, &body).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "{uri}");
     }
-    let ok = [("cookie", cookie.as_str())];
-    let (status, ..) = send(&router, "POST", "/api/setup/source", &ok, "nope").await;
+    let (status, ..) = send(&router, "POST", "/api/setup/source", &[], "nope").await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
 async fn a_good_source_is_saved_a_failing_one_is_not_unless_forced() {
     use crate::probe::tests::{gitea_mock, serve};
-    let (router, temp, cookie) = with_data("save").await;
+    let (router, temp) = with_data("save").await;
     let data = temp.0.join("data");
     let base = serve(gitea_mock()).await;
-    let headers = [("cookie", cookie.as_str())];
     let request = |token: &str, force: bool| {
         json!({
             "kind": "gitea", "name": "home", "create": true, "force": force,
@@ -455,7 +265,7 @@ async fn a_good_source_is_saved_a_failing_one_is_not_unless_forced() {
         &router,
         "POST",
         "/api/setup/source",
-        &headers,
+        &[],
         &request("wrong-token", false),
     )
     .await;
@@ -475,7 +285,7 @@ async fn a_good_source_is_saved_a_failing_one_is_not_unless_forced() {
         &router,
         "POST",
         "/api/setup/source",
-        &headers,
+        &[],
         &request("good-token-value", false),
     )
     .await;
@@ -503,7 +313,7 @@ async fn a_good_source_is_saved_a_failing_one_is_not_unless_forced() {
     }
 
     // The status now lists it as editable and running, with no restart needed.
-    let (_, _, text) = send(&router, "GET", "/api/setup/status", &headers, "").await;
+    let (_, _, text) = send(&router, "GET", "/api/setup/status", &[], "").await;
     let v: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(v["restart_needed"], false);
     assert_eq!(v["can_edit"], true);
@@ -518,7 +328,7 @@ async fn a_good_source_is_saved_a_failing_one_is_not_unless_forced() {
         &router,
         "POST",
         "/api/setup/source",
-        &headers,
+        &[],
         &request("good-token-value", false),
     )
     .await;
@@ -531,7 +341,7 @@ async fn a_good_source_is_saved_a_failing_one_is_not_unless_forced() {
         "secrets": { "token": "still-wrong" },
     })
     .to_string();
-    let (_, _, text) = send(&router, "POST", "/api/setup/source", &headers, &forced).await;
+    let (_, _, text) = send(&router, "POST", "/api/setup/source", &[], &forced).await;
     let v: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(v["saved"], true, "{text}");
     assert_eq!(
@@ -543,27 +353,25 @@ async fn a_good_source_is_saved_a_failing_one_is_not_unless_forced() {
 #[tokio::test]
 async fn removing_a_source_deletes_its_entry_and_its_own_secrets() {
     use crate::probe::tests::{gitea_mock, serve};
-    let (router, temp, cookie) = with_data("remove").await;
+    let (router, temp) = with_data("remove").await;
     let data = temp.0.join("data");
     let base = serve(gitea_mock()).await;
-    let headers = [("cookie", cookie.as_str())];
     let add = json!({
         "kind": "gitea", "name": "home", "create": true,
         "fields": { "base_url": base, "repos": ["o/r"] },
         "secrets": { "token": "good-token-value", "webhook_secret": "h" },
     })
     .to_string();
-    let (_, _, text) = send(&router, "POST", "/api/setup/source", &headers, &add).await;
+    let (_, _, text) = send(&router, "POST", "/api/setup/source", &[], &add).await;
     assert!(text.contains("\"saved\":true"), "{text}");
     assert!(data.join("credentials/gitea-home-token").exists());
 
     let gone = json!({ "kind": "gitea", "name": "home" }).to_string();
-    let (status, _, text) =
-        send(&router, "POST", "/api/setup/source/delete", &headers, &gone).await;
+    let (status, _, text) = send(&router, "POST", "/api/setup/source/delete", &[], &gone).await;
     assert_eq!(status, StatusCode::OK, "{text}");
     assert!(!data.join("credentials/gitea-home-token").exists());
     assert!(!data.join("credentials/gitea-home-webhook_secret").exists());
-    let (status, ..) = send(&router, "POST", "/api/setup/source/delete", &headers, &gone).await;
+    let (status, ..) = send(&router, "POST", "/api/setup/source/delete", &[], &gone).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
@@ -592,9 +400,8 @@ async fn fake_broker() -> u16 {
 
 #[tokio::test]
 async fn mqtt_settings_are_tested_then_saved_and_need_a_restart() {
-    let (router, temp, cookie) = with_data("mqtt").await;
+    let (router, temp) = with_data("mqtt").await;
     let data = temp.0.join("data");
-    let headers = [("cookie", cookie.as_str())];
     let port = fake_broker().await;
     let request = |port: u16, force: bool| {
         json!({
@@ -606,14 +413,7 @@ async fn mqtt_settings_are_tested_then_saved_and_need_a_restart() {
     };
 
     // Nothing listens on port 1: the test fails and nothing is written.
-    let (status, _, text) = send(
-        &router,
-        "POST",
-        "/api/setup/mqtt",
-        &headers,
-        &request(1, false),
-    )
-    .await;
+    let (status, _, text) = send(&router, "POST", "/api/setup/mqtt", &[], &request(1, false)).await;
     assert_eq!(status, StatusCode::OK, "{text}");
     let v: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(v["saved"], false, "{text}");
@@ -625,7 +425,7 @@ async fn mqtt_settings_are_tested_then_saved_and_need_a_restart() {
         &router,
         "POST",
         "/api/setup/mqtt",
-        &headers,
+        &[],
         &request(port, false),
     )
     .await;
@@ -646,7 +446,7 @@ async fn mqtt_settings_are_tested_then_saved_and_need_a_restart() {
             .mode();
         assert_eq!(mode & 0o777, 0o600);
     }
-    let (_, _, text) = send(&router, "GET", "/api/setup/status", &headers, "").await;
+    let (_, _, text) = send(&router, "GET", "/api/setup/status", &[], "").await;
     let v: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(v["restart_needed"], true);
     assert_eq!(v["mqtt"]["port"], port);
@@ -655,38 +455,21 @@ async fn mqtt_settings_are_tested_then_saved_and_need_a_restart() {
     assert!(!text.contains("broker-password-value"));
 
     // "Save anyway" writes settings whose test failed.
-    let (_, _, text) = send(
-        &router,
-        "POST",
-        "/api/setup/mqtt",
-        &headers,
-        &request(1, true),
-    )
-    .await;
+    let (_, _, text) = send(&router, "POST", "/api/setup/mqtt", &[], &request(1, true)).await;
     let v: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(v["saved"], true, "{text}");
     assert_eq!(v["report"]["ok"], false);
 
     // Bad input and the usual guards.
     let bad = json!({ "fields": { "port": 0 } }).to_string();
-    let (status, ..) = send(&router, "POST", "/api/setup/mqtt", &headers, &bad).await;
+    let (status, ..) = send(&router, "POST", "/api/setup/mqtt", &[], &bad).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    let (status, ..) = send(
-        &router,
-        "POST",
-        "/api/setup/mqtt",
-        &[],
-        &request(port, false),
-    )
-    .await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
 async fn a_source_added_from_the_page_can_be_tested_at_once() {
     use crate::probe::tests::{gitea_mock, serve};
-    let (router, _temp, cookie) = with_data("test-new").await;
-    let headers = [("cookie", cookie.as_str())];
+    let (router, _temp) = with_data("test-new").await;
     let base = serve(gitea_mock()).await;
     let add = json!({
         "kind": "gitea", "name": "home", "create": true,
@@ -694,10 +477,10 @@ async fn a_source_added_from_the_page_can_be_tested_at_once() {
         "secrets": { "token": "good-token-value", "webhook_secret": "h" },
     })
     .to_string();
-    let (_, _, text) = send(&router, "POST", "/api/setup/source", &headers, &add).await;
+    let (_, _, text) = send(&router, "POST", "/api/setup/source", &[], &add).await;
     assert!(text.contains("\"saved\":true"), "{text}");
     let body = json!({ "id": "gitea:home" }).to_string();
-    let (status, _, text) = send(&router, "POST", "/api/setup/test", &headers, &body).await;
+    let (status, _, text) = send(&router, "POST", "/api/setup/test", &[], &body).await;
     // Found (not a 404 "no such source") and checked. Whether the checks pass
     // depends on the process-wide credentials folder, which the test runs share.
     assert_eq!(status, StatusCode::OK, "{text}");
@@ -705,88 +488,67 @@ async fn a_source_added_from_the_page_can_be_tested_at_once() {
 }
 
 #[tokio::test]
-async fn restarting_needs_the_option_a_login_and_the_same_origin() {
+async fn restarting_needs_the_option_and_the_same_origin() {
     let temp = Temp::new("restart");
     let mut config = config(&temp.0);
-    let off = Setup::new(
-        &config,
-        &Secret::new("setup-token"),
-        MqttLink::default(),
-        None,
-        None,
-    );
+    let off = Setup::new(&config, MqttLink::default(), None, None);
     let router = off.router();
-    let cookie = logged_in(&router).await;
-    let ok = [("cookie", cookie.as_str())];
-    let (status, ..) = send(&router, "POST", "/api/setup/restart", &ok, "").await;
+    let (status, ..) = send(&router, "POST", "/api/setup/restart", &[], "").await;
     assert_eq!(status, StatusCode::CONFLICT, "off by default");
 
     config.setup.allow_restart = true;
-    let on = Setup::new(
-        &config,
-        &Secret::new("setup-token"),
-        MqttLink::default(),
-        None,
-        None,
-    );
+    let on = Setup::new(&config, MqttLink::default(), None, None);
     let signal = on.restart_signal();
     let router = on.router();
-    let cookie = logged_in(&router).await;
-    let ok = [("cookie", cookie.as_str())];
-    assert_eq!(
-        send(&router, "POST", "/api/setup/restart", &[], "").await.0,
-        StatusCode::UNAUTHORIZED
-    );
-    let evil = [
-        ("cookie", cookie.as_str()),
-        ("host", "b.lan"),
-        ("origin", "http://evil.example"),
-    ];
+    let evil = [("host", "b.lan"), ("origin", "http://evil.example")];
     assert_eq!(
         send(&router, "POST", "/api/setup/restart", &evil, "")
             .await
             .0,
         StatusCode::FORBIDDEN
     );
-    // Neither refused call raised the signal; the real one does.
+    // The refused call raised no signal; a real one does.
     assert!(
         tokio::time::timeout(Duration::from_millis(50), signal.notified())
             .await
             .is_err()
     );
-    let (status, ..) = send(&router, "POST", "/api/setup/restart", &ok, "").await;
+    let (status, ..) = send(&router, "POST", "/api/setup/restart", &[], "").await;
     assert_eq!(status, StatusCode::ACCEPTED);
     tokio::time::timeout(Duration::from_secs(1), signal.notified())
         .await
         .expect("the restart signal fired");
 
-    let (_, _, text) = send(&router, "GET", "/api/setup/status", &ok, "").await;
+    let (_, _, text) = send(&router, "GET", "/api/setup/status", &[], "").await;
     assert!(text.contains("\"can_restart\":true"), "{text}");
 }
 
-fn open_setup(temp: &Temp) -> Setup {
-    Setup::open(&config(&temp.0), MqttLink::default(), None, None)
-}
-
 #[tokio::test]
-async fn without_a_token_the_page_needs_no_login_and_still_hides_secrets() {
+async fn the_old_login_route_is_gone() {
     let temp = Temp::new("open");
-    let router = open_setup(&temp).router();
-    let (status, _, body) = send(&router, "GET", "/api/setup/status", &[], "").await;
+    let router = setup(&temp).router();
+    let (status, ..) = send(&router, "POST", "/api/setup/login", &[], "{}").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    // A stray cookie or token changes nothing.
+    let extras = [
+        ("authorization", "Bearer whatever"),
+        ("cookie", "deskwatch_setup=1.2"),
+    ];
+    let (status, ..) = send(&router, "GET", "/api/setup/status", &extras, "").await;
     assert_eq!(status, StatusCode::OK);
-    assert!(!body.contains(SECRET), "a secret reached the browser");
-    assert!(body.contains("github:main"));
-    // Login has nothing to do and sets no cookie.
-    let (status, headers, _) =
-        send(&router, "POST", "/api/setup/login", &[], &login_body("x")).await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-    assert!(headers.get(header::SET_COOKIE).is_none());
+}
+
+#[test]
+fn the_page_has_no_login_form() {
+    for word in ["loginForm", "api/setup/login", "setup token"] {
+        assert!(!SETUP_JS.contains(word), "the page still mentions {word}");
+    }
 }
 
 #[tokio::test]
-async fn without_a_token_another_site_still_cannot_change_anything() {
+async fn another_site_cannot_change_anything() {
     let temp = Temp::new("open-origin");
-    let router = open_setup(&temp).router();
+    let router = setup(&temp).router();
     let (status, ..) = send(
         &router,
         "POST",
@@ -804,7 +566,7 @@ async fn without_a_token_another_site_still_cannot_change_anything() {
 #[tokio::test]
 async fn status_says_whether_the_dashboard_is_there_to_link_back_to() {
     let temp = Temp::new("kiosk-flag");
-    let router = open_setup(&temp).router();
+    let router = setup(&temp).router();
     let (_, _, body) = send(&router, "GET", "/api/setup/status", &[], "").await;
     let status: Value = serde_json::from_str(&body).unwrap();
     assert_eq!(status["kiosk"], false);

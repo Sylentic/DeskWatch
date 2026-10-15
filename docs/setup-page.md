@@ -108,9 +108,8 @@ default. It needs the same origin like every change.
   tokens. Keep the port on a trusted network. A website you have open in your browser cannot use the page for you:
   requests whose `Origin` is another site are refused.
 - Secrets never reach the browser, whatever the network.
-- **Deprecated: `[setup] token_file`.** Existing configs keep working: with it the page still asks for its own token
-  (separate from the dashboard's, a 12-hour login cookie, wrong tokens delayed and five in a minute pause logins), and
-  the bridge warns at startup. `kiosk.trusted_networks` never applied to this page.
+- **Removed: `[setup] token_file`.** A config that still sets it is refused at startup with a message that names the
+  line to delete. The page has no login of its own; use a proxy with one if you need it.
 - The connection is plain HTTP unless you put a TLS reverse proxy in front ([docker.md](docker.md) has examples). The
   bridge logs a warning when the page is reachable from the network. Until you have TLS, keep the listener on
   `127.0.0.1` or on a network you trust.

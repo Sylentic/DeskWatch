@@ -73,16 +73,27 @@ struct MqttPatch {
     password_file: Option<String>,
 }
 
+/// Why the bridge refuses a login setting that no longer exists. It names the
+/// section and key, so the line to delete is easy to find.
+fn removed_login_message(section: &str, key: &str) -> String {
+    format!(
+        "[{section}] {key} is no longer supported: the dashboard and the setup page no longer have a login, \
+         they are for a trusted network only (docs/kiosk.md). Delete the `{key}` line from the \
+         [{section}] section of the config. To keep a login, put the bridge behind a reverse proxy that has \
+         its own"
+    )
+}
+
 /// The setup page (`/setup`, docs/setup-page.md). Off unless enabled.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SetupConfig {
     /// Serve the setup page. It has no login: use it on a trusted network only.
     pub enabled: bool,
-    /// Deprecated, still honoured (the bridge warns): a credential holding a
-    /// token that puts a login in front of the page, which also turns it on.
-    /// Separate from `kiosk.token_file`.
-    pub token_file: Option<String>,
+    /// Removed. Only read so that the bridge can refuse it with a clear
+    /// message (see `Config::validate`) instead of an "unknown field" error.
+    #[serde(rename = "token_file")]
+    pub(crate) removed_token_file: Option<toml::Value>,
     /// Let the setup page restart the bridge (the process exits with code 75
     /// after a clean shutdown). Only for a bridge that is started again by
     /// its supervisor: Docker `restart: unless-stopped`, systemd
@@ -92,9 +103,9 @@ pub struct SetupConfig {
 }
 
 impl SetupConfig {
-    /// Is the setup page served? Also true with the deprecated `token_file`.
+    /// Is the setup page served?
     pub fn is_on(&self) -> bool {
-        self.enabled || self.token_file.is_some()
+        self.enabled
     }
 }
 
@@ -132,7 +143,7 @@ pub struct Config {
     /// Folder the bridge may write to. Off unless set.
     #[serde(default)]
     pub data: DataConfig,
-    /// The setup page. Off unless `token_file` is set.
+    /// The setup page. Off unless `enabled = true`.
     #[serde(default)]
     pub setup: SetupConfig,
     /// `kind:name` of the sources that came from `sources.toml` in the data
@@ -261,19 +272,14 @@ pub struct KioskConfig {
     /// Grid size. Every widget takes `span` cells of it.
     pub columns: u8,
     pub rows: u8,
-    /// Optional. Without it the page needs no login, which is fine on a home
-    /// network (never expose the port to the internet). With it the data
-    /// endpoints require this token; the page asks for it once and keeps a
-    /// login cookie (`session_days`). Changing the token logs everybody out.
-    pub token_file: Option<String>,
-    /// Deprecated, still honoured (the bridge warns at startup). Networks
-    /// (`192.168.0.0/16`, `fd00::/8`, a single address) whose clients need no
-    /// token. Judged by the TCP peer address only, which behind a reverse
-    /// proxy or Docker is not the real client. Only matters with `token_file`.
-    pub trusted_networks: Vec<String>,
-    /// How many days a login stays valid. A browser logs in once with the
-    /// token (`POST /api/login`) and keeps a cookie for this long.
-    pub session_days: u16,
+    /// Removed (the dashboard has no login). Only read so that the bridge can
+    /// refuse them with a clear message instead of an "unknown field" error.
+    #[serde(rename = "token_file")]
+    pub(crate) removed_token_file: Option<toml::Value>,
+    #[serde(rename = "trusted_networks")]
+    pub(crate) removed_trusted_networks: Option<toml::Value>,
+    #[serde(rename = "session_days")]
+    pub(crate) removed_session_days: Option<toml::Value>,
     /// Most live-update WebSockets open at once. More get `503` and the page
     /// falls back to polling. A page needs one per open tab or screen.
     pub max_ws_clients: u16,
@@ -307,9 +313,9 @@ impl Default for KioskConfig {
             enabled: false,
             columns: 4,
             rows: 3,
-            token_file: None,
-            trusted_networks: Vec::new(),
-            session_days: 30,
+            removed_token_file: None,
+            removed_trusted_networks: None,
+            removed_session_days: None,
             max_ws_clients: 16,
             theme: Theme::Day,
             night_from: "22:00".into(),
@@ -335,12 +341,13 @@ impl KioskConfig {
             self.max_ws_clients >= 1,
             "kiosk.max_ws_clients must be at least 1"
         );
-        anyhow::ensure!(
-            (1..=365).contains(&self.session_days),
-            "kiosk.session_days must be between 1 and 365"
-        );
-        crate::kiosk::net::parse_all(&self.trusted_networks)
-            .map_err(|e| anyhow::anyhow!("kiosk.trusted_networks: {e}"))?;
+        for (key, present) in [
+            ("token_file", self.removed_token_file.is_some()),
+            ("trusted_networks", self.removed_trusted_networks.is_some()),
+            ("session_days", self.removed_session_days.is_some()),
+        ] {
+            anyhow::ensure!(!present, "{}", removed_login_message("kiosk", key));
+        }
         for (name, value) in [
             ("night_from", &self.night_from),
             ("night_to", &self.night_to),
@@ -972,6 +979,11 @@ impl Config {
     /// pairs. Run again after an overlay is added.
     fn validate(&self) -> Result<()> {
         anyhow::ensure!(
+            self.setup.removed_token_file.is_none(),
+            "{}",
+            removed_login_message("setup", "token_file")
+        );
+        anyhow::ensure!(
             self.server.interval_s > 0,
             "server.interval_s must be above 0"
         );
@@ -1222,7 +1234,6 @@ mod tests {
             Config::from_toml(include_str!("../../deploy/dashboard.example.toml")).unwrap();
         assert!(!config.mqtt.enabled);
         assert!(config.kiosk.enabled);
-        assert!(config.kiosk.token_file.is_none());
         assert!(config.source.gitea.is_empty());
     }
 
@@ -1527,7 +1538,6 @@ mod tests {
 enabled = true
 columns = 3
 rows = 2
-token_file = "kiosk-token"
 
 [[kiosk.panel]]
 widget = "stats"
@@ -1542,7 +1552,6 @@ title = "Reviews"
         )
         .unwrap();
         assert!(config.kiosk.enabled);
-        assert_eq!(config.kiosk.token_file.as_deref(), Some("kiosk-token"));
         let panels = config.kiosk.panels();
         assert_eq!(panels.len(), 2);
         assert_eq!(panels[0].widget, Widget::Stats);
@@ -1551,6 +1560,44 @@ title = "Reviews"
         assert_eq!(panels[1].widget, Widget::Prs);
         assert_eq!((panels[1].rows, panels[1].span), (Some(12), [1, 2]));
         assert_eq!(panels[1].title.as_deref(), Some("Reviews"));
+    }
+
+    #[test]
+    fn removed_login_settings_stop_the_bridge_and_name_the_line_to_delete() {
+        for (toml, section, key) in [
+            (
+                "[kiosk]\ntoken_file = \"kiosk-token\"\n",
+                "kiosk",
+                "token_file",
+            ),
+            (
+                "[kiosk]\ntrusted_networks = [\"10.0.0.0/8\"]\n",
+                "kiosk",
+                "trusted_networks",
+            ),
+            ("[kiosk]\nsession_days = 7\n", "kiosk", "session_days"),
+            (
+                "[setup]\ntoken_file = \"setup-token\"\n",
+                "setup",
+                "token_file",
+            ),
+            // Also when the page is switched off or the value is empty.
+            (
+                "[setup]\nenabled = false\ntoken_file = \"\"\n",
+                "setup",
+                "token_file",
+            ),
+        ] {
+            let err = Config::from_toml(toml).unwrap_err().to_string();
+            assert!(
+                err.contains(&format!("[{section}] {key}")) && err.contains("Delete the"),
+                "{toml:?} gave: {err}"
+            );
+        }
+        // Without them the same sections load.
+        let ok = Config::from_toml("[kiosk]\nenabled = true\n[setup]\nenabled = true\n").unwrap();
+        assert!(ok.setup.is_on() && ok.kiosk.enabled);
+        assert!(!Config::from_toml("").unwrap().setup.is_on());
     }
 
     #[test]
@@ -1630,7 +1677,6 @@ repo = "acme/*"
         assert!(bad("[kiosk]\ncolumns = 0").contains("between 1 and 12"));
         assert!(bad("[kiosk]\nrows = 13").contains("between 1 and 12"));
         assert!(bad("[kiosk]\nmax_ws_clients = 0").contains("at least 1"));
-        assert!(bad("[kiosk]\nsession_days = 0").contains("between 1 and 365"));
         assert!(bad("[[kiosk.panel]]\nwidget = \"jobs\"\nspan = [5, 1]").contains("span must fit"));
         assert!(bad("[[kiosk.panel]]\nwidget = \"jobs\"\nspan = [1, 0]").contains("span must fit"));
         assert!(bad("[[kiosk.panel]]\nwidget = \"prs\"\nhost = \"x\"").contains("only applies"));

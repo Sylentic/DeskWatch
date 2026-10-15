@@ -5,9 +5,7 @@
 #   install -m 755 deploy/kiosk/deskwatch-kiosk.sh ~/deskwatch-kiosk.sh
 #
 # URL: the bridge on this Pi, or http://<bridge host>:8787/ for a bridge on
-# another machine. Override with DESKWATCH_KIOSK_URL. If the bridge has a
-# kiosk token (optional), enter it once on first boot; the login cookie stays in
-# the browser profile below.
+# another machine. Override with DESKWATCH_KIOSK_URL. The page has no login.
 URL="${DESKWATCH_KIOSK_URL:-http://localhost:8787/}"
 
 # The browser is called `chromium` on Raspberry Pi OS Bookworm and newer, and

@@ -37,7 +37,7 @@ services:
 
     # The page. "8787:8787" is reachable from your whole network, which is fine
     # at home. Never forward this port from your router or publish it through a
-    # tunnel without a login (`token_file`, or the proxy's own). Behind a reverse
+    # tunnel without a login (the proxy's own). Behind a reverse
     # proxy on the same host, publish "127.0.0.1:8787:8787" instead and let only
     # the proxy reach it.
     ports:

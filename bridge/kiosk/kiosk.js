@@ -7,9 +7,9 @@
 // last data on screen, dims it and says how old it is, then recovers on its own.
 //
 // When the page cannot get data it says why, in the header chip and in a box
-// in the page body: a token is needed or was refused (with a field to enter
-// it), the bridge cannot be reached, the bridge answered with an error, the
-// WebSocket is blocked (the page then polls), or the bridge has no data yet.
+// in the page body: the bridge cannot be reached, the bridge answered with an
+// error, the WebSocket is blocked (the page then polls), or the bridge has no
+// data yet. There is no login: the page is for a trusted network.
 //
 // `?static` stops all network use; the screenshots and tests call
 // `DeskWatchKiosk.render(snapshot)` themselves.
@@ -20,7 +20,6 @@
   var POLL_MS = 5000;          // polling interval when the WebSocket is down
   var HISTORY = 60;            // samples kept for the CPU sparklines
   var params = new URLSearchParams(location.search);
-  var token = takeToken();
 
   var snap = null;             // latest snapshot
   var lastMsg = 0;             // client time (ms) of the latest snapshot
@@ -32,39 +31,6 @@
   var problem = null;          // why no data arrives, see describe(); null when all is well
   var wsFailed = false;        // the WebSocket is down, the page polls instead
   var noticeKey = null;        // which notice is on screen, to redraw it only on a change
-
-  // The token is entered once and traded for a login cookie (POST api/login),
-  // so it is not kept in the page at all. An old bookmark with ?token=... still
-  // works: the token is taken out of the address bar right away, so it stays
-  // out of the browser history and the Referer header, and is traded the same way.
-  function takeToken() {
-    var given = params.get('token');
-    if (!given) return null;
-    params.delete('token');
-    var rest = params.toString();
-    try { window.history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + location.hash); } catch (e) {}
-    return given;
-  }
-
-  // Trade a token for the login cookie. Resolves to null on success, else to
-  // a problem for describe()'s notice.
-  function login(given) {
-    return fetch('api/login', {
-      method: 'POST', cache: 'no-store', credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: given })
-    }).then(function (r) {
-      if (r.ok) return null;
-      if (r.status === 429) {
-        return {
-          code: 'limited', pill: 'too many attempts', needsToken: true,
-          title: 'Too many wrong tokens',
-          detail: 'Logins are paused for a minute after a few wrong tokens. Wait a moment and try again.'
-        };
-      }
-      return describe(r.status === 401 ? { auth: true } : { status: r.status });
-    }, function () { return describe({}); });
-  }
 
   var $ = function (id) { return document.getElementById(id); };
 
@@ -443,17 +409,6 @@
 
   // Turn a failed request into something a person can act on.
   function describe(e) {
-    if (e && e.auth) {
-      return token ? {
-        code: 'rejected', pill: 'token rejected', needsToken: true,
-        title: 'The dashboard token was not accepted',
-        detail: 'The access token is wrong, or it changed. It is the text in the file set by `token_file` under `[kiosk]` in the bridge config. Enter it again.'
-      } : {
-        code: 'required', pill: 'token required', needsToken: true,
-        title: 'This dashboard needs its access token',
-        detail: 'Not a Gitea, GitHub or Azure DevOps token. It is the text in the file set by `token_file` under `[kiosk]` in the bridge config. Enter it below once; this browser then stays logged in.'
-      };
-    }
     if (e && e.status) {
       return {
         code: 'http', pill: 'bridge error ' + e.status,
@@ -469,10 +424,10 @@
   }
 
   // The box in the page body. Rebuilt only when the message changes, so
-  // text typed into the token field is not lost on the next tick.
+  // the notice does not flicker on every tick.
   function renderNotice() {
     var el = $('notice'), p = null;
-    if (problem && (!snap || problem.needsToken)) p = problem;
+    if (problem && !snap) p = problem;
     else if (snap && !snap.now) {
       p = {
         code: 'starting', title: 'Waiting for the first data',
@@ -486,30 +441,8 @@
     noticeKey = key;
     el.hidden = !p;
     if (!p) { el.innerHTML = ''; return; }
-    el.innerHTML = '<h2>' + esc(p.title) + '</h2><p>' + esc(p.detail).replace(/`([^`]+)`/g, '<code>$1</code>') + '</p>' +
-      (p.needsToken ? '<div class="tokenbox"><input id="token-input" type="password" autocomplete="off" spellcheck="false" placeholder="token" aria-label="token">' +
-        '<button id="token-go" type="button">Connect</button></div>' : '');
-    var input = $('token-input');
-    if (input) input.focus();
+    el.innerHTML = '<h2>' + esc(p.title) + '</h2><p>' + esc(p.detail).replace(/`([^`]+)`/g, '<code>$1</code>') + '</p>';
   }
-
-  // Use a token typed into the notice: log in with it, then try again now.
-  function submitToken() {
-    var input = $('token-input');
-    var given = input && input.value.trim();
-    if (!given) return;
-    // 'rejected' (a token was tried) rather than 'required' while the notice shows.
-    token = given;
-    login(given).then(function (failed) {
-      if (failed) { problem = failed; tick(); return; }
-      token = null;
-      problem = null;
-      poll();
-      reconnect();
-    });
-  }
-  document.addEventListener('click', function (ev) { if (ev.target && ev.target.id === 'token-go') submitToken(); });
-  document.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' && ev.target && ev.target.id === 'token-input') submitToken(); });
 
   // ---- once-a-second work: clock, elapsed times, connection state --------
 
@@ -527,11 +460,10 @@
     var lost = !snap || age > STALE_AFTER_S;
     document.body.classList.toggle('lost', !!snap && lost);
     var off = $('offline');
-    off.hidden = !(snap && (lost || (problem && problem.needsToken)));
-    if (snap && problem && problem.needsToken) off.textContent = problem.title + '. Showing the last known state.';
-    else if (snap && lost) off.textContent = 'No data from the bridge for ' + clock(age) + '. Showing the last known state, reconnecting' + (problem ? ' (' + problem.pill + ').' : '.');
+    off.hidden = !(snap && lost);
+    if (snap && lost) off.textContent = 'No data from the bridge for ' + clock(age) + '. Showing the last known state, reconnecting' + (problem ? ' (' + problem.pill + ').' : '.');
     var conn = $('conn');
-    var ok = snap && !lost && !(problem && problem.needsToken);
+    var ok = snap && !lost;
     var problems = ok && (snap.sources || []).filter(function (s) { return s.health !== 'ok'; }).length;
     var text, cls;
     if (problem && !ok) { text = problem.pill; cls = 'bad'; }
@@ -553,7 +485,6 @@
     lastTry = lastTry || Date.now();
     fetch('api/kiosk', { cache: 'no-store' })
       .then(function (r) {
-        if (r.status === 401) throw { auth: true };
         if (!r.ok) throw { status: r.status };
         return r.json();
       })
@@ -576,17 +507,12 @@
       ws = null;
       wsFailed = true;
       // While the socket is down, keep fetching snapshots so a proxy that
-      // blocks WebSockets still works. The fetch also tells why (401, error).
+      // blocks WebSockets still works. The fetch also tells why (error).
       if (!pollTimer) { poll(); pollTimer = setInterval(poll, POLL_MS); }
       later();
     };
   }
   function later() { retryTimer = setTimeout(connect, retry); retry = Math.min(retry * 2, 10000); }
-  // Try the socket again right away, after a new token was entered.
-  function reconnect() {
-    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; connect(); }
-  }
-
   // Hide the mouse pointer after 3 s without movement; any movement brings it back.
   var idleTimer = null;
   function wake() {
@@ -602,10 +528,7 @@
   setInterval(tick, 1000);
   tick();
   if (!params.has('static')) {
-    if (token) {
-      // An address with ?token=: log in first, so the first request has the cookie.
-      var first = token;
-      login(first).then(function (failed) { if (failed) problem = failed; else token = null; poll(); connect(); });
-    } else { poll(); connect(); }
+    poll();
+    connect();
   }
 })();

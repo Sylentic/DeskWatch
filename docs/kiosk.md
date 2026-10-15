@@ -181,10 +181,8 @@ echo '~/deskwatch-kiosk.sh &' >> ~/.config/labwc/autostart                # Book
 
 [`deploy/kiosk/deskwatch-kiosk.sh`](../deploy/kiosk/deskwatch-kiosk.sh) opens `http://localhost:8787/`. For a bridge on
 another machine, set the address with an environment variable, for example
-`DESKWATCH_KIOSK_URL='http://bridge.example.lan:8787/' ~/deskwatch-kiosk.sh &`. If the bridge has a
-[kiosk token](#5-security) (optional), the page asks for it once on first boot (use a keyboard or the touch screen); Chromium keeps
-the login cookie in its profile (`~/.cache/deskwatch-kiosk`), so later boots need nothing. Deleting that folder logs the
-Pi out. Older releases, or Bookworm switched to X11 with LXDE, read
+`DESKWATCH_KIOSK_URL='http://bridge.example.lan:8787/' ~/deskwatch-kiosk.sh &`. The page has no login, so a Pi
+on the same network needs nothing else ([security](#5-security)). Older releases, or Bookworm switched to X11 with LXDE, read
 `~/.config/lxsession/LXDE-pi/autostart` instead; see
 [`deploy/kiosk/lxde-autostart`](../deploy/kiosk/lxde-autostart), which also turns the X11 screen blanking off.
 If there is no checkout on the Pi, the script is short enough to copy from the repository page.
@@ -212,40 +210,19 @@ Things that make a kiosk last:
 The page and its two data routes (`/api/kiosk` and `/api/kiosk/ws`) are read-only: the page cannot press buttons or
 change anything. They show PR titles, pipeline names, host stats and alert text, so treat them like a dashboard.
 
-- **No login by default.** The listener is `0.0.0.0:8787` (it has to be reachable for Gitea webhooks and for other
-  machines on your network). With the kiosk on and no token, anyone who can reach the port can read the page. On a
+- **No login.** The listener is `0.0.0.0:8787` (it has to be reachable for Gitea webhooks and for other
+  machines on your network). With the kiosk on, anyone who can reach the port can read the page. On a
   home network that is the intended trade-off, and the bridge logs one warning at startup saying so. **Never expose
   the port to the internet** (no router port forward, no tunnel or public reverse proxy) unless a login sits in front
-  of it: a token below, or the proxy's own login. To keep the page local to the Pi, run the bridge there with
+  of it: the proxy's own login. To keep the page local to the Pi, run the bridge there with
   `[http] listen = "127.0.0.1:8787"`, which is fine when the Pi has no webhook source.
-- **Optionally set a token** to keep other people on your network out, or when the page is reachable from further
-  away: put a long random string in a credential file and name it, like every other secret:
-
-  ```toml
-  [kiosk]
-  enabled = true
-  token_file = "kiosk-token"     # a credential, loaded with LoadCredential= like the others
-  max_ws_clients = 16            # live-update sockets at once (default 16); more tabs fall back to polling
-  ```
-
-  ```sh
-  openssl rand -hex 24 | sudo tee /etc/deskwatch/credentials/kiosk-token
-  sudo chmod 600 /etc/deskwatch/credentials/kiosk-token
-  ```
-
-  Add `LoadCredential=kiosk-token:/etc/deskwatch/credentials/kiosk-token` to the unit, restart, and open
-  `http://<host>:8787/`. The page file itself has no data and loads without the token; the data routes answer 401
-  without a login. Use hex or letters and digits for the token. The page asks for the token once and the bridge then
-  sets a session cookie (`HttpOnly`, `SameSite=Strict`, `Secure` behind an HTTPS proxy that sends
-  `X-Forwarded-Proto`), valid `session_days` days (default 30, `[kiosk]`). The token is therefore not in any address,
-  history or access log. Replacing the token file logs every browser out. Wrong tokens are delayed, and five in a
-  minute pause logins for a minute for everybody (the client address cannot be trusted behind Docker or a proxy);
-  open sessions are unaffected. The WebSocket refuses an `Origin` that is not the page's own host. Scripts send
-  `Authorization: Bearer <token>`; `?token=` in an address still works but is deprecated and logs a warning. The
-  connection is plain HTTP unless you put a reverse proxy with TLS in front, and the token keeps casual visitors out,
-  not someone who can watch your network traffic.
+- **There is no token or cookie login** (older releases had `[kiosk] token_file`, `trusted_networks` and
+  `session_days`; see [Removed login settings](#removed-login-settings) below). The only protection built in is that
+  the WebSocket refuses an `Origin` that is not the page's own host, so a website open in your browser cannot read
+  the page through it. The connection is plain HTTP unless you put a reverse proxy with TLS in front, which is also
+  where a login belongs if you need one.
 - **In a container**, `0.0.0.0:8787` inside is correct and the published port decides who can reach the page:
-  `"8787:8787"` is the whole network (keep the token), `"127.0.0.1:8787:8787"` is the Docker host only, for a reverse
+  `"8787:8787"` is the whole network (trusted network only), `"127.0.0.1:8787:8787"` is the Docker host only, for a reverse
   proxy that adds TLS and a login. Do not expose the port to the internet; use a VPN or an authenticating proxy.
   Details in [docker.md](docker.md#protecting-the-page).
 - Names shown come from your sources after their `alias` setting. If a work project name should not appear on a
@@ -263,22 +240,16 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
   look. Hosts that Prometheus reports as down get a red dot and a dimmed card.
 - **The bridge host's clock and the screen's clock differ.** Times such as "3 min ago" use the bridge's clock, so a
   Pi with a wrong clock still shows correct ages. The clock in the header is the screen's own.
-- **`trusted_networks` is deprecated.** It still works (clients in the listed ranges skip `token_file`, and the bridge
-  logs a warning at startup), but it only has meaning when `token_file` is set, and it judges the **TCP peer address**
-  only, which is not the real client behind a reverse proxy, with Docker Desktop, rootless Docker, or for connections
-  from the Docker host itself (the peer is then a `172.x.x.x` gateway address, and a range that covers it opens the
-  page to everyone behind it). Remove it. If you do not want a login on your home network, leave `token_file` out
-  instead. If you do want one, keep `token_file` and enter the token once per browser.
-- **Which token is this?** (Only if you set `token_file`.) The dashboard access token: the text stored in the file named by `token_file` under
-  `[kiosk]` in the bridge config (in Docker, the `kiosk-token` file in the credentials folder). It is not a Gitea,
-  GitHub or Azure DevOps token; those stay on the bridge and are never typed into the page.
+- <a id="removed-login-settings"></a>**The bridge refuses to start: "[kiosk] token_file is no longer supported".**
+  `[kiosk] token_file`, `[kiosk] trusted_networks`, `[kiosk] session_days` and `[setup] token_file` were removed: the
+  dashboard and the setup page are open on the trusted network. Delete the line the message names from the config.
+  The bridge stops instead of ignoring the line, so nobody keeps a login they believe is still active. If you need a
+  login, put a reverse proxy with its own in front ([docker.md](docker.md#protecting-the-page)).
 - **The page says why it has no data.** An empty page with `connecting` used to be all you saw. Now the header chip
   and a box in the page body name the cause:
 
   | Header chip | Meaning | What to do |
   | --- | --- | --- |
-  | `token required` | The bridge has `kiosk.token_file` set and this tab has no token (401). | Type the token into the box once; the browser then stays logged in. |
-  | `token rejected` | The token is wrong, or it changed when the bridge restarted. | Enter the current token (changing the token file logs every browser out). |
   | `bridge unreachable` | The request did not get an answer. | Check the container or service is running, the address and port, the firewall, the proxy. |
   | `bridge error 502` (any HTTP status) | Something answered, but with an error. | Usually a reverse proxy that cannot reach the bridge; see its log and the bridge log. |
   | `polling, no live socket` | The WebSocket is blocked (a proxy without WebSocket support) but the page still gets data by polling every 5 s. | Works as is. To get instant updates, let the proxy forward `Upgrade` headers on `/api/kiosk/ws`. |

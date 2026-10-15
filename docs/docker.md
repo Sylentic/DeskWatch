@@ -199,44 +199,31 @@ Stack managers such as Komodo and Portainer can run a Compose file with the conf
 your repository, and an update can wipe or conflict with a folder inside it. A named volume is writable for the bridge
 without a `chown` from 0.9.14 on ([data-dir.md](data-dir.md#docker)).
 
-**Who can open it.** Without `[kiosk] token_file` the port has no login of its own, and neither does the setup page.
+**Who can open it.** The port has no login of its own, and neither does the setup page.
 Publish it to a trusted network only, or put it behind a proxy that asks for a login
 ([Protecting the page](#protecting-the-page)). Never publish it to the internet as is.
 
 ### Protecting the page
 
 The page is read-only (nothing on it can change anything), but it shows PR titles, pipeline names, host stats and
-alert text. By default there is no login, which is fine on a home network and is why a new install just works. Do
-not expose the port to the internet. If other people can reach your network, or you open the page beyond it, choose
-one of these:
+alert text. There is no login, which is fine on a home network and is why a new install just works. Do not expose
+the port to the internet. The bridge has no token or cookie login of its own (older versions had `token_file`; a
+config that still sets it is refused at startup). The live WebSocket refuses a request whose `Origin` is another
+site. If other people can reach your network, or you open the page beyond it, choose one of these:
 
-1. **A token (optional).** Create the file (`openssl rand -hex 24 > dashboard/credentials/kiosk-token`, `chmod 644`
-   it) and set `token_file = "kiosk-token"` under `[kiosk]`. It is the dashboard access token, not a Gitea, GitHub or
-   Azure DevOps token. `token_file` makes the data routes answer 401 without a login. The page
-   file itself loads without it, but holds no data. The page asks for the token once and trades it for a session
-   cookie (`HttpOnly`, `SameSite=Strict`, `Secure` when a proxy says `X-Forwarded-Proto: https`), so the token is not
-   in the address, the history or an access log. Wrong tokens are slowed down and, after five in a minute, refused
-   for a minute (for everybody: behind Docker or a proxy the client address cannot be trusted; logins already open
-   are not affected). The live WebSocket refuses a request whose `Origin` is another site. Scripts use
-   `Authorization: Bearer <token>`. The old `?token=` address still works but is deprecated and logs a warning. Over
-   plain HTTP it keeps casual visitors on your LAN out; it does not stop someone who can watch your network traffic.
-   `trusted_networks` (skip the token for a network range) is deprecated: it still works and logs a warning, but in
-   Docker the bridge often does not see the real client, so it cannot be relied on. Leave `token_file` out instead if
-   you do not want a login.
-2. **A reverse proxy.** Publish the port to the host only (`"127.0.0.1:8787:8787"` in the Compose file) and let
-   your proxy (Caddy, Traefik, nginx) terminate TLS and do the access control (basic auth, or your SSO). Then the
-   token is optional, but keeping both costs nothing. Without a proxy login, do not publish the port to the internet. Make the proxy pass WebSocket upgrades on `/api/kiosk/ws`;
+1. **A reverse proxy.** Publish the port to the host only (`"127.0.0.1:8787:8787"` in the Compose file) and let
+   your proxy (Caddy, Traefik, nginx) terminate TLS and do the access control (basic auth, or your SSO). Without a
+   proxy login, do not publish the port to the internet. Make the proxy pass WebSocket upgrades on `/api/kiosk/ws`;
    without them the page falls back to polling `/api/kiosk` and still works, only slower to update.
-3. **Local only.** Publish `"127.0.0.1:8787:8787"` and open the page on the Docker host itself (a Pi with a screen
+2. **Local only.** Publish `"127.0.0.1:8787:8787"` and open the page on the Docker host itself (a Pi with a screen
    running the container).
 
 #### Reverse proxy examples
 
 All three examples terminate TLS for `dashboard.example.lan` (a placeholder), ask for a username and password, and
-pass the WebSocket on `/api/kiosk/ws`. The bridge listens on `127.0.0.1:8787` (published as in option 2) or, when
+pass the WebSocket on `/api/kiosk/ws`. The bridge listens on `127.0.0.1:8787` (published as in option 1) or, when
 the proxy runs in Docker too, on `deskwatch:8787` over a shared network. The browser sends the basic auth login on
-the WebSocket by itself, and the bridge ignores a `Basic` header, so keeping `token_file` set still works: the page
-asks for the token once. The proxy must pass the browser's `Host` (with the port, if it is not 443) or send
+the WebSocket by itself, and the bridge ignores a `Basic` header. The proxy must pass the browser's `Host` (with the port, if it is not 443) or send
 `X-Forwarded-Host`, because the bridge compares the WebSocket's `Origin` with it. Create the login hash with `htpasswd -nbB desk 'a-password'`
 (package `apache2-utils`) or, for Caddy, `caddy hash-password`.
 

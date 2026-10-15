@@ -32,7 +32,7 @@ use deskwatch_bridge::kiosk::Kiosk;
 use deskwatch_bridge::model::{Badges, Screen};
 use deskwatch_bridge::mqtt::{self, Inbound, Publisher};
 use deskwatch_bridge::setup::Setup;
-use deskwatch_bridge::source::{self, unix_now};
+use deskwatch_bridge::source::unix_now;
 use deskwatch_bridge::stats::StatsCollector;
 use deskwatch_bridge::store::Store;
 use deskwatch_bridge::supervisor::Supervisor;
@@ -176,61 +176,33 @@ async fn main() -> Result<()> {
     let supervisor = Supervisor::new(source_tx.clone(), hooks.webhooks());
     let mut kiosk = None;
     if config.kiosk.enabled {
-        let token = match &config.kiosk.token_file {
-            Some(file) => Some(source::load_secret(file).context("kiosk.token_file")?),
-            None => None,
-        };
-        if token.is_none() && !config.http.listen.ip().is_loopback() {
+        if !config.http.listen.ip().is_loopback() {
             warn!(
                 "the kiosk page on {} has no login: anyone who can reach this port can read your PR titles, \
                  pipelines and host stats. That is fine on a home network. Do not expose the port to the internet, \
-                 and do not publish it through a proxy or tunnel without kiosk.token_file or a login on the proxy",
+                 and do not publish it through a proxy or tunnel without a login on the proxy",
                 config.http.listen
             );
         }
-        if !config.kiosk.trusted_networks.is_empty() {
-            warn!(
-                "kiosk.trusted_networks is deprecated and will be removed: it still works (clients in {} need no token, \
-                 judged by the TCP peer address, which behind Docker or a proxy is not the real client), but it only \
-                 matters when kiosk.token_file is set. Remove it, or drop token_file for a page without a login",
-                config.kiosk.trusted_networks.join(", ")
-            );
-        }
-        let built = Kiosk::new(&config.kiosk, token).with_setup_link(config.setup.is_on());
+        let built = Kiosk::new(&config.kiosk).with_setup_link(config.setup.is_on());
         hooks.add("/", built.router());
         kiosk = Some(built);
     }
     // `/healthz` (the Docker health probe) reports the broker connection, so
     // the listener also opens for a bridge that only talks to an ESP panel.
     let mqtt_link = health::MqttLink::default();
-    // The setup page (docs/setup-page.md): off unless it has its own token.
+    // The setup page (docs/setup-page.md): off unless `[setup] enabled`.
     let mut setup = None;
     if config.setup.is_on() {
-        let built = match &config.setup.token_file {
-            Some(file) => {
-                let token = source::load_secret(file).context("setup.token_file")?;
-                warn!(
-                    "setup.token_file is deprecated; the setup page needs no login any more. \
-                     It still asks for its token while the setting is there"
-                );
-                Setup::new(
-                    &config,
-                    &token,
-                    mqtt_link.clone(),
-                    store.clone(),
-                    Some(supervisor.clone()),
-                )
-            }
-            None => Setup::open(
-                &config,
-                mqtt_link.clone(),
-                store.clone(),
-                Some(supervisor.clone()),
-            ),
-        };
+        let built = Setup::new(
+            &config,
+            mqtt_link.clone(),
+            store.clone(),
+            Some(supervisor.clone()),
+        );
         hooks.add("/setup", built.router());
         info!("setup page on /setup");
-        if config.setup.token_file.is_none() && !config.http.listen.ip().is_loopback() {
+        if !config.http.listen.ip().is_loopback() {
             warn!(
                 "the setup page on {} has no login: anyone who can reach this port can read how the bridge is set up \
                  and, with a data folder, change sources and store tokens. Use it on a trusted network only; never \
