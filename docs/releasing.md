@@ -7,10 +7,15 @@ image `ghcr.io/sylentic/deskwatch-bridge`, and the GitHub release.
 
 ## Steps
 
-1. Open the release PR: bump `version` in the root `Cargo.toml`, turn
-   `Unreleased` in `CHANGELOG.md` into the new version section, set the image
-   tag in `deploy/docker-compose.yml` and update the version examples in the
-   install docs. Merge it once CI is green.
+1. Open the release PR. It changes these places:
+   - `version` in the root `Cargo.toml`, and `Cargo.lock` with it (the workflow builds with `--locked`);
+   - `version` in `firmware/Cargo.toml` and `firmware/Cargo.lock`;
+   - `Unreleased` in `CHANGELOG.md`, turned into the new version section (the release notes are that section);
+   - the image tag in `deploy/docker-compose.yml`;
+   - the version examples in `docs/install.md` (two), `docs/raspberry-pi.md` and `docs/windows.md` (two), and the
+     example in `docs/docker.md` section 10.
+
+   Merge it once CI is green.
 2. Update your checkout so the tag lands on the release PR's merge commit:
 
    ```sh

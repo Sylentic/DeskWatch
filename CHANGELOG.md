@@ -8,6 +8,20 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Added
+
+- `docs/mosquitto.md`: a step-by-step switch-over for a broker in Docker (section 7), plus notes that an ACL leaves every unlisted client without access and that Docker often publishes the broker port on all interfaces.
+
+### Fixed
+
+- Documentation audit against 0.9.14, line by line. `docs/raspberry-pi.md` no longer says no image is published (the
+  image is on ghcr.io); `docs/docker.md`, `docs/install.md`, the example config, the Dockerfile and the code comments no
+  longer say the HTTP port only opens for a Gitea source or the dashboard (it also opens for the setup page and, with MQTT
+  on, the health check); `docs/azure-devops.md` had a broken scope table and now says a real organisation has been
+  connected once but its data not yet verified; `docs/runners.md` lost its "first version" and "this PR" wording;
+  `docs/releasing.md` lists every file a release PR changes; `docs/windows.md` mentions the dashboard-only setup;
+  the README's demo and Docker rows are corrected; comments pointing at schema section numbers match `docs/mqtt-schema.md`.
+
 ### Changed
 
 - CI and release workflows use current major versions of the Docker and artifact actions (Node 24), and the Dockerfile skips the `SecretsUsedInArgOrEnv` lint for `CREDENTIALS_DIRECTORY`, which is a path and not a secret (issue 74).

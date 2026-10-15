@@ -106,8 +106,9 @@ ENV CREDENTIALS_DIRECTORY=/run/credentials \
     RUST_LOG=info
 
 USER deskwatch
-# The HTTP listener (`[http] listen`): the dashboard page and the Gitea webhook.
-# It only opens when `[kiosk] enabled` is set or a Gitea source exists.
+# The HTTP listener (`[http] listen`): the dashboard page, the setup page, the
+# Gitea webhook and /healthz. It opens when any of them is on, which includes
+# every bridge with MQTT on (the default).
 EXPOSE 8787
 
 # The bridge checks itself (the image has no curl): it asks its own listener

@@ -10,7 +10,7 @@ Enterprise, Azure DevOps, Prometheus, Home Assistant, the machine's own stats) a
 |---|---|---|
 | **1. Mini display** (ESP32-S3) | A 4" touch screen on your desk that rotates through stats, PRs and pipelines, switches to live progress when a job runs, goes red on a failure and clears with a button | Drawing code done and checked in a desktop simulator. The firmware exists but has **never run on a board**; waiting on the screen. 1.0 is reserved for the first release that works on the real display. [firmware/](firmware/README.md) |
 | **2. Raspberry Pi with a full-size screen** | A dashboard page in a full-screen browser on a monitor or TV, up to 4K, everything at once, no rotation | Page built and tested in Chromium on a PC. **Not yet run on a Pi.** [docs/kiosk.md](docs/kiosk.md), [docs/raspberry-pi.md](docs/raspberry-pi.md) |
-| **3. Docker dashboard** | The same dashboard page, served by a container on your homelab; open it from any browser | Works: builds and serves the page with demo data, the optional token, and a health check were run in a container. Not yet run against real sources on a homelab. The image is published to ghcr.io with each release. [docs/docker.md](docs/docker.md) |
+| **3. Docker dashboard** | The same dashboard page, served by a container on your homelab; open it from any browser | Works: runs in a container on the author's homelab (0.9.14); the page, the optional token and the health check were also run with demo data. Not every source has been checked against real data (see below). The image is published to ghcr.io with each release. [docs/docker.md](docs/docker.md) |
 
 Ways 2 and 3 are the same page served by the same bridge and need **no MQTT broker**; only the ESP panel does.
 
@@ -35,7 +35,7 @@ The mini display's UI in the desktop simulator:
   publishes it over MQTT.
 - **Panel**: a deliberately dumb MQTT client with a touch screen (planned: an ESP32-S3 SuperMini with a 4" ST7796S
   display) that draws whatever page the bridge sends. Its drawing code, the `ui/` crate, is done and runs today in
-  a desktop simulator. The firmware is started in [`firmware/`](firmware/README.md) but not yet run on a board, and is not part of 0.9. A TLS test binary for the bare board is described [below](#firmware-and-the-tls-spike).
+  a desktop simulator. The firmware is started in [`firmware/`](firmware/README.md) but not yet run on a board, and is not in the release binaries. A TLS test binary for the bare board is described [below](#firmware-and-the-tls-spike).
 - **Kiosk dashboard** (optional, built into the bridge): a web page for a big screen, such as a Raspberry Pi with a
   monitor or TV, or a browser tab on any machine, that shows host stats, running jobs, pull requests, pipelines,
   alerts and source health all at once, with no rotation. It needs no broker (`[mqtt] enabled = false`) and no extra
@@ -183,7 +183,7 @@ anonymous access off, and [deploy/mosquitto](deploy/mosquitto) has an example co
 `--demo` plays a loop of fake data of a little over two minutes, so you can watch every page in the simulator
 without Gitea or Home Assistant: stats, open PRs, pipelines and alerts pages, notices, a running deploy with a
 second job, a failure cleared by the button, a green success flash, and an amber and a red home alert. No
-sources run; only `[mqtt]` and `[alerts]` from the config are used, and the config file is optional.
+sources run and the `[[rotation]]` blocks are ignored; the rest of the config (`[mqtt]`, `[alerts]`, `[kiosk]`, ...) applies, and the config file is optional.
 
 ```sh
 cargo run -p deskwatch-bridge -- --demo    # broker on localhost, or pass a config file
