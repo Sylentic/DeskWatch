@@ -140,6 +140,7 @@ impl Setup {
             .route("/api/setup/source", post(save_source))
             .route("/api/setup/source/delete", post(delete_source))
             .route("/api/setup/mqtt", post(save_mqtt))
+            .route("/api/setup/kiosk", post(save_kiosk))
             .route("/api/setup/restart", post(restart))
             .with_state(self.shared.clone())
     }
@@ -173,6 +174,7 @@ async fn status(State(shared): State<Arc<Shared>>) -> Response {
     out["restart_needed"] = json!(shared.changed.load(Ordering::Relaxed));
     out["can_restart"] = json!(shared.allow_restart);
     out["mqtt"]["editable"] = json!(can_edit);
+    out["host_view_editable"] = json!(can_edit);
     out["mqtt"]["connected"] = json!(shared.mqtt_enabled && shared.mqtt.is_up());
     let mut response = out.to_string().into_response();
     let h = response.headers_mut();
@@ -574,6 +576,48 @@ async fn save_mqtt(
     )
 }
 
+/// Save how the dashboard's built-in layout shows the hosts. There is nothing
+/// to test, and the layout is built at startup, so it applies after a restart.
+async fn save_kiosk(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let request = match change_request(&shared, &headers, &body) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    let store = shared.store.as_ref().expect("checked above");
+    let view = request
+        .get("host_view")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let _saving = shared.saving.lock().await;
+    let current = match store.read_sources() {
+        Ok(current) => current,
+        Err(err) => return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}")),
+    };
+    let text = match edit::set_kiosk(&current, view) {
+        Ok(text) => text,
+        Err(err) => return refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
+    };
+    if let Err(err) = shared.base.clone().with_overlay(&text) {
+        return refuse(StatusCode::BAD_REQUEST, format!("{err:#}"));
+    }
+    if let Err(err) = store.write_sources(&text) {
+        return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}"));
+    }
+    shared.changed.store(true, Ordering::Relaxed);
+    tracing::info!(
+        host_view = view,
+        "setup: host view saved (apply after a restart)"
+    );
+    json_response(
+        StatusCode::OK,
+        json!({ "saved": true, "id": "kiosk", "restart_needed": true }),
+    )
+}
+
 /// Ask the bridge to shut down cleanly and exit, so its supervisor starts it
 /// again with the saved settings. Off unless `[setup] allow_restart` is set.
 async fn restart(
@@ -693,6 +737,8 @@ pub fn describe(config: &Config) -> Value {
             "username": mqtt.username, "password": mqtt_password,
             "origin": if config.mqtt_before_overlay.is_some() { "data_folder" } else { "bridge_toml" },
         },
+        "host_view": config.kiosk.host_view,
+        "host_view_origin": if config.host_view_before_overlay.is_some() { "data_folder" } else { "bridge_toml" },
         "sources": sources,
     })
 }

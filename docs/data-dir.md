@@ -71,6 +71,11 @@ Those keys replace the ones from `bridge.toml` (an empty `username` means no log
 as `bridge.toml` has it. The setup page writes this table (see setup-page.md). The broker is connected once at
 startup, so a change needs a restart.
 
+## The `[kiosk]` table
+
+`sources.toml` can also hold `[kiosk]` with `host_view = "detailed"` or `"compact"` (set on the setup page). It
+replaces `[kiosk] host_view` from `bridge.toml`; nothing else of `[kiosk]` can be set here.
+
 ## Not covered yet
 
 `sources.toml` is read at startup and whenever the setup page saves a change; a hand edit of the file is picked up at the

@@ -161,6 +161,11 @@ body.lost .grid { opacity: .45; filter: grayscale(.7); }
 .card > header { flex: none; display: flex; align-items: baseline; gap: .8rem; margin-bottom: .6rem; }
 .card h2 { font-size: 1.15rem; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; }
 .card .count { margin-left: auto; font-size: 1.15rem; color: var(--text); font-weight: 600; }
+.card .hostnav { margin-left: auto; align-self: center; display: flex; align-items: center; gap: .2rem; }
+.card .hostnav button { min-width: 2.4rem; height: 2.2rem; border: 1px solid var(--card-edge); border-radius: .5rem; background: transparent; color: var(--text); font: inherit; font-size: 1.4rem; line-height: 1; cursor: pointer; }
+.card .hostnav button:hover { background: var(--track); }
+.card .hostnav .pos { min-width: 2.6rem; text-align: center; font-size: .95rem; color: var(--dim); }
+.card .hostnav + .tag, .card .hostnav + .count { margin-left: .8rem; }
 .card .tag { margin-left: auto; font-size: .95rem; color: var(--amber); }
 .card .count + .tag, .card .tag + .count { margin-left: .8rem; }
 .card.stale { border-color: #5b4520; }
@@ -188,6 +193,8 @@ body.lost .grid { opacity: .45; filter: grayscale(.7); }
 /* ---- hosts table ------------------------------------------------------- */
 
 .hosts { display: grid; grid-template-columns: 1fr auto auto auto; gap: .5rem .9rem; align-items: center; font-size: 1.15rem; }
+.hosts.wide { grid-template-columns: 1fr repeat(5, auto); }
+.hosts .net { grid-column: 1 / -1; margin: -.3rem 0 .3rem 1.3rem; color: var(--dim); font-size: .95rem; text-align: left; }
 .hosts .h { color: var(--dim); font-size: .95rem; text-transform: uppercase; letter-spacing: .06em; text-align: right; }
 .hosts .h:first-child { text-align: left; }
 .hosts .n { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

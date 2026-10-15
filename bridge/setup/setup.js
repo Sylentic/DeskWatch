@@ -322,6 +322,36 @@
     return card;
   }
 
+  // How the dashboard's built-in layout shows the hosts. Applies after a restart.
+  function hostViewCard(d) {
+    var card = el('section', 'card');
+    card.appendChild(el('h2', null, 'Dashboard hosts'));
+    var choice = el('select');
+    [['detailed', 'Detailed: bars for one host at a time, with arrows to switch'],
+     ['compact', 'Compact: one table with every host']].forEach(function (o) {
+      var opt = el('option', null, o[1]);
+      opt.value = o[0];
+      opt.selected = d.host_view === o[0];
+      choice.appendChild(opt);
+    });
+    choice.disabled = !d.host_view_editable;
+    card.appendChild(field('Host panel', choice));
+    if (d.host_view_editable) {
+      var save = el('button', 'secondary', 'Save');
+      save.type = 'button';
+      save.addEventListener('click', function () {
+        post('api/setup/kiosk', { host_view: choice.value }).then(function (j) {
+          if (j && j.error) window.alert(j.error);
+          load();
+        });
+      });
+      var line = el('div', 'buttons'); line.appendChild(save); card.appendChild(line);
+    }
+    card.appendChild(el('p', 'muted', 'Only for the built-in layout; panels set in bridge.toml stay as they are. '
+      + (d.host_view_editable ? 'Needs a restart of the bridge.' : 'Give the bridge a data folder to change it here.')));
+    return card;
+  }
+
   function render(d) {
     last = d;
     document.getElementById('build').textContent = 'version ' + d.build;
@@ -352,6 +382,7 @@
       var line = el('div', 'buttons'); line.appendChild(change); info.appendChild(line);
     }
     app.appendChild(info);
+    if (d.kiosk) app.appendChild(hostViewCard(d));
     if (form && form.kind === 'mqtt') app.appendChild(formCard());
 
     if (d.restart_needed || notice) {
