@@ -262,6 +262,7 @@ mod tests {
                 },
                 interrupt: true,
                 updated: started,
+                url: None,
             },
         }
     }
@@ -279,6 +280,7 @@ mod tests {
                 started: 0,
                 finished: Some(10),
                 interrupt: true,
+                url: None,
             },
         }
     }
@@ -296,6 +298,7 @@ mod tests {
                 number: 7,
                 title: "fix login".into(),
                 created: 1,
+                url: None,
             },
             notify: false,
         }

@@ -210,6 +210,15 @@ impl HttpApi {
         Ok(url)
     }
 
+    /// Web page of one agent pool in the organisation settings.
+    pub fn pool_url(&self, pool_id: u64) -> Option<String> {
+        crate::source::web_url(
+            self.base_url.as_str(),
+            &[&self.organization, "_settings", "agentpools"],
+            &[("poolId", &pool_id.to_string())],
+        )
+    }
+
     async fn get_json<T: DeserializeOwned>(&self, url: Url) -> Result<T> {
         let response = self
             .client

@@ -109,7 +109,7 @@ impl ApiLabel {
 impl ApiRunner {
     /// The shared fact. A status nobody knows counts as offline: showing a
     /// runner as idle when we cannot tell would hide an outage.
-    pub fn into_fact(self, source: &str) -> Runner {
+    pub fn into_fact(self, source: &str, url: Option<String>) -> Runner {
         let status = match self.status.as_str() {
             "offline" => RunnerStatus::Offline,
             "active" | "busy" => RunnerStatus::Busy,
@@ -128,6 +128,7 @@ impl ApiRunner {
                 .map(|l| truncate(l.name(), MAX_TITLE_CHARS))
                 .take(MAX_LABELS)
                 .collect(),
+            url,
         }
     }
 }
@@ -173,7 +174,7 @@ mod tests {
         let facts: Vec<_> = list
             .runners
             .into_iter()
-            .map(|r| r.into_fact("gitea"))
+            .map(|r| r.into_fact("gitea", None))
             .collect();
         let status: Vec<_> = facts.iter().map(|r| (r.status, r.disabled)).collect();
         assert_eq!(
@@ -195,7 +196,7 @@ mod tests {
         let runner = |json: &str| -> RunnerStatus {
             serde_json::from_str::<ApiRunner>(json)
                 .unwrap()
-                .into_fact("gitea")
+                .into_fact("gitea", None)
                 .status
         };
         assert_eq!(
@@ -211,6 +212,6 @@ mod tests {
     fn labels_may_be_plain_strings() {
         let runner: ApiRunner =
             serde_json::from_str(r#"{"status":"idle","labels":["a",{"name":"b"}]}"#).unwrap();
-        assert_eq!(runner.into_fact("gitea").labels, ["a", "b"]);
+        assert_eq!(runner.into_fact("gitea", None).labels, ["a", "b"]);
     }
 }

@@ -20,29 +20,62 @@ A grid of cards, 4 columns by 3 rows by default:
 | Widget | Shows |
 |---|---|
 | `stats` | One host in detail: CPU, RAM, disk bars with warning colours, temperature, load, network rates, uptime, a CPU graph of the last few minutes |
-| `hosts` | A compact table of every host (the bridge's own machine and every host a Prometheus source reports) |
+| `hosts` | Every host (the bridge's own machine and every host a Prometheus source reports): a list, or with `view = "detailed"` the chosen host in detail on top of the list |
 | `jobs` | Jobs running now, with step, progress bar and a live elapsed time |
 | `prs` | Open pull requests per repository, newest first, with the total |
-| `pipelines` | The latest run of every pipeline, newest first across all sources (a running run counts from its start, a finished one from its end), so the top rows are always the most recent activity; the default layout shows the 4 latest runs (`rows = 4`, with a "+N more" line when there are more) |
+| `pipelines` | The latest run of every pipeline, newest first across all sources (a running run counts from its start, a finished one from its end), so the top rows are always the most recent activity; in the default layout it is one cell and scrolls |
 | `alerts` | Active alerts (Home Assistant, scripts), most urgent first |
 | `containers` | Containers and hosts that are down (needs the Prometheus source) |
 | `health` | Whether every source is working, or why not (token refused, not reachable) |
 | `runners` | Runners and agents: offline first, then busy, then idle. Not in the default layout; see [runners.md](runners.md) |
 
+### Click through, and scroll
+
+Open PRs, pipeline runs, running jobs and runners are links: a click (or tap) opens the item on its own site in a new
+tab, so the dashboard stays where it is. A row only becomes a link when the source gave an address the bridge could
+trust; otherwise it stays plain text.
+
+| Source | PR | Run and running job | Runner |
+|---|---|---|---|
+| Gitea | the pull request | the run (Gitea's own address when its webhook sends one, else the run by its number, else the repository's Actions page); a job opens its job page or the Actions page | the runners page of the configured scope (`admin`, `user`, `org:<name>`, `repo:<owner>/<name>`) |
+| GitHub and GitHub Enterprise | the pull request | the workflow run; a job opens its job page | the runner settings of the repository or organisation (none for `admin` and `user`, GitHub has no such page) |
+| Azure DevOps | the pull request in its repository | the build results page | the agent pool in the organisation settings (a link per pool, not per agent) |
+
+Addresses are built from the source's own configured address, never hard coded, and only `http` and `https` addresses
+are used. The runner list links go to the page that lists the runners, because the APIs do not give a page per runner.
+
+Every card scrolls inside itself when its list is longer than the card: mouse wheel, touch drag or the arrow keys. There
+is no scrollbar (it clashes with the card edge and the night theme); a fade at the bottom edge shows that there is more.
+Open PRs and Running now show everything unless you set `rows`, so a long list scrolls instead of being cut off with
+"+N more". While you scroll a card, its contents are not redrawn (a redraw would throw your place away); about 8 seconds
+after you let go it catches up, and a card you left scrolled goes back to the top after 30 seconds, so a wall display
+shows the newest items again.
+
 ### Hosts: detailed or compact
 
-A `stats` panel without a `host` shows one host at a time. When the bridge knows more than one host, small arrows
-(`‹ 1/3 ›`) in the panel header step through them, by mouse or by touch. The choice is kept in the browser
-(localStorage), so a reload keeps it; a host that has disappeared falls back to the first one. There is no automatic
-rotation. A `stats` panel with a fixed `host` has no arrows and stays as configured.
+The built-in layout has one **Hosts** panel, one cell wide and two tall. In the `detailed` view (the default) the host
+you chose is shown in detail on top (CPU, RAM and disk bars, temperature, load, network, uptime, a CPU graph) and every
+host is listed below it with its CPU, RAM and disk. Tap or click a host in the list to show it in detail; the choice is
+kept in the browser (localStorage), so a reload keeps it, and a host that has disappeared falls back to the first one.
+There is no automatic rotation. In the `compact` view the panel is only the list, with the download and upload rates
+under each host.
 
-For the built-in layout `[kiosk] host_view` chooses how hosts are shown:
+`[kiosk] host_view = "detailed"` or `"compact"` chooses the view, or the [setup page](setup-page.md) ("Dashboard
+hosts", needs a data folder and a restart of the bridge); the setup page's choice wins over `bridge.toml`. In your own
+`[[kiosk.panel]]` blocks a `hosts` panel takes `view = "detailed"` or `"compact"` the same way; without `view` it is the
+plain table (two cells wide it gets network columns). A `stats` panel keeps working as before: with a fixed `host` it
+shows that host, without one it has arrows (`‹ 1/3 ›`) to step through the hosts.
 
-- `detailed` (the default): the `stats` card above, next to the small `hosts` table.
-- `compact`: only the `hosts` table, as big as the PR panel (1 cell wide, 2 tall) and placed next to it, so the grid keeps its 12 cells. It adds the network rates (a line with download and upload under each host). When you give a `hosts` panel your own `span` of 2 or more cells wide, the rates are extra columns instead.
+### Alerts in the header
 
-The choice can also be made on the [setup page](setup-page.md) ("Dashboard hosts", needs a data folder and a restart of
-the bridge). It is stored in `sources.toml` and wins over `bridge.toml`. It does not touch `[[kiosk.panel]]` blocks.
+Active alerts scroll through the header between the badges and the free space, from left to right, one after the other:
+the severity in colour (INFO blue, WARNING amber, CRITICAL red), what is wrong, the message and the source ("via
+homeassistant"). The most urgent comes in first. With no alerts the area is empty. The ticker pauses while the pointer is
+over it or it is touched, and with "reduce motion" switched on in the system it does not move: the most urgent alert stands
+still instead. The `alerts` badge (warnings and critical) stays next to the other counters.
+
+The "sources" chip on the right (all sources ok, or how many have a problem) opens the [setup page](setup-page.md) when it
+is on, where every source and its status is listed.
 
 Interrupts do not take over the whole screen as they do on the ESP panel, because the other widgets are still
 useful. The bridge's normal priority decides (critical alert, running job, failed, warning, success, notice), and
@@ -88,8 +121,11 @@ dashboard-only config and no broker. The Compose files, the token and the revers
 ## 3. Choose the widgets
 
 `[[kiosk.panel]]` blocks place widgets on the grid, left to right and top to bottom, like the `[[rotation]]` list.
-Without any, the default layout is used: `stats`, `hosts`, `jobs` (2 by 2, top right), `prs` (2 tall),
-`alerts`, `health`, `pipelines` (2 wide, bottom right). Add a `runners` panel yourself (it needs a source with runner scopes set, see
+Without any, the default layout is used: `prs` (a tall column on the left), one `hosts` panel (1 wide, 2 tall, see
+[Hosts](#hosts-detailed-or-compact)) with `pipelines` (1 cell) below it, and `jobs` (Running now) over the two columns on the
+right. There is no Alerts or Sources panel: alerts run through the header (below) and the sources and their status are
+on the [setup page](setup-page.md), which the "sources" chip in the header opens. The `alerts` and `health` widgets still
+exist for your own layout. Add a `runners` panel yourself (it needs a source with runner scopes set, see
 [runners.md](runners.md)); the default grid has no free cell for it.
 
 ```toml
@@ -279,7 +315,7 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
 and at least every 5 seconds (a heartbeat, so the page can tell quiet from gone). Snapshots are versioned with `"v"`
 (1), separately from the MQTT schema. Fields: `build` (bridge version; the page reloads when it changes), `now`
 (Unix seconds), `layout` (the grid, the widgets with their filters, `theme` and `pixel_shift_s` from the config), `screen` (the composer's pick as an MQTT v2
-screen payload, or `null` when idle), `badges`, `hosts`, `down`, `jobs`, `runs`, `pulls`, `alerts` and `sources`.
+screen payload, or `null` when idle), `badges`, `hosts`, `down`, `jobs`, `runs`, `pulls`, `runners`, `queued_jobs`, `alerts` and `sources`. `jobs`, `runs`, `pulls[].items[]` and `runners` each carry a `url` (an `http(s)` address, or `null`).
 Lists are not capped to the ESP panel's five rows. The structure is in `bridge/src/kiosk.rs` (`snapshot`) and
 covered by the tests next to it. Treat it as unstable until 1.0.
 
@@ -303,6 +339,13 @@ against the live `--demo` bridge: `theme = "auto"` picked night and day by the c
 03:00, 06:59, 07:00 and 12:00, with the window crossing midnight), `?theme=` overrode the config, a `source` plus
 prefix `repo` filter kept the matching runs and emptied the others, and the pixel shift walked the nine positions in
 order and stayed at the centre when off. Not checked: how the night theme looks on a real OLED or in a dark room.
+
+The links and scrolling were run in headless Chromium at 1280x720, 1920x1080 and 3840x2160 against the `--demo` bridge
+and a hand-built snapshot: wheel scrolling in a long Open PRs list, the position kept across redraws and while a card is
+held, the return to the top after 30 seconds, and a `javascript:` address staying plain text. Not checked: touch
+scrolling on a real touchscreen, and the links of every source against a real server. The addresses are built from
+documented URL patterns and covered by unit tests with sample data; see
+[azure-devops-verify.md](azure-devops-verify.md) for what to click when you try Azure DevOps.
 
 **Not tested on real Raspberry Pi hardware**: Chromium on Raspberry Pi OS, the `labwc` and LXDE autostart snippets,
 Wayland and X11 behaviour, screen blanking, 4K at 30 or 60 Hz, memory use at 4K, the pointer hiding, and touch

@@ -30,6 +30,8 @@
   var cards = {};              // card key -> { el, html }
   var problem = null;          // why no data arrives, see describe(); null when all is well
   var wsFailed = false;        // the WebSocket is down, the page polls instead
+  var HOLD_MS = 8000;          // a card someone is scrolling is not redrawn for this long
+  var RETURN_MS = 30000;       // a scrolled card goes back to the top after this long untouched
   var noticeKey = null;        // which notice is on screen, to redraw it only on a change
 
   var $ = function (id) { return document.getElementById(id); };
@@ -73,6 +75,15 @@
   function src(kind) {
     return kind ? '<span class="src ' + esc(kind) + '">' + esc(SOURCES[kind] || kind) + '</span>' : '';
   }
+  // A row or card that opens its page on the source. The bridge only sends
+  // http(s) addresses, and this checks again, so nothing else can become a
+  // link. It opens in a new tab: the dashboard itself stays where it is.
+  function href(url) { return typeof url === 'string' && /^https?:\/\//i.test(url) ? url : null; }
+  function linkOpen(url, cls) {
+    var h = href(url);
+    return h ? '<a class="' + cls + ' link" href="' + esc(h) + '" target="_blank" rel="noopener noreferrer">' : '<div class="' + cls + '">';
+  }
+  function linkClose(url) { return href(url) ? '</a>' : '</div>'; }
   function dot(status) { return '<span class="dot ' + esc(status) + '"></span>'; }
 
   // ---- widgets ------------------------------------------------------------
@@ -95,9 +106,49 @@
     if (hosts.length < 2) return;
     var at = 0;
     hosts.forEach(function (h, i) { if (h.name === chosenHost()) at = i; });
-    var next = hosts[(at + step + hosts.length) % hosts.length].name;
-    try { localStorage.setItem(HOST_KEY, next); } catch (e) { /* private mode: the choice lasts until reload */ }
+    chooseHost(hosts[(at + step + hosts.length) % hosts.length].name);
+  }
+  function chooseHost(name) {
+    try { localStorage.setItem(HOST_KEY, name); } catch (e) { /* private mode: the choice lasts until reload */ }
+    // The tap itself held the card still (see HOLD_MS); redraw it now.
+    Object.keys(cards).forEach(function (key) { cards[key].touched = 0; });
     render(snap);
+  }
+
+  // One host in detail: CPU, RAM and disk bars, a few numbers and the CPU graph.
+  function hostBody(host) {
+    var s = host.stats || {};
+    var load = s.load ? s.load.map(function (x) { return x.toFixed(1); }).join(' ') : '--';
+    return '<div class="gauges">' + gauge('CPU', s.cpu_pct, 70, 90) + gauge('RAM', s.ram_pct, 80, 90) + gauge('Disk', s.disk_pct, 80, 90) + '</div>' +
+      '<div class="stat-grid">' +
+      '<div><span class="l">Temp</span><span>' + (s.cpu_temp_c == null ? '--' : Math.round(s.cpu_temp_c) + ' &deg;C') + '</span></div>' +
+      '<div><span class="l">Load</span><span>' + load + '</span></div>' +
+      '<div><span class="l">Net in</span><span>' + (s.net ? rate(s.net.rx_bps) : '--') + '</span></div>' +
+      '<div><span class="l">Net out</span><span>' + (s.net ? rate(s.net.tx_bps) : '--') + '</span></div>' +
+      '<div><span class="l">Uptime</span><span>' + uptime(s.uptime_s) + '</span></div>' +
+      '<div><span class="l">Cores</span><span>' + (s.cpu_count == null ? '--' : s.cpu_count) + '</span></div>' +
+      '</div>' + sparkline(history[host.name]);
+  }
+
+  // The detailed hosts panel: the chosen host in detail on top, every host as a
+  // list below it. Tapping a host in the list chooses it (kept in this browser,
+  // like the arrows of a stats panel).
+  function hostsDetailed(hosts) {
+    var host = findHost(chosenHost()) || hosts[0];
+    var cell = function (v, w, c) { return '<span class="v ' + (v >= c ? 'crit-text' : v >= w ? 'warn-text' : '') + '">' + pct(v) + '</span>'; };
+    var list = '<div class="hostlist"><div class="hostrow head"><span class="h">Host</span><span class="h">CPU</span><span class="h">RAM</span><span class="h">Disk</span></div>';
+    hosts.forEach(function (h) {
+      var s = h.stats || {};
+      list += '<button type="button" class="hostrow' + (h === host ? ' sel' : '') + (h.up ? '' : ' off') + '" data-host-pick="' + esc(h.name) + '"' + (h === host ? ' aria-pressed="true"' : '') + '>' +
+        '<span class="n">' + esc(h.name) + '</span>' + cell(s.cpu_pct, 70, 90) + cell(s.ram_pct, 80, 90) + cell(s.disk_pct, 80, 90) + '</button>';
+    });
+    list += '</div>';
+    var down = (snap.down || []).length;
+    return {
+      title: 'Hosts', count: hosts.length, tag: down ? down + ' down' : (host.up ? '' : 'not answering'),
+      stale: host.stale || !host.up,
+      body: '<div class="hostdetail"><div class="hn">' + esc(host.name) + '</div>' + hostBody(host) + '</div>' + list
+    };
   }
 
   function ciStale() {
@@ -154,21 +205,12 @@
           '<button type="button" data-host-step="1" aria-label="Next host">&rsaquo;</button></span>';
       }
       if (!host) return { title: p.host || 'Server', stale: true, body: '<div class="empty">No data yet</div>' };
-      var s = host.stats || {};
-      var load = s.load ? s.load.map(function (x) { return x.toFixed(1); }).join(' ') : '--';
-      var html = '<div class="gauges">' + gauge('CPU', s.cpu_pct, 70, 90) + gauge('RAM', s.ram_pct, 80, 90) + gauge('Disk', s.disk_pct, 80, 90) + '</div>' +
-        '<div class="stat-grid">' +
-        '<div><span class="l">Temp</span><span>' + (s.cpu_temp_c == null ? '--' : Math.round(s.cpu_temp_c) + ' &deg;C') + '</span></div>' +
-        '<div><span class="l">Load</span><span>' + load + '</span></div>' +
-        '<div><span class="l">Net in</span><span>' + (s.net ? rate(s.net.rx_bps) : '--') + '</span></div>' +
-        '<div><span class="l">Net out</span><span>' + (s.net ? rate(s.net.tx_bps) : '--') + '</span></div>' +
-        '<div><span class="l">Uptime</span><span>' + uptime(s.uptime_s) + '</span></div>' +
-        '<div><span class="l">Cores</span><span>' + (s.cpu_count == null ? '--' : s.cpu_count) + '</span></div>' +
-        '</div>' + sparkline(history[host.name]);
+      var html = hostBody(host);
       return { title: p.title || host.name, nav: nav, tag: host.up ? '' : 'not answering', stale: host.stale || !host.up, body: html };
     },
 
     hosts: function (p) {
+      if (p && p.view === 'detailed' && (snap.hosts || []).length) return hostsDetailed(snap.hosts);
       // The compact host view is a taller table: it adds the network rates, as
       // columns when it is two cells wide, else as a small line under each host.
       var span = (p && p.span) || [1, 1];
@@ -203,18 +245,18 @@
     jobs: function (p) {
       var jobs = (snap.jobs || []).filter(function (j) { return matches(p, j.source, j.project); });
       if (!jobs.length) return { title: 'Running now', body: '<div class="empty">No jobs running</div>', stale: false, plain: true };
-      var max = p.rows || 3, shown = jobs.slice(0, max);
+      var max = p.rows, shown = max ? jobs.slice(0, max) : jobs;
       var html = shown.map(function (j) {
         var step = j.step ? esc(j.step) + (j.step_no && j.step_count ? ' <span>(' + j.step_no + '/' + j.step_count + ')</span>' : '') : 'starting';
         var bar = j.progress == null ? '<div class="pbar spin"><i></i></div>' :
           '<div class="pbar"><i style="--p:' + Math.round(j.progress * 100) + '%"></i></div>';
-        return '<div class="job"><div class="l1"><span class="kind ' + esc(j.kind) + '">' + esc(j.kind) + '</span>' +
+        return linkOpen(j.url, 'job') + '<div class="l1"><span class="kind ' + esc(j.kind) + '">' + esc(j.kind) + '</span>' +
           '<span class="name">' + esc(j.project) + ' / ' + esc(j.pipeline) + '</span>' +
           '<span class="el" data-since="' + j.started + '">' + clock(nowS() - j.started) + '</span></div>' +
           '<div class="l2"><span>' + esc(j.ref) + (j.commit ? ' @ ' + esc(j.commit) : '') + '</span>' + src(j.source) + '<span class="step">' + step + '</span></div>' +
-          bar + (j.progress == null ? '' : '<div class="pct">' + Math.round(j.progress * 100) + '%</div>') + '</div>';
+          bar + (j.progress == null ? '' : '<div class="pct">' + Math.round(j.progress * 100) + '%</div>') + linkClose(j.url);
       }).join('');
-      if (jobs.length > max) html += '<div class="more">+' + (jobs.length - max) + ' more running</div>';
+      if (max && jobs.length > max) html += '<div class="more">+' + (jobs.length - max) + ' more running</div>';
       return { title: 'Running now', count: jobs.length, stale: ciStale(), body: html };
     },
 
@@ -222,8 +264,8 @@
       var runs = (snap.runs || []).filter(function (r) { return matches(p, r.source, r.project); });
       var rows = runs.map(function (r) {
         var when = r.status === 'running' ? 'running' : ago(nowS() - (r.finished || r.started));
-        return '<div class="row">' + dot(runStatus(r.status)) + '<span class="main">' + esc(r.project) + ' / ' + esc(r.pipeline) + '</span>' +
-          '<span class="when">' + when + '</span><span class="sub">' + esc(r.ref) + src(r.source) + (r.step ? ' &middot; failed at ' + esc(r.step) : '') + '</span></div>';
+        return linkOpen(r.url, 'row') + dot(runStatus(r.status)) + '<span class="main">' + esc(r.project) + ' / ' + esc(r.pipeline) + '</span>' +
+          '<span class="when">' + when + '</span><span class="sub">' + esc(r.ref) + src(r.source) + (r.step ? ' &middot; failed at ' + esc(r.step) : '') + '</span>' + linkClose(r.url);
       });
       return { title: 'Pipelines', count: runs.length, stale: ciStale(), body: list(rows, p.rows, '<div class="empty">No runs yet</div>') };
     },
@@ -235,8 +277,8 @@
       repos.forEach(function (r) {
         rows.push('<div class="group"><b>' + esc(r.project) + '</b>' + src(r.source) + '<span>' + r.total + ' open</span></div>');
         (r.items || []).forEach(function (pr) {
-          rows.push('<div class="row pr compact">' + dot('open') + '<span class="main"><span class="num">#' + pr.number + '</span>' + esc(pr.title) + '</span>' +
-            '<span class="when">' + ago(nowS() - pr.created) + '</span></div>');
+          rows.push(linkOpen(pr.url, 'row pr compact') + dot('open') + '<span class="main"><span class="num">#' + pr.number + '</span>' + esc(pr.title) + '</span>' +
+            '<span class="when">' + ago(nowS() - pr.created) + '</span>' + linkClose(pr.url));
         });
       });
       return { title: 'Open PRs', count: total, stale: ciStale(), body: list(rows, p.rows, '<div class="empty good">No open PRs</div>') };
@@ -260,9 +302,9 @@
         var state = r.disabled ? 'disabled' : r.status;
         var dotState = r.disabled ? 'neutral' : r.status === 'busy' ? 'running' : r.status === 'idle' ? 'ok' : 'failed';
         var labels = (r.labels || []).join(', ');
-        return '<div class="row' + (r.disabled ? ' off' : '') + '">' + dot(dotState) + '<span class="main">' + esc(r.name) + '</span>' +
+        return linkOpen(r.url, 'row' + (r.disabled ? ' off' : '')) + dot(dotState) + '<span class="main">' + esc(r.name) + '</span>' +
           '<span class="when ' + (r.status === 'offline' && !r.disabled ? 'crit-text' : '') + '">' + esc(state) + '</span>' +
-          '<span class="sub">' + (labels ? esc(labels) : 'no labels') + src(r.source) + '</span></div>';
+          '<span class="sub">' + (labels ? esc(labels) : 'no labels') + src(r.source) + '</span>' + linkClose(r.url);
       });
       // Jobs waiting for an agent (Azure DevOps pools), busiest pool first.
       var queued = snap.queued_jobs || [];
@@ -312,20 +354,69 @@
     var entry = cards[key];
     if (!entry) {
       var el = document.createElement('section');
+      el.setAttribute('data-key', key);
       var span = panel.span || [1, 1];
       el.style.gridColumn = 'span ' + span[0];
       el.style.gridRow = 'span ' + span[1];
       grid.appendChild(el);
-      entry = cards[key] = { el: el, html: '' };
+      entry = cards[key] = { el: el, html: '', touched: 0 };
     }
     entry.el.className = 'card w-' + panel.widget + (out.stale ? ' stale' : '');
-    if (entry.html !== html) { entry.el.innerHTML = html; entry.html = html; }
+    // A redraw replaces the card's contents. It keeps the scroll position, and
+    // waits while someone is scrolling the card (the next snapshot, at most
+    // 5 s later, catches up) so a touch gesture is not cut off.
+    if (entry.html !== html && Date.now() - entry.touched >= HOLD_MS) {
+      var old = entry.el.querySelector('.body');
+      var top = old ? old.scrollTop : 0;
+      entry.el.innerHTML = html;
+      entry.html = html;
+      var fresh = entry.el.querySelector('.body');
+      if (fresh && top) fresh.scrollTop = top;
+    }
+    hint(entry.el);
+  }
+
+  // A card with more below shows a fade at its bottom edge (there is no
+  // scrollbar). Wheel, touch and keys scroll it.
+  function hint(el) {
+    var body = el.querySelector('.body');
+    var more = !!body && body.scrollHeight - body.clientHeight - body.scrollTop > 4;
+    if (el.classList.contains('more-below') !== more) el.classList.toggle('more-below', more);
+  }
+
+  // Remember when a card was last touched, wheeled or keyed.
+  function touched(ev) {
+    var el = ev.target && ev.target.closest ? ev.target.closest('.card') : null;
+    var entry = el && cards[el.getAttribute('data-key')];
+    if (entry) entry.touched = Date.now();
+  }
+  ['wheel', 'touchstart', 'touchmove', 'pointerdown', 'keydown'].forEach(function (name) {
+    document.addEventListener(name, touched, { passive: true, capture: true });
+  });
+  // Scroll events do not bubble; listen on the way down to update the fade.
+  document.addEventListener('scroll', function (ev) {
+    var el = ev.target && ev.target.closest ? ev.target.closest('.card') : null;
+    if (el) hint(el);
+  }, { passive: true, capture: true });
+
+  // A card that was scrolled and then left alone goes back to the top, so a
+  // wall display shows the newest items again.
+  function returnToTop() {
+    Object.keys(cards).forEach(function (key) {
+      var entry = cards[key], body = entry.el.querySelector('.body');
+      if (entry.touched && Date.now() - entry.touched > RETURN_MS) {
+        entry.touched = 0;
+        if (body && body.scrollTop > 0) body.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    });
   }
 
   // One listener for the arrows: cards are rebuilt on every snapshot.
   $('grid').addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('[data-host-step]') : null;
     if (b) stepHost(Number(b.getAttribute('data-host-step')));
+    var pick = e.target.closest ? e.target.closest('[data-host-pick]') : null;
+    if (pick) chooseHost(pick.getAttribute('data-host-pick'));
   });
 
   function renderBadges() {
@@ -335,6 +426,44 @@
       html += '<span class="chip ' + esc(b.status) + '">' + b.count + ' ' + (names[b.icon] || '') + '</span>';
     });
     if (el.innerHTML !== html) el.innerHTML = html;
+  }
+
+  // ---- alert ticker in the header -----------------------------------------
+
+  // Active alerts, most urgent first, scroll left to right between the badges
+  // and the free space. No alerts: the area is empty. With reduced motion the
+  // newest alert stands still instead. The key leaves out the age, so the
+  // ticker does not restart on every snapshot.
+  var tickerKey = '';
+  var SEVERITY = { critical: 'critical', warn: 'warning', info: 'info' };
+  function renderTicker() {
+    var el = $('ticker'), track = $('track');
+    var alerts = snap.alerts || [];
+    var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (still) alerts = alerts.slice(0, 1);
+    // The track moves right, so its last item leads: reverse, to let the most urgent come in first.
+    var html = alerts.slice().reverse().map(function (a) {
+      var msg = a.message ? ' <span class="m">' + esc(a.message) + '</span>' : '';
+      return '<span class="alert ' + esc(a.severity) + '"><span class="dot ' + esc(a.severity) + '"></span>' +
+        '<b class="sev">' + esc(SEVERITY[a.severity] || a.severity) + '</b> <span class="t">' + esc(a.title) + '</span>' + msg +
+        (a.source ? ' <span class="s">' + esc(a.source) + '</span>' : '') + '</span>';
+    }).join('');
+    var key = html + (still ? '|still' : '');
+    el.hidden = !html;
+    if (key === tickerKey) return;
+    tickerKey = key;
+    track.innerHTML = html;
+    el.classList.toggle('still', still);
+    if (!html || still) { track.style.animation = 'none'; return; }
+    // Slide from just outside the left edge to just outside the right edge at
+    // a steady speed (about 5 rem a second), however long the text is.
+    var rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    var from = -track.scrollWidth, to = el.clientWidth;
+    track.style.setProperty('--from', from + 'px');
+    track.style.setProperty('--to', to + 'px');
+    track.style.animation = 'none';
+    void track.offsetWidth;
+    track.style.animation = 'ticker ' + Math.max(8, (to - from) / (5 * rem)).toFixed(1) + 's linear infinite';
   }
 
   function renderBanner() {
@@ -384,6 +513,10 @@
 
     var layout = snap.layout || { columns: 4, rows: 3, panels: [] };
     $('setup-link').hidden = !layout.setup;
+    // With the setup page on, the sources chip opens it: that is where every
+    // source and its status are listed.
+    if (layout.setup) { $('conn').setAttribute('href', 'setup'); $('conn').setAttribute('title', 'Sources and their status: Setup'); }
+    else { $('conn').removeAttribute('href'); $('conn').removeAttribute('title'); }
     var grid = $('grid');
     grid.style.setProperty('--cols', layout.columns);
     grid.style.setProperty('--rows', layout.rows);
@@ -397,6 +530,7 @@
       if (!keep[key]) { grid.removeChild(cards[key].el); delete cards[key]; }
     });
     renderBadges();
+    renderTicker();
     renderBanner();
     tick();
   }
@@ -487,6 +621,7 @@
     var two = function (n) { return n < 10 ? '0' + n : '' + n; };
     applyTheme(d);
     applyShift(d.getTime());
+    returnToTop();
     $('time').textContent = two(d.getHours()) + ':' + two(d.getMinutes());
     $('date').textContent = d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
     Array.prototype.forEach.call(document.querySelectorAll('[data-since]'), function (el) {

@@ -87,6 +87,7 @@ Add the block from [azure-devops.md](azure-devops.md), start the bridge with `RU
 | Same with a business-hours or branch check | After about 10 seconds a "Check pending" notice and a `review` row |
 | Stop the only agent in a pool | The agent shows offline, with `n offline` in the Runners card |
 | Queue a job with no free agent | A row `<pool>: n waiting` |
+| Click a PR, a run, a running job and a pool on the kiosk | Each opens the same item in Azure DevOps (a pull request page, the build results page, the pool in the organisation settings). If one lands on the wrong page, note which and what the address looked like with the organisation and project replaced |
 | Remove the Agent Pools scope from the token | `cannot poll agent pools` in the log, the pipelines and PR cards stay fresh |
 
 The log lines to grep for: `polling Azure DevOps`, `polled agents`, `polled job requests`, `waiting`,

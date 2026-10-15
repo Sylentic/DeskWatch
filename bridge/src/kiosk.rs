@@ -196,6 +196,7 @@ pub fn snapshot(composer: &Composer, screen: &Screen, badges: &Badges, layout: &
                 map.remove("others");
                 map.insert("key".into(), json!(key));
                 map.insert("updated".into(), json!(job.updated));
+                map.insert("url".into(), json!(job.url));
             }
             data
         })
@@ -215,6 +216,7 @@ pub fn snapshot(composer: &Composer, screen: &Screen, badges: &Badges, layout: &
                 "pipeline": run.pipeline, "ref": run.git_ref,
                 "status": run.status.name(), "step": run.step,
                 "started": run.started, "finished": run.finished, "updated": updated,
+                "url": run.url,
             })
         })
         .collect();
@@ -228,7 +230,7 @@ pub fn snapshot(composer: &Composer, screen: &Screen, badges: &Badges, layout: &
             items.sort_by_key(|p| std::cmp::Reverse(p.created));
             let items: Vec<Value> = items
                 .into_iter()
-                .map(|p| json!({ "number": p.number, "title": p.title, "created": p.created }))
+                .map(|p| json!({ "number": p.number, "title": p.title, "created": p.created, "url": p.url }))
                 .collect();
             json!({ "source": repo.source, "project": repo.project, "total": repo.total, "items": items })
         })
@@ -242,7 +244,7 @@ pub fn snapshot(composer: &Composer, screen: &Screen, badges: &Badges, layout: &
             json!({
                 "source": runner.source, "name": runner.name,
                 "status": runner.status.name(), "disabled": runner.disabled,
-                "labels": runner.labels, "updated": updated,
+                "labels": runner.labels, "updated": updated, "url": runner.url,
             })
         })
         .collect();

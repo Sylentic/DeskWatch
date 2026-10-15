@@ -104,6 +104,8 @@ pub struct Runner {
     /// neutral and never counts as offline.
     pub disabled: bool,
     pub labels: Vec<String>,
+    /// Web page of the runner list (its scope or pool) on the source, if known.
+    pub url: Option<String>,
 }
 
 /// The runners of one scope with the Unix seconds they were last refreshed,
@@ -132,6 +134,8 @@ pub struct RunningJob {
     pub interrupt: bool,
     /// Unix seconds of the last webhook or poll that mentioned this job.
     pub updated: u64,
+    /// Web page of the job or its run on the source, if known.
+    pub url: Option<String>,
 }
 
 /// Status of a run, the same for every CI source (integrations plan 8.1).
@@ -199,6 +203,8 @@ pub struct Run {
     /// May this run's outcome take over the screen? A failure still counts in
     /// the `failed` badge when it may not.
     pub interrupt: bool,
+    /// Web page of the run on the source, if known.
+    pub url: Option<String>,
 }
 
 /// The outcome of a finished run, shown as a red or green alert.
@@ -217,6 +223,8 @@ pub struct OpenPull {
     pub title: String,
     /// Unix seconds, used to list the newest first.
     pub created: u64,
+    /// Web page of the pull request on the source, if known.
+    pub url: Option<String>,
 }
 
 /// Open pull requests of one repository.
@@ -708,6 +716,7 @@ mod tests {
             },
             interrupt: true,
             updated: started,
+            url: None,
         }
     }
 
@@ -722,6 +731,7 @@ mod tests {
             started: 100,
             finished: Some(200),
             interrupt: true,
+            url: None,
         }
     }
 
@@ -730,6 +740,7 @@ mod tests {
             number,
             title: format!("pr {number}"),
             created,
+            url: None,
         }
     }
 
@@ -958,6 +969,7 @@ mod tests {
             status,
             disabled,
             labels: vec!["ubuntu-latest".into()],
+            url: None,
         }
     }
 

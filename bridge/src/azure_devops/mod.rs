@@ -174,9 +174,13 @@ async fn poll_agent_pools(api: &HttpApi, id: &SourceId, names: &[String]) -> Vec
         match api.agents(pool.id).await {
             Ok(agents) => {
                 debug!(pool = %name, count = agents.len(), "polled agents");
+                let url = api.pool_url(pool.id);
                 out.push(Update::Runners {
                     key: format!("{id}:runners:pool:{name}"),
-                    runners: agents.into_iter().map(|a| agent_fact(a, name)).collect(),
+                    runners: agents
+                        .into_iter()
+                        .map(|a| agent_fact(a, name, url.clone()))
+                        .collect(),
                 });
             }
             Err(err) => warn!(pool = %name, "cannot poll agents: {err:#}"),
@@ -202,7 +206,7 @@ async fn poll_agent_pools(api: &HttpApi, id: &SourceId, names: &[String]) -> Vec
 /// offline: showing an agent as idle when we cannot tell would hide an outage.
 /// Agents have no labels; the pool name stands in, so the widget shows where
 /// an agent lives.
-fn agent_fact(agent: Agent, pool: &str) -> Runner {
+fn agent_fact(agent: Agent, pool: &str, url: Option<String>) -> Runner {
     let status = match agent.status.as_str() {
         "online" if agent.assigned_request.is_some() => RunnerStatus::Busy,
         "online" => RunnerStatus::Idle,
@@ -214,6 +218,7 @@ fn agent_fact(agent: Agent, pool: &str) -> Runner {
         status,
         disabled: agent.enabled == Some(false),
         labels: vec![truncate(pool, MAX_TITLE_CHARS)],
+        url,
     }
 }
 
@@ -325,6 +330,8 @@ struct LiveBuild {
     check_polls: u8,
     /// A job screen for this build was sent and not yet withdrawn.
     job_shown: bool,
+    /// Web page of the build.
+    url: Option<String>,
 }
 
 /// State the Azure DevOps source keeps between polls.
@@ -350,6 +357,8 @@ pub struct AzdoState {
     live: BTreeMap<(String, u64), LiveBuild>,
     /// First failing step per failed build (`None`: looked up, none found).
     failed_steps: HashMap<(String, u64), Option<String>>,
+    /// Site address and organisation, for links on the kiosk.
+    web: (String, String),
     /// Result of the last poll per project.
     health: BTreeMap<String, Health>,
 }
@@ -371,6 +380,7 @@ impl AzdoState {
             runs: HashMap::new(),
             live: BTreeMap::new(),
             failed_steps: HashMap::new(),
+            web: (config.base_url.clone(), config.organization.clone()),
             health: BTreeMap::new(),
         }
     }
@@ -410,6 +420,7 @@ impl AzdoState {
                 .or_default()
                 .push(pull);
         }
+        let web = self.web.clone();
         let first_poll = !self.known_pulls.contains_key(project);
         let known = self.known_pulls.entry(project.to_string()).or_default();
 
@@ -424,7 +435,11 @@ impl AzdoState {
                         key: pulls_key(&self.id, project, repo),
                         project: source::label(&self.alias, &format!("{project}/{repo}")),
                         source: KIND.into(),
-                        pull: open_pull(pull, now),
+                        pull: open_pull(
+                            pull,
+                            now,
+                            pull_url(&web, project, repo, pull.pull_request_id),
+                        ),
                         notify: true,
                     });
                 }
@@ -451,7 +466,10 @@ impl AzdoState {
             .map(|(repo, list)| (repo.to_string(), list.clone()))
             .chain(gone.into_iter().map(|repo| (repo, Vec::new())));
         for (repo, list) in repos {
-            let open: Vec<OpenPull> = list.iter().map(|p| open_pull(p, now)).collect();
+            let open: Vec<OpenPull> = list
+                .iter()
+                .map(|p| open_pull(p, now, pull_url(&web, project, &repo, p.pull_request_id)))
+                .collect();
             out.push(Update::Pulls {
                 key: pulls_key(&self.id, project, &repo),
                 repo: RepoPulls {
@@ -519,6 +537,7 @@ impl AzdoState {
                 started,
                 finished,
                 interrupt: fresh && may_interrupt,
+                url: build_url(&self.web, project, build.id),
             };
             let key = format!("{}:{project}:{pipeline}", self.id);
             if self.runs.get(&key).map(|(run, _)| run) != Some(&fact) {
@@ -541,6 +560,7 @@ impl AzdoState {
             let pipeline = build.definition.name.clone();
             let live_key = (project.to_string(), build.id);
             let kind = self.kind_of(&pipeline);
+            let url = build_url(&self.web, project, build.id);
             self.live.entry(live_key).or_insert_with(|| LiveBuild {
                 run_key: format!("{}:{project}:{pipeline}", self.id),
                 git_ref: branch_name(build.source_branch.as_deref()),
@@ -560,6 +580,7 @@ impl AzdoState {
                 waiting: false,
                 check_polls: 0,
                 job_shown: false,
+                url,
             });
         }
         let over: Vec<(String, u64)> = self
@@ -666,6 +687,7 @@ impl AzdoState {
                     data,
                     interrupt: live.interrupt,
                     updated: now,
+                    url: live.url.clone(),
                 },
             });
         }
@@ -705,15 +727,43 @@ fn job_data(live: &LiveBuild, project_label: &str, view: &View) -> JobData {
     }
 }
 
+/// Web page of a build: `{site}/{org}/{project}/_build/results?buildId=N`.
+fn build_url(web: &(String, String), project: &str, build_id: u64) -> Option<String> {
+    let (base, org) = web;
+    source::web_url(
+        base,
+        &[org, project, "_build", "results"],
+        &[("buildId", &build_id.to_string())],
+    )
+}
+
+/// Web page of a pull request: `{site}/{org}/{project}/_git/{repo}/pullrequest/N`.
+fn pull_url(web: &(String, String), project: &str, repo: &str, number: u64) -> Option<String> {
+    let (base, org) = web;
+    source::web_url(
+        base,
+        &[
+            org,
+            project,
+            "_git",
+            repo,
+            "pullrequest",
+            &number.to_string(),
+        ],
+        &[],
+    )
+}
+
 fn pulls_key(id: &SourceId, project: &str, repo: &str) -> String {
     format!("{id}:{project}/{repo}")
 }
 
-fn open_pull(pull: &PullRequest, now: u64) -> OpenPull {
+fn open_pull(pull: &PullRequest, now: u64, url: Option<String>) -> OpenPull {
     OpenPull {
         number: pull.pull_request_id,
         title: pull.title.clone(),
         created: unix_seconds(pull.creation_date.as_deref()).unwrap_or(now),
+        url,
     }
 }
 

@@ -464,3 +464,90 @@ async fn refused_runner_list_does_not_hurt_source_health() {
     }
     assert_eq!(healths, [Health::Ok]);
 }
+
+#[test]
+fn kiosk_links_come_from_github_and_bad_ones_are_dropped() {
+    let mut source = state(true, 0);
+    let pulls: Vec<PullRequest> = serde_json::from_value(json!([
+        { "number": 5, "title": "ok", "html_url": "https://github.com/your-user/demo/pull/5" },
+        { "number": 6, "title": "odd", "html_url": "javascript:alert(1)" },
+        { "number": 7, "title": "none" }
+    ]))
+    .unwrap();
+    let updates = source.on_pulls(REPO, pulls, NOW);
+    let Some(Update::Pulls { repo, .. }) = updates.last() else {
+        panic!("expected the PR list");
+    };
+    let urls: Vec<_> = repo.pulls.iter().map(|p| p.url.as_deref()).collect();
+    assert_eq!(
+        urls,
+        [Some("https://github.com/your-user/demo/pull/5"), None, None]
+    );
+
+    // A run links to itself, and its job to the job page or else the run.
+    let runs: Vec<WorkflowRun> = serde_json::from_value(json!([{
+        "id": 9, "path": ".github/workflows/ci.yml", "status": "in_progress",
+        "head_branch": "main", "html_url": "https://github.com/your-user/demo/actions/runs/9"
+    }]))
+    .unwrap();
+    let updates = source.on_runs(REPO, runs, NOW);
+    let run_url = updates.iter().find_map(|u| match u {
+        Update::Run { run, .. } => run.url.clone(),
+        _ => None,
+    });
+    assert_eq!(
+        run_url.as_deref(),
+        Some("https://github.com/your-user/demo/actions/runs/9")
+    );
+    let jobs: Vec<Job> = serde_json::from_value(json!([
+        { "id": 1, "run_id": 9, "name": "a", "status": "in_progress",
+          "html_url": "https://github.com/your-user/demo/actions/runs/9/job/1" },
+        { "id": 2, "run_id": 9, "name": "b", "status": "in_progress" }
+    ]))
+    .unwrap();
+    let (updates, _) = source.on_jobs(REPO, 9, jobs, NOW + 5);
+    let urls: Vec<_> = updates
+        .iter()
+        .filter_map(|u| match u {
+            Update::JobRunning { job, .. } => job.url.clone(),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        urls,
+        [
+            "https://github.com/your-user/demo/actions/runs/9/job/1",
+            "https://github.com/your-user/demo/actions/runs/9"
+        ]
+    );
+}
+
+#[test]
+fn runner_pages_follow_the_api_address() {
+    let links = |api: &str| {
+        let source = state(true, 0).with_api_base(api);
+        let scope = |text: &str| source.runners_url(&RunnerScope::parse(text).unwrap());
+        (scope("repo:me/demo"), scope("org:team"), scope("admin"))
+    };
+    let (repo, org, admin) = links("https://api.github.com");
+    assert_eq!(
+        repo.as_deref(),
+        Some("https://github.com/me/demo/settings/actions/runners")
+    );
+    assert_eq!(
+        org.as_deref(),
+        Some("https://github.com/organizations/team/settings/actions/runners")
+    );
+    assert_eq!(admin, None, "no such page on GitHub");
+    // Enterprise Server and GHE.com.
+    assert_eq!(
+        links("https://ghe.example/api/v3").0.as_deref(),
+        Some("https://ghe.example/me/demo/settings/actions/runners")
+    );
+    assert_eq!(
+        links("https://api.acme.ghe.com").0.as_deref(),
+        Some("https://acme.ghe.com/me/demo/settings/actions/runners")
+    );
+    // An address we cannot map makes no link at all.
+    assert_eq!(links("http://127.0.0.1:9999").0, None);
+}
