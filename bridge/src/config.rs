@@ -132,7 +132,7 @@ pub struct Config {
     /// Folder the bridge may write to. Off unless set.
     #[serde(default)]
     pub data: DataConfig,
-    /// The setup page. Off unless `token_file` is set.
+    /// The setup page. Off unless `enabled` is true (or the deprecated `token_file` is set).
     #[serde(default)]
     pub setup: SetupConfig,
     /// `kind:name` of the sources that came from `sources.toml` in the data
@@ -238,7 +238,8 @@ impl Default for ServerConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct HttpConfig {
-    /// Address webhook routes listen on. Only opened when a source needs it.
+    /// Address the HTTP routes listen on: webhooks, the kiosk page, the setup page and
+    /// `/healthz`. Only opened when at least one of them exists.
     pub listen: SocketAddr,
 }
 

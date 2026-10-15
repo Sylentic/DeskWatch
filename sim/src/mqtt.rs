@@ -21,7 +21,7 @@ const PASSWORD_ENV: &str = "DESKWATCH_MQTT_PASSWORD";
 /// Wait before the next attempt after a broker connection error.
 const RECONNECT_DELAY: Duration = Duration::from_secs(3);
 
-/// Short or long button press, as in schema section 5.
+/// Short or long button press, as in schema section 2.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Press {
     Short,
