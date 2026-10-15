@@ -8,6 +8,10 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Fixed
+
+- The Docker healthcheck now covers a bridge that only serves the setup page (no dashboard, MQTT off): it checks `/setup` instead of passing without looking.
+
 ## [0.9.14]
 
 ### Changed
