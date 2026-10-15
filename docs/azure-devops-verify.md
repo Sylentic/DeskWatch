@@ -105,7 +105,7 @@ cargo run -p deskwatch-bridge -- ado-capture --organization your-org --project "
 ```
 
 On Windows PowerShell set the token with `$env:AZURE_DEVOPS_PAT = Read-Host "PAT"` first (or use `--token-file`). The
-`ado-capture` command is in the bridge from the release after 0.9.14, so run it from a clone of the repository as above
+`ado-capture` command is in the bridge from 0.9.15, so run it from a clone of the repository as above
 (`cargo run`) until then. Useful options: `--project` more than once, `--pool "Pool name"` for the self-hosted pool
 you care about, `--build 1234` for the run that is waiting on an approval or check right now (start one first, then
 pass its id), `--timelines 15` for more history. `--help` lists them all.
