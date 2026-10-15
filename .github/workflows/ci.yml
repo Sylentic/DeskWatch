@@ -176,6 +176,10 @@ jobs:
       # Installs the "esp" toolchain (rust-toolchain.toml in firmware/ selects
       # it) and the Xtensa GCC the linker needs.
       - uses: esp-rs/xtensa-toolchain@v1.6
+        # espup asks the GitHub API for the latest Xtensa Rust release.
+        # Without a token that call is rate limited and fails with a 403.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           buildtargets: esp32s3
           ldproxy: false
