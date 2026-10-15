@@ -10,6 +10,11 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Added
 
+- **`deskwatch-bridge ado-capture`**: records what a real Azure DevOps organisation answers (builds, timelines, pull
+  requests, agent pools, agents, job requests) into one file with every name, id, link and mail address replaced by
+  stable placeholders, so the answers can be shared and compared with the hand-written test data. Read-only, the token
+  is never printed or saved, and a final check refuses to write a file that still holds the organisation, a project
+  name or the token. See `docs/azure-devops-verify.md`.
 - `docs/mosquitto.md`: a step-by-step switch-over for a broker in Docker (section 7), plus notes that an ACL leaves every unlisted client without access and that Docker often publishes the broker port on all interfaces.
 
 ### Fixed

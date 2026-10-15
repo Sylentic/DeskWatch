@@ -92,7 +92,51 @@ Add the block from [azure-devops.md](azure-devops.md), start the bridge with `RU
 The log lines to grep for: `polling Azure DevOps`, `polled agents`, `polled job requests`, `waiting`,
 `cannot poll agent pools`, `no self-hosted agent pool with this name`.
 
-## 4. Report back
+## 4. Record the answers safely (`ado-capture`)
+
+Instead of copying JSON by hand, the bridge can record every answer from section 2 for you and hide all names:
+
+```sh
+# Linux or macOS: type the token without it ending up in your shell history
+read -rs AZURE_DEVOPS_PAT; export AZURE_DEVOPS_PAT
+
+cargo run -p deskwatch-bridge -- ado-capture --organization your-org --project "Your Project" \
+  --hide "yourcompany" --hide "someone@example.com"
+```
+
+On Windows PowerShell set the token with `$env:AZURE_DEVOPS_PAT = Read-Host "PAT"` first (or use `--token-file`). The
+`ado-capture` command is in the bridge from the release after 0.9.14, so run it from a clone of the repository as above
+(`cargo run`) until then. Useful options: `--project` more than once, `--pool "Pool name"` for the self-hosted pool
+you care about, `--build 1234` for the run that is waiting on an approval or check right now (start one first, then
+pass its id), `--timelines 15` for more history. `--help` lists them all.
+
+What it does:
+
+- It sends only the same `GET` requests as the bridge: builds, the timelines of the newest builds, open pull
+  requests, agent pools, and the agents and job requests of the self-hosted pools.
+- It writes one file, `ado-capture.json`. The token is never printed or saved.
+- Every name is replaced by a placeholder that stays the same inside the file (`definition-1`, `agent-2`,
+  `user-1@example.invalid`), so the relations stay: which build belongs to which pipeline, which agent runs which job.
+  Ids are renumbered, links are replaced, branches other than `main` become `branch-1`, commit ids and GUIDs are faked.
+  Kept as they are: statuses and results, record types such as `Checkpoint.Approval`, timestamps, counts, order and
+  booleans. Build parameters, variables and links are dropped.
+- Anything the tool does not know is hidden, not kept. The organisation, the project names, every `--hide` word and
+  the token are searched for once more in the result; one hit and the file is not written.
+- At the end it prints which requests worked (`ok`) and which did not (`FAILED ... HTTP 403`), for example a missing
+  scope.
+
+Open the file and read it before you share it; names are replaced, but you are the judge. The "report" at the top of
+the file lists the combinations of status and result, and the timeline record types and states, that it saw.
+
+### What to share
+
+1. `ado-capture.json`, once with something running or waiting if you can (a queued run, a run on an approval, a
+   run on a business-hours check), and once at rest.
+2. In a sentence: what the Azure DevOps website showed at that moment (for example "one run waiting on approval,
+   agent Pool X had one busy and one idle agent"), so the data can be compared with what you saw.
+
+## 5. Report back
 
 For anything that differs, an issue with the sanitised JSON of the one record (not the whole answer) is enough: the
 fixtures in `bridge/src/azure_devops/testdata/` are written to match, and the parser is only a few lines per shape.
+Captured files from section 4 can be turned into new fixtures and compared with the hand-written ones.
