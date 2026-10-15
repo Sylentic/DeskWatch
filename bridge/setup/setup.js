@@ -327,8 +327,8 @@
     var card = el('section', 'card');
     card.appendChild(el('h2', null, 'Dashboard hosts'));
     var choice = el('select');
-    [['detailed', 'Detailed: bars for one host at a time, with arrows to switch'],
-     ['compact', 'Compact: one table with every host']].forEach(function (o) {
+    [['detailed', 'Detailed: one host in detail on top, every host as a list below (tap to switch)'],
+     ['compact', 'Compact: only the list of hosts, with network rates']].forEach(function (o) {
       var opt = el('option', null, o[1]);
       opt.value = o[0];
       opt.selected = d.host_view === o[0];

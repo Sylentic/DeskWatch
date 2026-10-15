@@ -321,7 +321,8 @@ fn snapshot_carries_every_fact() {
     assert_eq!(snap["v"], 1);
     assert_eq!(snap["now"], NOW);
     assert_eq!(snap["layout"]["columns"], 4);
-    assert_eq!(snap["layout"]["panels"][0]["widget"], "stats");
+    assert_eq!(snap["layout"]["panels"][0]["widget"], "prs");
+    assert_eq!(snap["layout"]["panels"][1]["widget"], "hosts");
 
     // Local host first, the duplicate name only once.
     let names: Vec<&str> = snap["hosts"]

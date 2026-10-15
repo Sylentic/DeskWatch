@@ -315,9 +315,10 @@ pub struct KioskConfig {
     pub host_view: HostView,
 }
 
-/// The host panel of the built-in layout. `detailed` is a stats card with
-/// bars for one host at a time, with arrows to switch host, next to a small
-/// table of all hosts. `compact` is one taller table of all hosts, as big as the PR panel.
+/// What the hosts panel of the built-in layout shows. `detailed`: the chosen
+/// host in detail (bars, temperature, load, network, a CPU graph) with every
+/// host as a list below it; tapping a host in the list chooses it. `compact`:
+/// only that list, with the network rates.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum HostView {
@@ -402,6 +403,10 @@ impl KioskConfig {
             anyhow::ensure!(
                 panel.host.is_none() || panel.widget == Widget::Stats,
                 "kiosk.panel {n}: host only applies to the stats widget"
+            );
+            anyhow::ensure!(
+                panel.view.is_none() || panel.widget == Widget::Hosts,
+                "kiosk.panel {n}: view only applies to the hosts widget"
             );
             let filterable = matches!(panel.widget, Widget::Jobs | Widget::Prs | Widget::Pipelines);
             anyhow::ensure!(
@@ -497,6 +502,11 @@ pub struct PanelConfig {
     /// trailing `*` matches a prefix (`acme/*`). Same widgets as `source`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<String>,
+    /// How a `hosts` widget shows its hosts: `detailed` (the chosen host in
+    /// detail on top, every host as a list below) or `compact` (the list
+    /// only). Without it the widget is the plain table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<HostView>,
     /// Grid cells taken: `[columns, rows]`.
     #[serde(default = "default_span")]
     pub span: [u8; 2],
@@ -514,37 +524,26 @@ fn panel(widget: Widget, span: [u8; 2]) -> PanelConfig {
         rows: None,
         source: None,
         repo: None,
+        view: None,
         span,
     }
 }
 
-/// The layout used when `[[kiosk.panel]]` is not set, for the default 4x3 grid.
+/// The layout used when `[[kiosk.panel]]` is not set, for the default 4x3 grid:
+/// Open PRs as a tall column on the left, one Hosts panel (1 wide, 2 tall) with
+/// Pipelines (1 cell) below it in the middle, Running now over the other two
+/// columns. Alerts are in the page header and the sources are on the setup
+/// page, so neither has a panel here.
 pub fn default_panels(view: HostView) -> Vec<PanelConfig> {
-    let pipelines = PanelConfig {
-        // Newest first and capped at the 4 latest runs, which fit at 1080p.
-        rows: Some(4),
-        ..panel(Widget::Pipelines, [2, 1])
-    };
-    match view {
-        HostView::Detailed => vec![
-            panel(Widget::Stats, [1, 1]),
-            panel(Widget::Hosts, [1, 1]),
-            panel(Widget::Jobs, [2, 2]),
-            panel(Widget::Prs, [1, 2]),
-            panel(Widget::Alerts, [1, 1]),
-            panel(Widget::Health, [1, 1]),
-            pipelines,
-        ],
-        // One table as tall as the PR panel, next to it: the same 12 cells.
-        HostView::Compact => vec![
-            panel(Widget::Hosts, [1, 2]),
-            panel(Widget::Prs, [1, 2]),
-            panel(Widget::Jobs, [2, 2]),
-            panel(Widget::Alerts, [1, 1]),
-            panel(Widget::Health, [1, 1]),
-            pipelines,
-        ],
-    }
+    vec![
+        panel(Widget::Prs, [1, 3]),
+        PanelConfig {
+            view: Some(view),
+            ..panel(Widget::Hosts, [1, 2])
+        },
+        panel(Widget::Jobs, [2, 3]),
+        panel(Widget::Pipelines, [1, 1]),
+    ]
 }
 
 /// The `[alerts]` table: alerts that arrive on `<topic_prefix>/alert`.
@@ -1652,26 +1651,23 @@ title = "Reviews"
     }
 
     #[test]
-    fn compact_host_view_replaces_both_host_panels_with_one_table() {
-        let widgets =
-            |view| -> Vec<Widget> { default_panels(view).iter().map(|p| p.widget).collect() };
-        let detailed = widgets(HostView::Detailed);
-        assert!(detailed.contains(&Widget::Stats) && detailed.contains(&Widget::Hosts));
-        let compact = widgets(HostView::Compact);
-        assert!(!compact.contains(&Widget::Stats));
-        assert_eq!(compact.iter().filter(|w| **w == Widget::Hosts).count(), 1);
-        // The grid stays full: the same number of cells in both views, and the
-        // table is as big as the PR panel.
-        let hosts = default_panels(HostView::Compact)[0].clone();
-        assert_eq!(hosts.span, [1, 2]);
-        let cells = |view| -> u32 {
-            default_panels(view)
-                .iter()
-                .map(|p| u32::from(p.span[0]) * u32::from(p.span[1]))
-                .sum()
-        };
-        assert_eq!(cells(HostView::Detailed), cells(HostView::Compact));
-
+    fn the_default_layout_has_one_hosts_panel_and_no_alerts_or_sources() {
+        for view in [HostView::Detailed, HostView::Compact] {
+            let panels = default_panels(view);
+            let widgets: Vec<Widget> = panels.iter().map(|p| p.widget).collect();
+            // Alerts live in the page header, the sources on the setup page.
+            assert_eq!(
+                widgets,
+                [Widget::Prs, Widget::Hosts, Widget::Jobs, Widget::Pipelines]
+            );
+            let hosts = &panels[1];
+            assert_eq!((hosts.span, hosts.view), ([1, 2], Some(view)));
+            // Open PRs a tall column, Running now big, Pipelines one cell.
+            assert_eq!(panels[0].span, [1, 3]);
+            assert_eq!(panels[2].span, [2, 3]);
+            assert_eq!((panels[3].span, panels[3].rows), ([1, 1], None));
+        }
+        // `host_view` picks the view of that panel, from bridge.toml or the setup page.
         let config = Config::from_toml("[kiosk]\nhost_view = \"compact\"\n").unwrap();
         assert_eq!(config.kiosk.panels(), default_panels(HostView::Compact));
         // The setup page's overlay wins over bridge.toml and can be taken off again.
@@ -1681,12 +1677,21 @@ title = "Reviews"
             .unwrap();
         assert_eq!(with.kiosk.host_view, HostView::Compact);
         assert_eq!(with.without_overlay().kiosk.host_view, HostView::Detailed);
-        // Panels set by hand are never touched.
+        // Panels set by hand are never touched, and a `stats` panel with a
+        // fixed host or a plain `hosts` table keep working.
         let custom = Config::from_toml(
-            "[kiosk]\nhost_view = \"compact\"\n[[kiosk.panel]]\nwidget = \"stats\"\n",
+            "[kiosk]\nhost_view = \"compact\"\n[[kiosk.panel]]\nwidget = \"stats\"\nhost = \"nas\"\n\
+             [[kiosk.panel]]\nwidget = \"hosts\"\n[[kiosk.panel]]\nwidget = \"alerts\"\n\
+             [[kiosk.panel]]\nwidget = \"health\"\n",
         )
         .unwrap();
-        assert_eq!(custom.kiosk.panels().len(), 1);
+        let panels = custom.kiosk.panels();
+        assert_eq!(panels.len(), 4);
+        assert_eq!(panels[1].view, None);
+        // `view` only means something on a hosts panel.
+        assert!(
+            Config::from_toml("[[kiosk.panel]]\nwidget = \"prs\"\nview = \"compact\"\n").is_err()
+        );
     }
 
     #[test]
@@ -1696,12 +1701,6 @@ title = "Reviews"
                 .iter()
                 .all(|p| p.widget != Widget::Runners)
         );
-        // The default Pipelines panel shows the 4 latest runs.
-        let pipelines = default_panels(HostView::Detailed)
-            .into_iter()
-            .find(|p| p.widget == Widget::Pipelines)
-            .unwrap();
-        assert_eq!(pipelines.rows, Some(4));
         let config =
             Config::from_toml("[[kiosk.panel]]\nwidget = \"runners\"\nspan = [2, 1]").unwrap();
         assert_eq!(config.kiosk.panels()[0].widget, Widget::Runners);

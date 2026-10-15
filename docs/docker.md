@@ -459,7 +459,7 @@ Every version tag (from 0.9.6 on, except 0.9.8, which was never built) is built 
 [`release.yml`](../.github/workflows/release.yml) and pushed to GitHub's registry:
 
 ```sh
-docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 0.9.15; no "v"
+docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 0.9.16; no "v"
 docker run --rm -p 8787:8787 ghcr.io/sylentic/deskwatch-bridge:<version> --demo --kiosk --no-mqtt
 ```
 

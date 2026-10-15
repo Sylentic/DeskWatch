@@ -106,9 +106,49 @@
     if (hosts.length < 2) return;
     var at = 0;
     hosts.forEach(function (h, i) { if (h.name === chosenHost()) at = i; });
-    var next = hosts[(at + step + hosts.length) % hosts.length].name;
-    try { localStorage.setItem(HOST_KEY, next); } catch (e) { /* private mode: the choice lasts until reload */ }
+    chooseHost(hosts[(at + step + hosts.length) % hosts.length].name);
+  }
+  function chooseHost(name) {
+    try { localStorage.setItem(HOST_KEY, name); } catch (e) { /* private mode: the choice lasts until reload */ }
+    // The tap itself held the card still (see HOLD_MS); redraw it now.
+    Object.keys(cards).forEach(function (key) { cards[key].touched = 0; });
     render(snap);
+  }
+
+  // One host in detail: CPU, RAM and disk bars, a few numbers and the CPU graph.
+  function hostBody(host) {
+    var s = host.stats || {};
+    var load = s.load ? s.load.map(function (x) { return x.toFixed(1); }).join(' ') : '--';
+    return '<div class="gauges">' + gauge('CPU', s.cpu_pct, 70, 90) + gauge('RAM', s.ram_pct, 80, 90) + gauge('Disk', s.disk_pct, 80, 90) + '</div>' +
+      '<div class="stat-grid">' +
+      '<div><span class="l">Temp</span><span>' + (s.cpu_temp_c == null ? '--' : Math.round(s.cpu_temp_c) + ' &deg;C') + '</span></div>' +
+      '<div><span class="l">Load</span><span>' + load + '</span></div>' +
+      '<div><span class="l">Net in</span><span>' + (s.net ? rate(s.net.rx_bps) : '--') + '</span></div>' +
+      '<div><span class="l">Net out</span><span>' + (s.net ? rate(s.net.tx_bps) : '--') + '</span></div>' +
+      '<div><span class="l">Uptime</span><span>' + uptime(s.uptime_s) + '</span></div>' +
+      '<div><span class="l">Cores</span><span>' + (s.cpu_count == null ? '--' : s.cpu_count) + '</span></div>' +
+      '</div>' + sparkline(history[host.name]);
+  }
+
+  // The detailed hosts panel: the chosen host in detail on top, every host as a
+  // list below it. Tapping a host in the list chooses it (kept in this browser,
+  // like the arrows of a stats panel).
+  function hostsDetailed(hosts) {
+    var host = findHost(chosenHost()) || hosts[0];
+    var cell = function (v, w, c) { return '<span class="v ' + (v >= c ? 'crit-text' : v >= w ? 'warn-text' : '') + '">' + pct(v) + '</span>'; };
+    var list = '<div class="hostlist"><div class="hostrow head"><span class="h">Host</span><span class="h">CPU</span><span class="h">RAM</span><span class="h">Disk</span></div>';
+    hosts.forEach(function (h) {
+      var s = h.stats || {};
+      list += '<button type="button" class="hostrow' + (h === host ? ' sel' : '') + (h.up ? '' : ' off') + '" data-host-pick="' + esc(h.name) + '"' + (h === host ? ' aria-pressed="true"' : '') + '>' +
+        '<span class="n">' + esc(h.name) + '</span>' + cell(s.cpu_pct, 70, 90) + cell(s.ram_pct, 80, 90) + cell(s.disk_pct, 80, 90) + '</button>';
+    });
+    list += '</div>';
+    var down = (snap.down || []).length;
+    return {
+      title: 'Hosts', count: hosts.length, tag: down ? down + ' down' : (host.up ? '' : 'not answering'),
+      stale: host.stale || !host.up,
+      body: '<div class="hostdetail"><div class="hn">' + esc(host.name) + '</div>' + hostBody(host) + '</div>' + list
+    };
   }
 
   function ciStale() {
@@ -165,21 +205,12 @@
           '<button type="button" data-host-step="1" aria-label="Next host">&rsaquo;</button></span>';
       }
       if (!host) return { title: p.host || 'Server', stale: true, body: '<div class="empty">No data yet</div>' };
-      var s = host.stats || {};
-      var load = s.load ? s.load.map(function (x) { return x.toFixed(1); }).join(' ') : '--';
-      var html = '<div class="gauges">' + gauge('CPU', s.cpu_pct, 70, 90) + gauge('RAM', s.ram_pct, 80, 90) + gauge('Disk', s.disk_pct, 80, 90) + '</div>' +
-        '<div class="stat-grid">' +
-        '<div><span class="l">Temp</span><span>' + (s.cpu_temp_c == null ? '--' : Math.round(s.cpu_temp_c) + ' &deg;C') + '</span></div>' +
-        '<div><span class="l">Load</span><span>' + load + '</span></div>' +
-        '<div><span class="l">Net in</span><span>' + (s.net ? rate(s.net.rx_bps) : '--') + '</span></div>' +
-        '<div><span class="l">Net out</span><span>' + (s.net ? rate(s.net.tx_bps) : '--') + '</span></div>' +
-        '<div><span class="l">Uptime</span><span>' + uptime(s.uptime_s) + '</span></div>' +
-        '<div><span class="l">Cores</span><span>' + (s.cpu_count == null ? '--' : s.cpu_count) + '</span></div>' +
-        '</div>' + sparkline(history[host.name]);
+      var html = hostBody(host);
       return { title: p.title || host.name, nav: nav, tag: host.up ? '' : 'not answering', stale: host.stale || !host.up, body: html };
     },
 
     hosts: function (p) {
+      if (p && p.view === 'detailed' && (snap.hosts || []).length) return hostsDetailed(snap.hosts);
       // The compact host view is a taller table: it adds the network rates, as
       // columns when it is two cells wide, else as a small line under each host.
       var span = (p && p.span) || [1, 1];
@@ -384,6 +415,8 @@
   $('grid').addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('[data-host-step]') : null;
     if (b) stepHost(Number(b.getAttribute('data-host-step')));
+    var pick = e.target.closest ? e.target.closest('[data-host-pick]') : null;
+    if (pick) chooseHost(pick.getAttribute('data-host-pick'));
   });
 
   function renderBadges() {
@@ -393,6 +426,44 @@
       html += '<span class="chip ' + esc(b.status) + '">' + b.count + ' ' + (names[b.icon] || '') + '</span>';
     });
     if (el.innerHTML !== html) el.innerHTML = html;
+  }
+
+  // ---- alert ticker in the header -----------------------------------------
+
+  // Active alerts, most urgent first, scroll left to right between the badges
+  // and the free space. No alerts: the area is empty. With reduced motion the
+  // newest alert stands still instead. The key leaves out the age, so the
+  // ticker does not restart on every snapshot.
+  var tickerKey = '';
+  var SEVERITY = { critical: 'critical', warn: 'warning', info: 'info' };
+  function renderTicker() {
+    var el = $('ticker'), track = $('track');
+    var alerts = snap.alerts || [];
+    var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (still) alerts = alerts.slice(0, 1);
+    // The track moves right, so its last item leads: reverse, to let the most urgent come in first.
+    var html = alerts.slice().reverse().map(function (a) {
+      var msg = a.message ? ' <span class="m">' + esc(a.message) + '</span>' : '';
+      return '<span class="alert ' + esc(a.severity) + '"><span class="dot ' + esc(a.severity) + '"></span>' +
+        '<b class="sev">' + esc(SEVERITY[a.severity] || a.severity) + '</b> <span class="t">' + esc(a.title) + '</span>' + msg +
+        (a.source ? ' <span class="s">' + esc(a.source) + '</span>' : '') + '</span>';
+    }).join('');
+    var key = html + (still ? '|still' : '');
+    el.hidden = !html;
+    if (key === tickerKey) return;
+    tickerKey = key;
+    track.innerHTML = html;
+    el.classList.toggle('still', still);
+    if (!html || still) { track.style.animation = 'none'; return; }
+    // Slide from just outside the left edge to just outside the right edge at
+    // a steady speed (about 5 rem a second), however long the text is.
+    var rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    var from = -track.scrollWidth, to = el.clientWidth;
+    track.style.setProperty('--from', from + 'px');
+    track.style.setProperty('--to', to + 'px');
+    track.style.animation = 'none';
+    void track.offsetWidth;
+    track.style.animation = 'ticker ' + Math.max(8, (to - from) / (5 * rem)).toFixed(1) + 's linear infinite';
   }
 
   function renderBanner() {
@@ -442,6 +513,10 @@
 
     var layout = snap.layout || { columns: 4, rows: 3, panels: [] };
     $('setup-link').hidden = !layout.setup;
+    // With the setup page on, the sources chip opens it: that is where every
+    // source and its status are listed.
+    if (layout.setup) { $('conn').setAttribute('href', 'setup'); $('conn').setAttribute('title', 'Sources and their status: Setup'); }
+    else { $('conn').removeAttribute('href'); $('conn').removeAttribute('title'); }
     var grid = $('grid');
     grid.style.setProperty('--cols', layout.columns);
     grid.style.setProperty('--rows', layout.rows);
@@ -455,6 +530,7 @@
       if (!keep[key]) { grid.removeChild(cards[key].el); delete cards[key]; }
     });
     renderBadges();
+    renderTicker();
     renderBanner();
     tick();
   }

@@ -8,6 +8,22 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+## [0.9.16]
+
+### Changed
+
+- **The default kiosk layout is new.** Open PRs is a tall column on the left, Running now is large on the right, one
+  Hosts panel (1 wide, 2 tall) with a small Pipelines panel sits in the middle. Alerts are no longer a panel: they scroll
+  through the page header, from left to right, with severity, message and source (they pause on hover or touch, and
+  stand still with "reduce motion"). Sources are no longer a panel: the sources and their status are on the setup page,
+  and the "sources" chip in the header opens it. Custom `[[kiosk.panel]]` blocks are untouched, and the `alerts` and
+  `health` widgets still exist for them.
+- **Stats and Hosts are one Hosts panel.** `host_view = "detailed"` (the default) shows the chosen host in detail on top
+  and every host as a list below it; tap a host to switch (kept in the browser). `compact` is the list only, with network
+  rates. The setup page chooses the view as before ("Dashboard hosts"). A `hosts` panel in your own layout can take
+  `view = "detailed"` or `"compact"`; without it, it is the plain table as before.
+- A running job list and the Pipelines panel no longer cut off at 3 jobs or 4 runs by default; they scroll.
+
 ### Added
 
 - **Kiosk page: click through to the source.** Open PRs, pipeline runs, running jobs and runner lists are links that
