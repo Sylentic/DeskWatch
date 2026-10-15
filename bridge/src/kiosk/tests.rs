@@ -483,7 +483,9 @@ fn page_explains_why_it_has_no_data() {
     }
     assert!(KIOSK_JS.contains("Waiting for the first data"));
     // The page fetches once at start instead of only after the socket fails.
-    assert!(KIOSK_JS.contains("poll();\n    connect();"));
+    // (Compared without line breaks: a Windows checkout has CRLF.)
+    let flat: String = KIOSK_JS.split_whitespace().collect();
+    assert!(flat.contains("poll();connect();"));
 }
 
 #[test]
