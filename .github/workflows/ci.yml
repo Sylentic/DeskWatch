@@ -184,10 +184,19 @@ jobs:
           buildtargets: esp32s3
           ldproxy: false
 
+      # The mbedtls build (CMake) caches the full path of the Xtensa GCC in the
+      # target directory. espup moves to a new GCC folder (esp-15.2.0_... to
+      # esp-16.2.0_...) whenever Espressif releases one, and a restored cache
+      # then points at a compiler that no longer exists. rust-cache only keys
+      # on the Rust version, so put the GCC folder name in the cache key.
+      - name: Find the Xtensa GCC version
+        id: gcc
+        run: echo "version=$(ls "$HOME/.rustup/toolchains/esp/xtensa-esp-elf" | sort | tail -n1)" >> "$GITHUB_OUTPUT"
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: firmware
-          key: firmware
+          key: firmware-${{ steps.gcc.outputs.version }}
 
       # Formatting does not need the Xtensa compiler, stable rustfmt is enough.
       - name: cargo fmt
