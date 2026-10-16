@@ -106,6 +106,12 @@ a.chip[href]:hover, a.chip[href]:focus-visible { background: var(--header); bord
 .chip.failed { --c: var(--red); color: var(--text); }
 .chip.review { --c: var(--amber); color: var(--text); }
 .chip.open { --c: var(--purple); color: var(--text); }
+.chip.update { --c: var(--blue); font-size: .95rem; }
+.chip.update[hidden] { display: none; }
+.chip.update a { color: var(--text); text-decoration: none; }
+.chip.update a:hover { text-decoration: underline; }
+.chip.update button { font: inherit; line-height: 1; color: var(--dim); background: none; border: 0; padding: 0 .1rem; cursor: pointer; }
+.chip.update button:hover { color: var(--text); }
 .chip.bad { --c: var(--red); color: var(--text); }
 .badges .chip { color: var(--text); font-weight: 600; }
 /* The failed badge is a button: it opens the list of failed runs under it. */

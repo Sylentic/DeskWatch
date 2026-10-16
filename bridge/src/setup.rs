@@ -85,6 +85,8 @@ struct Shared {
     mqtt: MqttLink,
     /// Where the test alert goes: the main loop, like an alert from MQTT.
     alert_tx: Option<mpsc::Sender<Inbound>>,
+    /// A newer release found by the daily check, for the Bridge section.
+    update: crate::update::UpdateNotice,
     /// Source id (`github:main`) to health name, kept current by the main loop.
     health: Mutex<BTreeMap<String, &'static str>>,
 }
@@ -116,6 +118,7 @@ impl Setup {
                 mqtt_enabled: config.mqtt.enabled,
                 mqtt,
                 alert_tx: None,
+                update: crate::update::UpdateNotice::default(),
                 health: Mutex::new(BTreeMap::new()),
             }),
         }
@@ -126,6 +129,14 @@ impl Setup {
     pub fn with_alert_sender(mut self, tx: mpsc::Sender<Inbound>) -> Self {
         if let Some(shared) = Arc::get_mut(&mut self.shared) {
             shared.alert_tx = Some(tx);
+        }
+        self
+    }
+
+    /// Show the newer release the daily check found. Call before `router`.
+    pub fn with_update(mut self, update: crate::update::UpdateNotice) -> Self {
+        if let Some(shared) = Arc::get_mut(&mut self.shared) {
+            shared.update = update;
         }
         self
     }
@@ -167,6 +178,7 @@ impl Setup {
             .route("/api/setup/kiosk", post(save_kiosk))
             .route("/api/setup/alerts", post(save_alerts))
             .route("/api/setup/alerts/test", post(test_alert))
+            .route("/api/setup/updates", post(save_updates))
             .route("/api/setup/restart", post(restart))
             .with_state(self.shared.clone())
     }
@@ -251,6 +263,8 @@ async fn status(State(shared): State<Arc<Shared>>) -> Response {
         "max_active": effective.alerts.max_active,
         "enabled": effective.alerts.enabled,
     });
+    out["update"] = json!(shared.update.get());
+    out["updates"] = json!({ "editable": can_edit, "check": effective.updates.check });
     out["mqtt"]["connected"] = json!(shared.mqtt_enabled && shared.mqtt.is_up());
     let mut response = out.to_string().into_response();
     let h = response.headers_mut();
@@ -729,6 +743,47 @@ async fn save_alerts(
     json_response(
         StatusCode::OK,
         json!({ "saved": true, "id": "alerts", "restart_needed": true }),
+    )
+}
+
+/// Save the update check switch (`{"check": true|false}`). The check starts
+/// with the bridge, so it applies after a restart.
+async fn save_updates(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let request = match change_request(&shared, &headers, &body) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    let Some(check) = request.get("check").and_then(Value::as_bool) else {
+        return refuse(
+            StatusCode::BAD_REQUEST,
+            "expected {\"check\": true or false}",
+        );
+    };
+    let store = shared.store.as_ref().expect("checked above");
+    let _saving = shared.saving.lock().await;
+    let current = match store.read_sources() {
+        Ok(current) => current,
+        Err(err) => return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}")),
+    };
+    let text = match edit::set_updates(&current, check) {
+        Ok(text) => text,
+        Err(err) => return refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
+    };
+    if let Err(err) = shared.base.clone().with_overlay(&text) {
+        return refuse(StatusCode::BAD_REQUEST, format!("{err:#}"));
+    }
+    if let Err(err) = store.write_sources(&text) {
+        return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}"));
+    }
+    shared.changed.store(true, Ordering::Relaxed);
+    tracing::info!(check, "setup: update check saved (apply after a restart)");
+    json_response(
+        StatusCode::OK,
+        json!({ "saved": true, "id": "updates", "restart_needed": true }),
     )
 }
 

@@ -116,6 +116,11 @@ interrupt = true                # true, false, or a list such as ["owner/repo"]
 # runners = ["user"]
 # runner_poll_s = 30            # seconds between runner polls
 
+# Once a day, look on GitHub for a newer release and show a small notice. Only the
+# version number is compared, nothing about this install is sent. false: never look.
+[updates]
+check = true
+
 # Alerts that Home Assistant or any script publishes on <topic_prefix>/alert.
 # Severity info flashes a notice, warning shows an amber screen, critical a
 # red screen above running jobs. The button takes an alert off the screen; it

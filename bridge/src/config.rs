@@ -63,6 +63,9 @@ struct Overlay {
     /// Alert and ticker settings the setup page changed.
     #[serde(default)]
     alerts: Option<AlertsPatch>,
+    /// Update check setting the setup page changed.
+    #[serde(default)]
+    updates: Option<UpdatesPatch>,
     /// `kind:name` of `bridge.toml` sources the setup page switched off.
     /// `bridge.toml` itself is never edited; the source is just left out.
     #[serde(default)]
@@ -75,6 +78,13 @@ struct Overlay {
 #[serde(deny_unknown_fields)]
 struct KioskPatch {
     host_view: Option<HostView>,
+}
+
+/// The `[updates]` key the setup page can change.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UpdatesPatch {
+    check: Option<bool>,
 }
 
 /// The `[alerts]` keys the setup page can change: how the header ticker looks
@@ -192,6 +202,9 @@ pub struct Config {
     /// changed some of its keys. Filled by `with_overlay`.
     #[serde(skip)]
     pub alerts_before_overlay: Option<AlertsConfig>,
+    /// `updates.check` as `bridge.toml` had it, when the data folder changed it.
+    #[serde(skip)]
+    pub update_check_before_overlay: Option<bool>,
     /// `kind:name` of the `bridge.toml` sources the data folder switched off.
     /// Filled by `with_overlay`.
     #[serde(skip)]
@@ -205,6 +218,9 @@ pub struct Config {
     /// Alerts raised on `<topic_prefix>/alert` by Home Assistant or scripts.
     #[serde(default)]
     pub alerts: AlertsConfig,
+    /// The daily look for a newer release.
+    #[serde(default)]
+    pub updates: UpdatesConfig,
     /// The browser dashboard for a big screen, served on `[http]`. Off by default.
     #[serde(default)]
     pub kiosk: KioskConfig,
@@ -590,6 +606,22 @@ pub fn default_panels(view: HostView) -> Vec<PanelConfig> {
         panel(Widget::Jobs, [2, 3]),
         panel(Widget::Pipelines, [1, 1]),
     ]
+}
+
+/// The `[updates]` table: the "newer version available" notice.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct UpdatesConfig {
+    /// Once a day, ask GitHub for the number of the latest release and show a
+    /// quiet notice when it is newer. Only the version number is compared;
+    /// nothing about this install is sent. Turn off for a bridge without internet.
+    pub check: bool,
+}
+
+impl Default for UpdatesConfig {
+    fn default() -> Self {
+        Self { check: true }
+    }
 }
 
 /// The `[alerts]` table: alerts that arrive on `<topic_prefix>/alert`.
@@ -1073,6 +1105,7 @@ impl Config {
             mqtt,
             kiosk,
             alerts,
+            updates,
             hidden,
         } = toml::from_str(overlay).context("invalid sources overlay")?;
         if !hidden.is_empty() {
@@ -1101,6 +1134,10 @@ impl Config {
         if let Some(view) = kiosk.and_then(|k| k.host_view) {
             self.host_view_before_overlay = Some(self.kiosk.host_view);
             self.kiosk.host_view = view;
+        }
+        if let Some(check) = updates.and_then(|u| u.check) {
+            self.update_check_before_overlay = Some(self.updates.check);
+            self.updates.check = check;
         }
         if let Some(patch) = alerts {
             self.alerts_before_overlay = Some(self.alerts.clone());
@@ -1160,6 +1197,9 @@ impl Config {
         }
         if let Some(original) = base.alerts_before_overlay.take() {
             base.alerts = original;
+        }
+        if let Some(original) = base.update_check_before_overlay.take() {
+            base.updates.check = original;
         }
         base
     }
@@ -1421,6 +1461,18 @@ mod tests {
         assert!(base.alerts.ticker);
         assert_eq!(base.alerts.max_active, 10);
         assert!(!base.alerts.http_input);
+    }
+
+    #[test]
+    fn the_update_check_is_on_by_default_and_the_data_folder_can_switch_it() {
+        let config = Config::from_toml("").unwrap();
+        assert!(config.updates.check);
+        let off = Config::from_toml("[updates]\ncheck = false\n").unwrap();
+        assert!(!off.updates.check);
+        let with = config.with_overlay("[updates]\ncheck = false\n").unwrap();
+        assert!(!with.updates.check);
+        assert!(with.without_overlay().updates.check);
+        assert!(Config::from_toml("[updates]\nother = 1\n").is_err());
     }
 
     #[test]

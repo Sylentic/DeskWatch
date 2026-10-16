@@ -79,6 +79,8 @@ pub struct Kiosk {
     sent_at: u64,
     /// Where a dismissed alert goes, when `[alerts] dismiss` is on.
     alert_tx: Option<mpsc::Sender<Inbound>>,
+    /// A newer release found by the daily check, shown as a chip in the header.
+    update: Option<crate::update::UpdateNotice>,
 }
 
 impl Kiosk {
@@ -94,7 +96,14 @@ impl Kiosk {
             last: None,
             sent_at: 0,
             alert_tx: None,
+            update: None,
         }
+    }
+
+    /// Show a chip when the daily check finds a newer release.
+    pub fn with_update(mut self, update: crate::update::UpdateNotice) -> Self {
+        self.update = Some(update);
+        self
     }
 
     /// Put the ticker settings in the layout. With `dismiss` on, the page may
@@ -165,6 +174,9 @@ impl Kiosk {
         let screen = composer.screen(now);
         let badges = composer.badges();
         let mut value = snapshot(composer, &screen, &badges, &self.layout);
+        if let Some(update) = self.update.as_ref().and_then(|u| u.get()) {
+            value["update"] = json!(update);
+        }
         let changed = self.last.as_ref() != Some(&value);
         if changed || now.saturating_sub(self.sent_at) >= HEARTBEAT_S {
             value["now"] = json!(now);

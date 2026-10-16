@@ -954,3 +954,18 @@ fn page_lets_the_failed_badge_be_dismissed_in_the_browser() {
     }
     assert!(include_str!("../../kiosk/index.html").contains("id=\"failed-pop\""));
 }
+
+#[test]
+fn a_newer_release_travels_in_the_snapshot_only_when_found() {
+    let notice = crate::update::UpdateNotice::default();
+    let mut kiosk = kiosk().with_update(notice.clone());
+    kiosk.update(&mut busy(), NOW);
+    assert!(json_of(&kiosk).get("update").is_none());
+    notice.set(Some(crate::update::Update {
+        version: "0.9.20".into(),
+        url: "https://github.com/Sylentic/DeskWatch/releases/tag/v0.9.20".into(),
+    }));
+    kiosk.update(&mut busy(), NOW + 1);
+    assert_eq!(json_of(&kiosk)["update"]["version"], "0.9.20");
+    assert!(KIOSK_JS.contains("renderUpdate"));
+}

@@ -187,6 +187,11 @@ async fn main() -> Result<()> {
     // sender stays alive here either way, so with MQTT off the receiver just
     // waits forever.
     let (inbound_tx, mut inbound_rx) = mpsc::channel(16);
+    // The daily "newer version" look (docs/updates.md). Not in the demo.
+    let update = deskwatch_bridge::update::UpdateNotice::default();
+    if config.updates.check && !args.demo {
+        update.spawn(env!("CARGO_PKG_VERSION"));
+    }
     let mut kiosk = None;
     if config.kiosk.enabled {
         if !config.http.listen.ip().is_loopback() {
@@ -199,7 +204,8 @@ async fn main() -> Result<()> {
         }
         let built = Kiosk::new(&config.kiosk)
             .with_setup_link(config.setup.is_on())
-            .with_alerts(&config.alerts, inbound_tx.clone());
+            .with_alerts(&config.alerts, inbound_tx.clone())
+            .with_update(update.clone());
         hooks.add("/", built.router());
         kiosk = Some(built);
     }
@@ -230,7 +236,8 @@ async fn main() -> Result<()> {
             store.clone(),
             Some(supervisor.clone()),
         )
-        .with_alert_sender(inbound_tx.clone());
+        .with_alert_sender(inbound_tx.clone())
+        .with_update(update.clone());
         hooks.add("/setup", built.router());
         info!("setup page on /setup");
         if !config.http.listen.ip().is_loopback() {

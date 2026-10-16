@@ -590,7 +590,14 @@
     var info = el('section', 'card');
     info.appendChild(el('h2', null, 'Bridge'));
     var dl = el('dl');
-    row(dl, 'Version', d.build);
+    var ver = el('span', null, d.build);
+    if (d.update) {
+      ver.appendChild(document.createTextNode(' '));
+      var ua = el('a', 'pill warn', 'update available: v' + d.update.version);
+      ua.href = d.update.url; ua.target = '_blank'; ua.rel = 'noopener noreferrer';
+      ver.appendChild(ua);
+    }
+    row(dl, 'Version', ver);
     row(dl, 'Web listener', d.http_listen);
     row(dl, 'Data folder', d.data_folder || 'not set (nothing can be saved from here yet)');
     info.appendChild(dl);
@@ -617,6 +624,22 @@
       card.appendChild(p);
     }
     box.appendChild(card);
+
+    var chk = el('section', 'card');
+    chk.appendChild(el('h2', null, 'Update check'));
+    var check = checkbox(d.updates.check, !d.updates.editable);
+    chk.appendChild(settingRow('Tell me about new versions', 'Once a day the bridge asks GitHub for the latest release number. Nothing about this install is sent. Turn off for a server without internet', check));
+    if (d.updates.editable) {
+      var usave = el('button', null, 'Save');
+      usave.type = 'button';
+      usave.addEventListener('click', function () {
+        post('api/setup/updates', { check: check.checked }).then(function (j) { notice = (j && j.error) || null; load(); });
+      });
+      var uline = el('div', 'buttons'); uline.appendChild(usave); chk.appendChild(uline);
+    }
+    chk.appendChild(el('p', 'muted', d.updates.editable ? 'Needs a restart of the bridge.'
+      : 'Give the bridge a data folder to change this here, or set check = false under [updates] in bridge.toml.'));
+    box.appendChild(chk);
     return box;
   }
 
