@@ -940,19 +940,126 @@ fn snapshot_lists_the_failed_runs_behind_the_badge() {
 }
 
 #[test]
-fn page_lets_the_failed_badge_be_dismissed_in_the_browser() {
+fn page_lets_the_failed_badge_be_dismissed_on_the_bridge() {
     let js = include_str!("../../kiosk/kiosk.js");
     // The badge opens the list, each failure and "all" can be dismissed, and
-    // the choice lives in localStorage under the run's key and start time.
+    // the choice goes to the bridge, not into the browser.
     for needle in [
         "data-failed-toggle",
         "data-dismiss-all",
-        "deskwatch.kiosk.dismissed",
+        "api/kiosk/failed/dismiss",
         "key + '@' + f.started",
     ] {
         assert!(js.contains(needle), "kiosk.js lacks {needle}");
     }
+    assert!(!js.contains("deskwatch.kiosk.dismissed"));
     assert!(include_str!("../../kiosk/index.html").contains("id=\"failed-pop\""));
+}
+
+#[tokio::test]
+async fn a_dismissed_failure_leaves_every_screen_until_it_fails_again() {
+    let mut kiosk = kiosk();
+    let router = kiosk.router();
+    let mut c = composer();
+    for (key, pipeline) in [("a", "deploy.yml"), ("b", "nightly.yml")] {
+        c.ci.apply(
+            Update::Run {
+                key: key.into(),
+                run: run(pipeline, RunStatus::Failed),
+            },
+            NOW,
+        );
+    }
+    kiosk.update(&mut c, NOW);
+    let first = json_of(&kiosk);
+    let id = format!("a@{}", first["failed"][0]["started"]);
+
+    // Dismiss one, from "a screen": the snapshot for everyone loses it and the badge follows.
+    let body = format!(r#"{{"ids":["{id}"]}}"#);
+    let (status, _) = send(&router, "POST", "/api/kiosk/failed/dismiss", &[], &body).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    kiosk.update(&mut c, NOW + 1);
+    let value = json_of(&kiosk);
+    assert_eq!(value["failed"].as_array().unwrap().len(), 1);
+    assert_eq!(value["failed"][0]["key"], "b");
+    assert_eq!(value["badges"][0]["count"], 1);
+
+    // The same pipeline failing again (another start time) is not hidden.
+    let mut again = run("deploy.yml", RunStatus::Failed);
+    again.started += 500;
+    c.ci.apply(
+        Update::Run {
+            key: "a".into(),
+            run: again,
+        },
+        NOW + 2,
+    );
+    kiosk.update(&mut c, NOW + 2);
+    assert_eq!(json_of(&kiosk)["failed"].as_array().unwrap().len(), 2);
+
+    // Bad input and foreign pages change nothing.
+    let uri = "/api/kiosk/failed/dismiss";
+    for bad in ["{}", r#"{"ids":[1]}"#, r#"{"ids":[""]}"#, "nope"] {
+        let (status, _) = send(&router, "POST", uri, &[], bad).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
+    }
+    let evil = [("origin", "https://evil.example"), ("host", "bridge.lan")];
+    let (status, _) = send(&router, "POST", uri, &evil, r#"{"ids":["b@1"]}"#).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn a_muted_source_is_flagged_until_it_works_again() {
+    use crate::source::{Health, SourceBody, SourceMsg};
+    let mut kiosk = kiosk();
+    let router = kiosk.router();
+    let mut c = composer();
+    let health = |h| SourceMsg {
+        source: crate::source::SourceId::new("gitea", "home"),
+        body: SourceBody::Health(h),
+    };
+    c.apply(health(Health::Unreachable), NOW);
+    kiosk.update(&mut c, NOW);
+    assert!(json_of(&kiosk)["sources"][0].get("muted").is_none());
+
+    let (status, _) = send(
+        &router,
+        "POST",
+        "/api/kiosk/source/mute",
+        &[],
+        r#"{"id":"gitea:home"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    kiosk.update(&mut c, NOW + 1);
+    let value = json_of(&kiosk);
+    // Still listed as a problem (the chip counts it), only flagged as muted.
+    assert_eq!(value["sources"][0]["health"], "unreachable");
+    assert_eq!(value["sources"][0]["muted"], true);
+
+    // Working again forgets the mute, so the next outage shows the pill.
+    c.apply(health(Health::Ok), NOW + 2);
+    kiosk.update(&mut c, NOW + 2);
+    c.apply(health(Health::AuthFailed), NOW + 3);
+    kiosk.update(&mut c, NOW + 3);
+    assert!(json_of(&kiosk)["sources"][0].get("muted").is_none());
+
+    let (status, _) = send(&router, "POST", "/api/kiosk/source/mute", &[], "{}").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[test]
+fn page_shows_a_pill_for_a_source_that_is_down() {
+    let js = include_str!("../../kiosk/kiosk.js");
+    for needle in [
+        "Source down",
+        "data-mute",
+        "api/kiosk/source/mute",
+        "x.muted",
+    ] {
+        assert!(js.contains(needle), "kiosk.js lacks {needle}");
+    }
+    assert!(include_str!("../../kiosk/index.html").contains("id=\"src-pill\""));
 }
 
 #[test]

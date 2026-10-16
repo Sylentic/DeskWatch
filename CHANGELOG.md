@@ -10,6 +10,9 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Added
 
+- **A "source down" pill in the kiosk header.** When a source cannot be checked (not answering, or its login
+  refused) a pill next to the alerts says which one and why. A quiet source is not a down source. **Mute** hides the
+  pill on every screen until the source works again; the "N sources have a problem" chip keeps counting it.
 - **A quiet "update available" notice.** Once a day the bridge asks GitHub for the latest release number. When it is
   newer than the running version, the dashboard header shows a small chip "update available: vX.Y.Z" next to Setup
   (links to the release notes, × hides it for that version in that browser) and Setup shows it behind the version.
@@ -19,6 +22,12 @@ may change if the firmware work needs it; any such change is listed here.
   page, setup page, `/api/alert`, webhooks and the WebSocket (which becomes `wss`). A wrong path stops the bridge at
   startup, and the Docker health check follows. Plain HTTP stays the default, so nothing changes for existing installs.
   `deploy/docker-compose.https.yml` adds Caddy with an internal CA as a second route. Guide: [docs/https.md](docs/https.md).
+
+### Changed
+
+- **Dismissing a failed run now happens on the bridge**, so it disappears on every screen at once, like an alert, instead
+  of per browser (localStorage). A new failure of the same pipeline still shows up; restarting the bridge shows the
+  failures again.
 
 ## [0.9.19]
 

@@ -135,6 +135,13 @@ button.chip.action:not(:disabled):hover, button.chip.action[aria-expanded="true"
 .failed-pop .foot { margin-top: .5rem; color: var(--dim); font-size: .85rem; }
 /* The most urgent alert is a pill next to the badges; it opens the Alerts menu. */
 button.pill { font: inherit; font-size: 1.15rem; font-weight: 600; color: inherit; border: 0; cursor: pointer; text-align: left; }
+/* A source that is down: a pill like the alert pill, with a Mute button. */
+#src-pill { display: flex; align-items: center; gap: .8rem; font-size: 1.15rem; font-weight: 600; }
+#src-pill[hidden] { display: none; }
+#src-pill.warn { background: var(--alert-amber); }
+#src-pill.critical { background: var(--alert-critical); }
+#src-pill .mute { font: inherit; font-size: .9rem; font-weight: 600; color: inherit; background: rgba(0, 0, 0, .22); border: 0; border-radius: .5rem; padding: .15rem .6rem; cursor: pointer; }
+#src-pill .mute:hover { background: rgba(0, 0, 0, .38); }
 .banner .more { font-size: .9rem; font-weight: 400; opacity: .85; }
 .clock { text-align: right; line-height: 1.05; }
 #time { font-size: 2rem; font-weight: 600; }

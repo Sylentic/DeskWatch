@@ -20,7 +20,8 @@
 //! docs/kiosk.md). The WebSocket still refuses an `Origin` that is not this
 //! host, so a page on another site cannot read it through the browser.
 
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use axum::Router;
@@ -67,6 +68,22 @@ const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self' 'unsa
 /// The latest snapshot, as JSON text.
 type Frame = Arc<str>;
 
+/// What people clicked away on a screen. It is kept on the bridge, so a
+/// dismissal holds on every screen, and in memory only: a restart shows the
+/// failures again.
+#[derive(Default)]
+struct Clicked {
+    /// Failed runs (`key@started`) taken off the list and the badge.
+    failed: HashSet<String>,
+    /// Sources (id) whose "source down" pill is muted until they work again.
+    muted: HashSet<String>,
+}
+
+/// More than this many ids in one set means something is wrong with the sender.
+const MAX_CLICKED: usize = 500;
+
+type SharedClicked = Arc<Mutex<Clicked>>;
+
 /// Builds snapshots and hands them to the HTTP routes.
 pub struct Kiosk {
     layout: Value,
@@ -81,6 +98,8 @@ pub struct Kiosk {
     alert_tx: Option<mpsc::Sender<Inbound>>,
     /// A newer release found by the daily check, shown as a chip in the header.
     update: Option<crate::update::UpdateNotice>,
+    /// Dismissed failed runs and muted sources, shared with the routes.
+    clicked: SharedClicked,
 }
 
 impl Kiosk {
@@ -97,6 +116,7 @@ impl Kiosk {
             sent_at: 0,
             alert_tx: None,
             update: None,
+            clicked: SharedClicked::default(),
         }
     }
 
@@ -144,11 +164,14 @@ impl Kiosk {
             rx: self.tx.subscribe(),
             slots: self.slots.clone(),
             alert_tx: self.alert_tx.clone(),
+            clicked: self.clicked.clone(),
         };
         let api = Router::new()
             .route("/api/kiosk", get(snapshot_handler))
             .route("/api/kiosk/ws", get(ws_handler))
             .route("/api/kiosk/alert/dismiss", post(dismiss_handler))
+            .route("/api/kiosk/failed/dismiss", post(dismiss_failed_handler))
+            .route("/api/kiosk/source/mute", post(mute_source_handler))
             .route_layer(middleware::from_fn(require_same_origin));
         Router::new()
             .route("/", get(|| asset("text/html; charset=utf-8", INDEX_HTML)))
@@ -174,6 +197,7 @@ impl Kiosk {
         let screen = composer.screen(now);
         let badges = composer.badges();
         let mut value = snapshot(composer, &screen, &badges, &self.layout);
+        self.apply_clicks(&mut value);
         if let Some(update) = self.update.as_ref().and_then(|u| u.get()) {
             value["update"] = json!(update);
         }
@@ -187,6 +211,47 @@ impl Kiosk {
                 object.remove("now");
             }
             self.last = Some(value);
+        }
+    }
+}
+
+impl Kiosk {
+    /// Leave out the failed runs somebody dismissed and flag the muted
+    /// sources. A dismissal or mute that no longer matches anything (the run
+    /// went green, the source works again) is forgotten, so a new failure or
+    /// a new outage shows up again. The failed badge counts what is left.
+    fn apply_clicks(&self, value: &mut Value) {
+        let mut clicked = self.clicked.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(failed) = value["failed"].as_array_mut() {
+            let id = |f: &Value| format!("{}@{}", f["key"].as_str().unwrap_or(""), f["started"]);
+            let live: HashSet<String> = failed.iter().map(id).collect();
+            clicked.failed.retain(|x| live.contains(x));
+            failed.retain(|f| !clicked.failed.contains(&id(f)));
+            let left = failed.len();
+            if let Some(badge) = value["badges"]
+                .as_array_mut()
+                .and_then(|b| b.iter_mut().find(|b| b["id"] == "failed"))
+            {
+                badge["count"] = json!(left);
+            }
+        }
+        let down: HashSet<String> = value["sources"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|s| s["health"] != "ok")
+            .filter_map(|s| s["id"].as_str().map(str::to_string))
+            .collect();
+        clicked.muted.retain(|x| down.contains(x));
+        if let Some(sources) = value["sources"].as_array_mut() {
+            for source in sources {
+                let muted = source["id"]
+                    .as_str()
+                    .is_some_and(|id| clicked.muted.contains(id));
+                if muted {
+                    source["muted"] = json!(true);
+                }
+            }
         }
     }
 }
@@ -274,8 +339,8 @@ pub fn snapshot(composer: &Composer, screen: &Screen, badges: &Badges, layout: &
         })
         .collect();
 
-    // The failures behind the header badge. The browser lets the user
-    // dismiss them (it remembers which), so each one carries what makes a new
+    // The failures behind the header badge. The user can dismiss them (the
+    // bridge remembers which, see `apply_clicks`), so each one carries what makes a new
     // failure different from an old one: the key of its pipeline and the
     // start time of the failed run.
     let failed: Vec<Value> = composer
@@ -364,6 +429,56 @@ struct AppState {
     rx: watch::Receiver<Frame>,
     slots: Arc<Semaphore>,
     alert_tx: Option<mpsc::Sender<Inbound>>,
+    clicked: SharedClicked,
+}
+
+/// `POST /api/kiosk/failed/dismiss {"ids": ["key@started", ...]}`: take failed
+/// runs off the list and the badge, for every screen. A new failure of the
+/// same pipeline has another start time, so it is not hidden.
+async fn dismiss_failed_handler(
+    State(state): State<AppState>,
+    body: axum::body::Bytes,
+) -> Response {
+    let ids = (body.len() <= 64 * 1024)
+        .then(|| serde_json::from_slice::<Value>(&body).ok())
+        .flatten()
+        .and_then(|v| {
+            v.get("ids")?
+                .as_array()?
+                .iter()
+                .map(|id| id.as_str().filter(|s| !s.is_empty() && s.len() <= 512))
+                .map(|id| id.map(str::to_string))
+                .collect::<Option<Vec<_>>>()
+        });
+    let Some(ids) = ids else {
+        return (StatusCode::BAD_REQUEST, "expected {\"ids\": [\"...\"]}").into_response();
+    };
+    let mut clicked = state.clicked.lock().unwrap_or_else(|e| e.into_inner());
+    if clicked.failed.len() + ids.len() > MAX_CLICKED {
+        return (StatusCode::BAD_REQUEST, "too many ids").into_response();
+    }
+    clicked.failed.extend(ids);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+/// `POST /api/kiosk/source/mute {"id": "..."}`: hide the "source down" pill of
+/// one source on every screen. The header chip still counts the problem, and
+/// the mute ends by itself when the source works again.
+async fn mute_source_handler(State(state): State<AppState>, body: axum::body::Bytes) -> Response {
+    let id = (body.len() <= 1024)
+        .then(|| serde_json::from_slice::<Value>(&body).ok())
+        .flatten()
+        .and_then(|v| v.get("id")?.as_str().map(str::to_string))
+        .filter(|id| !id.trim().is_empty());
+    let Some(id) = id else {
+        return (StatusCode::BAD_REQUEST, "expected {\"id\": \"...\"}").into_response();
+    };
+    let mut clicked = state.clicked.lock().unwrap_or_else(|e| e.into_inner());
+    if clicked.muted.len() >= MAX_CLICKED {
+        return (StatusCode::BAD_REQUEST, "too many ids").into_response();
+    }
+    clicked.muted.insert(id);
+    StatusCode::NO_CONTENT.into_response()
 }
 
 /// `POST /api/kiosk/alert/dismiss {"id": "..."}`: remove one active alert, for
