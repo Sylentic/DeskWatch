@@ -419,51 +419,190 @@
     if (pick) chooseHost(pick.getAttribute('data-host-pick'));
   });
 
+  // ---- failed runs: badge, list and dismiss --------------------------------
+
+  // A failure is dismissed in this browser only: the choice is kept in
+  // localStorage under the pipeline key plus the start time of the failed run,
+  // so a NEW failure of the same pipeline shows up again. Entries whose
+  // failure has left the data are dropped. A second screen has its own list.
+  var DISMISS_KEY = 'deskwatch.kiosk.dismissed';
+  var failedOpen = false;
+  function loadDismissed() {
+    try {
+      var list = JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]');
+      return Array.isArray(list) ? list.filter(function (x) { return typeof x === 'string'; }) : [];
+    } catch (e) { return []; }
+  }
+  var dismissed = loadDismissed();
+  function failId(f) { return f.key + '@' + f.started; }
+  function saveDismissed() {
+    try { localStorage.setItem(DISMISS_KEY, JSON.stringify(dismissed)); } catch (e) { /* private mode: lasts until reload */ }
+  }
+  function visibleFailed() {
+    return (snap.failed || []).filter(function (f) { return dismissed.indexOf(failId(f)) < 0; });
+  }
+  function pruneDismissed() {
+    var live = {};
+    (snap.failed || []).forEach(function (f) { live[failId(f)] = true; });
+    var kept = dismissed.filter(function (id) { return live[id]; });
+    if (kept.length !== dismissed.length) { dismissed = kept; saveDismissed(); }
+  }
+  function dismissFailed(id) {
+    // id null: dismiss everything that is listed now.
+    var ids = id ? [id] : visibleFailed().map(failId);
+    ids.forEach(function (x) { if (dismissed.indexOf(x) < 0) dismissed.push(x); });
+    saveDismissed();
+    renderBadges();
+  }
+
+  function failedRow(f) {
+    var what = esc(f.project || '') + (f.pipeline ? ' / ' + esc(f.pipeline) : '');
+    var sub = [f.ref ? esc(f.ref) : '', f.step ? 'step ' + esc(f.step) : '', f.finished ? ago(nowS() - f.finished) : '']
+      .filter(Boolean).join(' · ');
+    var open = linkOpen(f.url, 'what') ;
+    return '<li>' + open + src(f.source) + ' <b>' + what + '</b><span class="sub">' + sub + '</span>' + linkClose(f.url) +
+      '<button type="button" class="x" data-dismiss="' + esc(failId(f)) + '" aria-label="Dismiss">Dismiss</button></li>';
+  }
+
+  function renderFailedPop() {
+    var pop = $('failed-pop'), list = visibleFailed();
+    if (!failedOpen || !list.length) { failedOpen = failedOpen && list.length > 0; pop.hidden = true; pop.innerHTML = ''; return; }
+    var html = '<div class="head"><b>Failed runs</b>' +
+      '<button type="button" class="x all" data-dismiss-all="1">Dismiss all</button></div><ul>' + list.map(failedRow).join('') + '</ul>' +
+      '<div class="foot">Dismissed on this screen only. A new failure shows up again.</div>';
+    if (pop.innerHTML !== html) pop.innerHTML = html;
+    pop.hidden = false;
+    var chip = document.querySelector('[data-failed-toggle]');
+    if (chip) pop.style.left = Math.max(8, Math.min(chip.getBoundingClientRect().left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
+  }
+
+  // ---- alerts: badge, list and dismiss -------------------------------------
+
+  // The Alerts badge works like the Failed badge: click for the list. Dismiss
+  // is different in one way: it asks the bridge to clear the alert, so it goes
+  // away on every screen (the same as a `clear` message on MQTT). With
+  // `[alerts] dismiss = false` the list is read-only.
+  var alertsOpen = false;
+  var SEV_NAME = { critical: 'Critical', warn: 'Warning', info: 'Info' };
+  function alertList() {
+    return snap.alerts || [];
+  }
+  function canDismiss() {
+    var cfg = (snap.layout && snap.layout.alerts) || {};
+    return !!cfg.dismiss;
+  }
+  function dismissAlerts(ids) {
+    // One after the other, so the bridge never has more than one clear in flight.
+    return ids.reduce(function (chain, id) {
+      return chain.then(function () {
+        return fetch('api/kiosk/alert/dismiss', {
+          method: 'POST', cache: 'no-store', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id })
+        });
+      });
+    }, Promise.resolve()).catch(function () { /* the next snapshot shows what is left */ });
+  }
+  function alertRow(a) {
+    var cfg = (snap.layout && snap.layout.alerts) || {};
+    var sub = [a.message ? esc(a.message) : '', a.source && cfg.show_source !== false ? 'via ' + esc(a.source) : '', a.since ? ago(nowS() - a.since) : '']
+      .filter(Boolean).join(' &middot; ');
+    return '<li><span class="what"><span class="dot ' + esc(a.severity) + '"></span><b>' + esc(a.title) + '</b>' +
+      '<span class="sev ' + esc(a.severity) + '">' + esc(SEV_NAME[a.severity] || a.severity) + '</span><span class="sub">' + sub + '</span></span>' +
+      (canDismiss() ? '<button type="button" class="x" data-dismiss-alert="' + esc(a.id) + '" aria-label="Dismiss alert">Dismiss</button>' : '') + '</li>';
+  }
+  function renderAlertsPop() {
+    var pop = $('alerts-pop'), list = alertList();
+    if (!alertsOpen || !list.length) { alertsOpen = alertsOpen && list.length > 0; pop.hidden = true; pop.innerHTML = ''; return; }
+    var html = '<div class="head"><b>Alerts</b>' +
+      (canDismiss() ? '<button type="button" class="x all" data-dismiss-all-alerts="1">Dismiss all</button>' : '') + '</div><ul>' +
+      list.map(alertRow).join('') + '</ul>' +
+      (canDismiss() ? '<div class="foot">Dismissing clears the alert on every screen.</div>' : '');
+    if (pop.innerHTML !== html) pop.innerHTML = html;
+    pop.hidden = false;
+    var chip = document.querySelector('[data-alerts-toggle]');
+    if (chip) pop.style.left = Math.max(8, Math.min(chip.getBoundingClientRect().left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
+  }
+
   function renderBadges() {
     var el = $('badges'), html = '';
     var names = { pr: 'open PRs', pipeline: 'failed', server: 'down', warn: 'with a problem', home: 'alerts' };
-    (snap.badges || []).forEach(function (b) {
+    pruneDismissed();
+    // Order: Open PRs, Failed runs, Alerts, then any other badge.
+    var rank = { pr: 0, pipeline: 1 };
+    var list = (snap.badges || []).slice().sort(function (x, y) {
+      return (x.id === 'failed' ? 1 : rank[x.icon] === undefined ? 5 : rank[x.icon]) - (y.id === 'failed' ? 1 : rank[y.icon] === undefined ? 5 : rank[y.icon]);
+    });
+    list.forEach(function (b) {
+      if (b.id === 'alerts') return; // the Alerts chip below replaces it
+      if (b.id === 'failed' && snap.failed) {
+        // The count follows what is not dismissed; the chip opens the list and is gone at 0.
+        var n = visibleFailed().length;
+        if (!n) { failedOpen = false; return; }
+        html += '<button type="button" class="chip failed action" data-failed-toggle="1" aria-expanded="' + (failedOpen ? 'true' : 'false') +
+          '" title="Show the failed runs">' + n + ' failed</button>';
+        return;
+      }
+      if (b.icon === 'pr' && !b.count) return; // no open PRs: no badge
       html += '<span class="chip ' + esc(b.status) + '">' + b.count + ' ' + (names[b.icon] || '') + '</span>';
     });
+    // The Alerts chip: every active alert, worst colour wins. Gone at 0, like Failed and Open PRs.
+    var alerts = alertList(), worst = alerts.some(function (a) { return a.severity === 'critical'; }) ? 'failed'
+      : alerts.some(function (a) { return a.severity === 'warn'; }) ? 'review' : alerts.length ? 'open' : 'ok';
+    if (alerts.length) html += '<button type="button" class="chip ' + worst + ' action" data-alerts-toggle="1" aria-expanded="' + (alertsOpen ? 'true' : 'false') +
+      '" title="Show the alerts">' + alerts.length + ' alerts</button>';
+    if (!alerts.length) alertsOpen = false;
     if (el.innerHTML !== html) el.innerHTML = html;
+    renderFailedPop();
+    renderAlertsPop();
   }
 
-  // ---- alert ticker in the header -----------------------------------------
+  // One listener each: the badge row and the popover are rebuilt on every snapshot.
+  $('badges').addEventListener('click', function (e) {
+    if (e.target.closest && e.target.closest('[data-failed-toggle]')) { failedOpen = !failedOpen; alertsOpen = false; renderBadges(); }
+    if (e.target.closest && e.target.closest('[data-alerts-toggle]')) { alertsOpen = !alertsOpen; failedOpen = false; renderBadges(); }
+  });
+  $('alert-pill').addEventListener('click', function () { alertsOpen = !alertsOpen; failedOpen = false; renderBadges(); });
+  $('alerts-pop').addEventListener('click', function (e) {
+    var one = e.target.closest ? e.target.closest('[data-dismiss-alert]') : null;
+    if (one) { dismissAlerts([one.getAttribute('data-dismiss-alert')]); return; }
+    if (e.target.closest && e.target.closest('[data-dismiss-all-alerts]')) dismissAlerts(alertList().map(function (a) { return a.id; }));
+  });
+  $('failed-pop').addEventListener('click', function (e) {
+    var one = e.target.closest ? e.target.closest('[data-dismiss]') : null;
+    if (one) { dismissFailed(one.getAttribute('data-dismiss')); return; }
+    if (e.target.closest && e.target.closest('[data-dismiss-all]')) dismissFailed(null);
+  });
+  document.addEventListener('click', function (e) {
+    if (failedOpen && document.contains(e.target) && e.target.closest && !e.target.closest('#failed-pop') && !e.target.closest('[data-failed-toggle]')) {
+      failedOpen = false; renderBadges();
+    }
+    if (alertsOpen && document.contains(e.target) && e.target.closest && !e.target.closest('#alerts-pop') && !e.target.closest('[data-alerts-toggle]') && !e.target.closest('#alert-pill')) {
+      alertsOpen = false; renderBadges();
+    }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && (failedOpen || alertsOpen)) { failedOpen = false; alertsOpen = false; renderBadges(); }
+  });
 
-  // Active alerts, most urgent first, scroll left to right between the badges
-  // and the free space. No alerts: the area is empty. With reduced motion the
-  // newest alert stands still instead. The key leaves out the age, so the
-  // ticker does not restart on every snapshot.
-  var tickerKey = '';
-  var SEVERITY = { critical: 'critical', warn: 'warning', info: 'info' };
+  // ---- most urgent alert in the header --------------------------------------
+
+  // The most urgent active alert is a coloured pill next to the badges, with
+  // "+N" for the others; it opens the Alerts menu. No alerts: no pill. The
+  // `ticker` setting switches the pill off.
+  var SEV_CLASS = { critical: 'critical', warn: 'warn', info: 'note' };
   function renderTicker() {
-    var el = $('ticker'), track = $('track');
-    var alerts = snap.alerts || [];
-    var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (still) alerts = alerts.slice(0, 1);
-    // The track moves right, so its last item leads: reverse, to let the most urgent come in first.
-    var html = alerts.slice().reverse().map(function (a) {
-      var msg = a.message ? ' <span class="m">' + esc(a.message) + '</span>' : '';
-      return '<span class="alert ' + esc(a.severity) + '"><span class="dot ' + esc(a.severity) + '"></span>' +
-        '<b class="sev">' + esc(SEVERITY[a.severity] || a.severity) + '</b> <span class="t">' + esc(a.title) + '</span>' + msg +
-        (a.source ? ' <span class="s">' + esc(a.source) + '</span>' : '') + '</span>';
-    }).join('');
-    var key = html + (still ? '|still' : '');
-    el.hidden = !html;
-    if (key === tickerKey) return;
-    tickerKey = key;
-    track.innerHTML = html;
-    el.classList.toggle('still', still);
-    if (!html || still) { track.style.animation = 'none'; return; }
-    // Slide from just outside the left edge to just outside the right edge at
-    // a steady speed (about 5 rem a second), however long the text is.
-    var rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-    var from = -track.scrollWidth, to = el.clientWidth;
-    track.style.setProperty('--from', from + 'px');
-    track.style.setProperty('--to', to + 'px');
-    track.style.animation = 'none';
-    void track.offsetWidth;
-    track.style.animation = 'ticker ' + Math.max(8, (to - from) / (5 * rem)).toFixed(1) + 's linear infinite';
+    var el = $('alert-pill');
+    var cfg = (snap.layout && snap.layout.alerts) || {};
+    var alerts = cfg.ticker === false ? [] : snap.alerts || [];
+    var a = alerts[0];
+    el.hidden = !a;
+    if (!a) { el.innerHTML = ''; return; }
+    var html = '<span class="tag">' + esc(SEV_NAME[a.severity] || a.severity) + '</span><span>' + esc(a.title) + '</span>' +
+      (a.message ? '<span class="msg">' + esc(a.message) + '</span>' : '') +
+      (alerts.length > 1 ? '<span class="more">+' + (alerts.length - 1) + ' more</span>' : '') +
+      (a.source && cfg.show_source !== false ? '<span class="meta">' + esc(a.source) + '</span>' : '');
+    el.className = 'banner pill ' + (SEV_CLASS[a.severity] || 'note');
+    if (el.innerHTML !== html) el.innerHTML = html;
   }
 
   function renderBanner() {
@@ -477,7 +616,9 @@
       bar.style.setProperty('--p', Math.round((s.data.progress || 0) * 100) + '%');
     } else if (s && s.level < 5 && s.data) {
       var d = s.data;
-      if (s.template === 'alert') {
+      if (s.template === 'alert' && d.title) {
+        // An alert from Home Assistant or a script: the alert pill shows it, nothing here.
+      } else if (s.template === 'alert') {
         var tag = d.status === 'success' ? 'Success' : d.status === 'warn' ? 'Warning' : s.level === 0 ? 'Critical' : 'Failed';
         cls = s.level === 0 ? 'critical' : d.status === 'success' ? 'success' : d.status === 'warn' ? 'warn' : '';
         var title = d.title || ((d.project || '') + (d.pipeline ? ' / ' + d.pipeline : ''));
@@ -485,7 +626,7 @@
         html = '<span class="tag">' + tag + '</span><span>' + esc(title) + '</span><span class="msg">' + esc(msg) + '</span>' +
           (d.others ? '<span class="meta">+' + d.others + ' more</span>' : '') + '<span class="meta">' + esc(SOURCES[d.source] || d.source) + '</span>';
       } else if (s.template === 'notice') {
-        cls = 'notice';
+        cls = 'note';
         html = '<span class="tag">Notice</span><span>' + esc(d.text) + '</span><span class="msg">' + esc(d.sub) + '</span><span class="meta">' + esc(SOURCES[d.source] || d.source) + '</span>';
       }
     }

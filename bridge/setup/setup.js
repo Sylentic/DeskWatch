@@ -8,6 +8,24 @@
   'use strict';
 
   var app = document.getElementById('app');
+
+  // Dark is the default. The button switches to light and remembers it in this
+  // browser; the system's own light or dark setting is not consulted.
+  var themeButton = document.getElementById('theme');
+  function theme() {
+    try { return localStorage.getItem('deskwatch-setup-theme') === 'light' ? 'light' : 'dark'; } catch (e) { return 'dark'; }
+  }
+  function applyTheme(name) {
+    if (name === 'light') document.documentElement.setAttribute('data-theme', 'light');
+    else document.documentElement.removeAttribute('data-theme');
+    themeButton.textContent = name === 'light' ? 'Dark mode' : 'Light mode';
+  }
+  applyTheme(theme());
+  themeButton.addEventListener('click', function () {
+    var next = theme() === 'light' ? 'dark' : 'light';
+    try { localStorage.setItem('deskwatch-setup-theme', next); } catch (e) { /* not kept */ }
+    applyTheme(next);
+  });
   var REFRESH_MS = 5000;
   var timer = null;
   var last = null;       // latest status, so a finished test can redraw at once
@@ -17,7 +35,8 @@
   var form = null;       // the open add/edit form, or null (see openForm)
   var confirming = null; // key of the action waiting for its confirm click, or null
   var restarting = null; // { boot, since } while the page waits for a restart to finish
-  var SECTIONS = ['sources', 'mqtt', 'dashboard', 'bridge', 'secrets'];
+  var SECTIONS = ['sources', 'mqtt', 'dashboard', 'alerts', 'bridge', 'secrets'];
+  var alertNote = null;  // result of the last test alert button press
 
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -478,6 +497,94 @@
     return card;
   }
 
+  // ---- Alerts ----
+
+  // One row of the ticker settings: a label with a hint and its control.
+  function settingRow(title, hint, control) {
+    var r = el('div', 'setting');
+    var text = el('div');
+    text.appendChild(el('span', null, title));
+    text.appendChild(el('small', null, hint));
+    r.appendChild(text);
+    r.appendChild(control);
+    return r;
+  }
+
+  function checkbox(on, disabled) {
+    var c = el('input'); c.type = 'checkbox'; c.checked = !!on; c.disabled = !!disabled;
+    return c;
+  }
+
+  // Ticker settings (they apply after a restart), a fixed test alert, and where
+  // alerts can come from. The test button can only raise or clear its own alert.
+  function alertsSection(d) {
+    var a = d.alerts, box = el('div');
+    var two = el('div', 'two');
+    var card = el('section', 'card');
+    card.appendChild(el('h2', null, 'Alerts in the header'));
+    var ticker = checkbox(a.ticker, !a.editable), source = checkbox(a.show_source, !a.editable);
+    var dismiss = checkbox(a.dismiss, !a.editable), httpInput = checkbox(a.http_input, !a.editable);
+    var max = el('input'); max.type = 'number'; max.min = '1'; max.max = '50'; max.value = String(a.max_active); max.disabled = !a.editable;
+    max.className = 'narrow';
+    card.appendChild(settingRow('Show the latest alert', 'The most urgent alert is a coloured pill in the header bar of the dashboard', ticker));
+    card.appendChild(settingRow('Show the source', 'Adds "via homeassistant" behind each alert', source));
+    card.appendChild(settingRow('Most alerts kept', 'When there are more, the least urgent and oldest drops first (1 to 50)', max));
+    card.appendChild(settingRow('Dismiss on the dashboard', 'A Dismiss button per alert in the Alerts menu. It clears the alert on every screen', dismiss));
+    card.appendChild(settingRow('Accept alerts on the web address', 'POST /api/alert with the same JSON as MQTT. No login: for a trusted network only', httpInput));
+    if (a.editable) {
+      var save = el('button', null, 'Save');
+      save.type = 'button';
+      save.addEventListener('click', function () {
+        post('api/setup/alerts', {
+          ticker: ticker.checked, show_source: source.checked,
+          dismiss: dismiss.checked, http_input: httpInput.checked, max_active: parseInt(max.value, 10) || 0
+        }).then(function (j) { notice = (j && j.error) || null; load(); });
+      });
+      var line = el('div', 'buttons'); line.appendChild(save); card.appendChild(line);
+    }
+    card.appendChild(el('p', 'muted', a.editable ? 'Needs a restart of the bridge.'
+      : 'Give the bridge a data folder to change these here.'));
+    two.appendChild(card);
+
+    var tryIt = el('section', 'card');
+    tryIt.appendChild(el('h2', null, 'Try it'));
+    tryIt.appendChild(el('p', 'muted', 'Raises one harmless test alert (title "Test alert", source "setup") that goes away by itself after a minute. '
+      + 'Nothing else can be created from this page.'));
+    var send = el('button', null, 'Send test alert'), clear = el('button', 'secondary', 'Clear it now');
+    send.type = clear.type = 'button';
+    send.disabled = clear.disabled = !a.test_available;
+    function test(action) {
+      post('api/setup/alerts/test', { action: action }).then(function (j) {
+        alertNote = j && j.error ? j.error : (action === 'send'
+          ? 'Test alert sent. Look at the header of the dashboard (' + (a.ticker ? 'the pill next to the badges' : 'the header pill is switched off') + ').' : 'Test alert cleared.');
+        if (last) render(last);
+      });
+    }
+    send.addEventListener('click', function () { test('send'); });
+    clear.addEventListener('click', function () { test('clear'); });
+    var buttons = el('div', 'buttons'); buttons.appendChild(send); buttons.appendChild(clear); tryIt.appendChild(buttons);
+    if (alertNote) { var n = el('p', null, alertNote); n.setAttribute('role', 'status'); tryIt.appendChild(n); }
+    if (!d.kiosk) tryIt.appendChild(el('p', 'muted', 'The dashboard is off ([kiosk] enabled in bridge.toml), so there is no header to look at.'));
+    two.appendChild(tryIt);
+    box.appendChild(two);
+
+    var src = el('section', 'card');
+    src.appendChild(el('h2', null, 'Where alerts come from'));
+    var dl = el('dl');
+    var mqtt;
+    if (!a.enabled) mqtt = pill('alerts off ([alerts] enabled in bridge.toml)', 'muted');
+    else if (!a.mqtt_enabled) mqtt = pill('MQTT is off', 'muted');
+    else mqtt = pill(a.mqtt_connected ? 'broker connected' : 'no broker connection', a.mqtt_connected ? 'ok' : 'warn');
+    row(dl, 'MQTT', mqtt);
+    row(dl, 'Topic', 'deskpanel/alert (Home Assistant blueprints or any script, see docs/home-assistant.md)');
+    row(dl, 'Web address', a.enabled ? pill(a.http_input ? 'on: POST /api/alert' : 'off', a.http_input ? 'ok' : 'muted') : pill('alerts off ([alerts] enabled in bridge.toml)', 'muted'));
+    row(dl, 'Example', 'curl -X POST http://<bridge>:8787/api/alert -d \'{"v":2,"id":"x","severity":"warning","title":"Hello"}\' (see docs/home-assistant.md)');
+    src.appendChild(dl);
+    src.appendChild(el('p', 'muted', 'Failed pipeline runs are not alerts: they count in the Failed badge.'));
+    box.appendChild(src);
+    return box;
+  }
+
   function bridgeSection(d) {
     var box = el('div', 'two');
     var info = el('section', 'card');
@@ -544,7 +651,7 @@
     return card;
   }
 
-  var TITLES = { sources: 'Sources', mqtt: 'MQTT broker', dashboard: 'Dashboard', bridge: 'Bridge and restart', secrets: 'Stored secrets' };
+  var TITLES = { sources: 'Sources', mqtt: 'MQTT broker', dashboard: 'Dashboard', alerts: 'Alerts', bridge: 'Bridge and restart', secrets: 'Stored secrets' };
 
   function currentSection() {
     var id = (location.hash || '').replace('#', '');
@@ -591,7 +698,7 @@
     layout.appendChild(nav);
     var content = el('div', 'content');
     content.appendChild(el('h2', 'sectiontitle', TITLES[section]));
-    content.appendChild(({ sources: sourcesSection, mqtt: mqttSection, dashboard: dashboardSection,
+    content.appendChild(({ sources: sourcesSection, mqtt: mqttSection, dashboard: dashboardSection, alerts: alertsSection,
                            bridge: bridgeSection, secrets: secretsSection })[section](d));
     layout.appendChild(content);
     app.appendChild(layout);

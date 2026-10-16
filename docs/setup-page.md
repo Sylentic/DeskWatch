@@ -26,6 +26,9 @@ a phone. **Add a source** is the first thing in the first section. The menu entr
 When the dashboard is on too, it shows a small **Setup** link in its header that opens this page, and this page has a
 **Dashboard** link back.
 
+The page is dark. The **Light mode** button in the header switches to light and remembers the choice in that
+browser; the system's own light or dark setting is not followed.
+
 ## What it shows, and what it never shows
 
 - Per source: type, address, repositories or projects, whether it comes from `bridge.toml` or the data folder
@@ -88,6 +91,22 @@ With a data folder, the **Dashboard hosts** card chooses how the built-in dashbo
 **compact** (only the list of hosts, with their network rates). It is stored as `host_view` in a `[kiosk]` table in `sources.toml` and
 applies after a restart, like the broker settings. Panels set with `[[kiosk.panel]]` in `bridge.toml` are not
 touched. See [kiosk.md](kiosk.md#hosts-detailed-or-compact).
+
+## Alerts
+
+The **Alerts** section has three cards.
+
+- **Alerts in the header** (needs a data folder): show the latest alert pill or not, whether
+  "via <source>" is shown, the most alerts kept (1 to 50) and whether the Alerts menu on the dashboard has Dismiss buttons. They are stored
+  under `[alerts]` in `sources.toml` (`ticker`, `show_source`, `max_active`, `dismiss`) and apply
+  after a restart. `enabled` and `critical_ids` stay in `bridge.toml`.
+  The same card has **Accept alerts on the web address** (`http_input`): `POST /api/alert` with the MQTT JSON, off by
+  default, see [home-assistant.md](home-assistant.md#without-mqtt-the-web-address).
+- **Try it**: **Send test alert** raises one fixed warning ("Test alert", source "setup") that goes away by itself after a
+  minute, and **Clear it now** removes it. The page sends no text of its own, only the action `send` or `clear`, so there
+  is no way to create any other alert from here (the setup page has no login). It needs no data folder.
+- **Where alerts come from**: whether MQTT is on and connected. Alerts arrive on the MQTT topic `deskpanel/alert`
+  ([home-assistant.md](home-assistant.md)). Failed pipeline runs are not alerts; they count in the Failed badge.
 
 ## MQTT broker settings
 

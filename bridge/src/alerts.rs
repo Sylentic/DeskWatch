@@ -16,7 +16,14 @@
 use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, bail};
+use axum::Router;
+use axum::body::Bytes;
+use axum::extract::State;
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
+use axum::routing::post;
 use serde::Deserialize;
+use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
 use crate::config::AlertsConfig;
@@ -24,6 +31,7 @@ use crate::model::{
     AlertData, AlertStatus, Badge, BadgeIcon, Candidate, Level, ListData, ListRow, MAX_TITLE_CHARS,
     NoticeData, RowStatus, SCHEMA_VERSION, ScreenData, truncate,
 };
+use crate::mqtt::Inbound;
 
 /// Largest inbound payload accepted. Bigger ones are dropped unread.
 pub const MAX_PAYLOAD: usize = 1024;
@@ -110,7 +118,42 @@ pub struct AlertMessage {
     pub clear: bool,
 }
 
+/// Id of the alert the setup page's test button raises.
+pub const TEST_ALERT_ID: &str = "setup-test";
+
+/// How long the test alert stays, in seconds.
+pub const TEST_ALERT_TTL_S: u64 = 60;
+
 impl AlertMessage {
+    /// A message that removes the alert with this id.
+    pub fn clear(id: &str) -> Self {
+        Self {
+            v: SCHEMA_VERSION,
+            id: Some(id.to_string()),
+            severity: None,
+            title: None,
+            message: None,
+            ttl_s: None,
+            source: None,
+            clear: true,
+        }
+    }
+
+    /// The fixed alert of the setup page's test button: a warning that
+    /// removes itself after a minute. Nothing the page sends can change it.
+    pub fn setup_test() -> Self {
+        Self {
+            v: SCHEMA_VERSION,
+            id: Some(TEST_ALERT_ID.to_string()),
+            severity: Some(Severity::Warning),
+            title: Some("Test alert".to_string()),
+            message: Some("sent from the setup page".to_string()),
+            ttl_s: Some(TEST_ALERT_TTL_S),
+            source: Some("setup".to_string()),
+            clear: false,
+        }
+    }
+
     /// Parse and check a payload: at most `MAX_PAYLOAD` bytes, schema v2.
     pub fn parse(payload: &[u8]) -> Result<Self> {
         if payload.len() > MAX_PAYLOAD {
@@ -127,6 +170,50 @@ impl AlertMessage {
             bail!("clear needs an id");
         }
         Ok(msg)
+    }
+}
+
+/// Path of the web address that takes alerts (`[alerts] http_input`).
+pub const HTTP_PATH: &str = "/api/alert";
+
+/// `POST /api/alert`: the same JSON as on MQTT (schema section 4), for scripts,
+/// `curl`, Home Assistant's `rest_command` and anything else that can send an
+/// HTTP request. It has no login (like the dashboard), so a page on another
+/// site is refused by its `Origin`; `curl` and scripts send none. An alert
+/// without a `source` is labelled `http`.
+pub fn http_router(tx: mpsc::Sender<Inbound>) -> Router {
+    Router::new().route(HTTP_PATH, post(http_alert).with_state(tx))
+}
+
+async fn http_alert(
+    State(tx): State<mpsc::Sender<Inbound>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if !crate::kiosk::origin::same_origin(&headers) {
+        return (StatusCode::FORBIDDEN, "cross-origin request refused").into_response();
+    }
+    if body.len() > MAX_PAYLOAD {
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            format!("alert is over the {MAX_PAYLOAD} byte limit"),
+        )
+            .into_response();
+    }
+    let mut msg = match AlertMessage::parse(&body) {
+        Ok(msg) => msg,
+        Err(err) => return (StatusCode::BAD_REQUEST, format!("{err:#}")).into_response(),
+    };
+    if msg.source.is_none() {
+        msg.source = Some("http".to_string());
+    }
+    match tx.try_send(Inbound::Alert(msg)) {
+        Ok(()) => StatusCode::ACCEPTED.into_response(),
+        Err(_) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "the bridge is busy, try again",
+        )
+            .into_response(),
     }
 }
 
@@ -369,6 +456,9 @@ fn alert_id(id: &str) -> String {
 mod tests {
     use super::*;
     use crate::model::pick;
+    use axum::body::Body;
+    use axum::http::Request;
+    use tower::ServiceExt;
 
     fn raise(id: &str, severity: &str) -> AlertMessage {
         let json = format!(
@@ -530,5 +620,94 @@ mod tests {
         assert_eq!(row.text.chars().count(), MAX_TITLE_CHARS);
         assert_eq!(row.source, "mqtt");
         assert_eq!(row.status, RowStatus::Neutral, "default severity is info");
+    }
+
+    async fn post_alert(router: &Router, headers: &[(&str, &str)], body: &str) -> StatusCode {
+        let mut request = Request::builder().method("POST").uri(HTTP_PATH);
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        router
+            .clone()
+            .oneshot(request.body(Body::from(body.to_string())).unwrap())
+            .await
+            .unwrap()
+            .status()
+    }
+
+    #[tokio::test]
+    async fn the_web_address_takes_the_mqtt_json_and_labels_the_source() {
+        let (tx, mut rx) = mpsc::channel(4);
+        let router = http_router(tx);
+        let ok = r#"{"v":2,"id":"door","severity":"warning","title":"Freezer door"}"#;
+        assert_eq!(post_alert(&router, &[], ok).await, StatusCode::ACCEPTED);
+        let Some(Inbound::Alert(msg)) = rx.recv().await else {
+            panic!("expected an alert")
+        };
+        assert_eq!(msg.id.as_deref(), Some("door"));
+        assert_eq!(msg.source.as_deref(), Some("http"));
+
+        // A source the sender chose is kept, and a clear works like on MQTT.
+        let own = r#"{"v":2,"id":"door","title":"x","source":"uptime-kuma"}"#;
+        assert_eq!(post_alert(&router, &[], own).await, StatusCode::ACCEPTED);
+        let Some(Inbound::Alert(msg)) = rx.recv().await else {
+            panic!("expected an alert")
+        };
+        assert_eq!(msg.source.as_deref(), Some("uptime-kuma"));
+        let clear = r#"{"v":2,"id":"door","clear":true}"#;
+        assert_eq!(post_alert(&router, &[], clear).await, StatusCode::ACCEPTED);
+        let Some(Inbound::Alert(msg)) = rx.recv().await else {
+            panic!("expected a clear")
+        };
+        assert!(msg.clear);
+    }
+
+    #[tokio::test]
+    async fn the_web_address_refuses_bad_big_and_cross_origin_requests() {
+        let (tx, mut rx) = mpsc::channel(4);
+        let router = http_router(tx);
+        assert_eq!(
+            post_alert(&router, &[], "nope").await,
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            post_alert(&router, &[], r#"{"v":1,"title":"old"}"#).await,
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            post_alert(&router, &[], r#"{"v":2,"clear":true}"#).await,
+            StatusCode::BAD_REQUEST,
+            "clear needs an id"
+        );
+        let big = format!(r#"{{"v":2,"title":"{}"}}"#, "x".repeat(MAX_PAYLOAD));
+        assert_eq!(
+            post_alert(&router, &[], &big).await,
+            StatusCode::PAYLOAD_TOO_LARGE
+        );
+        let evil = [("origin", "https://evil.example"), ("host", "bridge.lan")];
+        assert_eq!(
+            post_alert(&router, &evil, r#"{"v":2,"title":"x"}"#).await,
+            StatusCode::FORBIDDEN
+        );
+        assert!(rx.try_recv().is_err());
+        // GET is not a thing here.
+        let got = router
+            .clone()
+            .oneshot(Request::get(HTTP_PATH).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(got.status(), StatusCode::METHOD_NOT_ALLOWED);
+    }
+
+    #[tokio::test]
+    async fn the_web_address_says_when_the_bridge_is_busy() {
+        let (tx, _rx) = mpsc::channel(1);
+        let router = http_router(tx);
+        let body = r#"{"v":2,"title":"x"}"#;
+        assert_eq!(post_alert(&router, &[], body).await, StatusCode::ACCEPTED);
+        assert_eq!(
+            post_alert(&router, &[], body).await,
+            StatusCode::SERVICE_UNAVAILABLE
+        );
     }
 }

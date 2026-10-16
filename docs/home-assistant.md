@@ -77,6 +77,27 @@ mosquitto_pub -u homeassistant -P '...' -t deskpanel/alert \
 mosquitto_pub -u homeassistant -P '...' -t deskpanel/alert -m '{"v":2,"id":"test","clear":true}'
 ```
 
+## Without MQTT: the web address
+
+Alerts can also arrive over HTTP, with the same JSON as on MQTT, for scripts, `curl`, Home Assistant's `rest_command`,
+Uptime Kuma or a cron job. It is off by default. Switch it on with `http_input = true` in `[alerts]`, or with the
+checkbox in the **Alerts** section of the [setup page](setup-page.md#alerts), then restart the bridge.
+
+```sh
+curl -X POST http://<bridge>:8787/api/alert \
+  -d '{"v":2,"id":"nas","severity":"warning","title":"NAS is slow","message":"Disk 95% full"}'
+curl -X POST http://<bridge>:8787/api/alert -d '{"v":2,"id":"nas","clear":true}'
+```
+
+The answer is `202` when the alert was accepted, `400` with the reason when the JSON is wrong (`v` must be 2, `clear`
+needs an `id`), `413` over 1024 bytes and `503` when the bridge is busy. An alert without a `source` shows as "via http".
+`max_active`, `critical_ids` and the other `[alerts]` settings apply as they do on MQTT.
+
+There is no login, like the dashboard and the setup page: use it on a trusted network only and do not publish the port
+to the internet. A web page on another site cannot post to it (a request with a foreign `Origin` is refused); `curl` and
+scripts send none. Over HTTP an alert can only be raised or cleared; it is not the panel button, and the ESP panel still
+needs the MQTT broker to show anything.
+
 ## Notes
 
 - The blueprints use the `action:` / `triggers:` syntax of recent HA releases (2024.10 and later).

@@ -66,20 +66,42 @@ hosts", needs a data folder and a restart of the bridge); the setup page's choic
 plain table (two cells wide it gets network columns). A `stats` panel keeps working as before: with a fixed `host` it
 shows that host, without one it has arrows (`‹ 1/3 ›`) to step through the hosts.
 
+### Failed runs: look and dismiss
+
+The red **failed** counter in the header counts pipelines whose latest finished run failed. It used to stay until the
+pipeline turned green (or until the button on the ESP panel was pressed, which the kiosk does not have), so an old
+failure could sit there forever. Now the counter is a button: click or tap it for a list with, per failed run, the
+source, project and pipeline, branch, failing step and how long ago, each opening the run on its source in a new tab.
+**Dismiss** removes one run from the list and the counter, **Dismiss all** clears the list. Escape or a click outside
+closes it. With nothing left the counter shows `0 failed` with a green dot.
+
+- A *new* failure (a new run of the same pipeline) is not hidden by an earlier dismiss and shows up again.
+- A pipeline that later succeeds drops off by itself, as before.
+- The dismissals are stored in this browser (localStorage, under the pipeline and the start time of the failed run) and
+  forgotten once the failure leaves the data. Nothing is stored on the bridge and nothing needs a login, so a second
+  screen or another browser keeps its own list. Restarting the bridge also forgets failures (they are held in memory).
+
 ### Alerts in the header
 
-Active alerts scroll through the header between the badges and the free space, from left to right, one after the other:
-the severity in colour (INFO blue, WARNING amber, CRITICAL red), what is wrong, the message and the source ("via
-homeassistant"). The most urgent comes in first. With no alerts the area is empty. The ticker pauses while the pointer is
-over it or it is touched, and with "reduce motion" switched on in the system it does not move: the most urgent alert stands
-still instead. The `alerts` badge (warnings and critical) stays next to the other counters.
+The most urgent active alert is a coloured pill in the header, next to the badges: the severity in colour (INFO blue,
+WARNING amber, CRITICAL red), what is wrong, the message and the source ("homeassistant"), with "+N more" when
+there are more. With no alerts there is no pill. Click it, or the **Alerts** badge, to fold out the menu with all alerts.
+The header badges run Open PRs, Failed runs, Alerts; each is gone at 0. Run results and notices (success, failed,
+notice) show as a pill beside it.
+
+The **Alerts** badge counts every active alert, coloured by the worst one. In the menu every alert has a **Dismiss**
+button, plus **Dismiss all**. Dismissing clears the alert for every screen (the same as a `clear` message on MQTT,
+unlike Failed runs, which are hidden per browser) and works without MQTT. It can only clear, never raise or change an
+alert. Switch it off with `dismiss = false` in `[alerts]`.
+The header pill on or off and "via source" are `[alerts]` settings too (`ticker`, `show_source`), also
+changeable on the [setup page](setup-page.md#alerts).
 
 The "sources" chip on the right (all sources ok, or how many have a problem) opens the [setup page](setup-page.md) when it
 is on, where every source and its status is listed.
 
 Interrupts do not take over the whole screen as they do on the ESP panel, because the other widgets are still
 useful. The bridge's normal priority decides (critical alert, running job, failed, warning, success, notice), and
-the page shows the winner as a coloured **banner** under the header: red for a failure, deep red for a critical
+the page shows the winner as a coloured **pill in the header** (next to the badges): red for a failure, deep red for a critical
 alert, amber for a warning, green for a success, blue for a notice. While a job runs, a thin orange progress line under
 the header follows it. The header also has the same counters as the panel badges (failed runs, open PRs, alerts,
 things down), a connection chip, and a clock.
@@ -315,7 +337,7 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
 and at least every 5 seconds (a heartbeat, so the page can tell quiet from gone). Snapshots are versioned with `"v"`
 (1), separately from the MQTT schema. Fields: `build` (bridge version; the page reloads when it changes), `now`
 (Unix seconds), `layout` (the grid, the widgets with their filters, `theme` and `pixel_shift_s` from the config), `screen` (the composer's pick as an MQTT v2
-screen payload, or `null` when idle), `badges`, `hosts`, `down`, `jobs`, `runs`, `pulls`, `runners`, `queued_jobs`, `alerts` and `sources`. `jobs`, `runs`, `pulls[].items[]` and `runners` each carry a `url` (an `http(s)` address, or `null`).
+screen payload, or `null` when idle), `badges`, `failed` (the failed runs behind the badge: `key`, `source`, `project`, `pipeline`, `ref`, `step`, `started`, `finished`, `url`), `hosts`, `down`, `jobs`, `runs`, `pulls`, `runners`, `queued_jobs`, `alerts` and `sources`. `jobs`, `runs`, `pulls[].items[]` and `runners` each carry a `url` (an `http(s)` address, or `null`).
 Lists are not capped to the ESP panel's five rows. The structure is in `bridge/src/kiosk.rs` (`snapshot`) and
 covered by the tests next to it. Treat it as unstable until 1.0.
 

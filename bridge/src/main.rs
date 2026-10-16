@@ -182,6 +182,11 @@ async fn main() -> Result<()> {
     let (source_tx, mut source_rx) = mpsc::channel(64);
     let mut hooks = Hooks::default();
     let supervisor = Supervisor::new(source_tx.clone(), hooks.webhooks());
+    // Alerts and button presses reach the main loop here: from MQTT, and
+    // from the kiosk page (dismiss) and the setup page (test alert). The
+    // sender stays alive here either way, so with MQTT off the receiver just
+    // waits forever.
+    let (inbound_tx, mut inbound_rx) = mpsc::channel(16);
     let mut kiosk = None;
     if config.kiosk.enabled {
         if !config.http.listen.ip().is_loopback() {
@@ -192,13 +197,30 @@ async fn main() -> Result<()> {
                 config.http.listen
             );
         }
-        let built = Kiosk::new(&config.kiosk).with_setup_link(config.setup.is_on());
+        let built = Kiosk::new(&config.kiosk)
+            .with_setup_link(config.setup.is_on())
+            .with_alerts(&config.alerts, inbound_tx.clone());
         hooks.add("/", built.router());
         kiosk = Some(built);
     }
     // `/healthz` (the Docker health probe) reports the broker connection, so
     // the listener also opens for a bridge that only talks to an ESP panel.
     let mqtt_link = health::MqttLink::default();
+    // Alerts over HTTP: off unless `[alerts] http_input`.
+    if config.alerts.enabled && config.alerts.http_input {
+        hooks.add(
+            deskwatch_bridge::alerts::HTTP_PATH,
+            deskwatch_bridge::alerts::http_router(inbound_tx.clone()),
+        );
+        if !config.http.listen.ip().is_loopback() {
+            warn!(
+                "POST {} on {} has no login: anyone who can reach this port can put alerts on the dashboard. \
+                 That is fine on a home network. Do not expose the port to the internet",
+                deskwatch_bridge::alerts::HTTP_PATH,
+                config.http.listen
+            );
+        }
+    }
     // The setup page (docs/setup-page.md): off unless `[setup] enabled`.
     let mut setup = None;
     if config.setup.is_on() {
@@ -207,7 +229,8 @@ async fn main() -> Result<()> {
             mqtt_link.clone(),
             store.clone(),
             Some(supervisor.clone()),
-        );
+        )
+        .with_alert_sender(inbound_tx.clone());
         hooks.add("/setup", built.router());
         info!("setup page on /setup");
         if !config.http.listen.ip().is_loopback() {
@@ -237,9 +260,6 @@ async fn main() -> Result<()> {
         .start(config.http.listen, config.http.tls.as_ref())
         .await?;
 
-    // The channel's sender stays alive here either way, so with MQTT off the
-    // receiver just waits forever.
-    let (inbound_tx, mut inbound_rx) = mpsc::channel(16);
     let publisher = if config.mqtt.enabled {
         let (publisher, eventloop) = mqtt::connect(&config.mqtt, mqtt::password(&config.mqtt)?)?;
         tokio::spawn(mqtt::run_event_loop(

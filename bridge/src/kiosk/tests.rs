@@ -774,6 +774,72 @@ fn setup_link_is_in_the_layout_only_when_asked() {
     assert!(json_of(&off)["layout"].get("setup").is_none());
 }
 
+#[test]
+fn ticker_settings_travel_in_the_layout() {
+    let (tx, _rx) = tokio::sync::mpsc::channel(4);
+    let alerts = crate::config::AlertsConfig {
+        ticker_speed: crate::config::TickerSpeed::Slow,
+        show_source: false,
+        ..Default::default()
+    };
+    let kiosk = kiosk().with_alerts(&alerts, tx);
+    let layout = &json_of(&kiosk)["layout"]["alerts"];
+    assert_eq!(layout["ticker"], true);
+    assert_eq!(layout["show_source"], false);
+    assert_eq!(layout["dismiss"], true);
+    assert!(layout["speed"].as_f64().unwrap() < 1.0);
+}
+
+#[tokio::test]
+async fn dismissing_an_alert_only_clears_it() {
+    use crate::mqtt::Inbound;
+    let (tx, mut rx) = tokio::sync::mpsc::channel(4);
+    let router = kiosk()
+        .with_alerts(&crate::config::AlertsConfig::default(), tx)
+        .router();
+    let uri = "/api/kiosk/alert/dismiss";
+    let (status, _) = send(&router, "POST", uri, &[], r#"{"id":"door"}"#).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let Some(Inbound::Alert(msg)) = rx.recv().await else {
+        panic!("expected a clear")
+    };
+    assert!(msg.clear);
+    assert_eq!(msg.id.as_deref(), Some("door"));
+
+    // No id, or a cross-origin page: nothing happens.
+    let (status, _) = send(&router, "POST", uri, &[], "{}").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let evil = [("origin", "https://evil.example"), ("host", "bridge.lan")];
+    let (status, _) = send(&router, "POST", uri, &evil, r#"{"id":"door"}"#).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert!(rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn dismissing_is_refused_when_switched_off() {
+    let (tx, mut rx) = tokio::sync::mpsc::channel(4);
+    let alerts = crate::config::AlertsConfig {
+        dismiss: false,
+        ..Default::default()
+    };
+    let router = kiosk().with_alerts(&alerts, tx).router();
+    let (status, _) = send(
+        &router,
+        "POST",
+        "/api/kiosk/alert/dismiss",
+        &[],
+        r#"{"id":"door"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert!(rx.try_recv().is_err());
+    assert_eq!(
+        json_of(&kiosk().with_alerts(&alerts, tokio::sync::mpsc::channel(1).0))["layout"]["alerts"]
+            ["dismiss"],
+        false
+    );
+}
+
 #[tokio::test]
 async fn data_needs_no_login() {
     let router = kiosk().router();
@@ -822,4 +888,69 @@ async fn cross_origin_data_requests_are_refused() {
         send(&router, "GET", "/api/kiosk/ws", &own, "").await.0,
         StatusCode::FORBIDDEN
     );
+}
+
+#[test]
+fn snapshot_lists_the_failed_runs_behind_the_badge() {
+    let mut kiosk = kiosk();
+    let mut c = composer();
+    let mut bad = run("deploy.yml", RunStatus::Failed);
+    bad.url = Some("https://git.example/me/webshop/actions/runs/9".into());
+    for (key, run) in [
+        ("a", bad),
+        ("b", run("ci.yml", RunStatus::Success)),
+        ("c", run("nightly.yml", RunStatus::Failed)),
+    ] {
+        c.ci.apply(
+            Update::Run {
+                key: key.into(),
+                run,
+            },
+            NOW,
+        );
+    }
+    kiosk.update(&mut c, NOW);
+    let value = json_of(&kiosk);
+    let failed = value["failed"].as_array().unwrap();
+    // Only failures, one per pipeline; the badge counts the same.
+    assert_eq!(failed.len(), 2);
+    assert_eq!(value["badges"][0]["count"], 2);
+    assert_eq!(failed[0]["key"], "a");
+    assert_eq!(failed[0]["pipeline"], "deploy.yml");
+    assert_eq!(failed[0]["ref"], "main");
+    assert_eq!(failed[0]["step"], "tests");
+    assert_eq!(failed[0]["started"], NOW - 100);
+    assert_eq!(
+        failed[0]["url"],
+        "https://git.example/me/webshop/actions/runs/9"
+    );
+    assert!(failed[1]["url"].is_null());
+
+    // A green run of the same pipeline takes it off the list by itself.
+    c.ci.apply(
+        Update::Run {
+            key: "a".into(),
+            run: run("deploy.yml", RunStatus::Success),
+        },
+        NOW,
+    );
+    kiosk.update(&mut c, NOW);
+    let value = json_of(&kiosk);
+    assert_eq!(value["failed"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn page_lets_the_failed_badge_be_dismissed_in_the_browser() {
+    let js = include_str!("../../kiosk/kiosk.js");
+    // The badge opens the list, each failure and "all" can be dismissed, and
+    // the choice lives in localStorage under the run's key and start time.
+    for needle in [
+        "data-failed-toggle",
+        "data-dismiss-all",
+        "deskwatch.kiosk.dismissed",
+        "key + '@' + f.started",
+    ] {
+        assert!(js.contains(needle), "kiosk.js lacks {needle}");
+    }
+    assert!(include_str!("../../kiosk/index.html").contains("id=\"failed-pop\""));
 }

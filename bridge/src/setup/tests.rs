@@ -491,6 +491,101 @@ async fn the_host_view_is_saved_and_needs_a_restart() {
 }
 
 #[tokio::test]
+async fn alert_settings_are_saved_and_need_a_restart() {
+    let (router, temp) = with_data("alert-settings").await;
+    let (_, _, text) = send(&router, "GET", "/api/setup/status", &[], "").await;
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["alerts"]["ticker"], true);
+    assert_eq!(v["alerts"]["editable"], true);
+    assert_eq!(v["alerts"]["max_active"], 10);
+    assert_eq!(v["alerts"]["http_input"], false);
+
+    let body =
+        json!({ "ticker": false, "ticker_speed": "fast", "max_active": 5, "http_input": true })
+            .to_string();
+    let (status, _, text) = send(&router, "POST", "/api/setup/alerts", &[], &body).await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    let saved = std::fs::read_to_string(temp.0.join("data/sources.toml")).unwrap();
+    assert!(saved.contains("ticker = false"), "{saved}");
+    let (_, _, text) = send(&router, "GET", "/api/setup/status", &[], "").await;
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["alerts"]["ticker"], false);
+    assert_eq!(v["alerts"]["ticker_speed"], "fast");
+    assert_eq!(v["alerts"]["max_active"], 5);
+    assert_eq!(v["alerts"]["http_input"], true);
+    assert_eq!(v["restart_needed"], true);
+
+    for bad in [json!({ "max_active": 99 }), json!({ "enabled": false })] {
+        let (status, ..) = send(&router, "POST", "/api/setup/alerts", &[], &bad.to_string()).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
+    }
+    let evil = [("origin", "https://evil.example"), ("host", "bridge.lan")];
+    let (status, ..) = send(&router, "POST", "/api/setup/alerts", &evil, "{}").await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn the_test_button_can_only_raise_or_clear_its_own_alert() {
+    use crate::mqtt::Inbound;
+    let temp = Temp::new("test-alert");
+    let config = Config::from_toml("").unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::channel(8);
+    let router = Setup::new(&config, MqttLink::default(), None, None)
+        .with_alert_sender(tx)
+        .router();
+    drop(temp);
+
+    // No data folder needed. The page sends no alert text, only an action.
+    let (status, ..) = send(
+        &router,
+        "POST",
+        "/api/setup/alerts/test",
+        &[],
+        r#"{"action":"send"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let Some(Inbound::Alert(sent)) = rx.recv().await else {
+        panic!("expected an alert")
+    };
+    assert_eq!(sent.id.as_deref(), Some("setup-test"));
+    assert_eq!(sent.title.as_deref(), Some("Test alert"));
+    assert_eq!(sent.ttl_s, Some(60));
+    assert!(!sent.clear);
+
+    let (status, ..) = send(
+        &router,
+        "POST",
+        "/api/setup/alerts/test",
+        &[],
+        r#"{"action":"clear"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let Some(Inbound::Alert(cleared)) = rx.recv().await else {
+        panic!("expected a clear")
+    };
+    assert!(cleared.clear && cleared.id.as_deref() == Some("setup-test"));
+
+    // Text of its own is ignored; anything but the two actions is refused.
+    let own = r#"{"action":"create","id":"x","title":"mine","severity":"critical"}"#;
+    let (status, ..) = send(&router, "POST", "/api/setup/alerts/test", &[], own).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(rx.try_recv().is_err());
+    let evil = [("origin", "https://evil.example"), ("host", "bridge.lan")];
+    let (status, ..) = send(
+        &router,
+        "POST",
+        "/api/setup/alerts/test",
+        &evil,
+        r#"{"action":"send"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert!(rx.try_recv().is_err());
+}
+
+#[tokio::test]
 async fn a_source_added_from_the_page_can_be_tested_at_once() {
     use crate::probe::tests::{gitea_mock, serve};
     let (router, _temp) = with_data("test-new").await;
@@ -783,4 +878,15 @@ fn the_page_has_the_sections_the_confirm_boxes_and_the_restart_wait() {
     let add = SETUP_JS[sources..].find("addBar(d)").unwrap();
     let grid = SETUP_JS[sources..].find("srcgrid").unwrap();
     assert!(add < grid);
+}
+
+/// The setup page is dark unless the person picks light with its button: the
+/// stylesheet must not follow the system's colour scheme.
+#[test]
+fn the_setup_page_is_dark_by_default_and_ignores_the_system_scheme() {
+    assert!(!SETUP_CSS.contains("prefers-color-scheme"));
+    assert!(SETUP_CSS.contains("color-scheme: dark"));
+    assert!(SETUP_CSS.contains(r#":root[data-theme="light"]"#));
+    assert!(INDEX_HTML.contains(r#"content="dark""#));
+    assert!(!INDEX_HTML.contains("light dark"));
 }

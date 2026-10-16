@@ -305,6 +305,49 @@ pub fn set_kiosk(current: &str, host_view: &str) -> Result<String> {
     toml::to_string(&root).context("cannot write sources.toml")
 }
 
+/// Set the ticker keys of `[alerts]` in `sources.toml`. `fields` may hold
+/// `ticker`, `show_source`, `dismiss` and `http_input` (booleans), `ticker_speed` (`slow`,
+/// `normal` or `fast`) and `max_active` (1 to 50); keys it leaves out stay as
+/// they are. Anything else is refused.
+pub fn set_alerts(
+    current: &str,
+    fields: &serde_json::Map<String, serde_json::Value>,
+) -> Result<String> {
+    use serde_json::Value;
+    let mut root = parse(current)?;
+    let table = root
+        .entry("alerts")
+        .or_insert_with(|| toml::Value::Table(Table::new()))
+        .as_table_mut()
+        .context("`alerts` in sources.toml is not a table")?;
+    for (key, value) in fields {
+        let new = match (key.as_str(), value) {
+            ("ticker" | "show_source" | "dismiss" | "http_input", Value::Bool(on)) => {
+                toml::Value::Boolean(*on)
+            }
+            ("ticker_speed", Value::String(speed))
+                if matches!(speed.as_str(), "slow" | "normal" | "fast") =>
+            {
+                toml::Value::String(speed.clone())
+            }
+            ("max_active", Value::Number(n)) => {
+                let n = n
+                    .as_u64()
+                    .filter(|n| (1..=crate::config::MAX_ACTIVE_ALERTS as u64).contains(n));
+                toml::Value::Integer(n.with_context(|| {
+                    format!(
+                        "max_active must be a number from 1 to {}",
+                        crate::config::MAX_ACTIVE_ALERTS
+                    )
+                })? as i64)
+            }
+            _ => bail!("{key:?} is not an alert setting, or its value has the wrong type"),
+        };
+        table.insert(key.clone(), new);
+    }
+    toml::to_string(&root).context("cannot write sources.toml")
+}
+
 /// Switch a `bridge.toml` source off (`hide`) or on again. The source stays in
 /// `bridge.toml`; `sources.toml` only lists its id under `hidden`.
 pub fn set_hidden(current: &str, kind: &str, name: &str, hide: bool) -> Result<String> {

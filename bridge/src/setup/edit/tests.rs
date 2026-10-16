@@ -377,3 +377,35 @@ fn removing_the_broker_login_or_all_saved_broker_settings() {
             .is_empty()
     );
 }
+
+#[test]
+fn alert_settings_are_written_checked_and_merged() {
+    use serde_json::json;
+    let fields = |v: serde_json::Value| v.as_object().unwrap().clone();
+    let text = set_alerts(
+        "",
+        &fields(
+            json!({ "ticker": false, "ticker_speed": "slow", "max_active": 4, "http_input": true }),
+        ),
+    )
+    .unwrap();
+    // A second save keeps the keys it does not mention.
+    let text = set_alerts(&text, &fields(json!({ "dismiss": false }))).unwrap();
+    let table: toml::Table = text.parse().unwrap();
+    let alerts = table["alerts"].as_table().unwrap();
+    assert_eq!(alerts["ticker"].as_bool(), Some(false));
+    assert_eq!(alerts["ticker_speed"].as_str(), Some("slow"));
+    assert_eq!(alerts["max_active"].as_integer(), Some(4));
+    assert_eq!(alerts["dismiss"].as_bool(), Some(false));
+    assert_eq!(alerts["http_input"].as_bool(), Some(true));
+
+    for bad in [
+        json!({ "ticker_speed": "warp" }),
+        json!({ "max_active": 0 }),
+        json!({ "max_active": 51 }),
+        json!({ "ticker": "yes" }),
+        json!({ "critical_ids": ["x"] }),
+    ] {
+        assert!(set_alerts("", &fields(bad.clone())).is_err(), "{bad}");
+    }
+}

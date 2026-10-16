@@ -60,6 +60,9 @@ struct Overlay {
     /// Dashboard settings the setup page changed.
     #[serde(default)]
     kiosk: Option<KioskPatch>,
+    /// Alert and ticker settings the setup page changed.
+    #[serde(default)]
+    alerts: Option<AlertsPatch>,
     /// `kind:name` of `bridge.toml` sources the setup page switched off.
     /// `bridge.toml` itself is never edited; the source is just left out.
     #[serde(default)]
@@ -72,6 +75,19 @@ struct Overlay {
 #[serde(deny_unknown_fields)]
 struct KioskPatch {
     host_view: Option<HostView>,
+}
+
+/// The `[alerts]` keys the setup page can change: how the header ticker looks
+/// and behaves. `critical_ids` and `enabled` stay in `bridge.toml`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AlertsPatch {
+    ticker: Option<bool>,
+    ticker_speed: Option<TickerSpeed>,
+    show_source: Option<bool>,
+    dismiss: Option<bool>,
+    max_active: Option<usize>,
+    http_input: Option<bool>,
 }
 
 /// The `[mqtt]` keys the setup page can change (docs/setup-page.md). Anything
@@ -172,6 +188,10 @@ pub struct Config {
     /// `kiosk.host_view` as `bridge.toml` had it, when the data folder changed it.
     #[serde(skip)]
     pub host_view_before_overlay: Option<HostView>,
+    /// The `[alerts]` section as `bridge.toml` had it, when the data folder
+    /// changed some of its keys. Filled by `with_overlay`.
+    #[serde(skip)]
+    pub alerts_before_overlay: Option<AlertsConfig>,
     /// `kind:name` of the `bridge.toml` sources the data folder switched off.
     /// Filled by `with_overlay`.
     #[serde(skip)]
@@ -583,7 +603,45 @@ pub struct AlertsConfig {
     /// When set, only these alert ids may be `critical` (level 0, above
     /// running jobs); any other critical alert is shown as a warning.
     pub critical_ids: Option<Vec<String>>,
+    /// Show the alert ticker in the kiosk header.
+    pub ticker: bool,
+    /// How fast the ticker moves.
+    pub ticker_speed: TickerSpeed,
+    /// Show "via <source>" behind each alert in the ticker.
+    pub show_source: bool,
+    /// Let the kiosk page dismiss an alert (Dismiss buttons in the Alerts
+    /// menu). It clears the alert for every screen, like a clear message would.
+    pub dismiss: bool,
+    /// Accept alerts as `POST /api/alert` on the shared HTTP listener, with
+    /// the same JSON as on MQTT. Off by default: like the dashboard it has no
+    /// login, so it is for a trusted network only.
+    pub http_input: bool,
 }
+
+/// How fast the header ticker moves.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TickerSpeed {
+    Slow,
+    #[default]
+    Normal,
+    Fast,
+}
+
+impl TickerSpeed {
+    /// Pixels per rem-second factor used by the page: the ticker moves at
+    /// `5 * rem * factor` pixels per second.
+    pub fn factor(self) -> f64 {
+        match self {
+            TickerSpeed::Slow => 0.6,
+            TickerSpeed::Normal => 1.0,
+            TickerSpeed::Fast => 1.7,
+        }
+    }
+}
+
+/// Most alerts `max_active` may keep.
+pub const MAX_ACTIVE_ALERTS: usize = 50;
 
 impl Default for AlertsConfig {
     fn default() -> Self {
@@ -591,6 +649,11 @@ impl Default for AlertsConfig {
             enabled: true,
             max_active: 10,
             critical_ids: None,
+            ticker: true,
+            ticker_speed: TickerSpeed::Normal,
+            show_source: true,
+            dismiss: true,
+            http_input: false,
         }
     }
 }
@@ -1009,6 +1072,7 @@ impl Config {
             source,
             mqtt,
             kiosk,
+            alerts,
             hidden,
         } = toml::from_str(overlay).context("invalid sources overlay")?;
         if !hidden.is_empty() {
@@ -1037,6 +1101,16 @@ impl Config {
         if let Some(view) = kiosk.and_then(|k| k.host_view) {
             self.host_view_before_overlay = Some(self.kiosk.host_view);
             self.kiosk.host_view = view;
+        }
+        if let Some(patch) = alerts {
+            self.alerts_before_overlay = Some(self.alerts.clone());
+            let a = &mut self.alerts;
+            a.ticker = patch.ticker.unwrap_or(a.ticker);
+            a.ticker_speed = patch.ticker_speed.unwrap_or(a.ticker_speed);
+            a.show_source = patch.show_source.unwrap_or(a.show_source);
+            a.dismiss = patch.dismiss.unwrap_or(a.dismiss);
+            a.max_active = patch.max_active.unwrap_or(a.max_active);
+            a.http_input = patch.http_input.unwrap_or(a.http_input);
         }
         macro_rules! merge {
             ($($kind:ident),+) => {$(
@@ -1084,6 +1158,9 @@ impl Config {
         if let Some(original) = base.host_view_before_overlay.take() {
             base.kiosk.host_view = original;
         }
+        if let Some(original) = base.alerts_before_overlay.take() {
+            base.alerts = original;
+        }
         base
     }
 
@@ -1094,6 +1171,10 @@ impl Config {
             self.setup.removed_token_file.is_none(),
             "{}",
             removed_login_message("setup", "token_file")
+        );
+        anyhow::ensure!(
+            (1..=MAX_ACTIVE_ALERTS).contains(&self.alerts.max_active),
+            "alerts.max_active must be between 1 and {MAX_ACTIVE_ALERTS}"
         );
         anyhow::ensure!(
             self.server.interval_s > 0,
@@ -1316,6 +1397,39 @@ mod tests {
         assert!(Config::from_toml("[mqtt]\nca_file = \"/etc/ca.pem\"\n").is_err());
         let half = "[mqtt]\ntls = true\nclient_cert_file = \"/etc/c.pem\"\n";
         assert!(Config::from_toml(half).is_err());
+    }
+
+    #[test]
+    fn ticker_settings_have_defaults_and_the_setup_page_can_change_them() {
+        let config = Config::from_toml("").unwrap();
+        let a = &config.alerts;
+        assert!(a.ticker && a.show_source && a.dismiss);
+        assert!(
+            !a.http_input,
+            "the web address is off until it is switched on"
+        );
+        assert_eq!(a.ticker_speed, TickerSpeed::Normal);
+
+        let overlay = "[alerts]\nticker = false\nticker_speed = \"fast\"\nmax_active = 3\nhttp_input = true\n";
+        let with = config.clone().with_overlay(overlay).unwrap();
+        assert!(!with.alerts.ticker && with.alerts.show_source);
+        assert_eq!(with.alerts.ticker_speed, TickerSpeed::Fast);
+        assert_eq!(with.alerts.max_active, 3);
+        assert!(with.alerts.http_input);
+        // Taking the overlay away gives bridge.toml's own values back.
+        let base = with.without_overlay();
+        assert!(base.alerts.ticker);
+        assert_eq!(base.alerts.max_active, 10);
+        assert!(!base.alerts.http_input);
+    }
+
+    #[test]
+    fn max_active_alerts_stays_between_1_and_50() {
+        for bad in ["0", "51"] {
+            let err = Config::from_toml(&format!("[alerts]\nmax_active = {bad}\n")).unwrap_err();
+            assert!(format!("{err:#}").contains("max_active"), "{err:#}");
+        }
+        assert!(Config::from_toml("[alerts]\nmax_active = 50\n").is_ok());
     }
 
     #[test]
