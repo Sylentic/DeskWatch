@@ -6,7 +6,9 @@
 #   # then open https://<that name>/ (for the internal CA see docs/https.md)
 #
 # DeskWatch is only reachable through Caddy: it publishes no port itself.
-# Use the same bridge.toml as in docker-compose.dashboard.yml.
+# Use the same bridge.toml as in docker-compose.dashboard.yml, WITHOUT [http.tls]:
+# Caddy talks plain HTTP to DeskWatch on the internal network and does the TLS
+# itself. The image's health check probes the bridge directly and is unaffected.
 
 services:
   deskwatch:

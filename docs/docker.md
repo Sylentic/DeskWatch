@@ -308,7 +308,7 @@ The live-update WebSocket is capped: at most 16 at once (`[kiosk] max_ws_clients
 further one gets `503` and that page polls instead), and a client that has not taken a frame for 10 seconds is
 dropped, after which the page reconnects. This keeps one stuck browser from holding the bridge, it is not a login.
 
-Do **not** publish the port on the internet. There is no login screen, no request rate limiting and no TLS in the bridge.
+Do **not** publish the port on the internet. There is no login screen and no request rate limiting in the bridge (HTTPS is optional, see [https.md](https.md)).
 If you want the page away from home, put it behind a VPN (WireGuard, Tailscale) or a proxy that requires a real
 login. A source alias keeps work project names off a visible screen
 ([kiosk.md](kiosk.md#5-security)).
@@ -424,7 +424,7 @@ If you want exact numbers for several machines, use a Prometheus source with nod
 
 The image has a `HEALTHCHECK`, and `docker ps` shows `healthy` or `unhealthy`. There is no curl in the image, so the
 bridge checks itself: `deskwatch-bridge --healthcheck` reads the same config and asks its own HTTP listener over
-loopback every 30 seconds. The page file carries no data and needs no token, and `/healthz` only answers `ok` or
+loopback every 30 seconds (over HTTPS when `[http.tls]` is set, without checking the certificate). The page file carries no data and needs no token, and `/healthz` only answers `ok` or
 `mqtt down`, so the probe needs no secret. The `Host` header it sends is the address it connects to.
 
 - **Dashboard on** (`[kiosk] enabled = true`): healthy when the page answers 200.

@@ -25,6 +25,10 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Changed
 
+- **HTTPS in the Docker examples.** Checked the Docker health check against `[http.tls]` (it works, it probes `https://`
+  on loopback). `docker-compose.dashboard.yml` and `dashboard.example.toml` now show how to mount the certificate, and
+  `docker.md` no longer says the bridge has no TLS.
+
 - **Dismissing a failed run now happens on the bridge**, so it disappears on every screen at once, like an alert, instead
   of per browser (localStorage). A new failure of the same pipeline still shows up; restarting the bridge shows the
   failures again.
