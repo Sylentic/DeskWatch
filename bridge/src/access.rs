@@ -1,0 +1,105 @@
+//! Who may reach the setup page and `POST /api/alert`.
+//!
+//! Both change things (sources, tokens, the alerts on the dashboard) and have no
+//! login yet, so by default they answer only clients on the local network:
+//! loopback, private (RFC 1918), link-local, unique-local (IPv6) and the
+//! shared range of Tailscale and carrier-grade NAT. A client with any other
+//! address gets a 403 that names the setting (`[http] allow_public = true`).
+//!
+//! The client is the peer of the TCP connection. Behind a reverse proxy the
+//! peer is the proxy, which is usually on a private address, so a request that
+//! carries forwarding headers is judged by the address the proxy saw: the
+//! last entry of `X-Forwarded-For`, which is the one the nearest proxy added
+//! (entries before it can be made up by the client). A forwarding header that
+//! cannot be read is refused.
+
+use std::net::{IpAddr, SocketAddr};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use axum::extract::{ConnectInfo, Request, State};
+use axum::http::{HeaderMap, StatusCode};
+use axum::middleware::Next;
+use axum::response::{IntoResponse, Response};
+use tracing::warn;
+
+/// Shared state of the check: the setting and a flag to log the first refusal.
+#[derive(Clone)]
+pub struct Access {
+    allow_public: bool,
+    logged: Arc<AtomicBool>,
+}
+
+impl Access {
+    pub fn new(allow_public: bool) -> Self {
+        Self {
+            allow_public,
+            logged: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
+
+/// Is this a local address (see the module comment)?
+pub fn is_local(ip: IpAddr) -> bool {
+    match ip.to_canonical() {
+        IpAddr::V4(v4) => {
+            let [a, b, ..] = v4.octets();
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || (a == 100 && (64..=127).contains(&b))
+        }
+        IpAddr::V6(v6) => {
+            let first = v6.segments()[0];
+            v6.is_loopback()
+                || (first & 0xfe00) == 0xfc00 // unique local fc00::/7
+                || (first & 0xffc0) == 0xfe80 // link local fe80::/10
+        }
+    }
+}
+
+/// The address the request came from, looking through one proxy. `None` when
+/// a forwarding header is present but cannot be read.
+fn client_ip(peer: IpAddr, headers: &HeaderMap) -> Option<IpAddr> {
+    if let Some(value) = headers.get("x-forwarded-for") {
+        let last = value.to_str().ok()?.rsplit(',').next()?.trim();
+        return last.parse::<IpAddr>().ok();
+    }
+    // Other forwarding headers: we do not read them, so do not trust the peer.
+    if headers.contains_key("forwarded") || headers.contains_key("x-real-ip") {
+        return None;
+    }
+    Some(peer)
+}
+
+/// Middleware: refuse clients that are not on the local network unless
+/// `allow_public` is set. Needs `into_make_service_with_connect_info`; a
+/// request without a peer address is refused.
+pub async fn require_local(State(access): State<Access>, request: Request, next: Next) -> Response {
+    if access.allow_public {
+        return next.run(request).await;
+    }
+    let peer = request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ConnectInfo(addr)| addr.ip());
+    let client = peer.and_then(|ip| client_ip(ip, request.headers()));
+    if client.is_some_and(is_local) {
+        return next.run(request).await;
+    }
+    if !access.logged.swap(true, Ordering::Relaxed) {
+        warn!(
+            "refused a request to {} from a client that is not on the local network. \
+             Set `[http] allow_public = true` only behind TLS and a proxy with a login",
+            request.uri().path()
+        );
+    }
+    (
+        StatusCode::FORBIDDEN,
+        "this address only answers the local network (set [http] allow_public = true to change that)",
+    )
+        .into_response()
+}
+
+#[cfg(test)]
+mod tests;

@@ -8,6 +8,15 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Changed (security)
+
+- **The setup page and `POST /api/alert` only answer the local network by default.** Clients with a loopback, private,
+  link-local, IPv6 unique-local or Tailscale (100.64/10) address work as before; anything else gets `403`, also when it
+  comes through a LAN reverse proxy (judged by the last `X-Forwarded-For` entry). `[http] allow_public = true` lifts the
+  rule, and the bridge warns when that is on without `[http.tls]`. A normal home install is unaffected; a setup page or
+  alert sender that is reached from the internet through a tunnel stops working until you set it. This is the first
+  step of making the app safe to offer beyond the home network (a login follows). See `docs/setup-page.md`.
+
 ### Added
 
 - **A "source down" pill in the kiosk header.** When a source cannot be checked (not answering, or its login
