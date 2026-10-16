@@ -49,6 +49,13 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
 
+    # HTTPS from the bridge itself (docs/https.md): mount the certificate and key
+    # read-only, readable for uid 10001, and add `[http.tls]` to bridge.toml with
+    # cert = "/etc/deskwatch/tls/dashboard.crt" and key = "/etc/deskwatch/tls/dashboard.key".
+    # The health check then probes https:// on loopback by itself.
+    #   - ${DESKWATCH_CONFIG_DIR:-../dashboard}/tls:/etc/deskwatch/tls:ro
+    # (put that line under `volumes:` above)
+
     # environment:
     #   DESKWATCH_DATA_DIR: /var/lib/deskwatch   # with the data volume above
 

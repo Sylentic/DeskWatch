@@ -17,6 +17,10 @@ display_name = "homeserver"     # name on the stats page; in a container the def
 listen = "0.0.0.0:8787"
 # HTTPS is opt-in: either `[http.tls]` here or the Caddy file
 # deploy/docker-compose.https.yml. Guide: docs/https.md
+# In a container, mount the files read-only (see docker-compose.dashboard.yml):
+# [http.tls]
+# cert = "/etc/deskwatch/tls/dashboard.crt"
+# key  = "/etc/deskwatch/tls/dashboard.key"
 
 [kiosk]
 enabled = true
