@@ -199,7 +199,8 @@ Stack managers such as Komodo and Portainer can run a Compose file with the conf
 your repository, and an update can wipe or conflict with a folder inside it. A named volume is writable for the bridge
 without a `chown` from 0.9.14 on ([data-dir.md](data-dir.md#docker)).
 
-**Who can open it.** The port has no login of its own, and neither does the setup page.
+**Who can open it.** The port has no login of its own, and neither does the setup page. The setup page and
+`POST /api/alert` also refuse clients outside the local network (`[http] allow_public`, [setup-page.md](setup-page.md#security)).
 Publish it to a trusted network only, or put it behind a proxy that asks for a login
 ([Protecting the page](#protecting-the-page)). Never publish it to the internet as is.
 

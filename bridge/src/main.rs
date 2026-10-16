@@ -192,6 +192,18 @@ async fn main() -> Result<()> {
     if config.updates.check && !args.demo {
         update.spawn(env!("CARGO_PKG_VERSION"));
     }
+    // Setup and POST /api/alert only answer the local network unless
+    // `[http] allow_public` (docs/setup-page.md, "Security").
+    let local_only = axum::middleware::from_fn_with_state(
+        deskwatch_bridge::access::Access::new(config.http.allow_public),
+        deskwatch_bridge::access::require_local,
+    );
+    if config.http.allow_public && config.http.tls.is_none() {
+        warn!(
+            "[http] allow_public is on without [http.tls]: the setup page and /api/alert have no login yet and \
+             would be open to the internet over plain HTTP. Put TLS and a proxy with a login in front first"
+        );
+    }
     let mut kiosk = None;
     if config.kiosk.enabled {
         if !config.http.listen.ip().is_loopback() {
@@ -216,7 +228,7 @@ async fn main() -> Result<()> {
     if config.alerts.enabled && config.alerts.http_input {
         hooks.add(
             deskwatch_bridge::alerts::HTTP_PATH,
-            deskwatch_bridge::alerts::http_router(inbound_tx.clone()),
+            deskwatch_bridge::alerts::http_router(inbound_tx.clone()).layer(local_only.clone()),
         );
         if !config.http.listen.ip().is_loopback() {
             warn!(
@@ -238,7 +250,7 @@ async fn main() -> Result<()> {
         )
         .with_alert_sender(inbound_tx.clone())
         .with_update(update.clone());
-        hooks.add("/setup", built.router());
+        hooks.add("/setup", built.router().layer(local_only.clone()));
         info!("setup page on /setup");
         if !config.http.listen.ip().is_loopback() {
             warn!(

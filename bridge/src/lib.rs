@@ -1,6 +1,7 @@
 //! DeskWatch bridge library: config, page model, MQTT and data sources.
 //! The `deskwatch-bridge` binary in `main.rs` wires these together.
 
+pub mod access;
 pub mod alerts;
 pub mod azure_devops;
 pub mod ci;

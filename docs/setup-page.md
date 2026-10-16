@@ -166,7 +166,12 @@ restart once by hand (`docker compose restart deskwatch-bridge`). It needs the s
 
 ## Security
 
-- **No login.** Anyone who can reach the port can open the page and, with a data folder, change sources and store
+- **Local network only by default.** The page and its `/api/setup/*` routes answer only loopback, private
+  (10/8, 172.16/12, 192.168/16), link-local, IPv6 unique-local and the Tailscale/CGNAT range (100.64/10) addresses; any
+  other client gets a `403`. Behind a reverse proxy the client is the last `X-Forwarded-For` entry (the one the proxy
+  added), so a public visitor behind a LAN proxy is refused too. `[http] allow_public = true` lifts this; do that only
+  with TLS and a proxy that has a login. The bridge warns at startup when it is on without TLS.
+- **No login.** Anyone who can reach the port from the local network can open the page and, with a data folder, change sources and store
   tokens. Keep the port on a trusted network. A website you have open in your browser cannot use the page for you:
   requests whose `Origin` is another site are refused.
 - Secrets never reach the browser, whatever the network.
