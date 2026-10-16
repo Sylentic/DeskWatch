@@ -8,6 +8,14 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Added
+
+- **A quiet "update available" notice.** Once a day the bridge asks GitHub for the latest release number. When it is
+  newer than the running version, the dashboard header shows a small chip "update available: vX.Y.Z" next to Setup
+  (links to the release notes, × hides it for that version in that browser) and Setup shows it behind the version.
+  Only the version number is compared; nothing about the install is sent, and a failed check is silent. Off with
+  `[updates] check = false` or the checkbox under Setup, Bridge and restart. See `docs/updates.md`.
+
 ## [0.9.19]
 
 ### Changed

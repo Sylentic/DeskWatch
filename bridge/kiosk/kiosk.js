@@ -438,6 +438,22 @@
   function saveDismissed() {
     try { localStorage.setItem(DISMISS_KEY, JSON.stringify(dismissed)); } catch (e) { /* private mode: lasts until reload */ }
   }
+  // A newer release is a quiet chip next to Setup. The x hides that version
+  // in this browser only; the next release shows again.
+  function renderUpdate(u) {
+    var chip = $('update-chip'), seen = null;
+    try { seen = localStorage.getItem('deskwatch.update.hidden'); } catch (e) {}
+    var ok = u && /^[0-9][0-9A-Za-z.+-]*$/.test(u.version) && /^https:\/\//.test(u.url || '') && seen !== u.version;
+    chip.hidden = !ok;
+    if (!ok) return;
+    $('update-link').textContent = 'update available: v' + u.version;
+    $('update-link').href = u.url;
+    $('update-link').title = 'Open the release notes';
+    $('update-x').onclick = function () {
+      try { localStorage.setItem('deskwatch.update.hidden', u.version); } catch (e) {}
+      chip.hidden = true;
+    };
+  }
   function visibleFailed() {
     return (snap.failed || []).filter(function (f) { return dismissed.indexOf(failId(f)) < 0; });
   }
@@ -654,6 +670,7 @@
 
     var layout = snap.layout || { columns: 4, rows: 3, panels: [] };
     $('setup-link').hidden = !layout.setup;
+    renderUpdate(snap.update);
     // With the setup page on, the sources chip opens it: that is where every
     // source and its status are listed.
     if (layout.setup) { $('conn').setAttribute('href', 'setup'); $('conn').setAttribute('title', 'Sources and their status: Setup'); }

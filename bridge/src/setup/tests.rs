@@ -890,3 +890,50 @@ fn the_setup_page_is_dark_by_default_and_ignores_the_system_scheme() {
     assert!(INDEX_HTML.contains(r#"content="dark""#));
     assert!(!INDEX_HTML.contains("light dark"));
 }
+
+#[tokio::test]
+async fn the_update_check_switch_is_saved_and_needs_a_restart() {
+    let (router, temp) = with_data("update-check").await;
+    let (_, _, text) = send(&router, "GET", "/api/setup/status", &[], "").await;
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["updates"]["check"], true);
+    assert_eq!(v["updates"]["editable"], true);
+    assert_eq!(v["update"], Value::Null);
+
+    let off = json!({ "check": false }).to_string();
+    let (status, _, text) = send(&router, "POST", "/api/setup/updates", &[], &off).await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    let saved = std::fs::read_to_string(temp.0.join("data/sources.toml")).unwrap();
+    assert!(saved.contains("check = false"), "{saved}");
+    let (_, _, text) = send(&router, "GET", "/api/setup/status", &[], "").await;
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["updates"]["check"], false);
+    assert_eq!(v["restart_needed"], true);
+
+    let (status, ..) = send(
+        &router,
+        "POST",
+        "/api/setup/updates",
+        &[],
+        r#"{"check":"no"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let evil = [("origin", "https://evil.example"), ("host", "bridge.lan")];
+    let (status, ..) = send(&router, "POST", "/api/setup/updates", &evil, &off).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn a_found_update_shows_in_the_status() {
+    let temp = Temp::new("update-found");
+    let notice = crate::update::UpdateNotice::default();
+    notice.set(Some(crate::update::Update {
+        version: "0.9.20".into(),
+        url: "https://github.com/Sylentic/DeskWatch/releases/tag/v0.9.20".into(),
+    }));
+    let router = setup(&temp).with_update(notice).router();
+    let (_, _, text) = send(&router, "GET", "/api/setup/status", &[], "").await;
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["update"]["version"], "0.9.20");
+}
