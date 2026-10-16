@@ -1,0 +1,36 @@
+# DeskWatch dashboard behind Caddy, which serves HTTPS.
+# Guide: docs/https.md
+#
+#   cp deploy/Caddyfile.example deploy/Caddyfile      # then put your own name in it
+#   docker compose -f deploy/docker-compose.https.yml up -d --build
+#   # then open https://<that name>/ (for the internal CA see docs/https.md)
+#
+# DeskWatch is only reachable through Caddy: it publishes no port itself.
+# Use the same bridge.toml as in docker-compose.dashboard.yml.
+
+services:
+  deskwatch:
+    build:
+      context: ..
+    image: deskwatch-bridge:local
+    restart: unless-stopped
+    volumes:
+      - ${DESKWATCH_CONFIG_DIR:-../dashboard}/bridge.toml:/etc/deskwatch/bridge.toml:ro
+      - ${DESKWATCH_CONFIG_DIR:-../dashboard}/credentials:/run/credentials:ro
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [deskwatch]
+    ports:
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Keeps the internal CA and certificates between restarts.
+      - caddy-data:/data
+
+volumes:
+  caddy-data:

@@ -211,6 +211,7 @@ the port to the internet. The bridge has no token or cookie login of its own (ol
 config that still sets it is refused at startup). The live WebSocket refuses a request whose `Origin` is another
 site. If other people can reach your network, or you open the page beyond it, choose one of these:
 
+0. **HTTPS.** Both a reverse proxy and the bridge itself can serve HTTPS, see [https.md](https.md).
 1. **A reverse proxy.** Publish the port to the host only (`"127.0.0.1:8787:8787"` in the Compose file) and let
    your proxy (Caddy, Traefik, nginx) terminate TLS and do the access control (basic auth, or your SSO). Without a
    proxy login, do not publish the port to the internet. Make the proxy pass WebSocket upgrades on `/api/kiosk/ws`;

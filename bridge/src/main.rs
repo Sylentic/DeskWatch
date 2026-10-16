@@ -233,7 +233,9 @@ async fn main() -> Result<()> {
             anyhow::bail!("source {id}: {reason}");
         }
     }
-    hooks.start(config.http.listen).await?;
+    hooks
+        .start(config.http.listen, config.http.tls.as_ref())
+        .await?;
 
     // The channel's sender stays alive here either way, so with MQTT off the
     // receiver just waits forever.
