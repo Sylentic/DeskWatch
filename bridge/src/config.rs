@@ -297,14 +297,29 @@ pub struct HttpConfig {
     /// Address the HTTP routes listen on: webhooks, the kiosk page, the setup page and
     /// `/healthz`. Only opened when at least one of them exists.
     pub listen: SocketAddr,
+    /// Serve HTTPS instead of HTTP. Off unless `[http.tls]` is given.
+    pub tls: Option<TlsConfig>,
 }
 
 impl Default for HttpConfig {
     fn default() -> Self {
         Self {
             listen: SocketAddr::from(([0, 0, 0, 0], 8787)),
+            tls: None,
         }
     }
+}
+
+/// The `[http.tls]` table: a certificate chain and private key, both PEM files.
+/// With it the one `[http]` listener speaks HTTPS only (kiosk page, setup page,
+/// `/api/alert`, webhooks and the WebSocket, which becomes `wss`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TlsConfig {
+    /// Certificate (and intermediates), PEM.
+    pub cert: PathBuf,
+    /// Private key, PEM.
+    pub key: PathBuf,
 }
 
 /// The `[kiosk]` table: the dashboard page for a Raspberry Pi or other big
@@ -1369,6 +1384,7 @@ mod tests {
         assert_eq!(config.rotation[0].page, "stats");
         assert!(config.source.gitea.is_empty());
         assert_eq!(config.http.listen.port(), 8787);
+        assert!(config.http.tls.is_none());
         assert!(config.alerts.enabled);
         assert_eq!(config.alerts.max_active, 10);
         assert!(config.alerts.allows_critical("anything"));

@@ -10,6 +10,7 @@ rust-version.workspace = true
 [dependencies]
 anyhow = "1.0.104"
 axum = { version = "0.8.9", features = ["ws"] }
+axum-server = { version = "0.8.0", features = ["tls-rustls"] }
 hex = "0.4.3"
 hmac = "0.13.0"
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls", "query"] }
@@ -29,4 +30,5 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 nix = { version = "0.31.3", features = ["fs"] }
 
 [dev-dependencies]
+rcgen = "0.14.10"
 tokio = { version = "1.53.2", features = ["test-util", "macros", "rt"] }

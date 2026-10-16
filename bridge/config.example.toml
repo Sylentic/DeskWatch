@@ -39,6 +39,13 @@ disk_path = "/"                 # filesystem for disk_pct (local stats are Linux
 [http]
 listen = "0.0.0.0:8787"
 
+# HTTPS for the kiosk page, the setup page, /api/alert and the live WebSocket.
+# Off by default (plain HTTP). With it the listener speaks HTTPS only, on the
+# same port. Both files are PEM. Guide: docs/https.md
+# [http.tls]
+# cert = "/etc/deskwatch/tls/dashboard.crt"
+# key = "/etc/deskwatch/tls/dashboard.key"
+
 # A writable folder where the bridge keeps sources.toml (more [[source.*]] blocks)
 # and credentials/ (secrets written by it). Off by default. Guide: docs/data-dir.md
 # [data]
