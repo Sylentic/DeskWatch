@@ -172,7 +172,7 @@ restart once by hand (`docker compose restart deskwatch-bridge`). It needs the s
 - Secrets never reach the browser, whatever the network.
 - **Removed: `[setup] token_file`.** A config that still sets it is refused at startup with a message that names the
   line to delete. The page has no login of its own; use a proxy with one if you need it.
-- The connection is plain HTTP unless you put a TLS reverse proxy in front ([docker.md](docker.md) has examples). The
+- The connection is plain HTTP unless you turn on HTTPS, in the bridge or with a TLS reverse proxy in front ([https.md](https.md)). The
   bridge logs a warning when the page is reachable from the network. Until you have TLS, keep the listener on
   `127.0.0.1` or on a network you trust.
 - The page is built with `textContent` only, so nothing from the config can inject markup, and it loads nothing from

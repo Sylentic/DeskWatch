@@ -1,0 +1,9 @@
+# Copy to deploy/Caddyfile and replace the name with the one your browsers use.
+# `tls internal` makes a certificate from Caddy's own CA (docs/https.md explains
+# how to trust it). With a public domain name, remove that line and Caddy gets a
+# Let's Encrypt certificate itself.
+dashboard.example.lan {
+	tls internal
+	# WebSocket upgrades on /api/kiosk/ws pass through without extra lines.
+	reverse_proxy deskwatch:8787
+}

@@ -76,8 +76,9 @@ pub async fn check(config: &Config) -> Result<Outcome> {
         return Ok(Outcome::NoListener);
     }
     let listen = config.http.listen;
+    let tls = config.http.tls.is_some();
     let timeout = "no answer from the HTTP listener within 3 seconds";
-    let status = tokio::time::timeout(TIMEOUT, http_get(listen, "/"))
+    let status = tokio::time::timeout(TIMEOUT, http_get(listen, tls, "/"))
         .await
         .context(timeout)??;
     if kiosk && status != 200 {
@@ -86,7 +87,7 @@ pub async fn check(config: &Config) -> Result<Outcome> {
     // Without the dashboard `/` has nothing to answer, so a bridge that only
     // serves the setup page is judged on `/setup` instead.
     if setup && !kiosk {
-        let status = tokio::time::timeout(TIMEOUT, http_get(listen, "/setup"))
+        let status = tokio::time::timeout(TIMEOUT, http_get(listen, tls, "/setup"))
             .await
             .context(timeout)??;
         if status != 200 {
@@ -94,7 +95,7 @@ pub async fn check(config: &Config) -> Result<Outcome> {
         }
     }
     if mqtt {
-        let status = tokio::time::timeout(TIMEOUT, http_get(listen, "/healthz"))
+        let status = tokio::time::timeout(TIMEOUT, http_get(listen, tls, "/healthz"))
             .await
             .context(timeout)??;
         if status != 200 {
@@ -107,7 +108,7 @@ pub async fn check(config: &Config) -> Result<Outcome> {
 /// `GET <path>` on the listener, via loopback when it listens on all
 /// addresses. The `Host` header is the address the probe connects to, so a
 /// setup that checks it sees a real authority. Returns the HTTP status code.
-async fn http_get(listen: SocketAddr, path: &str) -> Result<u16> {
+pub(crate) async fn http_get(listen: SocketAddr, tls: bool, path: &str) -> Result<u16> {
     let ip = if listen.ip().is_unspecified() {
         match listen.ip() {
             IpAddr::V4(_) => IpAddr::from([127, 0, 0, 1]),
@@ -117,6 +118,22 @@ async fn http_get(listen: SocketAddr, path: &str) -> Result<u16> {
         listen.ip()
     };
     let addr = SocketAddr::new(ip, listen.port());
+    if tls {
+        // The certificate is made for the name people use, not for loopback,
+        // so it is not checked here. The probe only reads a status code from
+        // its own listener and sends nothing sensitive.
+        let client = reqwest::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .timeout(TIMEOUT)
+            .build()?;
+        let url = format!("https://{addr}{path}");
+        let response = client
+            .get(&url)
+            .send()
+            .await
+            .with_context(|| format!("cannot connect to {url}"))?;
+        return Ok(response.status().as_u16());
+    }
     let mut stream = TcpStream::connect(addr)
         .await
         .with_context(|| format!("cannot connect to {addr}"))?;
@@ -285,6 +302,6 @@ mod tests {
             }),
         );
         tokio::spawn(async move { axum::serve(listener, strict).await });
-        assert_eq!(http_get(addr, "/").await.unwrap(), 200);
+        assert_eq!(http_get(addr, false, "/").await.unwrap(), 200);
     }
 }

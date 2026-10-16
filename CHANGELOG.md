@@ -15,6 +15,10 @@ may change if the firmware work needs it; any such change is listed here.
   (links to the release notes, × hides it for that version in that browser) and Setup shows it behind the version.
   Only the version number is compared; nothing about the install is sent, and a failed check is silent. Off with
   `[updates] check = false` or the checkbox under Setup, Bridge and restart. See `docs/updates.md`.
+- **HTTPS, opt-in.** `[http.tls]` with `cert` and `key` (PEM) makes the one HTTP listener serve HTTPS only: kiosk
+  page, setup page, `/api/alert`, webhooks and the WebSocket (which becomes `wss`). A wrong path stops the bridge at
+  startup, and the Docker health check follows. Plain HTTP stays the default, so nothing changes for existing installs.
+  `deploy/docker-compose.https.yml` adds Caddy with an internal CA as a second route. Guide: [docs/https.md](docs/https.md).
 
 ## [0.9.19]
 

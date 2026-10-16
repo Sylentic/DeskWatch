@@ -263,7 +263,9 @@ async fn main() -> Result<()> {
             anyhow::bail!("source {id}: {reason}");
         }
     }
-    hooks.start(config.http.listen).await?;
+    hooks
+        .start(config.http.listen, config.http.tls.as_ref())
+        .await?;
 
     let publisher = if config.mqtt.enabled {
         let (publisher, eventloop) = mqtt::connect(&config.mqtt, mqtt::password(&config.mqtt)?)?;

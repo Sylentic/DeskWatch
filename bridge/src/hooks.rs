@@ -14,9 +14,12 @@ use axum::Router;
 use axum::extract::{Request, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use axum_server::tls_rustls::RustlsConfig;
 use tokio::net::TcpListener;
 use tower::ServiceExt;
 use tracing::{info, warn};
+
+use crate::config::TlsConfig;
 
 /// Path prefix of the routes that sources can add and remove while the
 /// bridge runs.
@@ -110,31 +113,110 @@ impl Hooks {
     /// before anything else runs, so a port that is already taken stops the
     /// bridge at startup instead of failing quietly later. Does nothing when
     /// no source added a route.
-    pub async fn start(self, listen: SocketAddr) -> Result<()> {
+    pub async fn start(self, listen: SocketAddr, tls: Option<&TlsConfig>) -> Result<()> {
         if self.is_empty() {
             return Ok(());
         }
         let listener = TcpListener::bind(listen)
             .await
             .with_context(|| format!("cannot listen on {listen} (webhooks or kiosk page)"))?;
+        // Load the certificate now too, so a wrong path stops the bridge at startup.
+        let rustls = match tls {
+            Some(tls) => Some(
+                RustlsConfig::from_pem_file(&tls.cert, &tls.key)
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "cannot load the certificate {} and key {} from [http.tls]",
+                            tls.cert.display(),
+                            tls.key.display()
+                        )
+                    })?,
+            ),
+            None => None,
+        };
+        let scheme = if rustls.is_some() { "https" } else { "http" };
         let fixed = self.paths.iter().filter(|p| !p.starts_with(WEBHOOK_PREFIX));
         for path in fixed.cloned().chain(self.webhooks.paths()) {
-            info!("serving http://{listen}{path}");
+            info!("serving {scheme}://{listen}{path}");
         }
         let router = self.router.route(
             "/webhook/{*rest}",
             axum::routing::any(dispatch).with_state(self.webhooks.clone()),
         );
+        let app = router.into_make_service_with_connect_info::<SocketAddr>();
         tokio::spawn(async move {
-            if let Err(err) = axum::serve(
-                listener,
-                router.into_make_service_with_connect_info::<SocketAddr>(),
-            )
-            .await
-            {
-                warn!("webhook server stopped: {err:#}");
+            let result = match rustls {
+                Some(rustls) => {
+                    let std_listener = match listener.into_std() {
+                        Ok(l) => l,
+                        Err(err) => return warn!("webhook server stopped: {err:#}"),
+                    };
+                    axum_server::from_tcp_rustls(std_listener, rustls)
+                        .map(|server| server.serve(app))
+                }
+                None => {
+                    if let Err(err) = axum::serve(listener, app).await {
+                        warn!("webhook server stopped: {err:#}");
+                    }
+                    return;
+                }
+            };
+            match result {
+                Ok(server) => {
+                    if let Err(err) = server.await {
+                        warn!("webhook server stopped: {err:#}");
+                    }
+                }
+                Err(err) => warn!("webhook server stopped: {err:#}"),
             }
         });
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tls_tests {
+    use super::*;
+    use crate::config::TlsConfig;
+
+    /// With `[http.tls]` the listener answers HTTPS, and a wrong path stops
+    /// the start instead of failing later.
+    #[tokio::test]
+    async fn serves_https_with_a_certificate() {
+        let dir = std::env::temp_dir().join(format!("deskwatch-tls-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let certified = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+        let tls = TlsConfig {
+            cert: dir.join("cert.pem"),
+            key: dir.join("key.pem"),
+        };
+        std::fs::write(&tls.cert, certified.cert.pem()).unwrap();
+        std::fs::write(&tls.key, certified.signing_key.serialize_pem()).unwrap();
+
+        let port = {
+            let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            probe.local_addr().unwrap().port()
+        };
+        let listen = SocketAddr::from(([127, 0, 0, 1], port));
+        let mut hooks = Hooks::default();
+        hooks.add(
+            "/",
+            Router::new().route("/", axum::routing::get(|| async { "ok" })),
+        );
+        hooks.start(listen, Some(&tls)).await.unwrap();
+
+        let status = crate::health::http_get(listen, true, "/").await.unwrap();
+        assert_eq!(status, 200);
+
+        let mut missing = Hooks::default();
+        missing.add("/", Router::new());
+        let bad = TlsConfig {
+            cert: dir.join("nope.pem"),
+            key: dir.join("nope.key"),
+        };
+        let other = SocketAddr::from(([127, 0, 0, 1], 0));
+        assert!(missing.start(other, Some(&bad)).await.is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
