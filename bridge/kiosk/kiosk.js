@@ -421,23 +421,12 @@
 
   // ---- failed runs: badge, list and dismiss --------------------------------
 
-  // A failure is dismissed in this browser only: the choice is kept in
-  // localStorage under the pipeline key plus the start time of the failed run,
-  // so a NEW failure of the same pipeline shows up again. Entries whose
-  // failure has left the data are dropped. A second screen has its own list.
-  var DISMISS_KEY = 'deskwatch.kiosk.dismissed';
+  // A dismissed failure is kept on the bridge, so it goes away on every
+  // screen at once (like an alert). The snapshot no longer lists it; until
+  // the next snapshot arrives the page hides it itself. A new failure of the
+  // same pipeline has another start time, so it shows up again.
   var failedOpen = false;
-  function loadDismissed() {
-    try {
-      var list = JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]');
-      return Array.isArray(list) ? list.filter(function (x) { return typeof x === 'string'; }) : [];
-    } catch (e) { return []; }
-  }
-  var dismissed = loadDismissed();
   function failId(f) { return f.key + '@' + f.started; }
-  function saveDismissed() {
-    try { localStorage.setItem(DISMISS_KEY, JSON.stringify(dismissed)); } catch (e) { /* private mode: lasts until reload */ }
-  }
   // A newer release is a quiet chip next to Setup. The x hides that version
   // in this browser only; the next release shows again.
   function renderUpdate(u) {
@@ -455,20 +444,18 @@
     };
   }
   function visibleFailed() {
-    return (snap.failed || []).filter(function (f) { return dismissed.indexOf(failId(f)) < 0; });
-  }
-  function pruneDismissed() {
-    var live = {};
-    (snap.failed || []).forEach(function (f) { live[failId(f)] = true; });
-    var kept = dismissed.filter(function (id) { return live[id]; });
-    if (kept.length !== dismissed.length) { dismissed = kept; saveDismissed(); }
+    return snap.failed || [];
   }
   function dismissFailed(id) {
     // id null: dismiss everything that is listed now.
     var ids = id ? [id] : visibleFailed().map(failId);
-    ids.forEach(function (x) { if (dismissed.indexOf(x) < 0) dismissed.push(x); });
-    saveDismissed();
+    if (!ids.length) return;
+    snap.failed = visibleFailed().filter(function (f) { return ids.indexOf(failId(f)) < 0; });
     renderBadges();
+    fetch('api/kiosk/failed/dismiss', {
+      method: 'POST', cache: 'no-store', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: ids })
+    }).catch(function () { /* the next snapshot shows what is left */ });
   }
 
   function failedRow(f) {
@@ -485,7 +472,7 @@
     if (!failedOpen || !list.length) { failedOpen = failedOpen && list.length > 0; pop.hidden = true; pop.innerHTML = ''; return; }
     var html = '<div class="head"><b>Failed runs</b>' +
       '<button type="button" class="x all" data-dismiss-all="1">Dismiss all</button></div><ul>' + list.map(failedRow).join('') + '</ul>' +
-      '<div class="foot">Dismissed on this screen only. A new failure shows up again.</div>';
+      '<div class="foot">Dismissing clears the run on every screen. A new failure shows up again.</div>';
     if (pop.innerHTML !== html) pop.innerHTML = html;
     pop.hidden = false;
     var chip = document.querySelector('[data-failed-toggle]');
@@ -542,7 +529,6 @@
   function renderBadges() {
     var el = $('badges'), html = '';
     var names = { pr: 'open PRs', pipeline: 'failed', server: 'down', warn: 'with a problem', home: 'alerts' };
-    pruneDismissed();
     // Order: Open PRs, Failed runs, Alerts, then any other badge.
     var rank = { pr: 0, pipeline: 1 };
     var list = (snap.badges || []).slice().sort(function (x, y) {
@@ -651,6 +637,35 @@
     if (el.innerHTML !== html) el.innerHTML = html;
   }
 
+  // A source that is down (not answering, or its login refused) is a pill next
+  // to the alert pill, with a Mute button. Mute hides the pill on every screen
+  // until the source works again; the sources chip keeps counting the problem.
+  // A quiet source is not a down source: only a failed check counts.
+  var SRC_WHY = { unreachable: 'not answering', auth_failed: 'sign-in refused' };
+  function renderSourcePill() {
+    var el = $('src-pill');
+    var bad = (snap.sources || []).filter(function (x) { return x.health !== 'ok' && !x.muted; });
+    el.hidden = !bad.length;
+    if (!bad.length) { el.innerHTML = ''; return; }
+    var b = bad[0];
+    el.className = 'banner pill ' + (b.health === 'auth_failed' ? 'critical' : 'warn');
+    var html = '<span class="tag">Source down</span><span>' + esc(b.id) + '</span><span class="msg">' + esc(SRC_WHY[b.health] || b.health) + '</span>' +
+      (bad.length > 1 ? '<span class="more">+' + (bad.length - 1) + ' more</span>' : '') +
+      '<button type="button" class="mute" data-mute="' + esc(b.id) + '" title="Hide this until the source works again">Mute</button>';
+    if (el.innerHTML !== html) el.innerHTML = html;
+  }
+  $('src-pill').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('[data-mute]') : null;
+    if (!b) return;
+    var id = b.getAttribute('data-mute');
+    (snap.sources || []).forEach(function (x) { if (x.id === id) x.muted = true; });
+    renderSourcePill();
+    fetch('api/kiosk/source/mute', {
+      method: 'POST', cache: 'no-store', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id })
+    }).catch(function () { /* the next snapshot shows what is left */ });
+  });
+
   function render(next) {
     snap = next;
     skew = (snap.now || 0) - Date.now() / 1000;
@@ -671,6 +686,7 @@
     var layout = snap.layout || { columns: 4, rows: 3, panels: [] };
     $('setup-link').hidden = !layout.setup;
     renderUpdate(snap.update);
+    renderSourcePill();
     // With the setup page on, the sources chip opens it: that is where every
     // source and its status are listed.
     if (layout.setup) { $('conn').setAttribute('href', 'setup'); $('conn').setAttribute('title', 'Sources and their status: Setup'); }

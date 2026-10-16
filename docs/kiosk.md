@@ -77,9 +77,21 @@ closes it. With nothing left the counter shows `0 failed` with a green dot.
 
 - A *new* failure (a new run of the same pipeline) is not hidden by an earlier dismiss and shows up again.
 - A pipeline that later succeeds drops off by itself, as before.
-- The dismissals are stored in this browser (localStorage, under the pipeline and the start time of the failed run) and
-  forgotten once the failure leaves the data. Nothing is stored on the bridge and nothing needs a login, so a second
-  screen or another browser keeps its own list. Restarting the bridge also forgets failures (they are held in memory).
+- A dismissal is kept on the bridge, so it clears the run on every screen at once, like dismissing an alert. It is
+  forgotten once the failure leaves the data (the pipeline went green). It lives in memory only, so restarting the
+  bridge shows the failures again. Nothing needs a login: the page is for a trusted network.
+- The snapshot no longer lists a dismissed run, and the failed badge counts what is left.
+- API: `POST /api/kiosk/failed/dismiss {"ids": ["<key>@<started>", ...]}`, same-origin only.
+
+### Source down
+
+When a source cannot be checked, a pill appears in the header next to the alert pill: **SOURCE DOWN**, the source id
+and why (amber "not answering", red "sign-in refused"), with "+N more" for further sources. It only means the bridge's
+last check failed. A quiet source (no new PRs or runs for days) is fine and shows nothing. The chip on the right keeps
+saying "N sources have a problem" for as long as a source is down.
+
+**Mute** hides the pill on every screen (the bridge remembers it, in memory) until that source works again; the chip
+still counts the problem, and the next outage shows the pill again. API: `POST /api/kiosk/source/mute {"id": "..."}`.
 
 ### Alerts in the header
 
@@ -337,7 +349,7 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
 and at least every 5 seconds (a heartbeat, so the page can tell quiet from gone). Snapshots are versioned with `"v"`
 (1), separately from the MQTT schema. Fields: `build` (bridge version; the page reloads when it changes), `now`
 (Unix seconds), `layout` (the grid, the widgets with their filters, `theme` and `pixel_shift_s` from the config), `screen` (the composer's pick as an MQTT v2
-screen payload, or `null` when idle), `badges`, `failed` (the failed runs behind the badge: `key`, `source`, `project`, `pipeline`, `ref`, `step`, `started`, `finished`, `url`), `hosts`, `down`, `jobs`, `runs`, `pulls`, `runners`, `queued_jobs`, `alerts` and `sources`. `jobs`, `runs`, `pulls[].items[]` and `runners` each carry a `url` (an `http(s)` address, or `null`).
+screen payload, or `null` when idle), `badges`, `failed` (the failed runs behind the badge, minus the dismissed ones: `key`, `source`, `project`, `pipeline`, `ref`, `step`, `started`, `finished`, `url`), `hosts`, `down`, `jobs`, `runs`, `pulls`, `runners`, `queued_jobs`, `alerts` and `sources` (`id`, `health`, and `muted: true` when the pill was muted). `jobs`, `runs`, `pulls[].items[]` and `runners` each carry a `url` (an `http(s)` address, or `null`).
 Lists are not capped to the ESP panel's five rows. The structure is in `bridge/src/kiosk.rs` (`snapshot`) and
 covered by the tests next to it. Treat it as unstable until 1.0.
 
