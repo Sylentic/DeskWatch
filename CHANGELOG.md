@@ -8,6 +8,12 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Added
+
+- **Sign in with GitHub or Microsoft.** Optional, configured on the setup page under Sign-in providers. Authorization
+  code flow with PKCE, access by user, organisation, team or Microsoft group, admin rules, roles re-read at every
+  sign-in, deny by default. The local admin always works. See docs/auth.md.
+
 ## [0.9.20]
 
 ### Changed (security)

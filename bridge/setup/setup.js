@@ -49,7 +49,9 @@
   var form = null;       // the open add/edit form, or null (see openForm)
   var confirming = null; // key of the action waiting for its confirm click, or null
   var restarting = null; // { boot, since } while the page waits for a restart to finish
-  var SECTIONS = ['sources', 'mqtt', 'dashboard', 'alerts', 'access', 'bridge', 'secrets'];
+  var SECTIONS = ['sources', 'mqtt', 'dashboard', 'alerts', 'access', 'signin', 'bridge', 'secrets'];
+  var oauth = null;      // last answer of api/auth/oauth (the Sign-in section)
+  var oauthNote = null;
   var access = null;     // last answer of api/auth/status (the Access section)
   var accessNote = null; // result line and one-time key of the Access section
   var alertNote = null;  // result of the last test alert button press
@@ -826,7 +828,94 @@
     return card;
   }
 
-  var TITLES = { sources: 'Sources', mqtt: 'MQTT broker', dashboard: 'Dashboard', alerts: 'Alerts', access: 'Access', bridge: 'Bridge and restart', secrets: 'Stored secrets' };
+  function loadOauth() {
+    return fetch('api/auth/oauth', { cache: 'no-store', credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (o) { oauth = o || { unavailable: true }; if (last) render(last); },
+            function () { /* shown as unavailable */ });
+  }
+
+  function lines(text) {
+    return text.split('\n').map(function (x) { return x.trim(); }).filter(Boolean);
+  }
+
+  function textarea(name, rows, value) {
+    var t = el('textarea'); t.name = name; t.rows = rows; t.value = (value || []).join('\n');
+    t.spellcheck = false;
+    return t;
+  }
+
+  function signinSection() {
+    var card = el('section', 'card');
+    if (!oauth) { loadOauth(); card.appendChild(el('p', 'muted', 'Loading…')); return card; }
+    if (oauth.unavailable) {
+      card.appendChild(el('p', 'muted', 'Only the administrator can change the sign-in providers, and a login password must be set first (see Access).'));
+      return card;
+    }
+    if (oauthNote) {
+      var n = el('p', oauthNote.error ? 'err' : 'banner', oauthNote.error || oauthNote.ok);
+      n.setAttribute('role', 'status'); card.appendChild(n);
+    }
+    card.appendChild(el('p', 'muted', 'Let people sign in with GitHub or Microsoft. Nobody gets in by default: list who is allowed. A person who matches an administrator rule is an administrator, anyone else who is allowed can only look. The local administrator password always keeps working. The sign-in needs the public address below, over HTTPS.'));
+    var g = oauth.github, m = oauth.microsoft;
+    var url = input('text', 'public_url'); url.value = oauth.public_url || ''; url.placeholder = 'https://deskwatch.example.org';
+    var gOn = el('input'); gOn.type = 'checkbox'; gOn.checked = !!g;
+    var mOn = el('input'); mOn.type = 'checkbox'; mOn.checked = !!m;
+    var f = el('form', 'accessform');
+    f.style.maxWidth = '40rem';
+    f.appendChild(labelled('Public address', url));
+
+    function toggle(box, text) { var l = el('label'); l.appendChild(box); l.appendChild(document.createTextNode(' ' + text)); return l; }
+
+    f.appendChild(el('h3', null, 'GitHub'));
+    f.appendChild(toggle(gOn, 'Allow sign-in with GitHub'));
+    f.appendChild(el('p', 'muted', 'On GitHub: Settings, Developer settings, OAuth Apps, New. Callback URL: ' + (oauth.redirect.github || '<public address>/auth/callback/github')));
+    var gid = input('text', 'g_id'); gid.value = g ? g.client_id : '';
+    var gsec = input('password', 'g_secret', 'new-password'); gsec.placeholder = g && g.secret_set ? '(set, leave empty to keep)' : '';
+    f.appendChild(labelled('Client ID', gid));
+    f.appendChild(labelled('Client secret (never shown again)', gsec));
+    var gUsers = textarea('g_users', 3, g && g.users), gOrgs = textarea('g_orgs', 2, g && g.orgs), gTeams = textarea('g_teams', 3, g && g.teams);
+    var gAU = textarea('g_au', 2, g && g.admin_users), gAT = textarea('g_at', 2, g && g.admin_teams);
+    f.appendChild(labelled('Allowed users (GitHub user names, one per line)', gUsers));
+    f.appendChild(labelled('Allowed organisations (one per line)', gOrgs));
+    f.appendChild(labelled('Allowed teams (organisation/team, one per line)', gTeams));
+    f.appendChild(labelled('Administrators: users', gAU));
+    f.appendChild(labelled('Administrators: teams (organisation/team)', gAT));
+    f.appendChild(el('p', 'muted', 'Organisations and teams are only visible if the organisation approves this OAuth app (GitHub, Organization settings, Third-party access). Personal users always work.'));
+
+    f.appendChild(el('h3', null, 'Microsoft'));
+    f.appendChild(toggle(mOn, 'Allow sign-in with Microsoft'));
+    f.appendChild(el('p', 'muted', 'In Microsoft Entra: App registrations, New, Web, redirect URI: ' + (oauth.redirect.microsoft || '<public address>/auth/callback/microsoft') + '. Add a client secret. The permission User.Read (the default) is enough.'));
+    var mt = input('text', 'm_tenant'); mt.value = m ? m.tenant : '';
+    var mid = input('text', 'm_id'); mid.value = m ? m.client_id : '';
+    var msec = input('password', 'm_secret', 'new-password'); msec.placeholder = m && m.secret_set ? '(set, leave empty to keep)' : '';
+    var mg = textarea('m_groups', 3, m && m.groups), mag = textarea('m_admin', 2, m && m.admin_groups);
+    f.appendChild(labelled('Directory (tenant) ID', mt));
+    f.appendChild(labelled('Application (client) ID', mid));
+    f.appendChild(labelled('Client secret (never shown again)', msec));
+    f.appendChild(labelled('Allowed groups (Object Id of each group, one per line)', mg));
+    f.appendChild(labelled('Administrator groups (Object Id)', mag));
+
+    var b = el('button', null, 'Save'); b.type = 'submit'; f.appendChild(b);
+    f.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var body = { public_url: url.value.trim() || null, github: null, microsoft: null };
+      if (gOn.checked) body.github = { client_id: gid.value, secret: gsec.value || null, users: lines(gUsers.value),
+        orgs: lines(gOrgs.value), teams: lines(gTeams.value), admin_users: lines(gAU.value), admin_teams: lines(gAT.value) };
+      if (mOn.checked) body.microsoft = { tenant: mt.value, client_id: mid.value, secret: msec.value || null,
+        groups: lines(mg.value), admin_groups: lines(mag.value) };
+      b.disabled = true;
+      post('api/auth/oauth', body).then(function (j) {
+        oauthNote = j.error ? { error: j.error } : { ok: 'Saved. The sign-in buttons are on the login page now.' };
+        b.disabled = false;
+        return loadOauth();
+      });
+    });
+    card.appendChild(f);
+    return card;
+  }
+
+  var TITLES = { sources: 'Sources', mqtt: 'MQTT broker', dashboard: 'Dashboard', alerts: 'Alerts', access: 'Access', signin: 'Sign-in providers', bridge: 'Bridge and restart', secrets: 'Stored secrets' };
 
   function currentSection() {
     var id = (location.hash || '').replace('#', '');
@@ -874,7 +963,7 @@
     var content = el('div', 'content');
     content.appendChild(el('h2', 'sectiontitle', TITLES[section]));
     content.appendChild(({ sources: sourcesSection, mqtt: mqttSection, dashboard: dashboardSection, alerts: alertsSection,
-                           access: accessSection, bridge: bridgeSection, secrets: secretsSection })[section](d));
+                           access: accessSection, signin: signinSection, bridge: bridgeSection, secrets: secretsSection })[section](d));
     layout.appendChild(content);
     app.appendChild(layout);
   }

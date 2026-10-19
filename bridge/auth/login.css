@@ -22,3 +22,9 @@ button:disabled { opacity: .6; cursor: default; }
 .msg.bad { border-color: var(--bad); color: var(--bad); }
 .msg.warn { border-color: var(--warn); color: var(--warn); }
 .links { margin-top: 1rem; font-size: .9rem; }
+
+.oauth { display: grid; gap: .6rem; margin-top: 1rem; }
+.obtn { display: block; text-align: center; padding: .65rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font-weight: 600; text-decoration: none; }
+.obtn:hover { border-color: var(--accent); }
+.sep { display: flex; align-items: center; gap: .75rem; color: var(--muted); font-size: .85rem; margin-top: 1rem; }
+.sep::before, .sep::after { content: ""; flex: 1; height: 1px; background: var(--line); }

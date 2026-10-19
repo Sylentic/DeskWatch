@@ -50,6 +50,29 @@ Setup, Access, **API keys** creates a key (shown once, only its hash is stored).
 - `[http] allow_public = true` (setup page and alerts reachable from any address) now **requires** a password: without one
   the bridge refuses to start. With a password set the address check steps aside, because the login protects the pages.
 
+## Sign in with GitHub or Microsoft
+
+Optional, on top of the local password. Set it up on the setup page under **Sign-in providers** (needs the login to be
+on, and a public address that starts with `https://`; plain `http://` only works for `localhost`). The settings go in
+`oauth.toml` in the data folder (no secrets), the client secrets in `credentials/oauth-github` and
+`credentials/oauth-microsoft`. The local admin account always keeps working, so a wrong rule never locks you out.
+
+Nobody gets in by default: a person must match an allow rule. Roles are decided again at every sign-in, so removing
+someone from a team takes effect at their next sign-in.
+
+**GitHub.** Create an OAuth App (GitHub settings, Developer settings) with callback URL
+`<public address>/auth/callback/github`. Paste the client id and secret. Allow individual users (by login), whole
+organisations or teams (`org/team`), and name admin users or admin teams. People are recognised by their numeric id, so
+a renamed account stays the same person. Organisations and teams are only visible when the organisation approved the
+OAuth App; personal user rules work without that.
+
+**Microsoft.** Register an app in Entra ID with redirect URI `<public address>/auth/callback/microsoft` (type Web), add a
+client secret, and paste tenant id, client id and secret. Allow by group object id and name admin groups. Only work or
+school accounts have groups. People are recognised by tenant id plus object id, never by e-mail.
+
+Limits: no real-provider test has been run yet (the tests use mock providers); organisations and teams are read in pages
+of 100; a user in more than 20 matching Microsoft groups is checked in batches.
+
 ## Forgot the password
 
 No email. On the host: `deskwatch-bridge auth reset /etc/deskwatch/bridge.toml`, restart the bridge, and the first-run form
@@ -57,4 +80,4 @@ returns. Whoever can run that or reach the data volume owns the install, which i
 
 ## Not built yet
 
-OAuth sign-in with GitHub or Microsoft, several named accounts, and an audit page. See the design notes in the project files.
+Several named accounts, and an audit page. See the design notes in the project files.

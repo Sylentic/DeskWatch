@@ -477,6 +477,7 @@ dependencies = [
  "argon2",
  "axum",
  "axum-server",
+ "base64 0.22.1",
  "getrandom 0.3.4",
  "hex",
  "hmac",

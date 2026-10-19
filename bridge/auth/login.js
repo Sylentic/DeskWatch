@@ -39,7 +39,15 @@
     return l;
   }
 
-  function show(state, min) {
+  var ERRORS = {
+    denied: 'The sign-in was cancelled or refused by the provider.',
+    not_allowed: 'You signed in, but you are not allowed in. Ask an administrator to add you or your team.',
+    expired: 'That sign-in link expired or was not started here. Try again.',
+    failed: 'The sign-in did not work. The bridge log has the reason.'
+  };
+  var NAMES = { github: 'GitHub', microsoft: 'Microsoft' };
+
+  function show(state, min, providers) {
     card.textContent = '';
     var first = state === 'first_run';
     card.appendChild(el('h2', {}, first ? 'Set an administrator password' : 'Sign in'));
@@ -47,7 +55,19 @@
       ? 'DeskWatch has no password yet. Choose one before anyone else can.'
       : 'to open the dashboard and setup'));
     var message = el('div', { class: 'msg bad', hidden: '' });
+    var code = new URLSearchParams(location.search).get('error');
+    if (code && ERRORS[code]) { message.textContent = ERRORS[code]; message.hidden = false; }
     card.appendChild(message);
+    if (!first && providers.length) {
+      var box = el('div', { class: 'oauth' });
+      providers.forEach(function (id) {
+        var a = el('a', { class: 'obtn', href: 'auth/login/' + id + '?next=' + encodeURIComponent(nextUrl()) },
+          'Continue with ' + (NAMES[id] || id));
+        box.appendChild(a);
+      });
+      card.appendChild(box);
+      card.appendChild(el('div', { class: 'sep' }, 'or use a local account'));
+    }
     var form = el('form');
     form.appendChild(field('Username', 'username', 'text', first ? 'admin' : '', 'username'));
     form.appendChild(field(first ? 'New password' : 'Password', 'password', 'password', '',
@@ -92,7 +112,7 @@
     .then(function (r) { return r.json(); })
     .then(function (s) {
       if (s.state === 'signed_in' || s.state === 'open') { location.href = nextUrl(); return; }
-      show(s.state, s.min_password || 12);
+      show(s.state, s.min_password || 12, s.providers || []);
     })
     .catch(function () {
       card.textContent = '';
