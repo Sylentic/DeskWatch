@@ -15,6 +15,10 @@ display_name = "homeserver"     # name on the stats page; in a container the def
 # Compose file that decides who can reach the page.
 [http]
 listen = "0.0.0.0:8787"
+# The setup page and POST /api/alert only answer the local network (private,
+# loopback and Tailscale addresses). `allow_public = true` lifts that; only with
+# TLS and a proxy that has a login in front.
+# allow_public = false
 # HTTPS is opt-in: either `[http.tls]` here or the Caddy file
 # deploy/docker-compose.https.yml. Guide: docs/https.md
 # In a container, mount the files read-only (see docker-compose.dashboard.yml):

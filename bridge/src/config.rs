@@ -315,6 +315,10 @@ pub struct HttpConfig {
     pub listen: SocketAddr,
     /// Serve HTTPS instead of HTTP. Off unless `[http.tls]` is given.
     pub tls: Option<TlsConfig>,
+    /// Let clients outside the local network reach the setup page and
+    /// `POST /api/alert`. Off by default: both have no login yet, so they only
+    /// answer loopback, private and similar addresses (see `access.rs`).
+    pub allow_public: bool,
 }
 
 impl Default for HttpConfig {
@@ -322,6 +326,7 @@ impl Default for HttpConfig {
         Self {
             listen: SocketAddr::from(([0, 0, 0, 0], 8787)),
             tls: None,
+            allow_public: false,
         }
     }
 }
