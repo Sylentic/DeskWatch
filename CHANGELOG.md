@@ -8,6 +8,11 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Fixed
+
+- The startup warnings that the kiosk page, the setup page and `POST /api/alert` "have no login" are no longer logged
+  when an administrator password is set.
+
 ### Changed (security)
 
 - **The setup page and `POST /api/alert` only answer the local network by default.** Clients with a loopback, private,
