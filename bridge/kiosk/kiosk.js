@@ -393,11 +393,16 @@
       return { title: 'Open PRs', count: total, stale: ciStale(), body: list(rows, p.rows, '<div class="empty good">No open PRs</div>') };
     },
 
+    // Each alert is a tinted box (red, amber or blue) with a Dismiss button when
+    // `[alerts] dismiss` allows it; dismissing clears it on every screen.
     alerts: function (p) {
       var alerts = snap.alerts || [];
       var rows = alerts.map(function (a) {
-        return '<div class="row">' + dot(a.severity) + src(alertKind(a)) + '<span class="main">' + esc(a.title) + '</span><span class="when">' + ago(nowS() - a.since) + '</span>' +
-          (a.message ? '<span class="sub">' + esc(a.message) + '</span>' : '') + '</div>';
+        var sub = [a.message ? esc(a.message) : '', ago(nowS() - a.since)].filter(Boolean).join(' &middot; ');
+        return '<div class="abox ' + esc(a.severity) + '">' + src(alertKind(a)) +
+          '<span class="txt"><span class="main">' + esc(a.title) + '</span><span class="sub">' + sub + '</span></span>' +
+          (canDismiss() ? '<button type="button" class="ax" data-dismiss-alert="' + esc(a.id) + '" aria-label="Dismiss ' + esc(a.title) + '">&times;</button>' : '') +
+          '</div>';
       });
       return { title: 'Alerts', count: alerts.length || '', body: list(rows, p.rows, '<div class="empty good">All quiet</div>') };
     },
@@ -526,6 +531,15 @@
     if (b) stepHost(Number(b.getAttribute('data-host-step')));
     var pick = e.target.closest ? e.target.closest('[data-host-pick]') : null;
     if (pick) chooseHost(pick.getAttribute('data-host-pick'));
+    // The Alerts card's dismiss buttons work like the ones in the Alerts menu.
+    var gone = e.target.closest ? e.target.closest('[data-dismiss-alert]') : null;
+    if (gone) {
+      var id = gone.getAttribute('data-dismiss-alert');
+      snap.alerts = alertList().filter(function (a) { return a.id !== id; });
+      Object.keys(cards).forEach(function (key) { cards[key].touched = 0; });
+      drawGrid(); renderBadges(); renderTicker();
+      dismissAlerts([id]);
+    }
   });
 
   // ---- failed runs: badge, list and dismiss --------------------------------

@@ -19,7 +19,7 @@ This guide takes a Linux server from nothing to a bridge that publishes pages to
 host name, address, port and name below is a placeholder: replace `gitea.example.com`, `broker.example.lan` and
 friends with your own.
 
-The panel itself (the ESP32-S3 firmware) is not part of 0.9, see [What is not in 0.9](../README.md#what-is-not-in-09).
+The panel itself (the ESP32-S3 firmware) is not part of 0.9, see [Status](../README.md#status).
 Until it exists you can watch everything in the desktop simulator, see [Try it without hardware](#8-try-it-without-hardware).
 
 What you need:
@@ -314,7 +314,7 @@ Home Assistant raises and clears alerts on `deskpanel/alert` through two script 
 login limited to that one topic, MQTT integration, importing the blueprints, creating the scripts) is in
 [home-assistant.md](home-assistant.md). Alerts are on by default in the bridge; add `page = "alerts"` to
 `[[rotation]]` to show the list in the idle rotation. Without Home Assistant, any script can do the same with
-`mosquitto_pub`, see the [README](../README.md#alerts-from-home-assistant-and-scripts).
+`mosquitto_pub`, see [home-assistant.md](home-assistant.md).
 
 ## 7. Start and check
 
@@ -351,7 +351,7 @@ cargo run -p deskwatch-sim -- --host broker.example.lan --user deskwatch-panel
 
 Or play the built-in demo: `deskwatch-bridge --demo` publishes a loop of fake data to a broker on localhost
 (`[mqtt]` from a config file if you pass one), `cargo run -p deskwatch-sim -- --host localhost` shows it. The
-[README](../README.md#demo-mode) has the details of both.
+[development.md](development.md#demo-mode) has the details of both.
 
 ## 9. Update, roll back, remove
 

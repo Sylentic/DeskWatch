@@ -24,7 +24,8 @@ may change if the firmware work needs it; any such change is listed here.
   short while. Open PRs is one list, newest first, with a NEW tag for the first hour.
 - **Hosts, detailed view:** a list to pick from next to the chosen host (above it when the panel is narrow). Hosts that
   need a look (down, over a warning line, or rebooted in the last hour) come first. Both views show uptime.
-- **Default layout:** Running now and Hosts (2x2 each) on top, Pipelines and Open PRs (2x1 each) below. Layouts set with
+- **Default layout:** Running now and Hosts (2x2 each) on top; Pipelines (2x1), Open PRs and Alerts (1x1 each) below.
+  The Alerts panel is new in the default layout: each alert is a coloured box with a Dismiss button. Layouts set with
   `[[kiosk.panel]]` are not touched.
 
 ## [0.9.20]
