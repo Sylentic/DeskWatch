@@ -2,7 +2,8 @@
 
 DeskWatch shows what your servers and pipelines are doing: host stats, running CI jobs with live progress, open pull
 requests, failed runs and alerts. One small program, the **bridge**, collects the data (Gitea, GitHub, GitHub
-Enterprise, Azure DevOps, Prometheus, Home Assistant, the machine's own stats) and you choose where to look at it.
+Enterprise, GitLab, Bitbucket Cloud, Azure DevOps, Prometheus, Home Assistant, the machine's own stats) and you choose
+where to look at it. More detail on every page is in the [documentation index](docs/README.md).
 
 ## Three ways to use it
 
@@ -10,7 +11,7 @@ Enterprise, Azure DevOps, Prometheus, Home Assistant, the machine's own stats) a
 |---|---|---|
 | **1. Mini display** (ESP32-S3) | A 4" touch screen on your desk that rotates through stats, PRs and pipelines, switches to live progress when a job runs, goes red on a failure and clears with a button | Drawing code done and checked in a desktop simulator. The firmware exists but has **never run on a board**; waiting on the screen. 1.0 is reserved for the first release that works on the real display. [firmware/](firmware/README.md) |
 | **2. Raspberry Pi with a full-size screen** | A dashboard page in a full-screen browser on a monitor or TV, up to 4K, everything at once, no rotation | Page built and tested in Chromium on a PC. **Not yet run on a Pi.** [docs/kiosk.md](docs/kiosk.md), [docs/raspberry-pi.md](docs/raspberry-pi.md) |
-| **3. Docker dashboard** | The same dashboard page, served by a container on your homelab; open it from any browser | Works: runs in a container on the author's homelab (0.9.14); the page and the health check were also run with demo data. Not every source has been checked against real data (see below). The image is published to ghcr.io with each release. [docs/docker.md](docs/docker.md) |
+| **3. Docker dashboard** | The same dashboard page, served by a container on your homelab; open it from any browser | Works: runs in a container on the author's homelab; the page and the health check were also run with demo data. Not every source has been checked against real data (see below). The image is published to ghcr.io with each release. [docs/docker.md](docs/docker.md) |
 
 Ways 2 and 3 are the same page served by the same bridge and need **no MQTT broker**; only the ESP panel does.
 
@@ -21,8 +22,9 @@ git clone https://github.com/Sylentic/DeskWatch.git && cd DeskWatch
 docker compose -f deploy/docker-compose.demo.yml up --build     # first build takes a few minutes
 ```
 
-Open <http://localhost:8787/> for a dashboard with fake data. For your own data, put it on a homelab (no login by default, keep it off the internet) and
-real sources: [docs/docker.md](docs/docker.md#3-the-dashboard-on-your-homelab).
+Open <http://localhost:8787/> for a dashboard with fake data. For your own data, put it on a homelab and add real
+sources: [docs/docker.md](docs/docker.md#3-the-dashboard-on-your-homelab). There is no login until you set a
+password, so keep it off the internet until you have ([docs/auth.md](docs/auth.md)).
 
 The mini display's UI in the desktop simulator:
 
@@ -31,7 +33,7 @@ The mini display's UI in the desktop simulator:
 ## How it fits together
 
 - **Bridge** (Rust, runs on a Linux or Windows machine that stays on): collects server stats, receives Gitea webhooks, polls GitHub,
-  GitHub Enterprise, Azure DevOps and Prometheus, takes alerts from Home Assistant, decides what the panel should show and
+  GitHub Enterprise, GitLab, Bitbucket Cloud, Azure DevOps and Prometheus, takes alerts from Home Assistant and scripts, decides what the panel should show and
   publishes it over MQTT.
 - **Panel**: a deliberately dumb MQTT client with a touch screen (planned: an ESP32-S3 SuperMini with a 4" ST7796S
   display) that draws whatever page the bridge sends. Its drawing code, the `ui/` crate, is done and runs today in
@@ -57,8 +59,13 @@ The mini display's UI in the desktop simulator:
 | Windows x86_64 release zip (bridge and simulator), install and test guide | Done, see [docs/windows.md](docs/windows.md) |
 | Kiosk dashboard for big screens (browser page served by the bridge, autostart example for a Raspberry Pi) | Done in 0.9.5, not yet run on a Pi: [docs/kiosk.md](docs/kiosk.md) |
 | Kiosk extras: `runners` widget (Gitea and GitHub self-hosted runners, [docs/runners.md](docs/runners.md)), day/night theme, per-widget source and repo filters, OLED pixel shift | Done in 0.9.9, run in headless Chromium with demo data: [docs/kiosk.md](docs/kiosk.md) |
-| Login (off until you set an administrator password; admin and viewer roles, API keys for scripts and screens): [docs/auth.md](docs/auth.md) | New in the next release |
-| Setup page (`/setup`, off by default, opt in with `[setup] enabled = true`): see, test, add, edit and remove sources and tokens, change the MQTT broker, live source reload, optional restart button. No login, trusted network only. Needs a writable data folder to change anything | Done in 0.9.11 and 0.9.12, built against mock servers and a fake broker only: [docs/setup-page.md](docs/setup-page.md), [docs/data-dir.md](docs/data-dir.md) |
+| Built-in login (off until you set an administrator password; admin and viewer roles, API keys for scripts and screens, Argon2id, lockout after five wrong tries): [docs/auth.md](docs/auth.md) | Done in 0.9.20, covered by unit tests; new, still little proven in practice and not independently reviewed |
+| HTTPS, opt-in (`[http.tls]`, or the Caddy Compose file): [docs/https.md](docs/https.md) | Done in 0.9.20, new and still little proven in practice |
+| Setup page (`/setup`, off by default, opt in with `[setup] enabled = true`): see, test, add, edit and remove sources and tokens, alert settings and a test alert, change the MQTT broker, live source reload, optional restart button. Answers the local network only by default and needs the administrator login once a password is set. Needs a writable data folder to change anything | Redesigned in 0.9.17, built against mock servers and a fake broker only: [docs/setup-page.md](docs/setup-page.md), [docs/data-dir.md](docs/data-dir.md) |
+| Alerts over HTTP (`POST /api/alert`, off by default, `[alerts] http_input = true`) | Done in 0.9.18: [docs/home-assistant.md](docs/home-assistant.md#without-mqtt-the-web-address) |
+| Source: GitLab (merge requests, pipelines with stage progress, runners): [docs/gitlab.md](docs/gitlab.md) | Done in 0.9.20, **mock answers only**, not yet tried on a real GitLab |
+| Source: Bitbucket Cloud (pull requests, pipelines with step progress, runners): [docs/bitbucket.md](docs/bitbucket.md) | Done in 0.9.20, **mock answers only**, not yet tried on a real Bitbucket |
+| Kiosk header with pills for alerts, results and notices, clickable Open PRs, Failed and Alerts badges with Dismiss, "source down" pill with Mute, a quiet "update available" notice ([docs/updates.md](docs/updates.md)) | Done in 0.9.17 to 0.9.20, run in headless Chromium with demo data |
 | Azure DevOps extras: self-hosted agent pools and queued jobs on the `runners` widget, "Check pending" for non-approval checks | Done in 0.9.10, against mock answers only; [docs/azure-devops-verify.md](docs/azure-devops-verify.md) is the checklist for a real organisation |
 | Docker dashboard (no broker needed: `[mqtt] enabled = false`, Compose files, health check) | Done in 0.9.5, run in a container with demo data: [docs/docker.md](docs/docker.md) |
 
@@ -70,13 +77,21 @@ The mini display's UI in the desktop simulator:
   dashboard (`runners` widget, [docs/runners.md](docs/runners.md)). Azure DevOps agent pools and the jobs waiting
   per pool show there too (mock answers only, not yet checked against a real organisation). The ESP panel page and badge
   follow.
-- **Authentication.** Neither the dashboard nor the setup page asks for a login by default; both are for a trusted
-  network and must not be exposed to the internet or published through a proxy or tunnel without its own login. The
-  older `[kiosk] token_file`, `trusted_networks`, `session_days` and `[setup] token_file` were removed; a config that
-  still has them is refused at startup with the line to delete (see the changelog). How the ESP
-  panel's own setup mode (step 8 of the setup plan) is protected is an open point for when the screen exists.
-- **TLS on the webhook listener.** Gitea talks plain HTTP to the bridge; put a reverse proxy in front if the path
-  crosses an untrusted network.
+- **OAuth sign-in (GitHub, Microsoft Entra), several named accounts and an audit page.** Designed (the
+  design notes live in the project files, not in this repository) but **not built**. Today the login is one
+  administrator password, an optional viewer password and API keys. Per-source webhook keys and an export of the
+  config without secrets are planned too. How the ESP panel's own setup mode (step 8 of the setup plan) is protected is
+  an open point for when the screen exists.
+- **A login by default.** Until you set a password, the dashboard has no login, and the setup page and `/api/alert`
+  answer only the local network. Do not expose the port to the internet without a password and HTTPS. The older
+  `[kiosk] token_file`, `trusted_networks`, `session_days` and `[setup] token_file` were removed; a config that
+  still has them is refused at startup with the line to delete (see the changelog).
+- **TLS is opt-in.** The default is plain HTTP, also for the Gitea webhook. Turn on `[http.tls]` or put a reverse proxy
+  in front if the path crosses an untrusted network ([docs/https.md](docs/https.md)).
+- **Tested on real systems:** Gitea (28), GitHub, Azure DevOps (pipelines, PRs and runners on the author's own
+  organisation) and Prometheus. GitLab and Bitbucket Cloud were only tested against mock answers, and Forgejo and
+  Codeberg were not tested at all (pull request counts probably work, CI runs probably not): see
+  [docs/git-hosts.md](docs/git-hosts.md).
 - **Release binaries for macOS and 32-bit ARM.** Release binaries are x86_64 for Linux and Windows, and aarch64 for
   Linux (64-bit Raspberry Pi OS). Build from source for anything else; macOS is not covered, contributions are welcome.
 
@@ -101,12 +116,13 @@ DeskWatch supports **Linux and Windows**, plus the Raspberry Pi (64-bit Linux).
 A big screen (a Pi with a monitor or TV, a wall tablet) or any browser can show the [kiosk dashboard](docs/kiosk.md), a
 web page the bridge serves itself; it is off until you set `[kiosk] enabled = true` (the Docker dashboard setup does).
 
-The bridge can also serve a [setup page](docs/setup-page.md) (off until you set `[setup] enabled = true`; no login, trusted network only): it shows every source
+The bridge can also serve a [setup page](docs/setup-page.md) (off until you set `[setup] enabled = true`; local network only, and it needs the administrator login once you set a password): it shows every source
 and credential (never the values), tests a connection, and with a data folder adds, changes and removes sources,
 replaces tokens and changes the MQTT broker settings, without hand-editing files. Sources apply at once; broker
 changes need a restart.
 
-A short overview of the sources is below.
+Before you open the dashboard beyond your own network, read [docs/auth.md](docs/auth.md) and
+[docs/https.md](docs/https.md). A short overview of the sources is below.
 
 ## Running the bridge by hand
 
@@ -155,7 +171,9 @@ pins the current rotation page, or shows the next running job when several run a
 
 ## Alerts from Home Assistant and scripts
 
-Anything that can publish MQTT can raise an alert on `deskpanel/alert`:
+Anything that can publish MQTT can raise an alert on `deskpanel/alert`. Without a broker, the same JSON can be sent to
+`POST /api/alert` (off by default, `[alerts] http_input = true`; local network only, or with an alert key once the
+[login](docs/auth.md) is on):
 
 ```sh
 mosquitto_pub -t deskpanel/alert -m '{"v":2,"id":"freezer","severity":"warning","title":"Freezer door","message":"Open for 5 min","source":"homeassistant"}'

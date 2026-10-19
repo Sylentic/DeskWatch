@@ -54,7 +54,8 @@ listen = "0.0.0.0:8787"
 # The setup page (/setup): shows sources, credentials (never their values), the
 # broker and live source health, and (with a data folder) adds, changes and
 # removes sources and changes the broker settings. Off by default. It has NO
-# login: trusted network only, never exposed to the internet. Guide: docs/setup-page.md
+# login until you set an administrator password (docs/auth.md): trusted network
+# only until then, never exposed to the internet. Guide: docs/setup-page.md
 # [setup]
 # enabled = true
 # allow_restart = true          # a "Restart now" button; only when Docker or systemd starts the bridge again
@@ -132,7 +133,7 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 # ticker_speed = "normal"       # no longer used (the header has no moving text)
 # show_source = true            # "via homeassistant" behind the alert in the header
 # dismiss = true                # Dismiss buttons in the Alerts menu clear an alert for every screen
-# http_input = false            # accept alerts as POST /api/alert (same JSON as MQTT); no login, trusted network only
+# http_input = false            # accept alerts as POST /api/alert (same JSON as MQTT); LAN only, or an alert key once a login is set (docs/auth.md)
 # critical_ids = ["leak", "smoke"]  # only these ids may be critical, others become warnings
 
 # Host stats and container health from a Prometheus server that scrapes

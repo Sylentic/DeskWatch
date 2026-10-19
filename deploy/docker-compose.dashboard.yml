@@ -6,8 +6,8 @@
 #   mkdir -p dashboard/credentials
 #   cp deploy/dashboard.example.toml dashboard/bridge.toml        # then edit it
 #   docker compose -f deploy/docker-compose.dashboard.yml up -d --build
-#   # then open http://<docker host>:8787/ (no login by default; docs/docker.md,
-#   # "Protecting the page", for the optional token)
+#   # then open http://<docker host>:8787/ (no login until you set a password;
+#   # docs/auth.md, docs/docker.md "Protecting the page")
 #
 # The config and secrets come from ${DESKWATCH_CONFIG_DIR}, which defaults to
 # ../dashboard (next to this file, as in the steps above). To use this file from
@@ -37,7 +37,7 @@ services:
 
     # The page. "8787:8787" is reachable from your whole network, which is fine
     # at home. Never forward this port from your router or publish it through a
-    # tunnel without a login (the proxy's own). Behind a reverse
+    # tunnel without a login (docs/auth.md, or the proxy's own). Behind a reverse
     # proxy on the same host, publish "127.0.0.1:8787:8787" instead and let only
     # the proxy reach it.
     ports:

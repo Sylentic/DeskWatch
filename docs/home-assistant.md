@@ -94,8 +94,8 @@ needs an `id`), `413` over 1024 bytes and `503` when the bridge is busy. An aler
 `max_active`, `critical_ids` and the other `[alerts]` settings apply as they do on MQTT.
 
 With the [login](auth.md) on, send an alert key: `Authorization: Bearer <key>` in the `rest_command` headers. By default (no login) it only answers clients on the local network (loopback, private and Tailscale addresses); a sender from
-elsewhere gets `403` unless `[http] allow_public = true`. There is no login, like the dashboard and the setup page: use it on a trusted network only and do not publish the port
-to the internet. A web page on another site cannot post to it (a request with a foreign `Origin` is refused); `curl` and
+elsewhere gets `403` unless `[http] allow_public = true`. Without a password, as with the dashboard and the setup page, use it on a trusted network only and do not publish the
+port to the internet. A web page on another site cannot post to it (a request with a foreign `Origin` is refused); `curl` and
 scripts send none. Over HTTP an alert can only be raised or cleared; it is not the panel button, and the ESP panel still
 needs the MQTT broker to show anything.
 
