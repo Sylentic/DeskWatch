@@ -79,7 +79,7 @@ closes it. With nothing left the counter shows `0 failed` with a green dot.
 - A pipeline that later succeeds drops off by itself, as before.
 - A dismissal is kept on the bridge, so it clears the run on every screen at once, like dismissing an alert. It is
   forgotten once the failure leaves the data (the pipeline went green). It lives in memory only, so restarting the
-  bridge shows the failures again. Nothing needs a login: the page is for a trusted network.
+  bridge shows the failures again. Without a password set ([auth.md](auth.md)) nothing needs a login: the page is for a trusted network.
 - The snapshot no longer lists a dismissed run, and the failed badge counts what is left.
 - API: `POST /api/kiosk/failed/dismiss {"ids": ["<key>@<started>", ...]}`, same-origin only.
 
@@ -266,7 +266,7 @@ echo '~/deskwatch-kiosk.sh &' >> ~/.config/labwc/autostart                # Book
 
 [`deploy/kiosk/deskwatch-kiosk.sh`](../deploy/kiosk/deskwatch-kiosk.sh) opens `http://localhost:8787/`. For a bridge on
 another machine, set the address with an environment variable, for example
-`DESKWATCH_KIOSK_URL='http://bridge.example.lan:8787/' ~/deskwatch-kiosk.sh &`. With the [login](auth.md) on, create a **viewer** key under Setup, Access and put `?key=<key>` in the URL once. The page has no login by default, so a Pi
+`DESKWATCH_KIOSK_URL='http://bridge.example.lan:8787/' ~/deskwatch-kiosk.sh &`. With the [login](auth.md) on, create a **viewer** key under Setup, Access and put `?key=<key>` in the URL once. Without a password the page has no login, so a Pi
 on the same network needs nothing else ([security](#5-security)). Older releases, or Bookworm switched to X11 with LXDE, read
 `~/.config/lxsession/LXDE-pi/autostart` instead; see
 [`deploy/kiosk/lxde-autostart`](../deploy/kiosk/lxde-autostart), which also turns the X11 screen blanking off.
@@ -295,17 +295,16 @@ Things that make a kiosk last:
 The page and its two data routes (`/api/kiosk` and `/api/kiosk/ws`) are read-only: the page cannot press buttons or
 change anything. They show PR titles, pipeline names, host stats and alert text, so treat them like a dashboard.
 
-- **No login.** The listener is `0.0.0.0:8787` (it has to be reachable for Gitea webhooks and for other
-  machines on your network). With the kiosk on, anyone who can reach the port can read the page. On a
-  home network that is the intended trade-off, and the bridge logs one warning at startup saying so. **Never expose
-  the port to the internet** (no router port forward, no tunnel or public reverse proxy) unless a login sits in front
-  of it: the proxy's own login. To keep the page local to the Pi, run the bridge there with
+- **No login until you set a password.** The listener is `0.0.0.0:8787` (it has to be reachable for Gitea webhooks and
+  for other machines on your network). With the kiosk on and no password set, anyone who can reach the port can read the
+  page. On a home network that is the intended trade-off, and the bridge logs one warning at startup saying so. **Never
+  expose the port to the internet** (no router port forward, no tunnel or public reverse proxy) unless a login sits in
+  front of it: the built-in one ([auth.md](auth.md), with HTTPS) or the proxy's own. To keep the page local to the Pi, run the bridge there with
   `[http] listen = "127.0.0.1:8787"`, which is fine when the Pi has no webhook source.
-- **There is no token or cookie login** (older releases had `[kiosk] token_file`, `trusted_networks` and
-  `session_days`; see [Removed login settings](#removed-login-settings) below). The only protection built in is that
-  the WebSocket refuses an `Origin` that is not the page's own host, so a website open in your browser cannot read
-  the page through it. The connection is plain HTTP unless you put a reverse proxy with TLS in front, which is also
-  where a login belongs if you need one.
+- **The built-in login** ([auth.md](auth.md)) replaces the old `[kiosk] token_file`, `trusted_networks` and
+  `session_days` (removed; see [Removed login settings](#removed-login-settings) below). Independent of it, the
+  WebSocket refuses an `Origin` that is not the page's own host, so a website open in your browser cannot read the page
+  through it. The connection is plain HTTP unless you turn on [HTTPS](https.md) or put a reverse proxy with TLS in front.
 - **In a container**, `0.0.0.0:8787` inside is correct and the published port decides who can reach the page:
   `"8787:8787"` is the whole network (trusted network only), `"127.0.0.1:8787:8787"` is the Docker host only, for a reverse
   proxy that adds TLS and a login. Do not expose the port to the internet; use a VPN or an authenticating proxy.
@@ -327,9 +326,9 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
   Pi with a wrong clock still shows correct ages. The clock in the header is the screen's own.
 - <a id="removed-login-settings"></a>**The bridge refuses to start: "[kiosk] token_file is no longer supported".**
   `[kiosk] token_file`, `[kiosk] trusted_networks`, `[kiosk] session_days` and `[setup] token_file` were removed: the
-  dashboard and the setup page are open on the trusted network. Delete the line the message names from the config.
-  The bridge stops instead of ignoring the line, so nobody keeps a login they believe is still active. If you need a
-  login, put a reverse proxy with its own in front ([docker.md](docker.md#protecting-the-page)).
+  those old settings no longer do anything. Delete the line the message names from the config. The bridge stops
+  instead of ignoring the line, so nobody keeps a login they believe is still active. If you need a login, set a
+  password ([auth.md](auth.md)) or put a reverse proxy with its own in front ([docker.md](docker.md#protecting-the-page)).
 - **The page says why it has no data.** The header chip and a box in the page body name the cause:
 
   | Header chip | Meaning | What to do |

@@ -28,15 +28,14 @@ listen = "0.0.0.0:8787"
 
 [kiosk]
 enabled = true
-# No login: open http://<docker host>:8787/ and it works. Fine on a home
-# network. Do not expose the port to the internet, and do not publish it through
-# a proxy or tunnel without a login (docs/docker.md, "Protecting the page").
-# The bridge has no login of its own (the old `token_file` is refused at
-# startup); put a proxy with a login in front if you need one.
+# No password set: open http://<docker host>:8787/ and it works. Fine on a home
+# network. Do not expose the port to the internet without the built-in login
+# (docs/auth.md) and HTTPS (docs/https.md); see docs/docker.md, "Protecting the
+# page". The old `token_file` setting is refused at startup.
 
 # Optional: manage sources and tokens from the browser (docs/setup-page.md). Needs
 # the writable data volume in docker-compose.dashboard.yml (docs/data-dir.md). The
-# page has NO login: trusted network only, never exposed to the internet.
+# page has NO login until you set a password (docs/auth.md): trusted network only, never exposed to the internet.
 # [data]
 # dir = "/var/lib/deskwatch"
 # [setup]

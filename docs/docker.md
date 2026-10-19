@@ -7,7 +7,7 @@ DeskWatch runs in one small container. There are two ways to use it, and they di
 - **The bridge for the ESP panel**: the same container publishing screens to your Mosquitto broker for the desk
   panel (sections 4 to 9). It can serve the dashboard page at the same time.
 
-Sources (Gitea, GitHub, Azure DevOps, Prometheus), Mosquitto logins and Home Assistant are the same as in
+Sources (Gitea, GitHub, GitLab, Bitbucket Cloud, Azure DevOps, Prometheus), Mosquitto logins and Home Assistant are the same as in
 [install.md](install.md); only how the bridge is started and fed its files changes. All host names below are
 placeholders.
 
@@ -28,8 +28,8 @@ docker build -t deskwatch-bridge .
 docker run --rm -p 8787:8787 deskwatch-bridge --demo --kiosk --no-mqtt
 ```
 
-(The log may warn that the page "has no login". That is expected for the demo: the Compose file publishes the port on
-`127.0.0.1` only. Section 3 covers who can see the page in a real setup.)
+(The log may warn that the page "has no login". That is expected for the demo: no password is set and the Compose file
+publishes the port on `127.0.0.1` only. Section 3 covers who can see the page in a real setup.)
 
 Contents: [1. Build the image](#1-build-the-image) · [2. Try the demo](#2-try-the-demo) ·
 [3. The dashboard on your homelab](#3-the-dashboard-on-your-homelab) (also [Komodo and Portainer](#komodo-portainer-and-inline-configs)) ·
@@ -105,10 +105,11 @@ point the variable at an absolute folder that holds `bridge.toml` and `credentia
 docker compose -f docker-compose.dashboard.yml up -d`, or a line in a `.env` file next to the Compose file) and use the
 published image instead of `build:`, see section 10.
 
-Then open `http://<docker host>:8787/`. There is no login by default, so it works at once from any browser on your
-network, and a Raspberry Pi kiosk needs nothing typed on first boot. **Keep it on your home network:** do not forward
-the port from your router, and do not publish it through a tunnel or reverse proxy without a login (see "Protecting
-the page" below). The bridge logs one warning at startup that the page has no login.
+Then open `http://<docker host>:8787/`. Until you set an administrator password there is no login, so it works at
+once from any browser on your network, and a Raspberry Pi kiosk needs nothing typed on first boot. **Keep it on your
+home network** while it is like that: do not forward the port from your router. To use it beyond the home network, turn
+on the [built-in login](auth.md) (and HTTPS, [https.md](https.md)); see "Protecting the page" below. Without a password
+the bridge logs one warning at startup that the page has no login.
 
 **What the config does.** `[mqtt] enabled = false` makes the bridge skip the broker completely: no connection, no
 warnings every few seconds. It keeps working without one; the only things that need MQTT are the ESP panel, its
@@ -139,8 +140,8 @@ A named volume (`data:/var/lib/deskwatch` plus a top-level `volumes: { data: }`)
 the better choice when a stack manager (Komodo, Portainer) deploys the Compose file from git, because a relative
 `./data` would then sit inside the manager's checkout. See [data-dir.md](data-dir.md#docker).
 
-The page has no login, so it shares the rule of the dashboard: home network only, never published to the internet or
-through a proxy without its own login. `[setup] allow_restart = true` adds a "Restart now" button, which works because
+The setup page needs the administrator login once you have set a password ([auth.md](auth.md)). Without one it shares
+the rule of the dashboard: home network only, never published to the internet. `[setup] allow_restart = true` adds a "Restart now" button, which works because
 the Compose files use `restart: unless-stopped`. Back up `dashboard/data` with the rest of your config. Details:
 [data-dir.md](data-dir.md).
 
@@ -199,31 +200,36 @@ Stack managers such as Komodo and Portainer can run a Compose file with the conf
 your repository, and an update can wipe or conflict with a folder inside it. A named volume is writable for the bridge
 without a `chown` from 0.9.14 on ([data-dir.md](data-dir.md#docker)).
 
-**Who can open it.** The port has no login of its own, and neither does the setup page. The setup page and
-`POST /api/alert` also refuse clients outside the local network (`[http] allow_public`, [setup-page.md](setup-page.md#security)).
-Publish it to a trusted network only, or put it behind a proxy that asks for a login
-([Protecting the page](#protecting-the-page)). Never publish it to the internet as is.
+**Who can open it.** Until you set an administrator password ([auth.md](auth.md)) the port has no login, and neither
+does the setup page. The setup page and `POST /api/alert` also refuse clients outside the local network (`[http]
+allow_public`, [setup-page.md](setup-page.md#security)). With no password, publish it to a trusted network only. With a
+password and HTTPS you can open it further ([Protecting the page](#protecting-the-page)). Never publish it to the
+internet without a password.
 
 ### Protecting the page
 
 The page is read-only (nothing on it can change anything), but it shows PR titles, pipeline names, host stats and
-alert text. There is no login, which is fine on a home network and is why a new install just works. Do not expose
-the port to the internet. The bridge has no token or cookie login of its own (older versions had `token_file`; a
-config that still sets it is refused at startup). The live WebSocket refuses a request whose `Origin` is another
-site. If other people can reach your network, or you open the page beyond it, choose one of these:
+alert text. Out of the box there is no login, which is fine on a home network and is why a new install just works.
+The bridge has a built-in login that is off until you set an administrator password ([auth.md](auth.md)); the old
+`token_file` setting was removed and a config that still sets it is refused at startup. The live WebSocket refuses a
+request whose `Origin` is another site. If other people can reach your network, or you open the page beyond it, choose
+one or more of these:
 
-0. **HTTPS.** Both a reverse proxy and the bridge itself can serve HTTPS, see [https.md](https.md).
-1. **A reverse proxy.** Publish the port to the host only (`"127.0.0.1:8787:8787"` in the Compose file) and let
+1. **The built-in login.** Set an administrator password (and optionally a viewer password) under Setup, Access, or
+   with `deskwatch-bridge auth set-password`. Screens and scripts use API keys. Needed anyway before `[http]
+   allow_public = true`. Use it together with HTTPS.
+2. **HTTPS.** Both a reverse proxy and the bridge itself can serve HTTPS, see [https.md](https.md).
+3. **A reverse proxy.** Publish the port to the host only (`"127.0.0.1:8787:8787"` in the Compose file) and let
    your proxy (Caddy, Traefik, nginx) terminate TLS and do the access control (basic auth, or your SSO). Without a
    proxy login, do not publish the port to the internet. Make the proxy pass WebSocket upgrades on `/api/kiosk/ws`;
    without them the page falls back to polling `/api/kiosk` and still works, only slower to update.
-2. **Local only.** Publish `"127.0.0.1:8787:8787"` and open the page on the Docker host itself (a Pi with a screen
+4. **Local only.** Publish `"127.0.0.1:8787:8787"` and open the page on the Docker host itself (a Pi with a screen
    running the container).
 
 #### Reverse proxy examples
 
 All three examples terminate TLS for `dashboard.example.lan` (a placeholder), ask for a username and password, and
-pass the WebSocket on `/api/kiosk/ws`. The bridge listens on `127.0.0.1:8787` (published as in option 1) or, when
+pass the WebSocket on `/api/kiosk/ws`. The bridge listens on `127.0.0.1:8787` (published as in option 3) or, when
 the proxy runs in Docker too, on `deskwatch:8787` over a shared network. The browser sends the basic auth login on
 the WebSocket by itself, and the bridge ignores a `Basic` header. The proxy must pass the browser's `Host` (with the port, if it is not 443) or send
 `X-Forwarded-Host`, because the bridge compares the WebSocket's `Origin` with it. Create the login hash with `htpasswd -nbB desk 'a-password'`
@@ -309,9 +315,10 @@ The live-update WebSocket is capped: at most 16 at once (`[kiosk] max_ws_clients
 further one gets `503` and that page polls instead), and a client that has not taken a frame for 10 seconds is
 dropped, after which the page reconnects. This keeps one stuck browser from holding the bridge, it is not a login.
 
-Do **not** publish the port on the internet. There is no login screen and no request rate limiting in the bridge (HTTPS is optional, see [https.md](https.md)).
-If you want the page away from home, put it behind a VPN (WireGuard, Tailscale) or a proxy that requires a real
-login. A source alias keeps work project names off a visible screen
+Do **not** publish the port on the internet without the built-in login (or a proxy login) and HTTPS ([https.md](https.md)).
+The login limits wrong passwords per address, but nothing rate-limits the read-only page itself. If you want the page
+away from home, a VPN (WireGuard, Tailscale) is the simplest route; otherwise use the login behind HTTPS or a proxy that
+requires a real login. A source alias keeps work project names off a visible screen
 ([kiosk.md](kiosk.md#5-security)).
 
 ## 4. Config and secrets
@@ -461,7 +468,7 @@ Every version tag (from 0.9.6 on, except 0.9.8, which was never built) is built 
 [`release.yml`](../.github/workflows/release.yml) and pushed to GitHub's registry:
 
 ```sh
-docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 0.9.19; no "v"
+docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 0.9.20; no "v"
 docker run --rm -p 8787:8787 ghcr.io/sylentic/deskwatch-bridge:<version> --demo --kiosk --no-mqtt
 ```
 
