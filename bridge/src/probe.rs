@@ -14,7 +14,8 @@
 use serde::Serialize;
 
 use crate::config::{
-    AzureDevopsConfig, Config, GiteaConfig, GithubConfig, MqttConfig, PrometheusConfig,
+    AzureDevopsConfig, Config, GiteaConfig, GithubConfig, GitlabConfig, MqttConfig,
+    PrometheusConfig,
 };
 use crate::gitea::api::{GiteaApi, HttpApi as GiteaHttp};
 use crate::source::{Health, Secret, load_secret};
@@ -160,6 +161,7 @@ pub async fn source_with(config: &Config, id: &str, overrides: &Overrides) -> Op
     let s = &config.source;
     let report = match kind {
         "github" => github(s.github.iter().find(|c| c.name == name)?, overrides).await,
+        "gitlab" => gitlab(s.gitlab.iter().find(|c| c.name == name)?, overrides).await,
         "gitea" => gitea(s.gitea.iter().find(|c| c.name == name)?, overrides).await,
         "azure_devops" => {
             azure_devops(s.azure_devops.iter().find(|c| c.name == name)?, overrides).await
@@ -195,6 +197,43 @@ async fn github(config: &GithubConfig, overrides: &Overrides) -> Report {
                     api.runners(scope).await,
                     "Runners need more rights: repository runners \"Administration: read\", \
                      organisation runners \"Self-hosted runners: read\".",
+                );
+            }
+        }
+        Err(err) => report.fail("runners", format!("{err:#}")),
+    }
+    report
+}
+
+async fn gitlab(config: &GitlabConfig, overrides: &Overrides) -> Report {
+    let mut report = Report::default();
+    let Some(token) = credential(&mut report, overrides, "token", &config.token_file) else {
+        return report;
+    };
+    let api = match crate::gitlab::api::HttpApi::new(&config.base_url, token) {
+        Ok(api) => api,
+        Err(err) => {
+            report.fail("setup", format!("{err:#}"));
+            return report;
+        }
+    };
+    let hint = "Check that the token is valid (scope read_api) and that its user may see this \
+                project (Reporter role or higher). A project that does not exist answers the same way.";
+    for project in config.projects.iter().take(MAX_TARGETS) {
+        report.result(
+            format!("project {project}"),
+            api.project(project).await,
+            hint,
+        );
+    }
+    match config.runner_scopes() {
+        Ok(scopes) => {
+            for scope in scopes.iter().take(MAX_TARGETS) {
+                report.result(
+                    format!("runners {scope}"),
+                    api.runners(scope).await.map(|_| ()),
+                    "Runners need more rights: the Maintainer role on a project, Owner on a \
+                     group, an administrator token for \"instance\".",
                 );
             }
         }

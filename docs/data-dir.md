@@ -14,7 +14,7 @@ variable. The bridge creates the folder and stops at startup, with the reason, i
   auth.toml             login: password hashes and API key hashes, mode 0600 (auth.md)
 ```
 
-- **`sources.toml`** holds `[[source.gitea]]`, `[[source.github]]`, `[[source.azure_devops]]` and
+- **`sources.toml`** holds `[[source.gitea]]`, `[[source.github]]`, `[[source.gitlab]]`, `[[source.azure_devops]]` and
   `[[source.prometheus]]` blocks and nothing else. They are added to the ones in `bridge.toml` and checked together,
   so a name used twice for the same type is an error (nothing is replaced silently). `bridge.toml` itself is never
   rewritten, so your comments stay.

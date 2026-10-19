@@ -85,7 +85,7 @@
     return (v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)) + ' ' + u[i];
   }
   // The CI system a job, run or PR comes from, as a small tag.
-  var SOURCES = { gitea: 'Gitea', github: 'GitHub', azure_devops: 'Azure DevOps' };
+  var SOURCES = { gitea: 'Gitea', github: 'GitHub', gitlab: 'GitLab', azure_devops: 'Azure DevOps' };
   function src(kind) {
     return kind ? '<span class="src ' + esc(kind) + '">' + esc(SOURCES[kind] || kind) + '</span>' : '';
   }
@@ -167,7 +167,7 @@
 
   function ciStale() {
     // Only the CI sources: a Prometheus outage does not make the PR list old.
-    return (snap.sources || []).some(function (s) { return s.health !== 'ok' && /^(gitea|github|azure_devops):/.test(s.id); });
+    return (snap.sources || []).some(function (s) { return s.health !== 'ok' && /^(gitea|github|gitlab|azure_devops):/.test(s.id); });
   }
 
   function gauge(label, value, warn, crit) {

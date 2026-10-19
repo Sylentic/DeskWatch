@@ -1,0 +1,4 @@
+[
+  { "id": 4003, "name": "flaky-extra", "stage": "test", "status": "failed", "allow_failure": true, "started_at": "2026-10-08T17:00:30.000Z" },
+  { "id": 4002, "name": "unit", "stage": "test", "status": "failed", "allow_failure": false, "started_at": "2026-10-08T17:00:20.000Z" }
+]

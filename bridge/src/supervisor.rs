@@ -24,6 +24,7 @@ use crate::azure_devops::AzureDevops;
 use crate::config::Config;
 use crate::gitea::{self, Gitea};
 use crate::github::Github;
+use crate::gitlab::Gitlab;
 use crate::hooks::{Hooks, Webhooks};
 use crate::prometheus::Prometheus;
 use crate::source::{self, FactSink, SourceId, SourceMsg};
@@ -32,6 +33,7 @@ use crate::source::{self, FactSink, SourceId, SourceMsg};
 enum Built {
     Gitea(Gitea),
     Github(Github),
+    Gitlab(Gitlab),
     AzureDevops(AzureDevops),
     Prometheus(Prometheus),
 }
@@ -41,6 +43,7 @@ impl Built {
         match self {
             Built::Gitea(s) => source::spawn(s, tx),
             Built::Github(s) => source::spawn(s, tx),
+            Built::Gitlab(s) => source::spawn(s, tx),
             Built::AzureDevops(s) => source::spawn(s, tx),
             Built::Prometheus(s) => source::spawn(s, tx),
         }
@@ -73,6 +76,14 @@ fn wanted(config: &Config) -> Vec<Wanted> {
             id: SourceId::new("github", &c.name),
             fingerprint: format!("{c:?}"),
             build: Box::new(move |_| Ok(Built::Github(Github::new(&c)?))),
+        });
+    }
+    for c in &config.source.gitlab {
+        let c = c.clone();
+        out.push(Wanted {
+            id: SourceId::new("gitlab", &c.name),
+            fingerprint: format!("{c:?}"),
+            build: Box::new(move |_| Ok(Built::Gitlab(Gitlab::new(&c)?))),
         });
     }
     for c in &config.source.azure_devops {

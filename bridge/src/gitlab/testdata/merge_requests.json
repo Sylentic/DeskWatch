@@ -1,0 +1,12 @@
+[
+  {
+    "id": 9001, "iid": 42, "title": "Add invoice export", "draft": false,
+    "state": "opened", "created_at": "2026-10-07T09:15:00.000Z",
+    "web_url": "https://gitlab.example.com/your-group/demo/-/merge_requests/42"
+  },
+  {
+    "id": 9002, "iid": 43, "title": "Draft: try a new cache", "draft": true,
+    "state": "opened", "created_at": "2026-10-08T07:30:00.000Z",
+    "web_url": "https://gitlab.example.com/your-group/demo/-/merge_requests/43"
+  }
+]

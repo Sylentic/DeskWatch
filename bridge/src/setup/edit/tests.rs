@@ -159,6 +159,33 @@ fn gitea_needs_its_webhook_secret_and_may_skip_the_token() {
 }
 
 #[test]
+fn gitlab_source_is_created_with_projects_and_a_token() {
+    let f = fields(json!({ "base_url": "https://gitlab.com", "projects": ["team/sub/app", " "] }));
+    let plan = upsert("", "gitlab", "work", true, &f, &secrets(&[("token", "t")])).unwrap();
+    assert_eq!(plan.secrets[0].0, "gitlab-work-token");
+    let config = Config::from_toml("")
+        .unwrap()
+        .with_overlay(&plan.text)
+        .unwrap();
+    let gitlab = &config.source.gitlab[0];
+    assert_eq!(gitlab.projects, ["team/sub/app"]);
+    assert_eq!(gitlab.token_file, "gitlab-work-token");
+
+    // A token is required for a new source, and `repos` is not a GitLab field.
+    assert!(upsert("", "gitlab", "work", true, &f, &secrets(&[])).is_err());
+    let err = upsert(
+        "",
+        "gitlab",
+        "w2",
+        true,
+        &fields(json!({ "repos": ["a/b"] })),
+        &secrets(&[("token", "t")]),
+    )
+    .unwrap_err();
+    assert!(format!("{err:#}").contains("cannot be set"));
+}
+
+#[test]
 fn azure_devops_booleans_and_prometheus_host_tables() {
     let f = fields(
         json!({ "organization": "acme", "base_url": "https://dev.azure.com", "projects": ["P"], "pull_requests": true }),

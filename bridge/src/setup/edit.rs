@@ -39,6 +39,13 @@ const SPECS: &[Spec] = &[
         secrets: &[("token", "token_file", true)],
     },
     Spec {
+        kind: "gitlab",
+        strings: &["base_url"],
+        lists: &["projects"],
+        bools: &[],
+        secrets: &[("token", "token_file", true)],
+    },
+    Spec {
         kind: "gitea",
         strings: &["base_url"],
         lists: &["repos"],

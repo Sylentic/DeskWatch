@@ -78,7 +78,7 @@
     mounted: ['found (mounted file)', 'ok'], data_folder: ['found (data folder)', 'ok'],
     missing: ['missing', 'bad'], environment: ['from environment', 'ok'], none: ['none', 'muted']
   };
-  var KIND = { gitea: 'Gitea', github: 'GitHub', azure_devops: 'Azure DevOps', prometheus: 'Prometheus' };
+  var KIND = { gitea: 'Gitea', github: 'GitHub', gitlab: 'GitLab', azure_devops: 'Azure DevOps', prometheus: 'Prometheus' };
 
   function credState(c) {
     var s = CRED[c.status] || [c.status, 'warn'];
@@ -136,6 +136,11 @@
       strings: [['base_url', 'API address', 'https://api.github.com']],
       lists: [['repos', 'Repositories, one per line (owner/name)']],
       secrets: [['token', 'Token (read-only, fine-grained)', true]]
+    },
+    gitlab: {
+      strings: [['base_url', 'GitLab address (without /api/v4)', 'https://gitlab.com']],
+      lists: [['projects', 'Projects, one per line (group/project)']],
+      secrets: [['token', 'Access token (read_api, read-only)', true]]
     },
     gitea: {
       strings: [['base_url', 'Gitea address', 'https://gitea.example.com']],
@@ -374,7 +379,7 @@
     card.appendChild(h);
     var dl = el('dl');
     row(dl, 'Address', s.address);
-    if (s.repos && s.repos.length) row(dl, s.kind === 'prometheus' ? 'Hosts' : s.kind === 'azure_devops' ? 'Projects' : 'Repositories', s.repos.join(', '));
+    if (s.repos && s.repos.length) row(dl, s.kind === 'prometheus' ? 'Hosts' : (s.kind === 'azure_devops' || s.kind === 'gitlab') ? 'Projects' : 'Repositories', s.repos.join(', '));
     row(dl, 'Defined in', s.origin === 'data_folder' ? 'data folder (sources.toml)' : 'bridge.toml');
     s.credentials.forEach(function (c) {
       var v = el('span');
