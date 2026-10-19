@@ -372,7 +372,7 @@ and at least every 5 seconds (a heartbeat, so the page can tell quiet from gone)
 (Unix seconds), `layout` (the grid, the widgets with their filters, `theme` and `pixel_shift_s` from the config), `screen` (the composer's pick as an MQTT v2
 screen payload, or `null` when idle), `badges`, `failed` (the failed runs behind the badge, minus the dismissed ones: `key`, `source`, `project`, `pipeline`, `ref`, `step`, `started`, `finished`, `url`), `hosts`, `down`, `jobs`, `runs`, `pulls`, `runners`, `queued_jobs`, `alerts` and `sources` (`id`, `health`, and `muted: true` when the pill was muted). `jobs`, `runs`, `pulls[].items[]` and `runners` each carry a `url` (an `http(s)` address, or `null`).
 Lists are not capped to the ESP panel's five rows. The structure is in `bridge/src/kiosk.rs` (`snapshot`) and
-covered by the tests next to it. Treat it as unstable until 1.0.
+covered by the tests next to it. It is made for this page and may change between versions; scripts should use `POST /api/alert` instead.
 
 Status colours (the dots in Pipelines, the Running now bars and the header counters use the same ones): orange and
 pulsing for running, red for failed, green for success, amber and still for waiting for approval, grey for queued,

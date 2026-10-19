@@ -81,7 +81,7 @@ one and compares it with the approved image in `ui/tests/snapshots/`; after an i
 
 The panel firmware lives in [`firmware/`](../firmware/README.md). It is Rust (esp-hal, embassy), outside the Cargo
 workspace because it needs the Xtensa toolchain, and has its own CI job. It builds and lints in CI but has not run on a
-board yet; 1.0 waits for that.
+board yet, is not part of 1.0, and may be dropped.
 
 Next to it is a **TLS spike**, a test binary that needs only the ESP32-S3 board, USB and Wi-Fi (no screen, button or
 broker). It sets the clock over SNTP, makes HTTPS requests with full certificate verification and prints handshake

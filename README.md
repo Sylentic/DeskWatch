@@ -65,28 +65,21 @@ page and `POST /api/alert` only answer the local network.
 Forgejo and Codeberg are not tested; what they and the others need is in [docs/git-hosts.md](docs/git-hosts.md). Gitea,
 GitHub, GitLab and Bitbucket can also list their self-hosted runners ([docs/runners.md](docs/runners.md)).
 
-## The desk display (coming)
-
-Next to the big-screen dashboard, DeskWatch is built for a small **4" touch screen on an ESP32-S3** that rotates through
-stats, PRs and pipelines, switches to live progress when a job runs and turns red on a failure. The bridge already
-publishes everything it needs over MQTT ([docs/mqtt-schema.md](docs/mqtt-schema.md)), and its drawing code runs today in
-a desktop simulator:
-
-![The desk display in the simulator](docs/panel-example.png)
-
-The firmware is written but **has not run on a board yet**; the screen has not arrived. Version 1.0 is reserved for the
-first release that works on the real display. See [firmware/](firmware/README.md) and
-[docs/development.md](docs/development.md#panel-ui-and-simulator).
-
 ## Status
 
-DeskWatch is at **0.9**: the dashboard, the setup page, the login and the sources above work and run on the author's
+DeskWatch is at **1.0**: the dashboard, the setup page, the login and the sources above work and run on the author's
 homelab. Not done yet:
 
-- The ESP display firmware on real hardware, and over-the-air updates after that.
-- The dashboard on a real Raspberry Pi (built and tested in Chromium on a PC) and GitLab and Bitbucket against real
+- The dashboard on a real Raspberry Pi (built and tested in Chromium on a PC), and GitLab and Bitbucket against real
   servers.
 - Release binaries for macOS and 32-bit ARM (build from source).
+
+## The desk display (experimental)
+
+DeskWatch was first planned around a small **4" touch screen on an ESP32-S3**. The bridge publishes what it needs over
+MQTT ([docs/mqtt-schema.md](docs/mqtt-schema.md)) and its drawing code runs in a desktop simulator, but the firmware
+**has not run on a board yet**. It is not part of 1.0, and since the dashboard now does more, it may be dropped. See
+[firmware/](firmware/README.md) and [docs/development.md](docs/development.md#panel-ui-and-simulator).
 
 What changed in each version is in the [changelog](CHANGELOG.md).
 

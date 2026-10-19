@@ -2,11 +2,16 @@
 
 All notable changes to DeskWatch are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
-[Semantic Versioning](https://semver.org/). Version 1.0 is reserved for the first release with working firmware on the real
-screen. Until then (0.x) the MQTT schema (v2) and the bridge config file aim to change only in compatible ways, but
-may change if the firmware work needs it; any such change is listed here.
+[Semantic Versioning](https://semver.org/). From 1.0.0 on, a change that breaks an existing bridge config file or the
+`POST /api/alert` format needs a new major version. The ESP desk display is not part of 1.0: its firmware has not run on
+hardware yet, and its MQTT schema (v2) may still change or the display may be dropped.
 
 ## [Unreleased]
+
+## [1.0.0]
+
+The first stable release: the bridge, the dashboard (in a browser, on a Raspberry Pi or in Docker), the setup page and
+the login. The ESP desk display stays experimental and is not part of this release.
 
 ### Changed
 
