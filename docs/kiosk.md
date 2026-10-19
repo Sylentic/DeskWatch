@@ -266,7 +266,7 @@ echo '~/deskwatch-kiosk.sh &' >> ~/.config/labwc/autostart                # Book
 
 [`deploy/kiosk/deskwatch-kiosk.sh`](../deploy/kiosk/deskwatch-kiosk.sh) opens `http://localhost:8787/`. For a bridge on
 another machine, set the address with an environment variable, for example
-`DESKWATCH_KIOSK_URL='http://bridge.example.lan:8787/' ~/deskwatch-kiosk.sh &`. The page has no login, so a Pi
+`DESKWATCH_KIOSK_URL='http://bridge.example.lan:8787/' ~/deskwatch-kiosk.sh &`. With the [login](auth.md) on, create a **viewer** key under Setup, Access and put `?key=<key>` in the URL once. The page has no login by default, so a Pi
 on the same network needs nothing else ([security](#5-security)). Older releases, or Bookworm switched to X11 with LXDE, read
 `~/.config/lxsession/LXDE-pi/autostart` instead; see
 [`deploy/kiosk/lxde-autostart`](../deploy/kiosk/lxde-autostart), which also turns the X11 screen blanking off.

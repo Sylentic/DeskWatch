@@ -16,6 +16,20 @@
 (function () {
   'use strict';
 
+  // The login (docs/auth.md): every write carries X-DeskWatch (a page on
+  // another site cannot add it), and a refused session goes to the sign-in page.
+  var plainFetch = window.fetch;
+  window.fetch = function (url, opts) {
+    opts = opts || {};
+    if (opts.method && opts.method !== 'GET') {
+      opts.headers = Object.assign({ 'X-DeskWatch': '1' }, opts.headers || {});
+    }
+    return plainFetch.call(this, url, opts).then(function (r) {
+      if (r.status === 401) location.href = '/login?next=' + encodeURIComponent(location.pathname);
+      return r;
+    });
+  };
+
   var STALE_AFTER_S = 15;      // dim the page when no snapshot has come in this long
   var POLL_MS = 5000;          // polling interval when the WebSocket is down
   var HISTORY = 60;            // samples kept for the CPU sparklines

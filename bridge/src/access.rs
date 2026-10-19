@@ -27,6 +27,9 @@ use tracing::warn;
 #[derive(Clone)]
 pub struct Access {
     allow_public: bool,
+    /// Set once a login password exists: the login then protects the page,
+    /// so the address check steps aside.
+    login_on: Arc<AtomicBool>,
     logged: Arc<AtomicBool>,
 }
 
@@ -34,8 +37,15 @@ impl Access {
     pub fn new(allow_public: bool) -> Self {
         Self {
             allow_public,
+            login_on: Arc::new(AtomicBool::new(false)),
             logged: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Follow this flag (`Auth::enabled_flag`): while it is true every client may reach the guarded routes.
+    pub fn with_login_flag(mut self, flag: Arc<AtomicBool>) -> Self {
+        self.login_on = flag;
+        self
     }
 }
 
@@ -60,7 +70,7 @@ pub fn is_local(ip: IpAddr) -> bool {
 
 /// The address the request came from, looking through one proxy. `None` when
 /// a forwarding header is present but cannot be read.
-fn client_ip(peer: IpAddr, headers: &HeaderMap) -> Option<IpAddr> {
+pub(crate) fn client_ip(peer: IpAddr, headers: &HeaderMap) -> Option<IpAddr> {
     if let Some(value) = headers.get("x-forwarded-for") {
         let last = value.to_str().ok()?.rsplit(',').next()?.trim();
         return last.parse::<IpAddr>().ok();
@@ -76,7 +86,7 @@ fn client_ip(peer: IpAddr, headers: &HeaderMap) -> Option<IpAddr> {
 /// `allow_public` is set. Needs `into_make_service_with_connect_info`; a
 /// request without a peer address is refused.
 pub async fn require_local(State(access): State<Access>, request: Request, next: Next) -> Response {
-    if access.allow_public {
+    if access.allow_public || access.login_on.load(Ordering::Relaxed) {
         return next.run(request).await;
     }
     let peer = request

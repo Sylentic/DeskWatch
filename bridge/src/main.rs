@@ -48,6 +48,7 @@ const BADGES_REFRESH_S: u64 = 60;
 const USAGE: &str = "\
 usage: deskwatch-bridge [--demo] [--kiosk] [--no-mqtt] [--healthcheck] [CONFIG]
        deskwatch-bridge ado-capture --help
+       deskwatch-bridge auth reset|set-password [CONFIG]   (the login, docs/auth.md)
 
 CONFIG defaults to $DESKWATCH_CONFIG, then /etc/deskwatch/bridge.toml
 (on Windows %ProgramData%\\DeskWatch\\bridge.toml).
@@ -117,8 +118,13 @@ async fn main() -> Result<()> {
     // `deskwatch-bridge ado-capture ...` records sanitised Azure DevOps
     // answers (docs/azure-devops-verify.md) and then exits; no config, no logs.
     let mut raw_args = std::env::args().skip(1);
-    if raw_args.next().as_deref() == Some("ado-capture") {
-        return deskwatch_bridge::azure_devops::capture::run_cli(raw_args.collect()).await;
+    match raw_args.next().as_deref() {
+        Some("ado-capture") => {
+            return deskwatch_bridge::azure_devops::capture::run_cli(raw_args.collect()).await;
+        }
+        // The host-side password commands (docs/auth.md).
+        Some("auth") => return deskwatch_bridge::auth::run_cli(raw_args.collect()),
+        _ => {}
     }
 
     tracing_subscriber::fmt()
@@ -194,16 +200,34 @@ async fn main() -> Result<()> {
     }
     // Setup and POST /api/alert only answer the local network unless
     // `[http] allow_public` (docs/setup-page.md, "Security").
-    let local_only = axum::middleware::from_fn_with_state(
-        deskwatch_bridge::access::Access::new(config.http.allow_public),
-        deskwatch_bridge::access::require_local,
-    );
-    if config.http.allow_public && config.http.tls.is_none() {
-        warn!(
-            "[http] allow_public is on without [http.tls]: the setup page and /api/alert have no login yet and \
-             would be open to the internet over plain HTTP. Put TLS and a proxy with a login in front first"
+    // The login (docs/auth.md): off until an administrator password exists.
+    let auth = deskwatch_bridge::auth::Auth::open(
+        config.data_dir().as_deref(),
+        config.http.tls.is_some(),
+    )?;
+    if config.http.allow_public && !auth.enabled() {
+        anyhow::bail!(
+            "[http] allow_public needs a login password first: run `deskwatch-bridge auth set-password` \
+             on the host (docs/auth.md), or remove the setting"
         );
     }
+    if auth.enabled() {
+        info!("login is on: the dashboard and setup need a sign-in");
+        if config.http.tls.is_none() && !config.http.listen.ip().is_loopback() {
+            warn!(
+                "the login works over plain HTTP, but passwords and the session cookie then cross the network \
+                 unprotected. Use [http.tls] or a TLS proxy before anyone outside a trusted network signs in"
+            );
+        }
+    }
+    let local_only = axum::middleware::from_fn_with_state(
+        deskwatch_bridge::access::Access::new(config.http.allow_public)
+            .with_login_flag(auth.enabled_flag()),
+        deskwatch_bridge::access::require_local,
+    );
+    use deskwatch_bridge::auth::{Need, enforce};
+    let guard = |need| axum::middleware::from_fn_with_state(auth.guard(need), enforce);
+    hooks.add("/login", auth.router());
     let mut kiosk = None;
     if config.kiosk.enabled {
         if !config.http.listen.ip().is_loopback() {
@@ -218,7 +242,7 @@ async fn main() -> Result<()> {
             .with_setup_link(config.setup.is_on())
             .with_alerts(&config.alerts, inbound_tx.clone())
             .with_update(update.clone());
-        hooks.add("/", built.router());
+        hooks.add("/", built.router().layer(guard(Need::Viewer)));
         kiosk = Some(built);
     }
     // `/healthz` (the Docker health probe) reports the broker connection, so
@@ -228,7 +252,9 @@ async fn main() -> Result<()> {
     if config.alerts.enabled && config.alerts.http_input {
         hooks.add(
             deskwatch_bridge::alerts::HTTP_PATH,
-            deskwatch_bridge::alerts::http_router(inbound_tx.clone()).layer(local_only.clone()),
+            deskwatch_bridge::alerts::http_router(inbound_tx.clone())
+                .layer(local_only.clone())
+                .layer(guard(Need::AlertKey)),
         );
         if !config.http.listen.ip().is_loopback() {
             warn!(
@@ -250,7 +276,13 @@ async fn main() -> Result<()> {
         )
         .with_alert_sender(inbound_tx.clone())
         .with_update(update.clone());
-        hooks.add("/setup", built.router().layer(local_only.clone()));
+        hooks.add(
+            "/setup",
+            built
+                .router()
+                .layer(local_only.clone())
+                .layer(guard(Need::Admin)),
+        );
         info!("setup page on /setup");
         if !config.http.listen.ip().is_loopback() {
             warn!(

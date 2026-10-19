@@ -152,7 +152,7 @@ fn create_private_dir(path: &Path) -> std::io::Result<()> {
 /// Write `bytes` to a temporary file next to `path` (created with `mode`
 /// from the start, so the content is never readable by others, even for a
 /// moment), flush it to disk, then rename it over `path`.
-fn write_atomic(path: &Path, bytes: &[u8], mode: u32) -> Result<()> {
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8], mode: u32) -> Result<()> {
     let name = path.file_name().context("no file name")?.to_string_lossy();
     let tmp = path.with_file_name(format!(".{name}.tmp"));
     let mut options = std::fs::OpenOptions::new();
