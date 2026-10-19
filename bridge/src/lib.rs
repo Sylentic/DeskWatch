@@ -12,6 +12,7 @@ pub mod demo;
 pub mod fleet;
 pub mod gitea;
 pub mod github;
+pub mod gitlab;
 pub mod health;
 pub mod hooks;
 pub mod kiosk;

@@ -1,13 +1,14 @@
 # Runners and agent pools
 
 Which of your CI runners are up, busy or down, on the kiosk dashboard. This page is the design for all three CI
-systems and the guide for the parts that exist today: **Gitea runners**, **GitHub self-hosted runners** and **Azure DevOps agent pools**.
+systems and the guide for the parts that exist today: **Gitea runners**, **GitHub self-hosted runners**, **Azure DevOps agent pools** and **GitLab runners**.
 
 | Source | What it lists | State |
 |---|---|---|
 | Gitea | Runners of a user, organisation, repository or the whole instance | In this version |
 | GitHub, GitHub Enterprise | Self-hosted runners of a repository or organisation | In this version |
 | Azure DevOps | Agents of the self-hosted agent pools | In this version, built against mock responses only, with the number of jobs waiting per pool |
+| GitLab | Runners of a project, a group or the whole instance | In this version, built against mock responses only |
 | ESP panel | A `runners` page and an offline count in the `warn` badge | Not built, needs a schema change |
 
 ## 1. How it fits
@@ -175,15 +176,52 @@ waiting request has neither `assignTime` nor `finishTime`. If the last one is wr
 or zero; nothing else depends on it. "Waiting for runner" on the pipelines page (matching a queued run to a pool
 by label) is still left to the ESP panel step.
 
-## 5. Order of the work
+## 5. GitLab runners (in this version)
+
+`runners = [...]` takes `"project:<group>/<name>"`, `"group:<path>"` (a group or `group/subgroup`) and `"instance"`
+(every runner of the server). `runner_poll_s` defaults to 300. Same `Runner` fact as the other sources.
+
+```toml
+[[source.gitlab]]
+name = "personal"
+token_file = "gitlab-personal"
+projects = ["your-group/project-a"]
+runners = ["project:your-group/project-a"]   # or "group:your-group", "instance"; off when empty or missing
+runner_poll_s = 300
+```
+
+Like the other sources, the runner poll is separate and **does not change the source's health**: a token without the
+right gets a plain `403` on this list only, the bridge logs `cannot poll runners` and the PR and pipeline widgets
+stay fresh.
+
+| Scope | Endpoint | Needs |
+|---|---|---|
+| Project | `GET /projects/:id/runners` | Maintainer role on the project |
+| Group | `GET /groups/:id/runners` | Owner role on the group |
+| Instance | `GET /runners/all` | An administrator's token |
+
+The scopes were taken from the GitLab documentation, not tried on a server; if the connection test says `403`, the
+role is too small (or the token scope: keep `read_api`). A project's list also holds the group and shared runners
+the project may use, so do not list a project and its group together, a runner would show twice.
+
+The list gives each runner a `status` (`online`, `offline`, `stale` or `never_contacted`), `paused`, `description`
+and `runner_type`. Mapping: `online` is idle or busy, everything else is offline; `paused` is shown as disabled
+(not an outage). The list does not say whether a runner is working, so the bridge asks each **online** runner
+(at most 50 per scope) `GET /runners/:id/jobs?status=running` and shows it as busy when it has a job. If that
+request fails the runner stays idle. The runner's tags are only in a per-runner request that is not made, so the
+label on the card is the kind of runner (`project`, `group` or `instance`). The name is the runner's description,
+else its name.
+
+## 6. Order of the work
 
 1. **Done:** the `Runner` fact and the kiosk widget, with Gitea as the first source.
 2. **Done:** GitHub runners, with their own token scope.
 3. **Done:** Azure DevOps pools and queued jobs per pool, against mock answers only; the shapes still need checking against a real organisation.
+   **Done:** GitLab runners, against mock answers only.
 4. **Open:** the ESP panel `runners` page, the offline count in the `warn` badge and "waiting for runner" on the
    pipelines page, together with one amendment of the MQTT schema.
 
-## 6. Try it without any CI
+## 7. Try it without any CI
 
 ```sh
 deskwatch-bridge --demo --kiosk --no-mqtt config.toml    # config with a `runners` panel

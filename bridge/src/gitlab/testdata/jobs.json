@@ -1,0 +1,7 @@
+[
+  { "id": 5005, "name": "deploy-prod", "stage": "deploy", "status": "created", "allow_failure": false, "started_at": null },
+  { "id": 5004, "name": "integration", "stage": "test", "status": "running", "allow_failure": false, "started_at": "2026-10-08T18:01:00.000Z" },
+  { "id": 5003, "name": "unit", "stage": "test", "status": "success", "allow_failure": false, "started_at": "2026-10-08T18:00:40.000Z" },
+  { "id": 5002, "name": "compile", "stage": "build", "status": "success", "allow_failure": false, "started_at": "2026-10-08T18:00:35.000Z" },
+  { "id": 5001, "name": "lint", "stage": "build", "status": "success", "allow_failure": false, "started_at": "2026-10-08T18:00:32.000Z" }
+]

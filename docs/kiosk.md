@@ -201,7 +201,7 @@ and combine (a widget needs to match both):
 [[kiosk.panel]]
 widget = "prs"
 title = "Work PRs"
-source = "azure_devops"   # gitea, github or azure_devops: the tag shown next to a repository
+source = "azure_devops"   # gitea, github, gitlab or azure_devops: the tag shown next to a repository
 
 [[kiosk.panel]]
 widget = "pipelines"

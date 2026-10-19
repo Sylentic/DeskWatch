@@ -1,0 +1,6 @@
+[
+  { "id": 11, "description": "build-box-1", "name": "gitlab-runner", "paused": false, "is_shared": false, "runner_type": "project_type", "online": true, "status": "online" },
+  { "id": 12, "description": "build-box-2", "name": "gitlab-runner", "paused": false, "is_shared": false, "runner_type": "project_type", "online": true, "status": "online" },
+  { "id": 13, "description": "", "name": "gitlab-runner", "paused": false, "is_shared": false, "runner_type": "project_type", "online": false, "status": "offline" },
+  { "id": 14, "description": "retired-box", "name": "gitlab-runner", "paused": true, "is_shared": true, "runner_type": "instance_type", "online": false, "status": "stale" }
+]

@@ -511,7 +511,7 @@ impl KioskConfig {
 }
 
 /// The CI systems a `source` filter can name, as the kiosk page tags them.
-const SOURCE_KINDS: [&str; 3] = ["gitea", "github", "azure_devops"];
+const SOURCE_KINDS: [&str; 4] = ["gitea", "github", "gitlab", "azure_devops"];
 
 /// Is this `HH:MM` on a 24 hour clock?
 fn valid_time(text: &str) -> bool {
@@ -561,7 +561,7 @@ pub struct PanelConfig {
     /// Most list rows (or running jobs) to show. Default: as many as fit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rows: Option<u32>,
-    /// Only what comes from this CI system: `gitea`, `github` or
+    /// Only what comes from this CI system: `gitea`, `github`, `gitlab` or
     /// `azure_devops`. For the `jobs`, `prs` and `pipelines` widgets.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
@@ -720,6 +720,7 @@ fn hide_source(sources: &mut Sources, id: &str) -> Result<bool> {
     Ok(match kind {
         "gitea" => drop_from!(sources.gitea),
         "github" => drop_from!(sources.github),
+        "gitlab" => drop_from!(sources.gitlab),
         "azure_devops" => drop_from!(sources.azure_devops),
         "prometheus" => drop_from!(sources.prometheus),
         _ => anyhow::bail!("hidden source {id:?} has an unknown type"),
@@ -732,6 +733,7 @@ fn hide_source(sources: &mut Sources, id: &str) -> Result<bool> {
 pub struct Sources {
     pub gitea: Vec<GiteaConfig>,
     pub github: Vec<GithubConfig>,
+    pub gitlab: Vec<GitlabConfig>,
     pub azure_devops: Vec<AzureDevopsConfig>,
     pub prometheus: Vec<PrometheusConfig>,
 }
@@ -850,6 +852,61 @@ impl GithubConfig {
                     self.name
                 );
                 Ok(scope)
+            })
+            .collect()
+    }
+}
+
+/// One `[[source.gitlab]]` block: open merge requests and pipelines from
+/// gitlab.com or a self-managed GitLab, by polling.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GitlabConfig {
+    /// Instance name, unique among GitLab sources. Used in logs and fact keys.
+    pub name: String,
+    /// The GitLab site: `https://gitlab.com` (default) or
+    /// `https://gitlab.example.com`. `/api/v4` is added by the bridge.
+    #[serde(default = "default_gitlab_base_url")]
+    pub base_url: String,
+    /// Credential with a read-only token (`read_api` scope, Reporter role).
+    pub token_file: String,
+    /// Projects to watch, by path: `group/project` or `group/subgroup/project`.
+    pub projects: Vec<String>,
+    /// Seconds between polls of open merge requests and recent pipelines.
+    #[serde(default = "default_github_poll_s")]
+    pub poll_s: u64,
+    /// Seconds between stage progress polls while a pipeline is running.
+    #[serde(default = "default_github_job_poll_s")]
+    pub job_poll_s: u64,
+    /// May running pipelines and finished runs take over the screen? `true`,
+    /// `false`, or a list of projects that may.
+    #[serde(default = "interrupt_all")]
+    pub interrupt: Interrupt,
+    /// Flash "New PR" when a poll finds a new, non-draft merge request.
+    #[serde(default = "yes")]
+    pub notify_new_prs: bool,
+    /// Runner lists for the kiosk `runners` widget: `"project:<group>/<name>"`,
+    /// `"group:<path>"` or `"instance"` (all runners, needs an administrator
+    /// token). Needs extra rights (docs/runners.md). Empty means runners are
+    /// not polled. Do not list overlapping scopes, a runner would show twice.
+    #[serde(default)]
+    pub runners: Vec<String>,
+    /// Seconds between runner polls.
+    #[serde(default = "default_github_runner_poll_s")]
+    pub runner_poll_s: u64,
+    /// Short panel labels for projects, such as `{ "team/service-a" = "work A" }`.
+    #[serde(default)]
+    pub alias: BTreeMap<String, String>,
+}
+
+impl GitlabConfig {
+    /// The parsed `runners` entries.
+    pub fn runner_scopes(&self) -> Result<Vec<crate::gitlab::runners::RunnerScope>> {
+        self.runners
+            .iter()
+            .map(|text| {
+                crate::gitlab::runners::RunnerScope::parse(text)
+                    .with_context(|| format!("source.gitlab {}: runners", self.name))
             })
             .collect()
     }
@@ -1016,6 +1073,10 @@ fn default_github_base_url() -> String {
     crate::github::api::GITHUB_COM.into()
 }
 
+fn default_gitlab_base_url() -> String {
+    crate::gitlab::api::GITLAB_COM.into()
+}
+
 fn default_azure_devops_agent_poll_s() -> u64 {
     60
 }
@@ -1078,6 +1139,20 @@ fn default_rotation() -> Vec<RotationEntry> {
 /// Project names may contain spaces.
 fn valid_azure_name(name: &str) -> bool {
     !name.trim().is_empty() && !name.contains('/') && !name.chars().any(char::is_control)
+}
+
+/// A GitLab group or project path: `min_segments` or more names joined by `/`,
+/// each of letters, digits, `-`, `_` and `.`.
+pub(crate) fn valid_gitlab_path(path: &str, min_segments: usize) -> bool {
+    let mut count = 0;
+    let ok = path.split('/').all(|part| {
+        count += 1;
+        !part.is_empty()
+            && part
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+    });
+    ok && count >= min_segments
 }
 
 fn valid_repo(repo: &str) -> bool {
@@ -1170,7 +1245,7 @@ impl Config {
                 }
             )+};
         }
-        merge!(gitea, github, azure_devops, prometheus);
+        merge!(gitea, github, gitlab, azure_devops, prometheus);
         self.validate()?;
         Ok(self)
     }
@@ -1183,6 +1258,7 @@ impl Config {
             |kind: &str, name: &str| !self.overlay_sources.contains(&format!("{kind}:{name}"));
         base.source.gitea.retain(|s| keep("gitea", &s.name));
         base.source.github.retain(|s| keep("github", &s.name));
+        base.source.gitlab.retain(|s| keep("gitlab", &s.name));
         base.source
             .azure_devops
             .retain(|s| keep("azure_devops", &s.name));
@@ -1286,6 +1362,35 @@ impl Config {
             anyhow::ensure!(
                 github.repos.iter().all(|r| valid_repo(r)),
                 "source.github {name}: repos entries must look like owner/name"
+            );
+        }
+        let mut names = HashSet::new();
+        for gitlab in &self.source.gitlab {
+            let name = &gitlab.name;
+            anyhow::ensure!(
+                valid_name(name),
+                "source.gitlab name {name:?} may only use letters, digits, - and _"
+            );
+            anyhow::ensure!(
+                names.insert(name),
+                "two source.gitlab blocks are named {name:?}"
+            );
+            anyhow::ensure!(
+                gitlab.base_url.starts_with("https://") || gitlab.base_url.starts_with("http://"),
+                "source.gitlab {name}: base_url must start with https://"
+            );
+            anyhow::ensure!(
+                gitlab.poll_s > 0 && gitlab.job_poll_s > 0 && gitlab.runner_poll_s > 0,
+                "source.gitlab {name}: poll_s, job_poll_s and runner_poll_s must be above 0"
+            );
+            gitlab.runner_scopes()?;
+            anyhow::ensure!(
+                !gitlab.projects.is_empty(),
+                "source.gitlab {name}: projects needs at least one group/project"
+            );
+            anyhow::ensure!(
+                gitlab.projects.iter().all(|p| valid_gitlab_path(p, 2)),
+                "source.gitlab {name}: projects entries must look like group/project"
             );
         }
         let mut names = HashSet::new();
@@ -1525,7 +1630,7 @@ mod tests {
     fn example_github_blocks_parse_when_uncommented() {
         let text = include_str!("../config.example.toml");
         let start = text.find("# [[source.github]]").unwrap();
-        let end = text.find("# Azure DevOps Services").unwrap();
+        let end = text.find("# GitLab (gitlab.com").unwrap();
         let github: String = text[start..end]
             .lines()
             .map(|l| l.strip_prefix("# ").unwrap_or(l.trim_start_matches('#')))
@@ -1646,6 +1751,66 @@ mod tests {
             Config::from_toml(&block("token = \"ghp_x\"")).is_err(),
             "no inline tokens"
         );
+    }
+
+    #[test]
+    fn example_gitlab_block_parses_when_uncommented() {
+        let text = include_str!("../config.example.toml");
+        assert!(
+            Config::from_toml(text).unwrap().source.gitlab.is_empty(),
+            "GitLab block is commented out"
+        );
+        let start = text.find("# [[source.gitlab]]").unwrap();
+        let end = text.find("# Azure DevOps Services").unwrap();
+        let block: String = text[start..end]
+            .lines()
+            .map(|l| l.strip_prefix("# ").unwrap_or(l.trim_start_matches('#')))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let config = Config::from_toml(&block).unwrap();
+        let gitlab = &config.source.gitlab[0];
+        assert_eq!(gitlab.base_url, "https://gitlab.com");
+        assert_eq!(gitlab.projects, ["your-group/project-a"]);
+        assert_eq!(gitlab.alias["your-group/project-a"], "A");
+    }
+
+    #[test]
+    fn gitlab_defaults_and_checks() {
+        let block = |extra: &str| {
+            format!(
+                "[[source.gitlab]]\nname = \"work\"\nprojects = [\"team/sub/app\"]\n\
+                 token_file = \"gitlab-token\"\n{extra}"
+            )
+        };
+        let config = Config::from_toml(&block("")).unwrap();
+        let gitlab = &config.source.gitlab[0];
+        assert_eq!(gitlab.base_url, "https://gitlab.com");
+        assert_eq!((gitlab.poll_s, gitlab.job_poll_s), (60, 5));
+        assert_eq!(gitlab.interrupt, Interrupt::All(true));
+        assert!(gitlab.runners.is_empty() && gitlab.notify_new_prs);
+
+        let scopes = Config::from_toml(&block(
+            "runners = [\"project:team/app\", \"group:team/sub\", \"instance\"]",
+        ))
+        .unwrap();
+        assert_eq!(scopes.source.gitlab[0].runner_scopes().unwrap().len(), 3);
+
+        for bad in [
+            "runners = [\"repo:team/app\"]",
+            "runners = [\"project:app\"]",
+            "base_url = \"gitlab.example.com\"",
+            "poll_s = 0",
+        ] {
+            assert!(Config::from_toml(&block(bad)).is_err(), "{bad}");
+        }
+        // A project needs group and name; the paths allow only plain characters.
+        for bad in ["[\"app\"]", "[\"team//app\"]", "[\"team/ap p\"]", "[]"] {
+            let text =
+                format!("[[source.gitlab]]\nname = \"w\"\ntoken_file = \"t\"\nprojects = {bad}\n");
+            assert!(Config::from_toml(&text).is_err(), "{bad}");
+        }
+        let twice = format!("{}\n{}", block(""), block(""));
+        assert!(Config::from_toml(&twice).is_err(), "names are unique");
     }
 
     #[test]

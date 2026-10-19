@@ -30,6 +30,14 @@ may change if the firmware work needs it; any such change is listed here.
   folder, in-memory sessions (HttpOnly, SameSite=Lax cookie, Secure over HTTPS), an `X-DeskWatch` header on every write, and
   rate limiting per address after five wrong tries. `deskwatch-bridge auth reset` forgets the passwords. Off until a password is
   set, so existing installs are unchanged. The health check accepts the 303 or 401 a guarded page answers.
+- **GitLab source** (`[[source.gitlab]]`) for gitlab.com and self-managed GitLab, by polling with a read-only
+  `read_api` token. Open merge requests count as the open PRs (exact count from `X-Total`), pipelines fill the
+  pipelines page, and a running pipeline shows as one "Running now" card with its current stage (GitLab jobs have no
+  steps, so the bar counts stages). A failed pipeline raises the red alert naming the failed job. Optional runner
+  lists (`project:`, `group:`, `instance`) for the `runners` widget. Also in the Setup page ("Add a source", with a
+  connection test), the kiosk `source` filter and `docs/gitlab.md`. **Only tested against mock answers written from
+  the GitLab documentation; not yet tried on a real GitLab.** `docs/git-hosts.md` lists which Git hosts work today
+  (Forgejo and Codeberg only in part, Bitbucket not) and what Bitbucket would take.
 - **A "source down" pill in the kiosk header.** When a source cannot be checked (not answering, or its login
   refused) a pill next to the alerts says which one and why. A quiet source is not a down source. **Mute** hides the
   pill on every screen until the source works again; the "N sources have a problem" chip keeps counting it.

@@ -133,6 +133,48 @@ async fn a_refused_token_says_what_to_look_at_and_never_repeats_the_token() {
 }
 
 #[tokio::test]
+async fn gitlab_checks_each_project_with_the_token() {
+    let temp = Temp::new("gitlab");
+    let app = Router::new().route(
+        "/api/v4/projects/{id}",
+        get(
+            |h: HeaderMap, axum::extract::Path(id): axum::extract::Path<String>| async move {
+                if h.get("private-token").and_then(|v| v.to_str().ok()) != Some(GOOD) {
+                    (StatusCode::UNAUTHORIZED, "")
+                } else if id == "g/p" {
+                    (StatusCode::OK, "{}")
+                } else {
+                    (StatusCode::NOT_FOUND, "")
+                }
+            },
+        ),
+    );
+    let base = serve(app).await;
+    let make = |token: &str| {
+        format!(
+            "[[source.gitlab]]\nname = \"main\"\nbase_url = {base:?}\ntoken_file = {}\n\
+             projects = [\"g/p\", \"g/other\"]\n",
+            temp.token("gl", token)
+        )
+    };
+    let report = report_for(&make(GOOD), "gitlab:main").await;
+    assert!(check(&report, "project g/p").ok);
+    assert!(
+        check(&report, "project g/other")
+            .message
+            .contains("not found")
+    );
+    assert!(!report.ok);
+
+    let report = report_for(&make("expired"), "gitlab:main").await;
+    let c = check(&report, "project g/p");
+    assert!(
+        !c.ok && c.message.contains("401") && c.message.contains("read_api"),
+        "{c:?}"
+    );
+}
+
+#[tokio::test]
 async fn github_checks_each_repository_with_the_token() {
     let temp = Temp::new("github");
     let app = Router::new().route(

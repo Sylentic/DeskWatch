@@ -115,7 +115,7 @@ ignored. The parts you will touch:
 - `[http]`: the address webhooks arrive on (default `0.0.0.0:8787`). It also serves the dashboard, the setup page and the health check, so it is open whenever MQTT is on, and
   that is the case by default. If the server has a firewall, allow this port from the Gitea host only. Behind a reverse proxy, set
   `listen = "127.0.0.1:8787"`.
-- `[[source.gitea]]`, `[[source.github]]`, `[[source.azure_devops]]`, `[[source.prometheus]]`: one block per instance (step 5).
+- `[[source.gitea]]`, `[[source.github]]`, `[[source.gitlab]]`, `[[source.azure_devops]]`, `[[source.prometheus]]`: one block per instance (step 5).
 - `[alerts]` and `[[rotation]]`: which pages rotate and for how long.
 
 **The example config ships with a Gitea block switched on.** Without a Gitea server, delete that
@@ -232,6 +232,20 @@ down when less than 10 % of the rate limit is left. Runs that finished before th
 pipelines page and count in the red badge but do not take over the screen. `interrupt` and `alias` work as for
 Gitea; a new non-draft PR flashes "New PR" unless `notify_new_prs = false`. Only the first 100 open PRs per
 repository are counted.
+
+### GitLab
+
+For gitlab.com and self-managed GitLab the bridge polls open merge requests (counted as the open PRs) and pipelines
+with a read-only token (scope `read_api`, Reporter role), and shows a running pipeline with its current stage.
+Creating the token, the options and what is and is not tested are in [gitlab.md](gitlab.md).
+
+```toml
+[[source.gitlab]]
+name = "personal"
+token_file = "gitlab-personal"
+projects = ["your-group/project-a"]
+# base_url = "https://gitlab.example.com"   # self-managed
+```
 
 ### Azure DevOps
 
