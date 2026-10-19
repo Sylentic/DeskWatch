@@ -3,7 +3,8 @@
 The ESP panel shows one page at a time on a 4 inch screen. The **kiosk dashboard** is the other output: one web page
 that shows everything at once, with no rotation, for a monitor or TV (a Raspberry Pi with a browser in kiosk mode, a
 wall tablet, or any browser on your desk). It is built into the bridge, so there is nothing extra to install, and
-it works on a LAN with no internet access (no CDN, fonts or scripts are loaded from elsewhere).
+it works on a LAN with no internet access (no CDN or scripts are loaded from elsewhere; the typefaces, Geist, Geist Mono
+and Space Grotesk, are built into the bridge and served on `/fonts/`, see `bridge/fonts/`).
 
 It reads the same facts as the ESP panel, so the two always agree, but it is its own design: the MQTT schema (v2)
 and the panel do not change, and the page does not need a broker.
@@ -53,12 +54,15 @@ shows the newest items again.
 
 ### Hosts: detailed or compact
 
-The built-in layout has one **Hosts** panel, one cell wide and two tall. In the `detailed` view (the default) the host
-you chose is shown in detail on top (CPU, RAM and disk bars, temperature, load, network, uptime, a CPU graph) and every
-host is listed below it with its CPU, RAM and disk. Tap or click a host in the list to show it in detail; the choice is
-kept in the browser (localStorage), so a reload keeps it, and a host that has disappeared falls back to the first one.
-There is no automatic rotation. In the `compact` view the panel is only the list, with the download and upload rates
-under each host.
+The built-in layout has one **Hosts** panel, two cells wide and two tall. In the `detailed` view (the default) a list
+of every host sits on the left and the host you chose is shown in detail next to it (CPU, memory and disk bars, uptime,
+temperature, load, network, cores and a CPU graph). Each line in the list shows the host's highest value (`DISK 88`);
+hosts that need a look (down, over a warning line, or started less than an hour ago) come first, with an amber or red
+pip. Tap or click a host to show it in detail; the choice is kept in the browser (localStorage), so a reload keeps it,
+and a host that has disappeared falls back to the first one. The chosen host never changes by itself. When the panel is
+narrow (one cell wide) the chosen host is shown above the list instead. In the `compact` view the panel is only the
+table: uptime, CPU, memory and disk, and the download and upload rates (as columns when the panel is two cells wide,
+else as a small line under each host).
 
 `[kiosk] host_view = "detailed"` or `"compact"` chooses the view, or the [setup page](setup-page.md) ("Dashboard
 hosts", needs a data folder and a restart of the bridge); the setup page's choice wins over `bridge.toml`. In your own
@@ -155,10 +159,10 @@ dashboard-only config and no broker. The Compose files, the token and the revers
 ## 3. Choose the widgets
 
 `[[kiosk.panel]]` blocks place widgets on the grid, left to right and top to bottom, like the `[[rotation]]` list.
-Without any, the default layout is used: `prs` (a tall column on the left), one `hosts` panel (1 wide, 2 tall, see
-[Hosts](#hosts-detailed-or-compact)) with `pipelines` (1 cell) below it, and `jobs` (Running now) over the two columns on the
-right. There is no Alerts or Sources panel: alerts run through the header (below) and the sources and their status are
-on the [setup page](setup-page.md), which the "sources" chip in the header opens. The `alerts` and `health` widgets still
+Without any, the default layout is used: `jobs` (Running now, 2 wide, 2 tall) and one `hosts` panel (2 wide, 2 tall,
+see [Hosts](#hosts-detailed-or-compact)) on top, `pipelines` and `prs` (2 wide each) below them. There is no Alerts or
+Sources panel: alerts run through the header (below) and the sources and their status are in the bar under the header,
+which opens the [setup page](setup-page.md) when it is on. The `alerts` and `health` widgets still
 exist for your own layout. Add a `runners` panel yourself (it needs a source with runner scopes set, see
 [runners.md](runners.md)); the default grid has no free cell for it.
 

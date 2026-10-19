@@ -10,18 +10,22 @@
 </head>
 <body>
 <header id="top">
-  <div class="brand"><span class="logo" aria-hidden="true"></span>DeskWatch</div>
+  <div class="brand">DeskWatch</div>
   <div id="badges" class="badges"></div>
-  <div id="banner" class="banner" hidden></div>
+  <div class="spacer"></div>
+  <div id="banner" class="banner" role="status" hidden></div>
   <button type="button" id="alert-pill" class="banner pill" aria-live="polite" title="Show the alerts" hidden></button>
   <div id="src-pill" class="banner pill warn" role="status" hidden></div>
-  <div class="spacer"></div>
   <span id="update-chip" class="chip update" hidden><a id="update-link" href="#" target="_blank" rel="noopener noreferrer"></a><button type="button" id="update-x" aria-label="Hide this notice" title="Hide until the next version">&times;</button></span>
   <a id="setup-link" class="setup-link" href="setup" hidden>Setup</a>
-  <a id="conn" class="chip">connecting</a>
   <div class="clock"><div id="time">--:--</div><div id="date"></div></div>
   <div id="progress" class="topbar" hidden><i></i></div>
 </header>
+<nav id="rail" class="rail" aria-label="Sources">
+  <span class="label">SOURCES</span>
+  <span id="sources"></span>
+  <a id="conn" class="chip end">connecting</a>
+</nav>
 <div id="alerts-pop" class="failed-pop" role="dialog" aria-label="Alerts" hidden></div>
 <div id="failed-pop" class="failed-pop" role="dialog" aria-label="Failed runs" hidden></div>
 <div id="offline" class="offline" hidden></div>

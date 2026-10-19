@@ -11,6 +11,7 @@ pub mod composer;
 pub mod config;
 pub mod demo;
 pub mod fleet;
+pub mod fonts;
 pub mod gitea;
 pub mod github;
 pub mod gitlab;

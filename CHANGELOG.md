@@ -8,6 +8,25 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+### Changed
+
+- **New look for the dashboard, the setup page and the sign-in page ("Graphite").** Darker, more compact cards with one
+  set of text styles everywhere. The typefaces (Geist, Geist Mono, Space Grotesk; SIL Open Font License) are built into
+  the bridge and served on `/fonts/`, so the pages still need no internet. The night theme keeps working.
+- **Where something runs is always visible.** Every job, run, pull request, runner and alert carries a two-letter mark
+  for its source (Gt, GH, GL, BB, AZ, PM, HA), and a bar under the header lists every source with its state ("2
+  running", "ok", "not answering"). With the setup page on, it opens the setup page.
+- **One event at a time in the header.** A run result, notice or alert is one pill: red for failed and critical, amber
+  for warnings, green for success. A success right after a failure of the same pipeline says **Fixed**; a deploy says
+  **Deployed**. A new red result pulses once (not with reduced motion).
+- **Running now** shows one segment per step when the source tells the steps, and a run that just finished well stays
+  for 30 seconds as "Done" before it moves to Pipelines. Just-finished rows in Pipelines are tinted red or green for a
+  short while. Open PRs is one list, newest first, with a NEW tag for the first hour.
+- **Hosts, detailed view:** a list to pick from next to the chosen host (above it when the panel is narrow). Hosts that
+  need a look (down, over a warning line, or rebooted in the last hour) come first. Both views show uptime.
+- **Default layout:** Running now and Hosts (2x2 each) on top, Pipelines and Open PRs (2x1 each) below. Layouts set with
+  `[[kiosk.panel]]` are not touched.
+
 ## [0.9.20]
 
 ### Added

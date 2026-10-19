@@ -228,6 +228,8 @@ async fn main() -> Result<()> {
     use deskwatch_bridge::auth::{Need, enforce};
     let guard = |need| axum::middleware::from_fn_with_state(auth.guard(need), enforce);
     hooks.add("/login", auth.router());
+    // The pages' typefaces: no login, the login page needs them too.
+    hooks.add("/fonts", deskwatch_bridge::fonts::router());
     let mut kiosk = None;
     if config.kiosk.enabled {
         if warn_no_login(auth.enabled(), config.http.listen.ip().is_loopback()) {
