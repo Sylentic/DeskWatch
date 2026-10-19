@@ -11,7 +11,8 @@ take.
 | GitLab (gitlab.com, self-managed) | `gitlab` | Built, tested against mock answers only. See [gitlab.md](gitlab.md). |
 | Azure DevOps Services | `azure_devops` | Built, tested against mock answers and a first connection. See [azure-devops.md](azure-devops.md). |
 | Forgejo, Codeberg | (`gitea`, in part) | Not tested, see below. |
-| Bitbucket Cloud, Bitbucket Data Center | none | Not built, see below. |
+| Bitbucket Cloud | `bitbucket` | Built, tested against mock answers only. See [bitbucket.md](bitbucket.md). |
+| Bitbucket Data Center / Server | none | Not built, see below. |
 | Gogs, Gitee, SourceHut, others | none | Not planned. |
 
 ## Forgejo and Codeberg
@@ -46,30 +47,17 @@ Woodpecker CI and Drone, which are often used next to Forgejo, are separate CI s
 
 ## Bitbucket
 
-Not built. What it would take, from the Bitbucket documentation and my memory of it (I could not check the current
-pages from here, so treat the details as a starting point):
+Bitbucket Cloud (`bitbucket.org`) has its own source, see [bitbucket.md](bitbucket.md). It was written from
+Atlassian's published API description and tested against mock answers only, because nobody on the project uses
+Bitbucket. Feedback from a real workspace is what turns it from "built" into "works".
 
-- **Bitbucket Cloud** (`bitbucket.org`), REST API 2.0 at `https://api.bitbucket.org/2.0`:
-  - open pull requests: `GET /repositories/{workspace}/{repo}/pullrequests?state=OPEN`, paged with `next` links,
-    `size` gives the count;
-  - Bitbucket Pipelines: `GET /repositories/{workspace}/{repo}/pipelines/?sort=-created_on`, each with a state
-    (`PENDING`, `IN_PROGRESS`, `COMPLETED`) and a result (`SUCCESSFUL`, `FAILED`, `STOPPED`, ...), and the steps of a
-    pipeline under `/pipelines/{uuid}/steps/`, which gives a real step progress bar;
-  - runners (workspace or repository self-hosted runners) have their own API and would be a later addition;
-  - authentication: a repository or workspace access token sent as a bearer token, read-only scopes for pull
-    requests and pipelines. App passwords are being phased out by Atlassian, so a new source should not rely on them.
-- **Bitbucket Data Center / Server** is a different API (`/rest/api/1.0/...`) and a different CI story (build
-  statuses from Bamboo, Jenkins or others). It would be a separate source, and is the less likely one to be wanted.
-
-Cloud would be about the size of the GitLab source: an API client, payload shapes, a state machine that turns
-pipelines and steps into the shared run and job facts, a Setup form, a connection test, mocks and a docs page. The
-main unknowns are the exact pagination of the pipelines list and what the step states look like in a running
-pipeline, which want a real Bitbucket workspace to confirm. Tell me if you want it and which of the two it is.
+**Bitbucket Data Center / Server** is a different API (`/rest/api/1.0/...`) and a different CI story (build
+statuses from Bamboo, Jenkins or others). It would be a separate source and is not planned.
 
 ## Adding a host in general
 
 Every source ends in the same facts (open PRs, the latest run per pipeline, running jobs, runners), so the page,
 the kiosk and the ESP screen do not change. A new host is one module under `bridge/src/<host>/` (API client,
 payload types, a state machine, tests with fixtures), one config struct in `config.rs`, a line each in the
-supervisor, the Setup page and the connection test, and a docs page. `bridge/src/gitlab/` is the most recent
+supervisor, the Setup page and the connection test, and a docs page. `bridge/src/bitbucket/` is the most recent
 example to copy.

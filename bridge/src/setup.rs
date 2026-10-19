@@ -294,6 +294,7 @@ fn source_ids(config: &Config) -> BTreeSet<String> {
     ids.extend(s.gitea.iter().map(|c| format!("gitea:{}", c.name)));
     ids.extend(s.github.iter().map(|c| format!("github:{}", c.name)));
     ids.extend(s.gitlab.iter().map(|c| format!("gitlab:{}", c.name)));
+    ids.extend(s.bitbucket.iter().map(|c| format!("bitbucket:{}", c.name)));
     ids.extend(
         s.azure_devops
             .iter()
@@ -1100,6 +1101,15 @@ pub fn describe(config: &Config) -> Value {
             "address": s.base_url, "repos": s.projects,
             "credentials": [cred("token", &s.token_file, true)],
             "fields": { "base_url": s.base_url, "projects": s.projects },
+        }));
+    }
+    for s in &config.source.bitbucket {
+        sources.push(json!({
+            "id": format!("bitbucket:{}", s.name), "kind": "bitbucket", "name": s.name,
+            "origin": origin("bitbucket", &s.name),
+            "address": s.base_url, "repos": s.repos,
+            "credentials": [cred("token", &s.token_file, true)],
+            "fields": { "repos": s.repos },
         }));
     }
     for s in &config.source.azure_devops {

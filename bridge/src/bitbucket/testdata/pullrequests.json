@@ -1,0 +1,15 @@
+{
+  "pagelen": 50, "page": 1, "size": 2,
+  "values": [
+    {
+      "type": "pullrequest", "id": 42, "title": "Add invoice export", "draft": false, "state": "OPEN",
+      "created_on": "2026-10-07T09:15:00.000000+00:00",
+      "links": { "html": { "href": "https://bitbucket.org/your-workspace/demo/pull-requests/42" } }
+    },
+    {
+      "type": "pullrequest", "id": 43, "title": "Try a new cache", "draft": true, "state": "OPEN",
+      "created_on": "2026-10-08T07:30:00.000000+00:00",
+      "links": { "html": { "href": "https://bitbucket.org/your-workspace/demo/pull-requests/43" } }
+    }
+  ]
+}

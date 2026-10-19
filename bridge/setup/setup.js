@@ -78,7 +78,7 @@
     mounted: ['found (mounted file)', 'ok'], data_folder: ['found (data folder)', 'ok'],
     missing: ['missing', 'bad'], environment: ['from environment', 'ok'], none: ['none', 'muted']
   };
-  var KIND = { gitea: 'Gitea', github: 'GitHub', gitlab: 'GitLab', azure_devops: 'Azure DevOps', prometheus: 'Prometheus' };
+  var KIND = { gitea: 'Gitea', github: 'GitHub', gitlab: 'GitLab', bitbucket: 'Bitbucket', azure_devops: 'Azure DevOps', prometheus: 'Prometheus' };
 
   function credState(c) {
     var s = CRED[c.status] || [c.status, 'warn'];
@@ -141,6 +141,11 @@
       strings: [['base_url', 'GitLab address (without /api/v4)', 'https://gitlab.com']],
       lists: [['projects', 'Projects, one per line (group/project)']],
       secrets: [['token', 'Access token (read_api, read-only)', true]]
+    },
+    bitbucket: {
+      strings: [],
+      lists: [['repos', 'Repositories, one per line (workspace/repo)']],
+      secrets: [['token', 'Access token (read-only: Pull requests, Pipelines)', true]]
     },
     gitea: {
       strings: [['base_url', 'Gitea address', 'https://gitea.example.com']],

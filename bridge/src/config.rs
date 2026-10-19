@@ -511,7 +511,7 @@ impl KioskConfig {
 }
 
 /// The CI systems a `source` filter can name, as the kiosk page tags them.
-const SOURCE_KINDS: [&str; 4] = ["gitea", "github", "gitlab", "azure_devops"];
+const SOURCE_KINDS: [&str; 5] = ["gitea", "github", "gitlab", "bitbucket", "azure_devops"];
 
 /// Is this `HH:MM` on a 24 hour clock?
 fn valid_time(text: &str) -> bool {
@@ -561,8 +561,8 @@ pub struct PanelConfig {
     /// Most list rows (or running jobs) to show. Default: as many as fit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rows: Option<u32>,
-    /// Only what comes from this CI system: `gitea`, `github`, `gitlab` or
-    /// `azure_devops`. For the `jobs`, `prs` and `pipelines` widgets.
+    /// Only what comes from this CI system: `gitea`, `github`, `gitlab`,
+    /// `bitbucket` or `azure_devops`. For the `jobs`, `prs` and `pipelines` widgets.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     /// Only this repository or project, matched without regard to case. A
@@ -721,6 +721,7 @@ fn hide_source(sources: &mut Sources, id: &str) -> Result<bool> {
         "gitea" => drop_from!(sources.gitea),
         "github" => drop_from!(sources.github),
         "gitlab" => drop_from!(sources.gitlab),
+        "bitbucket" => drop_from!(sources.bitbucket),
         "azure_devops" => drop_from!(sources.azure_devops),
         "prometheus" => drop_from!(sources.prometheus),
         _ => anyhow::bail!("hidden source {id:?} has an unknown type"),
@@ -734,6 +735,7 @@ pub struct Sources {
     pub gitea: Vec<GiteaConfig>,
     pub github: Vec<GithubConfig>,
     pub gitlab: Vec<GitlabConfig>,
+    pub bitbucket: Vec<BitbucketConfig>,
     pub azure_devops: Vec<AzureDevopsConfig>,
     pub prometheus: Vec<PrometheusConfig>,
 }
@@ -912,6 +914,62 @@ impl GitlabConfig {
     }
 }
 
+/// One `[[source.bitbucket]]` block: open pull requests and Pipelines runs from
+/// Bitbucket Cloud (bitbucket.org), by polling.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BitbucketConfig {
+    /// Instance name, unique among Bitbucket sources. Used in logs and fact keys.
+    pub name: String,
+    /// API root. Only changes for tests.
+    #[serde(default = "default_bitbucket_base_url")]
+    pub base_url: String,
+    /// Credential with a read-only repository, project or workspace access
+    /// token (Pull requests: Read, Pipelines: Read).
+    pub token_file: String,
+    /// Repositories to watch, as `workspace/repo-slug`.
+    pub repos: Vec<String>,
+    /// Seconds between polls of open pull requests and recent pipelines.
+    /// Bitbucket Cloud limits requests per hour, hence the slower default.
+    #[serde(default = "default_bitbucket_poll_s")]
+    pub poll_s: u64,
+    /// Seconds between step progress polls while a pipeline is in progress.
+    #[serde(default = "default_bitbucket_job_poll_s")]
+    pub job_poll_s: u64,
+    /// May running pipelines and finished runs take over the screen? `true`,
+    /// `false`, or a list of repositories that may.
+    #[serde(default = "interrupt_all")]
+    pub interrupt: Interrupt,
+    /// Flash "New PR" when a poll finds a new, non-draft pull request.
+    #[serde(default = "yes")]
+    pub notify_new_prs: bool,
+    /// Self-hosted runner lists for the kiosk `runners` widget:
+    /// `"repo:<workspace>/<repo>"` or `"workspace:<slug>"`. Needs the Runners:
+    /// Read right (docs/runners.md). Empty means runners are not polled. Do not
+    /// list overlapping scopes, a runner would show twice.
+    #[serde(default)]
+    pub runners: Vec<String>,
+    /// Seconds between runner polls.
+    #[serde(default = "default_github_runner_poll_s")]
+    pub runner_poll_s: u64,
+    /// Short panel labels for repositories, such as `{ "team/service-a" = "work A" }`.
+    #[serde(default)]
+    pub alias: BTreeMap<String, String>,
+}
+
+impl BitbucketConfig {
+    /// The parsed `runners` entries.
+    pub fn runner_scopes(&self) -> Result<Vec<crate::bitbucket::runners::RunnerScope>> {
+        self.runners
+            .iter()
+            .map(|text| {
+                crate::bitbucket::runners::RunnerScope::parse(text)
+                    .with_context(|| format!("source.bitbucket {}: runners", self.name))
+            })
+            .collect()
+    }
+}
+
 /// One `[[source.azure_devops]]` block: pipeline runs and open PRs from Azure
 /// DevOps Services, by polling.
 #[derive(Debug, Clone, Deserialize)]
@@ -1073,6 +1131,18 @@ fn default_github_base_url() -> String {
     crate::github::api::GITHUB_COM.into()
 }
 
+fn default_bitbucket_base_url() -> String {
+    crate::bitbucket::api::BITBUCKET_API.into()
+}
+
+fn default_bitbucket_poll_s() -> u64 {
+    120
+}
+
+fn default_bitbucket_job_poll_s() -> u64 {
+    10
+}
+
 fn default_gitlab_base_url() -> String {
     crate::gitlab::api::GITLAB_COM.into()
 }
@@ -1155,7 +1225,15 @@ pub(crate) fn valid_gitlab_path(path: &str, min_segments: usize) -> bool {
     ok && count >= min_segments
 }
 
-fn valid_repo(repo: &str) -> bool {
+/// One name of a repository path: letters, digits, `-`, `_` and `.`.
+pub(crate) fn valid_repo_part(part: &str) -> bool {
+    !part.is_empty()
+        && part
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+}
+
+pub(crate) fn valid_repo(repo: &str) -> bool {
     let mut parts = repo.split('/');
     let ok = |p: Option<&str>| {
         p.is_some_and(|p| {
@@ -1245,7 +1323,7 @@ impl Config {
                 }
             )+};
         }
-        merge!(gitea, github, gitlab, azure_devops, prometheus);
+        merge!(gitea, github, gitlab, bitbucket, azure_devops, prometheus);
         self.validate()?;
         Ok(self)
     }
@@ -1259,6 +1337,7 @@ impl Config {
         base.source.gitea.retain(|s| keep("gitea", &s.name));
         base.source.github.retain(|s| keep("github", &s.name));
         base.source.gitlab.retain(|s| keep("gitlab", &s.name));
+        base.source.bitbucket.retain(|s| keep("bitbucket", &s.name));
         base.source
             .azure_devops
             .retain(|s| keep("azure_devops", &s.name));
@@ -1391,6 +1470,36 @@ impl Config {
             anyhow::ensure!(
                 gitlab.projects.iter().all(|p| valid_gitlab_path(p, 2)),
                 "source.gitlab {name}: projects entries must look like group/project"
+            );
+        }
+        let mut names = HashSet::new();
+        for bitbucket in &self.source.bitbucket {
+            let name = &bitbucket.name;
+            anyhow::ensure!(
+                valid_name(name),
+                "source.bitbucket name {name:?} may only use letters, digits, - and _"
+            );
+            anyhow::ensure!(
+                names.insert(name),
+                "two source.bitbucket blocks are named {name:?}"
+            );
+            anyhow::ensure!(
+                bitbucket.base_url.starts_with("https://")
+                    || bitbucket.base_url.starts_with("http://"),
+                "source.bitbucket {name}: base_url must start with https://"
+            );
+            anyhow::ensure!(
+                bitbucket.poll_s > 0 && bitbucket.job_poll_s > 0 && bitbucket.runner_poll_s > 0,
+                "source.bitbucket {name}: poll_s, job_poll_s and runner_poll_s must be above 0"
+            );
+            bitbucket.runner_scopes()?;
+            anyhow::ensure!(
+                !bitbucket.repos.is_empty(),
+                "source.bitbucket {name}: repos needs at least one workspace/repo"
+            );
+            anyhow::ensure!(
+                bitbucket.repos.iter().all(|r| valid_repo(r)),
+                "source.bitbucket {name}: repos entries must look like workspace/repo"
             );
         }
         let mut names = HashSet::new();
@@ -1761,7 +1870,7 @@ mod tests {
             "GitLab block is commented out"
         );
         let start = text.find("# [[source.gitlab]]").unwrap();
-        let end = text.find("# Azure DevOps Services").unwrap();
+        let end = text.find("# Bitbucket Cloud").unwrap();
         let block: String = text[start..end]
             .lines()
             .map(|l| l.strip_prefix("# ").unwrap_or(l.trim_start_matches('#')))
@@ -1807,6 +1916,62 @@ mod tests {
         for bad in ["[\"app\"]", "[\"team//app\"]", "[\"team/ap p\"]", "[]"] {
             let text =
                 format!("[[source.gitlab]]\nname = \"w\"\ntoken_file = \"t\"\nprojects = {bad}\n");
+            assert!(Config::from_toml(&text).is_err(), "{bad}");
+        }
+        let twice = format!("{}\n{}", block(""), block(""));
+        assert!(Config::from_toml(&twice).is_err(), "names are unique");
+    }
+
+    #[test]
+    fn example_bitbucket_block_parses_when_uncommented() {
+        let text = include_str!("../config.example.toml");
+        assert!(
+            Config::from_toml(text).unwrap().source.bitbucket.is_empty(),
+            "Bitbucket block is commented out"
+        );
+        let start = text.find("# [[source.bitbucket]]").unwrap();
+        let end = text.find("# Azure DevOps Services").unwrap();
+        let block: String = text[start..end]
+            .lines()
+            .map(|l| l.strip_prefix("# ").unwrap_or(l.trim_start_matches('#')))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let config = Config::from_toml(&block).unwrap();
+        let bitbucket = &config.source.bitbucket[0];
+        assert_eq!(bitbucket.repos, ["your-workspace/repo-a"]);
+        assert_eq!(bitbucket.alias["your-workspace/repo-a"], "A");
+    }
+
+    #[test]
+    fn bitbucket_defaults_and_checks() {
+        let block = |extra: &str| {
+            format!(
+                "[[source.bitbucket]]\nname = \"work\"\nrepos = [\"team/app\"]\n\
+                 token_file = \"bitbucket-token\"\n{extra}"
+            )
+        };
+        let config = Config::from_toml(&block("")).unwrap();
+        let bitbucket = &config.source.bitbucket[0];
+        assert_eq!(bitbucket.base_url, "https://api.bitbucket.org/2.0");
+        assert_eq!((bitbucket.poll_s, bitbucket.job_poll_s), (120, 10));
+        assert_eq!(bitbucket.interrupt, Interrupt::All(true));
+        assert!(bitbucket.runners.is_empty() && bitbucket.notify_new_prs);
+
+        let scopes =
+            Config::from_toml(&block("runners = [\"repo:team/app\", \"workspace:team\"]")).unwrap();
+        assert_eq!(scopes.source.bitbucket[0].runner_scopes().unwrap().len(), 2);
+
+        for bad in [
+            "runners = [\"project:team/app\"]",
+            "runners = [\"repo:app\"]",
+            "base_url = \"api.bitbucket.org\"",
+            "poll_s = 0",
+        ] {
+            assert!(Config::from_toml(&block(bad)).is_err(), "{bad}");
+        }
+        for bad in ["[\"app\"]", "[\"team/sub/app\"]", "[\"team/ap p\"]", "[]"] {
+            let text =
+                format!("[[source.bitbucket]]\nname = \"w\"\ntoken_file = \"t\"\nrepos = {bad}\n");
             assert!(Config::from_toml(&text).is_err(), "{bad}");
         }
         let twice = format!("{}\n{}", block(""), block(""));

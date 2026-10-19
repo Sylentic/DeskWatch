@@ -1,7 +1,7 @@
 # Runners and agent pools
 
 Which of your CI runners are up, busy or down, on the kiosk dashboard. This page is the design for all three CI
-systems and the guide for the parts that exist today: **Gitea runners**, **GitHub self-hosted runners**, **Azure DevOps agent pools** and **GitLab runners**.
+systems and the guide for the parts that exist today: **Gitea runners**, **GitHub self-hosted runners**, **Azure DevOps agent pools**, **GitLab runners** and **Bitbucket runners**.
 
 | Source | What it lists | State |
 |---|---|---|
@@ -9,6 +9,7 @@ systems and the guide for the parts that exist today: **Gitea runners**, **GitHu
 | GitHub, GitHub Enterprise | Self-hosted runners of a repository or organisation | In this version |
 | Azure DevOps | Agents of the self-hosted agent pools | In this version, built against mock responses only, with the number of jobs waiting per pool |
 | GitLab | Runners of a project, a group or the whole instance | In this version, built against mock responses only |
+| Bitbucket Cloud | Self-hosted runners of a repository or a workspace | In this version, built against mock responses only |
 | ESP panel | A `runners` page and an offline count in the `warn` badge | Not built, needs a schema change |
 
 ## 1. How it fits
@@ -212,16 +213,38 @@ request fails the runner stays idle. The runner's tags are only in a per-runner 
 label on the card is the kind of runner (`project`, `group` or `instance`). The name is the runner's description,
 else its name.
 
-## 6. Order of the work
+## 6. Bitbucket runners (in this version)
+
+`runners = [...]` takes `"repo:<workspace>/<repo>"` and `"workspace:<workspace>"`. `runner_poll_s` defaults to 300.
+
+```toml
+[[source.bitbucket]]
+name = "personal"
+token_file = "bitbucket-personal"
+repos = ["your-workspace/repo-a"]
+runners = ["workspace:your-workspace"]   # or "repo:your-workspace/repo-a"; off when empty or missing
+```
+
+The runner poll is separate and **does not change the source's health**: a token without the Runners: Read right
+gets a plain `403` on this list only, the bridge logs `cannot poll runners` and the PR and pipeline widgets stay
+fresh. `GET /repositories/{workspace}/{repo}/pipelines-config/runners` and `GET /workspaces/{workspace}/pipelines-config/runners`
+come from Atlassian's API description, not from a real workspace.
+
+Mapping: `ONLINE` and `ENABLED` are idle, `DISABLED` is shown as disabled (not an outage), everything else is
+offline. The list has **no busy flag**, so a Bitbucket runner is never shown as busy. Labels come from the runner
+(at most 8). The cards have no link, because the runner page address is not known. Do not list a repository and its
+workspace together, a runner would show twice.
+
+## 7. Order of the work
 
 1. **Done:** the `Runner` fact and the kiosk widget, with Gitea as the first source.
 2. **Done:** GitHub runners, with their own token scope.
 3. **Done:** Azure DevOps pools and queued jobs per pool, against mock answers only; the shapes still need checking against a real organisation.
-   **Done:** GitLab runners, against mock answers only.
+   **Done:** GitLab and Bitbucket runners, against mock answers only.
 4. **Open:** the ESP panel `runners` page, the offline count in the `warn` badge and "waiting for runner" on the
    pipelines page, together with one amendment of the MQTT schema.
 
-## 7. Try it without any CI
+## 8. Try it without any CI
 
 ```sh
 deskwatch-bridge --demo --kiosk --no-mqtt config.toml    # config with a `runners` panel

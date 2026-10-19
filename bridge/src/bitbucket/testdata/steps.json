@@ -1,0 +1,13 @@
+{
+  "pagelen": 100, "page": 1, "size": 4,
+  "values": [
+    { "type": "pipeline_step", "uuid": "{5555-1}", "name": "Build",
+      "state": { "name": "COMPLETED", "result": { "name": "SUCCESSFUL" } }, "started_on": "2026-10-08T18:00:35.000000+00:00" },
+    { "type": "pipeline_step", "uuid": "{5555-2}", "name": "Unit tests",
+      "state": { "name": "COMPLETED", "result": { "name": "SUCCESSFUL" } }, "started_on": "2026-10-08T18:00:50.000000+00:00" },
+    { "type": "pipeline_step", "uuid": "{5555-3}", "name": "Integration tests",
+      "state": { "name": "IN_PROGRESS" }, "started_on": "2026-10-08T18:01:10.000000+00:00" },
+    { "type": "pipeline_step", "uuid": "{5555-4}", "name": "Deploy",
+      "state": { "name": "PENDING" } }
+  ]
+}

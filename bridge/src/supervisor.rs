@@ -21,6 +21,7 @@ use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
 use crate::azure_devops::AzureDevops;
+use crate::bitbucket::Bitbucket;
 use crate::config::Config;
 use crate::gitea::{self, Gitea};
 use crate::github::Github;
@@ -34,6 +35,7 @@ enum Built {
     Gitea(Gitea),
     Github(Github),
     Gitlab(Gitlab),
+    Bitbucket(Bitbucket),
     AzureDevops(AzureDevops),
     Prometheus(Prometheus),
 }
@@ -44,6 +46,7 @@ impl Built {
             Built::Gitea(s) => source::spawn(s, tx),
             Built::Github(s) => source::spawn(s, tx),
             Built::Gitlab(s) => source::spawn(s, tx),
+            Built::Bitbucket(s) => source::spawn(s, tx),
             Built::AzureDevops(s) => source::spawn(s, tx),
             Built::Prometheus(s) => source::spawn(s, tx),
         }
@@ -84,6 +87,14 @@ fn wanted(config: &Config) -> Vec<Wanted> {
             id: SourceId::new("gitlab", &c.name),
             fingerprint: format!("{c:?}"),
             build: Box::new(move |_| Ok(Built::Gitlab(Gitlab::new(&c)?))),
+        });
+    }
+    for c in &config.source.bitbucket {
+        let c = c.clone();
+        out.push(Wanted {
+            id: SourceId::new("bitbucket", &c.name),
+            fingerprint: format!("{c:?}"),
+            build: Box::new(move |_| Ok(Built::Bitbucket(Bitbucket::new(&c)?))),
         });
     }
     for c in &config.source.azure_devops {

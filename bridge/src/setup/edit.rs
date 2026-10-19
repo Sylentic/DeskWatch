@@ -46,6 +46,13 @@ const SPECS: &[Spec] = &[
         secrets: &[("token", "token_file", true)],
     },
     Spec {
+        kind: "bitbucket",
+        strings: &[],
+        lists: &["repos"],
+        bools: &[],
+        secrets: &[("token", "token_file", true)],
+    },
+    Spec {
         kind: "gitea",
         strings: &["base_url"],
         lists: &["repos"],

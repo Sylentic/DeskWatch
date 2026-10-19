@@ -14,8 +14,8 @@
 use serde::Serialize;
 
 use crate::config::{
-    AzureDevopsConfig, Config, GiteaConfig, GithubConfig, GitlabConfig, MqttConfig,
-    PrometheusConfig,
+    AzureDevopsConfig, BitbucketConfig, Config, GiteaConfig, GithubConfig, GitlabConfig,
+    MqttConfig, PrometheusConfig,
 };
 use crate::gitea::api::{GiteaApi, HttpApi as GiteaHttp};
 use crate::source::{Health, Secret, load_secret};
@@ -161,6 +161,7 @@ pub async fn source_with(config: &Config, id: &str, overrides: &Overrides) -> Op
     let s = &config.source;
     let report = match kind {
         "github" => github(s.github.iter().find(|c| c.name == name)?, overrides).await,
+        "bitbucket" => bitbucket(s.bitbucket.iter().find(|c| c.name == name)?, overrides).await,
         "gitlab" => gitlab(s.gitlab.iter().find(|c| c.name == name)?, overrides).await,
         "gitea" => gitea(s.gitea.iter().find(|c| c.name == name)?, overrides).await,
         "azure_devops" => {
@@ -197,6 +198,43 @@ async fn github(config: &GithubConfig, overrides: &Overrides) -> Report {
                     api.runners(scope).await,
                     "Runners need more rights: repository runners \"Administration: read\", \
                      organisation runners \"Self-hosted runners: read\".",
+                );
+            }
+        }
+        Err(err) => report.fail("runners", format!("{err:#}")),
+    }
+    report
+}
+
+async fn bitbucket(config: &BitbucketConfig, overrides: &Overrides) -> Report {
+    let mut report = Report::default();
+    let Some(token) = credential(&mut report, overrides, "token", &config.token_file) else {
+        return report;
+    };
+    let api = match crate::bitbucket::api::HttpApi::new(&config.base_url, token) {
+        Ok(api) => api,
+        Err(err) => {
+            report.fail("setup", format!("{err:#}"));
+            return report;
+        }
+    };
+    let hint = "Check that the access token is valid (a repository, project or workspace access token, \
+                with Pull requests: Read and Pipelines: Read) and that it covers this repository. \
+                A repository that does not exist answers the same way.";
+    for repo in config.repos.iter().take(MAX_TARGETS) {
+        report.result(
+            format!("repository {repo}"),
+            api.repository(repo).await,
+            hint,
+        );
+    }
+    match config.runner_scopes() {
+        Ok(scopes) => {
+            for scope in scopes.iter().take(MAX_TARGETS) {
+                report.result(
+                    format!("runners {scope}"),
+                    api.runners(scope).await.map(|_| ()),
+                    "Runners need the Runners: Read right on the token.",
                 );
             }
         }
