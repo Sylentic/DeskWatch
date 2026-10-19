@@ -68,6 +68,8 @@ may change if the firmware work needs it; any such change is listed here.
 
 ### Fixed
 
+- The startup warnings that the kiosk page, the setup page and `POST /api/alert` "have no login" are no longer logged
+  when an administrator password is set.
 - **CI:** the firmware job's cache is keyed on the Xtensa GCC version, and the Xtensa toolchain install gets a GitHub
   token, so it no longer fails on API rate limits.
 

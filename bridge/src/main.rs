@@ -230,7 +230,7 @@ async fn main() -> Result<()> {
     hooks.add("/login", auth.router());
     let mut kiosk = None;
     if config.kiosk.enabled {
-        if !config.http.listen.ip().is_loopback() {
+        if warn_no_login(auth.enabled(), config.http.listen.ip().is_loopback()) {
             warn!(
                 "the kiosk page on {} has no login: anyone who can reach this port can read your PR titles, \
                  pipelines and host stats. That is fine on a home network. Do not expose the port to the internet, \
@@ -256,7 +256,7 @@ async fn main() -> Result<()> {
                 .layer(local_only.clone())
                 .layer(guard(Need::AlertKey)),
         );
-        if !config.http.listen.ip().is_loopback() {
+        if warn_no_login(auth.enabled(), config.http.listen.ip().is_loopback()) {
             warn!(
                 "POST {} on {} has no login: anyone who can reach this port can put alerts on the dashboard. \
                  That is fine on a home network. Do not expose the port to the internet",
@@ -284,7 +284,7 @@ async fn main() -> Result<()> {
                 .layer(guard(Need::Admin)),
         );
         info!("setup page on /setup");
-        if !config.http.listen.ip().is_loopback() {
+        if warn_no_login(auth.enabled(), config.http.listen.ip().is_loopback()) {
             warn!(
                 "the setup page on {} has no login: anyone who can reach this port can read how the bridge is set up \
                  and, with a data folder, change sources and store tokens. Use it on a trusted network only; never \
@@ -502,9 +502,23 @@ impl Shown {
     }
 }
 
+/// Whether the startup warnings "... has no login" apply: only while no
+/// administrator password is set and the listener is reachable from the network.
+fn warn_no_login(login_on: bool, loopback: bool) -> bool {
+    !login_on && !loopback
+}
+
 #[cfg(test)]
 mod tests {
-    use super::flag_value;
+    use super::{flag_value, warn_no_login};
+
+    #[test]
+    fn no_login_warning_only_without_a_password_on_the_network() {
+        assert!(warn_no_login(false, false), "no password, reachable");
+        assert!(!warn_no_login(true, false), "password set");
+        assert!(!warn_no_login(false, true), "loopback only");
+        assert!(!warn_no_login(true, true));
+    }
 
     #[test]
     fn environment_flags_accept_the_usual_spellings() {
