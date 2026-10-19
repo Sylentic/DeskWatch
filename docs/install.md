@@ -115,7 +115,7 @@ ignored. The parts you will touch:
 - `[http]`: the address webhooks arrive on (default `0.0.0.0:8787`). It also serves the dashboard, the setup page and the health check, so it is open whenever MQTT is on, and
   that is the case by default. If the server has a firewall, allow this port from the Gitea host only. Behind a reverse proxy, set
   `listen = "127.0.0.1:8787"`.
-- `[[source.gitea]]`, `[[source.github]]`, `[[source.gitlab]]`, `[[source.azure_devops]]`, `[[source.prometheus]]`: one block per instance (step 5).
+- `[[source.gitea]]`, `[[source.github]]`, `[[source.gitlab]]`, `[[source.bitbucket]]`, `[[source.azure_devops]]`, `[[source.prometheus]]`: one block per instance (step 5).
 - `[alerts]` and `[[rotation]]`: which pages rotate and for how long.
 
 **The example config ships with a Gitea block switched on.** Without a Gitea server, delete that
@@ -245,6 +245,19 @@ name = "personal"
 token_file = "gitlab-personal"
 projects = ["your-group/project-a"]
 # base_url = "https://gitlab.example.com"   # self-managed
+```
+
+### Bitbucket Cloud
+
+For `bitbucket.org` the bridge polls open pull requests and Pipelines with a read-only access token (Pull requests:
+Read, Pipelines: Read) and shows a running pipeline with its current step. Creating the token, the options and what
+is and is not tested are in [bitbucket.md](bitbucket.md).
+
+```toml
+[[source.bitbucket]]
+name = "personal"
+token_file = "bitbucket-personal"
+repos = ["your-workspace/repo-a"]
 ```
 
 ### Azure DevOps

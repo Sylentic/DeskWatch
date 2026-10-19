@@ -130,7 +130,7 @@ is read from `$CREDENTIALS_DIRECTORY`, which systemd fills from the unit's `Load
 
 Each source is a `[[source.<type>]]` block in the config and runs as its own task; a source that cannot log in or
 connect shows as a `warn` badge on the panel. Setup for each is in [docs/install.md](docs/install.md#5-sources) (Azure DevOps in more detail in
-[docs/azure-devops.md](docs/azure-devops.md), GitLab in [docs/gitlab.md](docs/gitlab.md)). Which Git hosts work today, and what
+[docs/azure-devops.md](docs/azure-devops.md), GitLab in [docs/gitlab.md](docs/gitlab.md), Bitbucket in [docs/bitbucket.md](docs/bitbucket.md)). Which Git hosts work today, and what
 Forgejo, Codeberg and Bitbucket would need, is in [docs/git-hosts.md](docs/git-hosts.md).
 
 | Source | How it gets data | What it adds |
@@ -138,11 +138,12 @@ Forgejo, Codeberg and Bitbucket would need, is in [docs/git-hosts.md](docs/git-h
 | `gitea` | Webhooks for instant job start and end, polling for step progress and open PRs | Running job takes over the screen, red alert on failure, green flash on success, PR badge, pipelines page |
 | `github` | Polling with ETags (github.com, GitHub Enterprise Server, GHE.com) | The same as Gitea |
 | `gitlab` | Polling with a read-only token (gitlab.com and self-managed); setup in [docs/gitlab.md](docs/gitlab.md) | Merge requests as the PR count, pipelines with stage progress, runners; only tested against mock answers so far |
+| `bitbucket` | Polling with a read-only access token (Bitbucket Cloud); setup in [docs/bitbucket.md](docs/bitbucket.md) | Pull requests as the PR count, pipelines with step progress, runners; only tested against mock answers so far |
 | `azure_devops` | Polling with a read-only token (Azure DevOps Services); setup in [docs/azure-devops.md](docs/azure-devops.md) | Pipeline runs with stage and task (Terraform plan and apply), a notice when a deploy waits for an approval, PR count; quiet unless you set `interrupt` |
 | `prometheus` | HTTP API (node_exporter, cAdvisor) | A `stats:<host>` page per machine, a `containers` page of what stopped, a `server` badge |
 | built-in `stats` | `/proc` and `/sys` of the bridge machine (Linux; on Windows it shows only the machine name) | The home page, always available |
 
-Gitea, GitHub and GitLab sources can also list their self-hosted runners (`runners = [...]`) for the kiosk `runners` widget,
+Gitea, GitHub, GitLab and Bitbucket sources can also list their self-hosted runners (`runners = [...]`) for the kiosk `runners` widget,
 see [docs/runners.md](docs/runners.md).
 
 `interrupt` decides which repositories may take over the screen. Runs from other repositories still show on the

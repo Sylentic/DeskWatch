@@ -1,0 +1,8 @@
+{
+  "pagelen": 100, "page": 1, "size": 3,
+  "values": [
+    { "uuid": "{6666-1}", "name": "Build", "state": { "name": "COMPLETED", "result": { "name": "SUCCESSFUL" } } },
+    { "uuid": "{6666-2}", "name": "Unit tests", "state": { "name": "COMPLETED", "result": { "name": "FAILED" } } },
+    { "uuid": "{6666-3}", "name": "Deploy", "state": { "name": "COMPLETED", "result": { "name": "NOT_RUN" } } }
+  ]
+}

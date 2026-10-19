@@ -37,7 +37,13 @@ may change if the firmware work needs it; any such change is listed here.
   lists (`project:`, `group:`, `instance`) for the `runners` widget. Also in the Setup page ("Add a source", with a
   connection test), the kiosk `source` filter and `docs/gitlab.md`. **Only tested against mock answers written from
   the GitLab documentation; not yet tried on a real GitLab.** `docs/git-hosts.md` lists which Git hosts work today
-  (Forgejo and Codeberg only in part, Bitbucket not) and what Bitbucket would take.
+  (Forgejo and Codeberg only in part).
+- **Bitbucket Cloud source** (`[[source.bitbucket]]`), by polling with a read-only access token. Open pull requests
+  count as the open PRs, pipelines fill the pipelines page, and a running pipeline shows as one "Running now" card
+  with its current step and a progress bar. A failed pipeline raises the red alert naming the failed step. Optional
+  runner lists (`repo:`, `workspace:`) for the `runners` widget (no busy state, Bitbucket does not send one). Also in
+  the Setup page, the connection test, the kiosk `source` filter and `docs/bitbucket.md`. **Only tested against mock
+  answers written from Atlassian's API description; not yet tried on a real Bitbucket.**
 - **A "source down" pill in the kiosk header.** When a source cannot be checked (not answering, or its login
   refused) a pill next to the alerts says which one and why. A quiet source is not a down source. **Mute** hides the
   pill on every screen until the source works again; the "N sources have a problem" chip keeps counting it.

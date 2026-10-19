@@ -1,0 +1,9 @@
+{
+  "pagelen": 100, "page": 1, "size": 4,
+  "values": [
+    { "type": "pipeline_runner", "uuid": "{7777-1}", "name": "build-box-1", "labels": ["self.hosted", "linux"], "state": { "status": "ONLINE" } },
+    { "type": "pipeline_runner", "uuid": "{7777-2}", "name": "build-box-2", "labels": ["self.hosted", "gpu"], "state": { "status": "UNHEALTHY" } },
+    { "type": "pipeline_runner", "uuid": "{7777-3}", "name": "build-box-3", "labels": [], "state": { "status": "OFFLINE" } },
+    { "type": "pipeline_runner", "uuid": "{7777-4}", "name": "retired-box", "labels": ["self.hosted"], "state": { "status": "DISABLED" } }
+  ]
+}

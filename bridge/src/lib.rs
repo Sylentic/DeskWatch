@@ -5,6 +5,7 @@ pub mod access;
 pub mod alerts;
 pub mod auth;
 pub mod azure_devops;
+pub mod bitbucket;
 pub mod ci;
 pub mod composer;
 pub mod config;

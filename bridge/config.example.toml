@@ -92,7 +92,7 @@ listen = "0.0.0.0:8787"
 #
 # [[kiosk.panel]]
 # widget = "pipelines"          # jobs, prs and pipelines can be filtered:
-# # source = "github"           # gitea, github, gitlab or azure_devops
+# # source = "github"           # gitea, github, gitlab, bitbucket or azure_devops
 # # repo = "acme/*"             # one repository, or a prefix ending in *; case does not matter
 
 # Data sources. Each type is an array, so there can be several of each; the
@@ -202,6 +202,22 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 # # runners = ["project:your-group/project-a", "group:your-group"]  # do not list overlapping scopes
 # # runner_poll_s = 300         # seconds between runner polls
 # alias = { "your-group/project-a" = "A" }  # short labels on the panel
+
+# Bitbucket Cloud (bitbucket.org): open pull requests and Pipelines runs, by
+# polling with a read-only access token. Setup and the rights to grant are in
+# docs/bitbucket.md. Uncomment and adjust; add one block per token.
+# [[source.bitbucket]]
+# name = "personal"             # required: used in logs
+# token_file = "bitbucket-personal" # required: read-only access token
+# repos = ["your-workspace/repo-a"]  # required: workspace/repo-slug
+# poll_s = 120                  # open PRs and recent pipelines (Bitbucket limits requests per hour)
+# job_poll_s = 10               # step progress while a pipeline is in progress
+# interrupt = true              # true, false, or a list such as ["your-workspace/repo-a"]
+# notify_new_prs = true         # flash "New PR" for new non-draft PRs
+# # Self-hosted runners for the kiosk `runners` widget (docs/runners.md). Off unless listed.
+# # runners = ["repo:your-workspace/repo-a", "workspace:your-workspace"]  # do not list overlapping scopes
+# # runner_poll_s = 300         # seconds between runner polls
+# alias = { "your-workspace/repo-a" = "A" }  # short labels on the panel
 
 # Azure DevOps Services: pipeline runs and open PRs, by polling with a read-only
 # personal access token. Terraform pipelines show their stage and task
