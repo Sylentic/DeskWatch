@@ -380,7 +380,11 @@
 
   function sourceCard(s) {
     var card = el('section', 'card' + (s.hidden ? ' off' : ''));
-    var h = el('h2', null, (KIND[s.kind] || s.kind) + ': ' + s.name + ' ');
+    var h = el('h2');
+    // The same two-letter mark as on the dashboard.
+    var MARK = { gitea: 'Gt', github: 'GH', gitlab: 'GL', bitbucket: 'BB', azure_devops: 'AZ', prometheus: 'PM' };
+    if (MARK[s.kind]) h.appendChild(el('span', 'mark ' + s.kind, MARK[s.kind]));
+    h.appendChild(document.createTextNode((KIND[s.kind] || s.kind) + ': ' + s.name + ' '));
     var hs = HEALTH[s.health] || (s.hidden ? ['switched off', 'muted'] : [s.health, 'warn']);
     h.appendChild(pill(hs[0], hs[1]));
     card.appendChild(h);

@@ -59,7 +59,7 @@
   }
   function nowS() { return Date.now() / 1000 + skew; }
   function pct(v) { return v == null ? '--' : Math.round(v) + '%'; }
-  function level(v, warn, crit) { return v == null ? 'var(--grey)' : v >= crit ? 'var(--red)' : v >= warn ? 'var(--amber)' : 'var(--green)'; }
+  function level(v, warn, crit) { return v == null ? 'var(--grey)' : v >= crit ? 'var(--red)' : v >= warn ? 'var(--amber)' : 'var(--blue)'; }
   function clock(s) {
     s = Math.max(0, Math.floor(s));
     var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), r = s % 60;
@@ -84,10 +84,26 @@
     while (v >= 1000 && i < u.length - 1) { v /= 1000; i++; }
     return (v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)) + ' ' + u[i];
   }
-  // The CI system a job, run or PR comes from, as a small tag.
-  var SOURCES = { gitea: 'Gitea', github: 'GitHub', gitlab: 'GitLab', bitbucket: 'Bitbucket', azure_devops: 'Azure DevOps' };
+  // The CI system a job, run or PR comes from, as a two-letter mark. Every
+  // row carries one, so a glance tells where something runs.
+  var SOURCES = { gitea: 'Gitea', github: 'GitHub', gitlab: 'GitLab', bitbucket: 'Bitbucket', azure_devops: 'Azure DevOps',
+    prometheus: 'Prometheus', home_assistant: 'Home Assistant', local: 'this machine' };
+  var MARKS = { gitea: 'Gt', github: 'GH', gitlab: 'GL', bitbucket: 'BB', azure_devops: 'AZ', prometheus: 'PM', home_assistant: 'HA', local: 'LO' };
   function src(kind) {
-    return kind ? '<span class="src ' + esc(kind) + '">' + esc(SOURCES[kind] || kind) + '</span>' : '';
+    // An empty mark keeps the row's columns in line.
+    if (!kind) return '<span class="mark blank" aria-hidden="true"></span>';
+    var k = MARKS[kind] ? kind : 'other';
+    return '<span class="mark ' + esc(k) + '" title="' + esc(SOURCES[kind] || kind) + '">' +
+      esc(MARKS[kind] || String(kind).slice(0, 2).toUpperCase()) + '</span>';
+  }
+  // A source id is "<kind>:<name>"; github-enterprise counts as github.
+  function kindOf(id) {
+    var k = String(id || '').split(':')[0].replace(/[-_]?enterprise$/, '');
+    return k === 'stats' || k === 'proc' ? 'local' : k;
+  }
+  // Where an alert comes from, for its mark: Home Assistant or anything else.
+  function alertKind(a) {
+    return /home.?assistant|^ha\b/i.test(a.source || '') ? 'home_assistant' : 'local';
   }
   // A row or card that opens its page on the source. The bridge only sends
   // http(s) addresses, and this checks again, so nothing else can become a
@@ -130,38 +146,70 @@
   }
 
   // One host in detail: CPU, RAM and disk bars, a few numbers and the CPU graph.
+  // A host that was started less than an hour ago: it rebooted, worth a look.
+  var REBOOT_S = 3600;
   function hostBody(host) {
     var s = host.stats || {};
     var load = s.load ? s.load.map(function (x) { return x.toFixed(1); }).join(' ') : '--';
-    return '<div class="gauges">' + gauge('CPU', s.cpu_pct, 70, 90) + gauge('RAM', s.ram_pct, 80, 90) + gauge('Disk', s.disk_pct, 80, 90) + '</div>' +
+    var vals = history[host.name] || [];
+    var peak = vals.length ? Math.round(Math.max.apply(null, vals)) + '%' : '--';
+    var fresh = s.uptime_s != null && s.uptime_s < REBOOT_S;
+    return '<div class="gauges">' + gauge('CPU', s.cpu_pct, 70, 90) + gauge('MEM', s.ram_pct, 80, 90) + gauge('DISK', s.disk_pct, 80, 90) + '</div>' +
       '<div class="stat-grid">' +
+      '<div><span class="l">Uptime</span><span' + (fresh ? ' class="warn-text"' : '') + '>' + uptime(s.uptime_s) + '</span></div>' +
       '<div><span class="l">Temp</span><span>' + (s.cpu_temp_c == null ? '--' : Math.round(s.cpu_temp_c) + ' &deg;C') + '</span></div>' +
       '<div><span class="l">Load</span><span>' + load + '</span></div>' +
       '<div><span class="l">Net in</span><span>' + (s.net ? rate(s.net.rx_bps) : '--') + '</span></div>' +
       '<div><span class="l">Net out</span><span>' + (s.net ? rate(s.net.tx_bps) : '--') + '</span></div>' +
-      '<div><span class="l">Uptime</span><span>' + uptime(s.uptime_s) + '</span></div>' +
       '<div><span class="l">Cores</span><span>' + (s.cpu_count == null ? '--' : s.cpu_count) + '</span></div>' +
-      '</div>' + sparkline(history[host.name]);
+      '</div><div class="sparkhead"><span>CPU &middot; ' + Math.round(HISTORY * 5 / 60) + ' MIN</span><span>PEAK ' + peak + '</span></div>' +
+      sparkline(vals);
   }
 
-  // The detailed hosts panel: the chosen host in detail on top, every host as a
-  // list below it. Tapping a host in the list chooses it (kept in this browser,
-  // like the arrows of a stats panel).
+  // Does a host need a look: down, a value over its warning line, or rebooted.
+  function hostLook(h) {
+    var s = h.stats || {};
+    if (!h.up) return 'off';
+    if (s.cpu_pct >= 70 || s.ram_pct >= 80 || s.disk_pct >= 80) return 'look';
+    if (s.uptime_s != null && s.uptime_s < REBOOT_S) return 'look';
+    return '';
+  }
+  // The highest of CPU, MEM and DISK, as "DISK 88", for the host list.
+  function hostKey(h) {
+    var s = h.stats || {};
+    var pick = [['CPU', s.cpu_pct, 70, 90], ['MEM', s.ram_pct, 80, 90], ['DISK', s.disk_pct, 80, 90]]
+      .filter(function (x) { return x[1] != null; })
+      .sort(function (a, b) { return b[1] - a[1]; })[0];
+    if (!pick) return '<span class="k">--</span>';
+    var cls = pick[1] >= pick[3] ? ' crit-text' : pick[1] >= pick[2] ? ' warn-text' : '';
+    return '<span class="k' + cls + '">' + pick[0] + ' ' + Math.round(pick[1]) + '</span>';
+  }
+
+  // The detailed hosts panel: a list to pick from next to the chosen host (the
+  // host above the list when the card is narrow). Hosts that need a look come
+  // first. Tapping a host chooses it, kept in this browser. The chosen host
+  // never changes by itself: a host going down gets a red pip in the list.
   function hostsDetailed(hosts) {
     var host = findHost(chosenHost()) || hosts[0];
-    var cell = function (v, w, c) { return '<span class="v ' + (v >= c ? 'crit-text' : v >= w ? 'warn-text' : '') + '">' + pct(v) + '</span>'; };
-    var list = '<div class="hostlist"><div class="hostrow head"><span class="h">Host</span><span class="h">CPU</span><span class="h">RAM</span><span class="h">Disk</span></div>';
-    hosts.forEach(function (h) {
-      var s = h.stats || {};
-      list += '<button type="button" class="hostrow' + (h === host ? ' sel' : '') + (h.up ? '' : ' off') + '" data-host-pick="' + esc(h.name) + '"' + (h === host ? ' aria-pressed="true"' : '') + '>' +
-        '<span class="n">' + esc(h.name) + '</span>' + cell(s.cpu_pct, 70, 90) + cell(s.ram_pct, 80, 90) + cell(s.disk_pct, 80, 90) + '</button>';
+    var rank = { off: 0, look: 1, '': 2 };
+    var order = hosts.map(function (h, i) { return { h: h, i: i, r: rank[hostLook(h)] }; })
+      .sort(function (a, b) { return a.r - b.r || a.i - b.i; });
+    var list = '<div class="hostlist" role="listbox" aria-label="Hosts">';
+    order.forEach(function (o) {
+      var h = o.h, look = hostLook(h);
+      list += '<button type="button" role="option" class="hostrow' + (h === host ? ' sel' : '') + (look ? ' ' + look : '') +
+        '" data-host-pick="' + esc(h.name) + '" aria-selected="' + (h === host ? 'true' : 'false') + '">' +
+        '<span class="pip"></span><span class="n">' + esc(h.name) + '</span>' + (h.up ? hostKey(h) : '<span class="k crit-text">down</span>') + '</button>';
     });
     list += '</div>';
-    var down = (snap.down || []).length;
+    var down = hosts.filter(function (h) { return !h.up; }).length;
+    var look = hosts.filter(function (h) { return hostLook(h) === 'look'; }).length;
+    var tag = down ? down + ' down' : look ? look + (look === 1 ? ' needs' : ' need') + ' a look' : '';
     return {
-      title: 'Hosts', count: hosts.length, tag: down ? down + ' down' : (host.up ? '' : 'not answering'),
+      title: 'Hosts', count: (hosts.length - down) + '/' + hosts.length + ' up', tag: tag,
       stale: host.stale || !host.up,
-      body: '<div class="hostdetail"><div class="hn">' + esc(host.name) + '</div>' + hostBody(host) + '</div>' + list
+      body: '<div class="hsplit">' + list + '<div class="hostdetail"><div class="hn">' + esc(host.name) +
+        (host.up ? '' : '<span class="meta crit-text">not answering</span>') + '</div>' + hostBody(host) + '</div></div>'
     };
   }
 
@@ -208,6 +256,9 @@
 
   // Seconds after which a runner list counts as old (a few missed polls).
   var RUNNERS_OLD = 150;
+  // How long a finished run stays in Running now as "Done", a just-finished
+  // row stays tinted, and an open PR carries NEW.
+  var DONE_S = 30, FRESH_S = 30, NEW_PR_S = 3600;
 
   var widgets = {
     stats: function (p) {
@@ -233,53 +284,89 @@
       var html;
       if (!hosts.length) html = '<div class="empty">No hosts</div>';
       else {
-        html = '<div class="hosts' + (wide ? ' wide' : '') + '"><span class="h">Host</span><span class="h">CPU</span><span class="h">RAM</span><span class="h">Disk</span>' +
-          (wide ? '<span class="h">Net in</span><span class="h">Net out</span>' : '');
-        hosts.forEach(function (h) {
+        // Hosts that need a look come first, like in the detailed view.
+        var rank = { off: 0, look: 1, '': 2 };
+        var order = hosts.map(function (h, i) { return { h: h, i: i, r: rank[hostLook(h)] }; })
+          .sort(function (a, b) { return a.r - b.r || a.i - b.i; }).map(function (o) { return o.h; });
+        html = '<div class="hosts' + (wide ? ' wide' : '') + '"><span class="h">Host</span><span class="h">Uptime</span><span class="h">CPU</span><span class="h">Mem</span><span class="h">Disk</span>' +
+          (wide ? '<span class="h">&darr; In</span><span class="h">&uarr; Out</span>' : '');
+        order.forEach(function (h) {
           var s = h.stats || {};
-          var cell = function (v, w, c) { return '<span class="v ' + (v >= c ? 'crit-text' : v >= w ? 'warn-text' : '') + '">' + pct(v) + '</span>'; };
+          var cell = function (v, w, c) { return '<span class="v ' + (v >= c ? 'crit-text' : v >= w ? 'warn-text' : '') + '">' + (v == null ? '--' : Math.round(v)) + '</span>'; };
+          var fresh = s.uptime_s != null && s.uptime_s < REBOOT_S;
           var net = tall ? '<span class="net">&darr; ' + (s.net ? rate(s.net.rx_bps) : '--') + ' &nbsp; &uarr; ' + (s.net ? rate(s.net.tx_bps) : '--') + '</span>' : '';
-          html += '<span class="n' + (h.up ? '' : ' off') + '">' + esc(h.name) + '</span>' + cell(s.cpu_pct, 70, 90) + cell(s.ram_pct, 80, 90) + cell(s.disk_pct, 80, 90) +
-            (wide ? '<span class="v">' + (s.net ? rate(s.net.rx_bps) : '--') + '</span><span class="v">' + (s.net ? rate(s.net.tx_bps) : '--') + '</span>' : '') + net;
+          html += '<span class="n' + (h.up ? '' : ' off') + '">' + esc(h.name) + '</span>' +
+            '<span class="u' + (fresh ? ' warn-text' : '') + '">' + (h.up ? uptime(s.uptime_s) : 'down') + '</span>' +
+            cell(s.cpu_pct, 70, 90) + cell(s.ram_pct, 80, 90) + cell(s.disk_pct, 80, 90) +
+            (wide ? '<span class="r">' + (s.net ? rate(s.net.rx_bps) : '--') + '</span><span class="r">' + (s.net ? rate(s.net.tx_bps) : '--') + '</span>' : '') + net;
         });
         html += '</div>';
       }
-      var down = (snap.down || []).length;
-      return { title: 'Hosts', count: hosts.length, tag: down ? down + ' down' : '', body: html };
+      var down = hosts.filter(function (h) { return !h.up; }).length;
+      var look = hosts.filter(function (h) { return hostLook(h) === 'look'; }).length;
+      return { title: 'Hosts', count: (hosts.length - down) + '/' + hosts.length + ' up',
+        tag: down ? down + ' down' : look ? look + (look === 1 ? ' needs' : ' need') + ' a look' : '', body: html };
     },
 
     containers: function (p) {
       var down = snap.down || [];
       var rows = down.map(function (d) {
-        return '<div class="row compact">' + dot('failed') + '<span class="main">' + esc(d.text) + '</span><span class="when">' + esc(d.sub) + '</span></div>';
+        return '<div class="row compact nomark">' + dot('failed') + '<span class="main">' + esc(d.text) + '</span><span class="when">' + esc(d.sub) + '</span></div>';
       });
       return { title: 'Containers', count: down.length || '', body: list(rows, p.rows, '<div class="empty good">Everything is running</div>') };
     },
 
     jobs: function (p) {
       var jobs = (snap.jobs || []).filter(function (j) { return matches(p, j.source, j.project); });
-      if (!jobs.length) return { title: 'Running now', body: '<div class="empty">No jobs running</div>', stale: false, plain: true };
-      var max = p.rows, shown = max ? jobs.slice(0, max) : jobs;
-      var html = shown.map(function (j) {
-        var step = j.step ? esc(j.step) + (j.step_no && j.step_count ? ' <span>(' + j.step_no + '/' + j.step_count + ')</span>' : '') : 'starting';
-        var bar = j.progress == null ? '<div class="pbar spin"><i></i></div>' :
-          '<div class="pbar"><i style="--p:' + Math.round(j.progress * 100) + '%"></i></div>';
-        return linkOpen(j.url, 'job') + '<div class="l1"><span class="kind ' + esc(j.kind) + '">' + esc(j.kind) + '</span>' +
-          '<span class="name">' + esc(j.project) + ' / ' + esc(j.pipeline) + '</span>' +
-          '<span class="el" data-since="' + j.started + '">' + clock(nowS() - j.started) + '</span></div>' +
-          '<div class="l2"><span>' + esc(j.ref) + (j.commit ? ' @ ' + esc(j.commit) : '') + '</span>' + src(j.source) + '<span class="step">' + step + '</span></div>' +
-          bar + (j.progress == null ? '' : '<div class="pct">' + Math.round(j.progress * 100) + '%</div>') + linkClose(j.url);
+      // A run that just finished well stays here for DONE_S as "Done", then
+      // only Pipelines has it. A failed run goes straight to the red pill.
+      var done = (snap.runs || []).filter(function (r) {
+        return r.status === 'success' && r.finished && nowS() - r.finished < DONE_S && matches(p, r.source, r.project) &&
+          !jobs.some(function (j) { return j.project === r.project && j.pipeline === r.pipeline; });
+      });
+      if (!jobs.length && !done.length) return { title: 'Running now', body: '<div class="empty">No jobs running</div>', stale: false, plain: true };
+      var max = p.rows;
+      var items = done.map(function (r) { return { done: r }; }).concat(jobs.map(function (j) { return { job: j }; }));
+      var shown = max ? items.slice(0, max) : items;
+      var html = shown.map(function (it) {
+        if (it.done) {
+          var r = it.done;
+          return linkOpen(r.url, 'job done fresh ok') + '<div class="l1">' + src(r.source) + '<span class="name">' + esc(r.project) + '</span>' +
+            '<span class="ref">' + esc(r.pipeline) + (r.ref ? ' &middot; ' + esc(r.ref) : '') + '</span></div>' +
+            '<div class="l2"><span class="steps"><i class="d"></i></span><span class="step">Done</span>' +
+            '<span class="el">' + clock((r.finished || r.started) - r.started) + '</span></div>' + linkClose(r.url);
+        }
+        var j = it.job;
+        var step = j.step ? esc(j.step) : 'starting';
+        var bar;
+        if (j.step_no && j.step_count && j.step_count <= 12) {
+          bar = '<span class="steps" title="step ' + j.step_no + ' of ' + j.step_count + '">';
+          for (var i = 1; i <= j.step_count; i++) bar += '<i class="' + (i < j.step_no ? 'd' : i === j.step_no ? 'c' : '') + '"></i>';
+          bar += '</span>';
+        } else {
+          bar = j.progress == null ? '<span class="pbar spin"><i></i></span>' :
+            '<span class="pbar"><i style="--p:' + Math.round(j.progress * 100) + '%"></i></span>';
+        }
+        return linkOpen(j.url, 'job') + '<div class="l1">' + src(j.source) + '<span class="name">' + esc(j.project) + '</span>' +
+          '<span class="kind ' + esc(j.kind) + '">' + esc(j.kind) + '</span>' +
+          '<span class="ref">' + esc(j.pipeline) + (j.ref ? ' &middot; ' + esc(j.ref) : '') + (j.commit ? ' @ ' + esc(j.commit) : '') + '</span></div>' +
+          '<div class="l2">' + bar + '<span class="step">' + step + '</span>' +
+          '<span class="el" data-since="' + j.started + '">' + clock(nowS() - j.started) + '</span></div>' + linkClose(j.url);
       }).join('');
-      if (max && jobs.length > max) html += '<div class="more">+' + (jobs.length - max) + ' more running</div>';
-      return { title: 'Running now', count: jobs.length, stale: ciStale(), body: html };
+      if (max && items.length > max) html += '<div class="more">+' + (items.length - max) + ' more running</div>';
+      return { title: 'Running now', count: jobs.length + (done.length ? ' · ' + done.length + ' done' : ''), stale: ciStale(), body: html };
     },
 
     pipelines: function (p) {
       var runs = (snap.runs || []).filter(function (r) { return matches(p, r.source, r.project); });
       var rows = runs.map(function (r) {
         var when = r.status === 'running' ? 'running' : ago(nowS() - (r.finished || r.started));
-        return linkOpen(r.url, 'row') + dot(runStatus(r.status)) + '<span class="main">' + esc(r.project) + ' / ' + esc(r.pipeline) + '</span>' +
-          '<span class="when">' + when + '</span><span class="sub">' + esc(r.ref) + src(r.source) + (r.step ? ' &middot; failed at ' + esc(r.step) : '') + '</span>' + linkClose(r.url);
+        var status = runStatus(r.status);
+        var fresh = r.finished && nowS() - r.finished < FRESH_S && (status === 'failed' || status === 'ok') ? ' fresh ' + status : '';
+        return linkOpen(r.url, 'row' + fresh) + dot(status) + src(r.source) +
+          '<span class="main">' + esc(r.project) + ' <span class="wf">&middot; ' + esc(r.pipeline) + '</span></span>' +
+          '<span class="when">' + when + '</span>' +
+          (r.ref || r.step ? '<span class="sub">' + esc(r.ref) + (r.step ? ' &middot; failed at ' + esc(r.step) : '') + '</span>' : '') + linkClose(r.url);
       });
       return { title: 'Pipelines', count: runs.length, stale: ciStale(), body: list(rows, p.rows, '<div class="empty">No runs yet</div>') };
     },
@@ -287,22 +374,35 @@
     prs: function (p) {
       var repos = (snap.pulls || []).filter(function (r) { return r.total > 0 && matches(p, r.source, r.project); });
       var total = repos.reduce(function (n, r) { return n + r.total; }, 0);
-      var rows = [];
+      // One flat list, newest first; the repository goes in the line under the title.
+      var items = [];
+      repos.forEach(function (r) { (r.items || []).forEach(function (pr) { items.push({ pr: pr, repo: r }); }); });
+      items.sort(function (a, b) { return (b.pr.created || 0) - (a.pr.created || 0); });
+      var rows = items.map(function (it) {
+        var pr = it.pr, isNew = pr.created && nowS() - pr.created < NEW_PR_S;
+        return linkOpen(pr.url, 'row pr') + dot('open') + src(it.repo.source) +
+          '<span class="main"><span class="num">#' + pr.number + '</span>' + esc(pr.title) + (isNew ? '<span class="tagnew">NEW</span>' : '') + '</span>' +
+          '<span class="when">' + ago(nowS() - pr.created) + '</span><span class="sub">' + esc(it.repo.project) + '</span>' + linkClose(pr.url);
+      });
+      // A repository whose items the bridge does not send still counts.
       repos.forEach(function (r) {
-        rows.push('<div class="group"><b>' + esc(r.project) + '</b>' + src(r.source) + '<span>' + r.total + ' open</span></div>');
-        (r.items || []).forEach(function (pr) {
-          rows.push(linkOpen(pr.url, 'row pr compact') + dot('open') + '<span class="main"><span class="num">#' + pr.number + '</span>' + esc(pr.title) + '</span>' +
-            '<span class="when">' + ago(nowS() - pr.created) + '</span>' + linkClose(pr.url));
-        });
+        var shown = (r.items || []).length;
+        if (r.total > shown) rows.push('<div class="row">' + dot('open') + src(r.source) + '<span class="main">' + esc(r.project) + '</span>' +
+          '<span class="when">' + (r.total - shown) + ' more</span></div>');
       });
       return { title: 'Open PRs', count: total, stale: ciStale(), body: list(rows, p.rows, '<div class="empty good">No open PRs</div>') };
     },
 
+    // Each alert is a tinted box (red, amber or blue) with a Dismiss button when
+    // `[alerts] dismiss` allows it; dismissing clears it on every screen.
     alerts: function (p) {
       var alerts = snap.alerts || [];
       var rows = alerts.map(function (a) {
-        return '<div class="row">' + dot(a.severity) + '<span class="main">' + esc(a.title) + '</span><span class="when">' + ago(nowS() - a.since) + '</span>' +
-          (a.message ? '<span class="sub">' + esc(a.message) + '</span>' : '') + '</div>';
+        var sub = [a.message ? esc(a.message) : '', ago(nowS() - a.since)].filter(Boolean).join(' &middot; ');
+        return '<div class="abox ' + esc(a.severity) + '">' + src(alertKind(a)) +
+          '<span class="txt"><span class="main">' + esc(a.title) + '</span><span class="sub">' + sub + '</span></span>' +
+          (canDismiss() ? '<button type="button" class="ax" data-dismiss-alert="' + esc(a.id) + '" aria-label="Dismiss ' + esc(a.title) + '">&times;</button>' : '') +
+          '</div>';
       });
       return { title: 'Alerts', count: alerts.length || '', body: list(rows, p.rows, '<div class="empty good">All quiet</div>') };
     },
@@ -316,18 +416,18 @@
         var state = r.disabled ? 'disabled' : r.status;
         var dotState = r.disabled ? 'neutral' : r.status === 'busy' ? 'running' : r.status === 'idle' ? 'ok' : 'failed';
         var labels = (r.labels || []).join(', ');
-        return linkOpen(r.url, 'row' + (r.disabled ? ' off' : '')) + dot(dotState) + '<span class="main">' + esc(r.name) + '</span>' +
+        return linkOpen(r.url, 'row' + (r.disabled ? ' off' : '')) + dot(dotState) + src(r.source) + '<span class="main">' + esc(r.name) + '</span>' +
           '<span class="when ' + (r.status === 'offline' && !r.disabled ? 'crit-text' : '') + '">' + esc(state) + '</span>' +
-          '<span class="sub">' + (labels ? esc(labels) : 'no labels') + src(r.source) + '</span>' + linkClose(r.url);
+          '<span class="sub">' + (labels ? esc(labels) : 'no labels') + '</span>' + linkClose(r.url);
       });
       // Jobs waiting for an agent (Azure DevOps pools), busiest pool first.
       var queued = snap.queued_jobs || [];
       var waiting = queued.reduce(function (n, q) { return n + q.queued; }, 0);
       queued.forEach(function (q) {
         if (nowS() - q.updated > RUNNERS_OLD) { old = true; }
-        rows.unshift('<div class="row">' + dot('waiting') + '<span class="main">' + esc(q.pool) + '</span>' +
+        rows.unshift('<div class="row">' + dot('waiting') + src(q.source) + '<span class="main">' + esc(q.pool) + '</span>' +
           '<span class="when">' + q.queued + ' waiting</span>' +
-          '<span class="sub">for an agent' + src(q.source) + '</span></div>');
+          '<span class="sub">for an agent</span></div>');
       });
       var tags = [];
       if (offline) { tags.push(offline + ' offline'); }
@@ -340,7 +440,7 @@
       var bad = sources.filter(function (s) { return s.health !== 'ok'; }).length;
       var names = { ok: 'working', auth_failed: 'token refused', unreachable: 'not reachable' };
       var rows = sources.map(function (s) {
-        return '<div class="row compact">' + dot(s.health === 'ok' ? 'ok' : 'failed') + '<span class="main">' + esc(s.id) + '</span><span class="when">' + (names[s.health] || esc(s.health)) + '</span></div>';
+        return '<div class="row compact">' + dot(s.health === 'ok' ? 'ok' : 'failed') + src(kindOf(s.id)) + '<span class="main">' + esc(s.id) + '</span><span class="when">' + (names[s.health] || esc(s.health)) + '</span></div>';
       });
       return { title: 'Sources', count: sources.length, tag: bad ? bad + ' with a problem' : '', body: list(rows, null, '<div class="empty">No sources configured</div>') };
     }
@@ -431,6 +531,15 @@
     if (b) stepHost(Number(b.getAttribute('data-host-step')));
     var pick = e.target.closest ? e.target.closest('[data-host-pick]') : null;
     if (pick) chooseHost(pick.getAttribute('data-host-pick'));
+    // The Alerts card's dismiss buttons work like the ones in the Alerts menu.
+    var gone = e.target.closest ? e.target.closest('[data-dismiss-alert]') : null;
+    if (gone) {
+      var id = gone.getAttribute('data-dismiss-alert');
+      snap.alerts = alertList().filter(function (a) { return a.id !== id; });
+      Object.keys(cards).forEach(function (key) { cards[key].touched = 0; });
+      drawGrid(); renderBadges(); renderTicker();
+      dismissAlerts([id]);
+    }
   });
 
   // ---- failed runs: badge, list and dismiss --------------------------------
@@ -611,6 +720,8 @@
     var cfg = (snap.layout && snap.layout.alerts) || {};
     var alerts = cfg.ticker === false ? [] : snap.alerts || [];
     var a = alerts[0];
+    // The header shows one pill: a run result or notice wins over the alert pill.
+    if (!$('banner').hidden) a = null;
     el.hidden = !a;
     if (!a) { el.innerHTML = ''; return; }
     var html = '<span class="tag">' + esc(SEV_NAME[a.severity] || a.severity) + '</span><span>' + esc(a.title) + '</span>' +
@@ -635,20 +746,48 @@
       if (s.template === 'alert' && d.title) {
         // An alert from Home Assistant or a script: the alert pill shows it, nothing here.
       } else if (s.template === 'alert') {
-        var tag = d.status === 'success' ? 'Success' : d.status === 'warn' ? 'Warning' : s.level === 0 ? 'Critical' : 'Failed';
+        var runKey = (d.project || '') + '/' + (d.pipeline || '');
+        // A success right after a failure of the same pipeline is "Fixed": the
+        // bridge has already replaced the red result with this green one.
+        var fixed = d.status === 'success' && failedSeen[runKey];
+        var tag = fixed ? 'Fixed' : d.status === 'success' ? (/deploy/i.test(d.kind || d.pipeline || '') ? 'Deployed' : 'Success')
+          : d.status === 'warn' ? 'Warning' : s.level === 0 ? 'Critical' : 'Failed';
         cls = s.level === 0 ? 'critical' : d.status === 'success' ? 'success' : d.status === 'warn' ? 'warn' : '';
-        var title = d.title || ((d.project || '') + (d.pipeline ? ' / ' + d.pipeline : ''));
-        var msg = d.message || (d.step ? 'failed at ' + d.step : '');
-        html = '<span class="tag">' + tag + '</span><span>' + esc(title) + '</span><span class="msg">' + esc(msg) + '</span>' +
-          (d.others ? '<span class="meta">+' + d.others + ' more</span>' : '') + '<span class="meta">' + esc(SOURCES[d.source] || d.source) + '</span>';
+        var title = d.title || ((d.project || '') + (d.pipeline ? ' · ' + d.pipeline : ''));
+        var msg = d.message || (d.step ? 'step ' + d.step : '');
+        html = '<span class="tag">' + tag + '</span>' + src(d.source) + '<span>' + esc(title) + '</span>' + (msg ? '<span class="msg">' + esc(msg) + '</span>' : '') +
+          (d.others ? '<span class="meta">+' + d.others + '</span>' : '');
       } else if (s.template === 'notice') {
         cls = 'note';
-        html = '<span class="tag">Notice</span><span>' + esc(d.text) + '</span><span class="msg">' + esc(d.sub) + '</span><span class="meta">' + esc(SOURCES[d.source] || d.source) + '</span>';
+        html = '<span class="tag">Notice</span>' + src(d.source) + '<span>' + esc(d.text) + '</span><span class="msg">' + esc(d.sub) + '</span>';
       }
     }
     el.hidden = !html;
-    el.className = 'banner ' + cls;
+    // A new red result pulses once; the same one redrawn does not.
+    var fresh = html && cls !== 'success' && cls !== 'note' && html !== bannerSeen;
+    if (html) bannerSeen = html;
+    el.className = 'banner ' + cls + (fresh ? ' fresh' : '');
     if (el.innerHTML !== html) el.innerHTML = html;
+  }
+  var bannerSeen = '';
+  // Pipelines that failed recently (project/pipeline -> true), so a success
+  // that follows can say Fixed. Kept for a day.
+  var failedSeen = {}, failedSeenAt = {};
+  function noteFailures() {
+    var t = nowS();
+    (snap.failed || []).forEach(function (f) {
+      var k = (f.project || '') + '/' + (f.pipeline || '');
+      failedSeen[k] = true; failedSeenAt[k] = t;
+    });
+    (snap.runs || []).forEach(function (r) {
+      var k = r.project + '/' + r.pipeline;
+      if (r.status === 'failed') { failedSeen[k] = true; failedSeenAt[k] = t; }
+      // Long after a success the next one is not a fix any more.
+      else if (r.status === 'success' && r.finished && t - r.finished > 300) { delete failedSeen[k]; delete failedSeenAt[k]; }
+    });
+    Object.keys(failedSeenAt).forEach(function (k) {
+      if (t - failedSeenAt[k] > 86400) { delete failedSeen[k]; delete failedSeenAt[k]; }
+    });
   }
 
   // A source that is down (not answering, or its login refused) is a pill next
@@ -701,26 +840,55 @@
     $('setup-link').hidden = !layout.setup;
     renderUpdate(snap.update);
     renderSourcePill();
+    renderSources();
     // With the setup page on, the sources chip opens it: that is where every
     // source and its status are listed.
     if (layout.setup) { $('conn').setAttribute('href', 'setup'); $('conn').setAttribute('title', 'Sources and their status: Setup'); }
     else { $('conn').removeAttribute('href'); $('conn').removeAttribute('title'); }
+    drawGrid();
+    renderBadges();
+    renderBanner();
+    renderTicker();
+    noteFailures();
+    tick();
+  }
+
+  // The cards. Also redrawn every few seconds without a new snapshot, so a
+  // "Done" job and a tinted row go away on time.
+  function drawGrid() {
+    var layout = snap.layout || { columns: 4, rows: 3, panels: [] };
     var grid = $('grid');
     grid.style.setProperty('--cols', layout.columns);
     grid.style.setProperty('--rows', layout.rows);
     var keep = {};
     (layout.panels || []).forEach(function (panel, i) {
-      var key = i + ':' + panel.widget + ':' + (panel.host || '');
+      // The span is in the key: a card is placed once, so a new size needs a new card.
+      var key = i + ':' + panel.widget + ':' + (panel.host || '') + ':' + (panel.span || [1, 1]).join('x');
       keep[key] = true;
       renderCard(key, panel, grid);
     });
     Object.keys(cards).forEach(function (key) {
       if (!keep[key]) { grid.removeChild(cards[key].el); delete cards[key]; }
     });
-    renderBadges();
-    renderTicker();
-    renderBanner();
-    tick();
+  }
+
+  // The sources bar: every source with its mark and state. Running jobs count
+  // per CI system; a source with a problem says what. With the setup page on,
+  // each opens it.
+  var SRC_STATE = { auth_failed: 'sign-in refused', unreachable: 'not answering' };
+  function renderSources() {
+    var setup = snap.layout && snap.layout.setup;
+    var html = (snap.sources || []).map(function (s) {
+      var kind = kindOf(s.id), name = String(s.id).split(':').slice(1).join(':') || kind;
+      var running = (snap.jobs || []).filter(function (j) { return j.source === kind; }).length;
+      var cls = s.health !== 'ok' ? (s.health === 'auth_failed' ? 'bad' : 'warn') : running ? 'busy' : '';
+      var st = s.health !== 'ok' ? (SRC_STATE[s.health] || s.health) : running ? running + ' running' : 'ok';
+      var tag = setup ? 'a' : 'span';
+      return '<' + tag + ' class="rsrc ' + cls + '"' + (setup ? ' href="setup#sources"' : '') + ' title="' + esc(s.id) + '">' +
+        src(kind) + '<span>' + esc(name) + '</span><span class="st">' + esc(st) + '</span></' + tag + '>';
+    }).join('');
+    var el = $('sources');
+    if (el.innerHTML !== html) el.innerHTML = html;
   }
 
   // ---- day and night, pixel shift ----------------------------------------
@@ -810,8 +978,10 @@
     applyTheme(d);
     applyShift(d.getTime());
     returnToTop();
+    // Done jobs and tinted rows run out on the clock, not on a new snapshot.
+    if (snap && d.getSeconds() % 5 === 0) drawGrid();
     $('time').textContent = two(d.getHours()) + ':' + two(d.getMinutes());
-    $('date').textContent = d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+    $('date').textContent = d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
     Array.prototype.forEach.call(document.querySelectorAll('[data-since]'), function (el) {
       el.textContent = clock(nowS() - Number(el.getAttribute('data-since')));
     });
@@ -831,7 +1001,7 @@
     else if (wsFailed) { text = 'polling, no live socket'; cls = 'review'; }
     else if (problems) { text = problems + (problems === 1 ? ' source has' : ' sources have') + ' a problem'; cls = 'bad'; }
     else { text = 'all sources ok'; cls = 'ok'; }
-    conn.className = 'chip ' + cls;
+    conn.className = 'chip end ' + cls;
     conn.textContent = text;
     renderNotice();
   }

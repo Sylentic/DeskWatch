@@ -63,7 +63,7 @@ const KIOSK_JS: &str = include_str!("../kiosk/kiosk.js");
 /// `style-src` allows inline styles because the widgets set bar widths with
 /// `style` attributes.
 const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
-                   connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'";
+                   connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'";
 
 /// The latest snapshot, as JSON text.
 type Frame = Arc<str>;

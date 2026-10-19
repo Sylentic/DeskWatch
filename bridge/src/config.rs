@@ -597,19 +597,19 @@ fn panel(widget: Widget, span: [u8; 2]) -> PanelConfig {
 }
 
 /// The layout used when `[[kiosk.panel]]` is not set, for the default 4x3 grid:
-/// Open PRs as a tall column on the left, one Hosts panel (1 wide, 2 tall) with
-/// Pipelines (1 cell) below it in the middle, Running now over the other two
-/// columns. Alerts are in the page header and the sources are on the setup
-/// page, so neither has a panel here.
+/// Running now (2 wide, 2 tall) and Hosts (2 wide, 2 tall) on top, Pipelines
+/// (2 wide), Open PRs and Alerts (1 cell each) below them. The sources are in
+/// the bar under the header, so they have no panel here.
 pub fn default_panels(view: HostView) -> Vec<PanelConfig> {
     vec![
-        panel(Widget::Prs, [1, 3]),
+        panel(Widget::Jobs, [2, 2]),
         PanelConfig {
             view: Some(view),
-            ..panel(Widget::Hosts, [1, 2])
+            ..panel(Widget::Hosts, [2, 2])
         },
-        panel(Widget::Jobs, [2, 3]),
-        panel(Widget::Pipelines, [1, 1]),
+        panel(Widget::Pipelines, [2, 1]),
+        panel(Widget::Prs, [1, 1]),
+        panel(Widget::Alerts, [1, 1]),
     ]
 }
 
@@ -2239,21 +2239,27 @@ title = "Reviews"
     }
 
     #[test]
-    fn the_default_layout_has_one_hosts_panel_and_no_alerts_or_sources() {
+    fn the_default_layout_has_one_hosts_panel_and_no_sources_panel() {
         for view in [HostView::Detailed, HostView::Compact] {
             let panels = default_panels(view);
             let widgets: Vec<Widget> = panels.iter().map(|p| p.widget).collect();
-            // Alerts live in the page header, the sources on the setup page.
+            // The sources are in the bar under the header.
             assert_eq!(
                 widgets,
-                [Widget::Prs, Widget::Hosts, Widget::Jobs, Widget::Pipelines]
+                [
+                    Widget::Jobs,
+                    Widget::Hosts,
+                    Widget::Pipelines,
+                    Widget::Prs,
+                    Widget::Alerts
+                ]
             );
             let hosts = &panels[1];
-            assert_eq!((hosts.span, hosts.view), ([1, 2], Some(view)));
-            // Open PRs a tall column, Running now big, Pipelines one cell.
-            assert_eq!(panels[0].span, [1, 3]);
-            assert_eq!(panels[2].span, [2, 3]);
-            assert_eq!((panels[3].span, panels[3].rows), ([1, 1], None));
+            assert_eq!((hosts.span, hosts.view), ([2, 2], Some(view)));
+            // Running now and Hosts big on top; Pipelines, Open PRs and Alerts below.
+            assert_eq!(panels[0].span, [2, 2]);
+            assert_eq!((panels[2].span, panels[2].rows), ([2, 1], None));
+            assert_eq!((panels[3].span, panels[4].span), ([1, 1], [1, 1]));
         }
         // `host_view` picks the view of that panel, from bridge.toml or the setup page.
         let config = Config::from_toml("[kiosk]\nhost_view = \"compact\"\n").unwrap();

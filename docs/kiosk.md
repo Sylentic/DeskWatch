@@ -3,7 +3,8 @@
 The ESP panel shows one page at a time on a 4 inch screen. The **kiosk dashboard** is the other output: one web page
 that shows everything at once, with no rotation, for a monitor or TV (a Raspberry Pi with a browser in kiosk mode, a
 wall tablet, or any browser on your desk). It is built into the bridge, so there is nothing extra to install, and
-it works on a LAN with no internet access (no CDN, fonts or scripts are loaded from elsewhere).
+it works on a LAN with no internet access (no CDN or scripts are loaded from elsewhere; the typefaces, Geist, Geist Mono
+and Space Grotesk, are built into the bridge and served on `/fonts/`, see `bridge/fonts/`).
 
 It reads the same facts as the ESP panel, so the two always agree, but it is its own design: the MQTT schema (v2)
 and the panel do not change, and the page does not need a broker.
@@ -53,12 +54,15 @@ shows the newest items again.
 
 ### Hosts: detailed or compact
 
-The built-in layout has one **Hosts** panel, one cell wide and two tall. In the `detailed` view (the default) the host
-you chose is shown in detail on top (CPU, RAM and disk bars, temperature, load, network, uptime, a CPU graph) and every
-host is listed below it with its CPU, RAM and disk. Tap or click a host in the list to show it in detail; the choice is
-kept in the browser (localStorage), so a reload keeps it, and a host that has disappeared falls back to the first one.
-There is no automatic rotation. In the `compact` view the panel is only the list, with the download and upload rates
-under each host.
+The built-in layout has one **Hosts** panel, two cells wide and two tall. In the `detailed` view (the default) a list
+of every host sits on the left and the host you chose is shown in detail next to it (CPU, memory and disk bars, uptime,
+temperature, load, network, cores and a CPU graph). Each line in the list shows the host's highest value (`DISK 88`);
+hosts that need a look (down, over a warning line, or started less than an hour ago) come first, with an amber or red
+pip. Tap or click a host to show it in detail; the choice is kept in the browser (localStorage), so a reload keeps it,
+and a host that has disappeared falls back to the first one. The chosen host never changes by itself. When the panel is
+narrow (one cell wide) the chosen host is shown above the list instead. In the `compact` view the panel is only the
+table: uptime, CPU, memory and disk, and the download and upload rates (as columns when the panel is two cells wide,
+else as a small line under each host).
 
 `[kiosk] host_view = "detailed"` or `"compact"` chooses the view, or the [setup page](setup-page.md) ("Dashboard
 hosts", needs a data folder and a restart of the bridge); the setup page's choice wins over `bridge.toml`. In your own
@@ -87,19 +91,20 @@ closes it. With nothing left the counter shows `0 failed` with a green dot.
 
 When a source cannot be checked, a pill appears in the header next to the alert pill: **SOURCE DOWN**, the source id
 and why (amber "not answering", red "sign-in refused"), with "+N more" for further sources. It only means the bridge's
-last check failed. A quiet source (no new PRs or runs for days) is fine and shows nothing. The chip on the right keeps
-saying "N sources have a problem" for as long as a source is down.
+last check failed. A quiet source (no new PRs or runs for days) is fine and shows nothing. The source's entry in the
+sources bar under the header turns amber or red, and the connection state at the end of that bar keeps saying
+"N sources have a problem", for as long as the source is down.
 
-**Mute** hides the pill on every screen (the bridge remembers it, in memory) until that source works again; the chip
-still counts the problem, and the next outage shows the pill again. API: `POST /api/kiosk/source/mute {"id": "..."}`.
+**Mute** hides the pill on every screen (the bridge remembers it, in memory) until that source works again; the sources
+bar still shows the problem, and the next outage shows the pill again. API: `POST /api/kiosk/source/mute {"id": "..."}`.
 
 ### Alerts in the header
 
-The most urgent active alert is a coloured pill in the header, next to the badges: the severity in colour (INFO blue,
+The most urgent active alert is a coloured pill on the right of the header: the severity in colour (INFO blue,
 WARNING amber, CRITICAL red), what is wrong, the message and the source ("homeassistant"), with "+N more" when
 there are more. With no alerts there is no pill. Click it, or the **Alerts** badge, to fold out the menu with all alerts.
-The header badges run Open PRs, Failed runs, Alerts; each is gone at 0. Run results and notices (success, failed,
-notice) show as a pill beside it.
+The header badges (one bar next to the DESKWATCH name) run Open PRs, Failed runs, Alerts; each is gone at 0. While a run
+result or notice is showing (see below), it takes the pill's place: the header shows one pill at a time.
 
 The **Alerts** badge counts every active alert, coloured by the worst one. In the menu every alert has a **Dismiss**
 button, plus **Dismiss all**. Dismissing clears the alert for every screen (the same as a `clear` message on MQTT,
@@ -108,15 +113,30 @@ alert. Switch it off with `dismiss = false` in `[alerts]`.
 The header pill on or off and "via source" are `[alerts]` settings too (`ticker`, `show_source`), also
 changeable on the [setup page](setup-page.md#alerts).
 
-The "sources" chip on the right (all sources ok, or how many have a problem) opens the [setup page](setup-page.md) when it
-is on, where every source and its status is listed.
+### Where things run: source marks and the sources bar
+
+Every job, run, pull request, runner and alert carries a two-letter mark for its source: **Gt** Gitea, **GH** GitHub,
+**GL** GitLab, **BB** Bitbucket, **AZ** Azure DevOps, **PM** Prometheus, **HA** Home Assistant, **LO** the bridge
+machine or a script. The bar under the header lists every source with its mark, its name and its state: how many jobs
+run there, `ok`, or what is wrong (`not answering`, `sign-in refused`). With the setup page on, each entry opens it.
+At the end of the bar the connection state says whether the page gets live data (`all sources ok`, `offline`,
+`polling, no live socket`).
+
+### Run results in the header
 
 Interrupts do not take over the whole screen as they do on the ESP panel, because the other widgets are still
 useful. The bridge's normal priority decides (critical alert, running job, failed, warning, success, notice), and
-the page shows the winner as a coloured **pill in the header** (next to the badges): red for a failure, deep red for a critical
-alert, amber for a warning, green for a success, blue for a notice. While a job runs, a thin orange progress line under
-the header follows it. The header also has the same counters as the panel badges (failed runs, open PRs, alerts,
-things down), a connection chip, and a clock.
+the page shows the winner as a coloured **pill in the header**:
+
+- **FAILED** (red) and **CRITICAL**: stay until dismissed; a new one pulses once (not with reduced motion).
+- **WARNING** (amber).
+- **SUCCESS** (green), **FIXED** when the same pipeline failed before (the bridge has already replaced the red result),
+  **DEPLOYED** for a pipeline with "deploy" in its name: these go away by themselves.
+- **NOTICE** (blue).
+
+While a job runs, a thin orange progress line under the header follows it. A run that finished well stays in Running
+now for 30 seconds as **Done**, and a row in Pipelines that just finished is tinted red or green for 30 seconds. An
+open PR younger than an hour carries **NEW**.
 
 The size follows the screen width, so the same layout is readable on 1080p and 4K and on a small 1280x720 screen.
 Under 900 px wide (a phone) it becomes a single scrolling column. The pointer hides after 3 seconds without mouse movement.
@@ -155,10 +175,11 @@ dashboard-only config and no broker. The Compose files, the token and the revers
 ## 3. Choose the widgets
 
 `[[kiosk.panel]]` blocks place widgets on the grid, left to right and top to bottom, like the `[[rotation]]` list.
-Without any, the default layout is used: `prs` (a tall column on the left), one `hosts` panel (1 wide, 2 tall, see
-[Hosts](#hosts-detailed-or-compact)) with `pipelines` (1 cell) below it, and `jobs` (Running now) over the two columns on the
-right. There is no Alerts or Sources panel: alerts run through the header (below) and the sources and their status are
-on the [setup page](setup-page.md), which the "sources" chip in the header opens. The `alerts` and `health` widgets still
+Without any, the default layout is used: `jobs` (Running now, 2 wide, 2 tall) and one `hosts` panel (2 wide, 2 tall,
+see [Hosts](#hosts-detailed-or-compact)) on top, `pipelines` (2 wide), `prs` and `alerts` (1 cell each) below them.
+The Alerts panel shows every active alert as a coloured box with a Dismiss button (when `[alerts] dismiss` is on). There
+is no Sources panel: the sources and their status are in the bar under the header, which opens the
+[setup page](setup-page.md) when it is on. The `alerts` and `health` widgets still
 exist for your own layout. Add a `runners` panel yourself (it needs a source with runner scopes set, see
 [runners.md](runners.md)); the default grid has no free cell for it.
 
@@ -311,16 +332,16 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
   Details in [docker.md](docker.md#protecting-the-page).
 - Names shown come from your sources after their `alias` setting. If a work project name should not appear on a
   visible screen, give it an alias, exactly as for the ESP panel. The page has no other redaction.
-- The page sets a strict Content Security Policy: scripts and styles only from the bridge itself.
+- The page sets a strict Content Security Policy: scripts, styles and fonts only from the bridge itself.
 
 ## 6. When something goes wrong
 
 - **The bridge restarts or the network drops.** The page keeps the last data on screen, dims it, and shows
-  "No data from the bridge for 0:42. Showing the last known state, reconnecting." in the banner row; the header chip
-  turns red and says `offline`. It retries with a growing delay (up to 10 s) and also polls `/api/kiosk` in case a
+  "No data from the bridge for 0:42. Showing the last known state, reconnecting." in the banner row; the connection state
+  at the end of the sources bar turns red and says `offline`. It retries with a growing delay (up to 10 s) and also polls `/api/kiosk` in case a
   proxy blocks WebSockets, and carries on by itself when the bridge is back.
-- **A source stops working** (expired token, service down). The `health` widget names it, the header chip says how
-  many sources have a problem, and the widgets built from that source's data are dimmed with a "may be out of date"
+- **A source stops working** (expired token, service down). The `health` widget names it, the sources bar marks it
+  and says how many sources have a problem, and the widgets built from that source's data are dimmed with a "may be out of date"
   look. Hosts that Prometheus reports as down get a red dot and a dimmed card.
 - **The bridge host's clock and the screen's clock differ.** Times such as "3 min ago" use the bridge's clock, so a
   Pi with a wrong clock still shows correct ages. The clock in the header is the screen's own.
@@ -329,9 +350,10 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
   those old settings no longer do anything. Delete the line the message names from the config. The bridge stops
   instead of ignoring the line, so nobody keeps a login they believe is still active. If you need a login, set a
   password ([auth.md](auth.md)) or put a reverse proxy with its own in front ([docker.md](docker.md#protecting-the-page)).
-- **The page says why it has no data.** The header chip and a box in the page body name the cause:
+- **The page says why it has no data.** The connection state (end of the sources bar) and a box in the page body
+  name the cause:
 
-  | Header chip | Meaning | What to do |
+  | Connection state | Meaning | What to do |
   | --- | --- | --- |
   | `bridge unreachable` | The request did not get an answer. | Check the container or service is running, the address and port, the firewall, the proxy. |
   | `bridge error 502` (any HTTP status) | Something answered, but with an error. | Usually a reverse proxy that cannot reach the bridge; see its log and the bridge log. |
@@ -350,7 +372,7 @@ and at least every 5 seconds (a heartbeat, so the page can tell quiet from gone)
 (Unix seconds), `layout` (the grid, the widgets with their filters, `theme` and `pixel_shift_s` from the config), `screen` (the composer's pick as an MQTT v2
 screen payload, or `null` when idle), `badges`, `failed` (the failed runs behind the badge, minus the dismissed ones: `key`, `source`, `project`, `pipeline`, `ref`, `step`, `started`, `finished`, `url`), `hosts`, `down`, `jobs`, `runs`, `pulls`, `runners`, `queued_jobs`, `alerts` and `sources` (`id`, `health`, and `muted: true` when the pill was muted). `jobs`, `runs`, `pulls[].items[]` and `runners` each carry a `url` (an `http(s)` address, or `null`).
 Lists are not capped to the ESP panel's five rows. The structure is in `bridge/src/kiosk.rs` (`snapshot`) and
-covered by the tests next to it. Treat it as unstable until 1.0.
+covered by the tests next to it. It is made for this page and may change between versions; scripts should use `POST /api/alert` instead.
 
 Status colours (the dots in Pipelines, the Running now bars and the header counters use the same ones): orange and
 pulsing for running, red for failed, green for success, amber and still for waiting for approval, grey for queued,
