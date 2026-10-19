@@ -11,7 +11,7 @@ DeskWatch supports **Linux and Windows** (x86_64 release binaries for both). Pic
 | A full-size status page in a browser (no ESP panel, no broker) | [docker.md](docker.md#3-the-dashboard-on-your-homelab) for a container on a homelab, [kiosk.md](kiosk.md) for the page itself and a Raspberry Pi with a screen; skip the Mosquitto steps below and set `[mqtt] enabled = false` |
 | macOS | Not covered yet; contributions are welcome |
 
-The source setup in [section 5](#5-sources) (Gitea, GitHub, Azure DevOps, Prometheus), the Mosquitto logins and
+The source setup in [section 5](#5-sources) (Gitea, GitHub, GitLab, Bitbucket Cloud, Azure DevOps, Prometheus), the Mosquitto logins and
 Home Assistant steps are the same on both systems apart from how secrets are stored; [windows.md](windows.md)
 points back here for them.
 
@@ -26,7 +26,7 @@ What you need:
 
 - A Linux server that stays on, with `systemd` (Debian 12 or newer is what the steps are written for).
 - A Mosquitto broker the bridge can reach (often the same server).
-- At least one source: Gitea, GitHub or GitHub Enterprise, Azure DevOps, Prometheus, or only Home Assistant alerts. With no
+- At least one source: Gitea, GitHub or GitHub Enterprise, GitLab, Bitbucket Cloud, Azure DevOps, Prometheus, or only Home Assistant alerts. With no
   source at all the bridge still shows the server's own stats.
 
 Contents: [1. Get the binary](#1-get-the-binary) · [2. Install it](#2-install-the-bridge) ·
@@ -38,7 +38,7 @@ Contents: [1. Get the binary](#1-get-the-binary) · [2. Install it](#2-install-t
 Prefer a browser to a text editor for the sources? The optional [setup page](setup-page.md) can add, test and remove
 sources and tokens (and change the MQTT broker) once you give the bridge a writable [data folder](data-dir.md); on
 systemd that means `StateDirectory=deskwatch` in the unit and `[data] dir = "/var/lib/deskwatch"` plus
-`[setup] enabled = true` in `bridge.toml`. It has no login: trusted network only.
+`[setup] enabled = true` in `bridge.toml`. It has no login until you set an administrator password ([auth.md](auth.md)): trusted network only until then.
 
 ## 1. Get the binary
 
@@ -49,7 +49,7 @@ aarch64, the Raspberry Pi, see [raspberry-pi.md](raspberry-pi.md)) and a checksu
 file (the Windows zip is covered in [windows.md](windows.md)). It is built on Ubuntu 22.04, so it runs on Debian 12 and newer. It needs nothing but the system C library.
 
 ```sh
-VERSION=v0.9.19      # the release you want
+VERSION=v0.9.20      # the release you want
 cd "$(mktemp -d)"
 curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-x86_64-linux.tar.gz"
 curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-x86_64-linux.tar.gz.sha256"
@@ -73,7 +73,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 git clone https://github.com/Sylentic/DeskWatch.git
 cd DeskWatch
-git checkout v0.9.19            # or stay on main for the newest, untagged code
+git checkout v0.9.20            # or stay on main for the newest, untagged code
 cargo build --release --locked -p deskwatch-bridge
 ```
 

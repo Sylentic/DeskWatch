@@ -8,6 +8,8 @@ may change if the firmware work needs it; any such change is listed here.
 
 ## [Unreleased]
 
+## [0.9.20]
+
 ### Changed (security)
 
 - **The setup page and `POST /api/alert` only answer the local network by default.** Clients with a loopback, private,
@@ -16,9 +18,6 @@ may change if the firmware work needs it; any such change is listed here.
   rule, and the bridge warns when that is on without `[http.tls]`. A normal home install is unaffected; a setup page or
   alert sender that is reached from the internet through a tunnel stops working until you set it. This is the first
   step of making the app safe to offer beyond the home network (a login follows). See `docs/setup-page.md`.
-
-### Changed
-
 - `[http] allow_public = true` now needs a login password; without one the bridge refuses to start.
 
 ### Added
@@ -66,6 +65,19 @@ may change if the firmware work needs it; any such change is listed here.
 - **Dismissing a failed run now happens on the bridge**, so it disappears on every screen at once, like an alert, instead
   of per browser (localStorage). A new failure of the same pipeline still shows up; restarting the bridge shows the
   failures again.
+
+### Fixed
+
+- **CI:** the firmware job's cache is keyed on the Xtensa GCC version, and the Xtensa toolchain install gets a GitHub
+  token, so it no longer fails on API rate limits.
+
+### Documentation
+
+- A full pass over the documentation against the current code: the login, HTTPS, setup page, kiosk, Docker, Home
+  Assistant and install pages no longer say the dashboard "has no login" without the "until you set a password"
+  qualifier, the source lists name GitLab and Bitbucket Cloud, and the README states plainly what is tested on real systems
+  and what is not (GitLab and Bitbucket: mock answers only; Forgejo and Codeberg: untested; OAuth sign-in: designed, not
+  built). New `docs/README.md` indexes every page.
 
 ## [0.9.19]
 

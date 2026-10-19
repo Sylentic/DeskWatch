@@ -12,9 +12,9 @@ It is **off by default**. Turn it on in `bridge.toml`, restart the bridge and op
 enabled = true
 ```
 
-There is no login. Whoever can reach the port can use the page, so it belongs on a network you trust (your home
-network). The bridge logs a warning at startup when the page is reachable from the network. **Never expose the port to
-the internet**, and do not publish it through a reverse proxy or tunnel unless that has its own login. The page never
+Until you set an administrator password ([auth.md](auth.md)) there is no login. Whoever can reach the port can use the
+page, so it belongs on a network you trust (your home network). The bridge logs a warning at startup when the page is
+reachable from the network without one. **Never expose the port to the internet** without the built-in login (and HTTPS). The page never
 shows a secret (only whether a credential exists), token fields are write-only, and a page from another website cannot
 make changes in your browser (the `Origin` check, below).
 
@@ -104,7 +104,7 @@ The **Alerts** section has three cards.
   default, see [home-assistant.md](home-assistant.md#without-mqtt-the-web-address).
 - **Try it**: **Send test alert** raises one fixed warning ("Test alert", source "setup") that goes away by itself after a
   minute, and **Clear it now** removes it. The page sends no text of its own, only the action `send` or `clear`, so there
-  is no way to create any other alert from here (the setup page has no login). It needs no data folder.
+  is no way to create any other alert from here (without a password the setup page has no login). It needs no data folder.
 - **Where alerts come from**: whether MQTT is on and connected. Alerts arrive on the MQTT topic `deskpanel/alert`
   ([home-assistant.md](home-assistant.md)). Failed pipeline runs are not alerts; they count in the Failed badge.
 
@@ -173,7 +173,7 @@ restart once by hand (`docker compose restart deskwatch-bridge`). It needs the s
   with TLS and a proxy that has a login. The bridge warns at startup when it is on without TLS.
 - **A login is available** ([auth.md](auth.md)): set an administrator password under **Access** and the page, the
   dashboard and every change need a sign-in; the address rule above then steps aside. Until you do, there is no login.
-- **No login (default).** Anyone who can reach the port from the local network can open the page and, with a data folder, change sources and store
+- **No login until you set a password (default).** Anyone who can reach the port from the local network can open the page and, with a data folder, change sources and store
   tokens. Keep the port on a trusted network. A website you have open in your browser cannot use the page for you:
   requests whose `Origin` is another site are refused.
 - Secrets never reach the browser, whatever the network.
