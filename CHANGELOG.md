@@ -17,8 +17,19 @@ may change if the firmware work needs it; any such change is listed here.
   alert sender that is reached from the internet through a tunnel stops working until you set it. This is the first
   step of making the app safe to offer beyond the home network (a login follows). See `docs/setup-page.md`.
 
+### Changed
+
+- `[http] allow_public = true` now needs a login password; without one the bridge refuses to start.
+
 ### Added
 
+- **A built-in login** ([docs/auth.md](docs/auth.md)). Set an administrator password (first-run screen, Setup, Access, or
+  `deskwatch-bridge auth set-password` on the host) and the dashboard, its WebSocket, the setup page and every change need a
+  sign-in. Optional viewer password (dashboard only). Scripts and screens use API keys: an alert key for `POST /api/alert`
+  (`Authorization: Bearer`), a viewer key for a Pi kiosk (`/?key=`). Argon2id hashes and key hashes in `auth.toml` in the data
+  folder, in-memory sessions (HttpOnly, SameSite=Lax cookie, Secure over HTTPS), an `X-DeskWatch` header on every write, and
+  rate limiting per address after five wrong tries. `deskwatch-bridge auth reset` forgets the passwords. Off until a password is
+  set, so existing installs are unchanged. The health check accepts the 303 or 401 a guarded page answers.
 - **A "source down" pill in the kiosk header.** When a source cannot be checked (not answering, or its login
   refused) a pill next to the alerts says which one and why. A quiet source is not a down source. **Mute** hides the
   pill on every screen until the source works again; the "N sources have a problem" chip keeps counting it.

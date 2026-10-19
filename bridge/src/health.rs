@@ -67,6 +67,12 @@ pub enum Outcome {
     NoListener,
 }
 
+/// With the login on, a page answers 303 (to the sign-in page) or 401 to a
+/// probe that has no session: the listener is alive and guarding it.
+fn page_answers(status: u16) -> bool {
+    matches!(status, 200 | 303 | 401)
+}
+
 /// Probe the listener that `config` says should be open. `Err` means unhealthy.
 pub async fn check(config: &Config) -> Result<Outcome> {
     let kiosk = config.kiosk.enabled;
@@ -81,7 +87,7 @@ pub async fn check(config: &Config) -> Result<Outcome> {
     let status = tokio::time::timeout(TIMEOUT, http_get(listen, tls, "/"))
         .await
         .context(timeout)??;
-    if kiosk && status != 200 {
+    if kiosk && !page_answers(status) {
         bail!("the dashboard page answered HTTP {status}, expected 200");
     }
     // Without the dashboard `/` has nothing to answer, so a bridge that only
@@ -90,7 +96,7 @@ pub async fn check(config: &Config) -> Result<Outcome> {
         let status = tokio::time::timeout(TIMEOUT, http_get(listen, tls, "/setup"))
             .await
             .context(timeout)??;
-        if status != 200 {
+        if !page_answers(status) {
             bail!("the setup page answered HTTP {status}, expected 200");
         }
     }

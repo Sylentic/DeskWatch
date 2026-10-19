@@ -79,3 +79,9 @@ code { font-family: ui-monospace, monospace; font-size: .9em; }
 .setting small { display: block; color: var(--muted); }
 .setting input[type=checkbox] { width: 1.2rem; height: 1.2rem; flex: none; }
 .setting select, .setting input.narrow { flex: 0 0 8rem; width: 8rem; }
+
+form.accessform { display: grid; gap: .6rem; margin-top: 1rem; max-width: 26rem; }
+form.accessform h3, .card h3 { font-size: 1rem; margin: 1.25rem 0 .25rem; }
+label.field { display: grid; gap: .2rem; font-size: .9rem; }
+select { padding: .5rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; }
+#signout[hidden] { display: none; }

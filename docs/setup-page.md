@@ -171,12 +171,14 @@ restart once by hand (`docker compose restart deskwatch-bridge`). It needs the s
   other client gets a `403`. Behind a reverse proxy the client is the last `X-Forwarded-For` entry (the one the proxy
   added), so a public visitor behind a LAN proxy is refused too. `[http] allow_public = true` lifts this; do that only
   with TLS and a proxy that has a login. The bridge warns at startup when it is on without TLS.
-- **No login.** Anyone who can reach the port from the local network can open the page and, with a data folder, change sources and store
+- **A login is available** ([auth.md](auth.md)): set an administrator password under **Access** and the page, the
+  dashboard and every change need a sign-in; the address rule above then steps aside. Until you do, there is no login.
+- **No login (default).** Anyone who can reach the port from the local network can open the page and, with a data folder, change sources and store
   tokens. Keep the port on a trusted network. A website you have open in your browser cannot use the page for you:
   requests whose `Origin` is another site are refused.
 - Secrets never reach the browser, whatever the network.
 - **Removed: `[setup] token_file`.** A config that still sets it is refused at startup with a message that names the
-  line to delete. The page has no login of its own; use a proxy with one if you need it.
+  line to delete. Use the built-in login ([auth.md](auth.md)) or a proxy with one instead.
 - The connection is plain HTTP unless you turn on HTTPS, in the bridge or with a TLS reverse proxy in front ([https.md](https.md)). The
   bridge logs a warning when the page is reachable from the network. Until you have TLS, keep the listener on
   `127.0.0.1` or on a network you trust.

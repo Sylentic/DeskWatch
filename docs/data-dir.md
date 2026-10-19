@@ -11,6 +11,7 @@ variable. The bridge creates the folder and stops at startup, with the reason, i
 /var/lib/deskwatch/
   sources.toml          [[source.*]] blocks, same format as in bridge.toml
   credentials/<name>    one secret per file, mode 0600, folder mode 0700
+  auth.toml             login: password hashes and API key hashes, mode 0600 (auth.md)
 ```
 
 - **`sources.toml`** holds `[[source.gitea]]`, `[[source.github]]`, `[[source.azure_devops]]` and

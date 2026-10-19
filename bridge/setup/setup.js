@@ -7,6 +7,20 @@
 (function () {
   'use strict';
 
+  // The login (docs/auth.md): every write carries X-DeskWatch (a page on
+  // another site cannot add it), and a refused session goes to the sign-in page.
+  var plainFetch = window.fetch;
+  window.fetch = function (url, opts) {
+    opts = opts || {};
+    if (opts.method && opts.method !== 'GET') {
+      opts.headers = Object.assign({ 'X-DeskWatch': '1' }, opts.headers || {});
+    }
+    return plainFetch.call(this, url, opts).then(function (r) {
+      if (r.status === 401) location.href = '/login?next=' + encodeURIComponent(location.pathname);
+      return r;
+    });
+  };
+
   var app = document.getElementById('app');
 
   // Dark is the default. The button switches to light and remembers it in this
@@ -35,7 +49,9 @@
   var form = null;       // the open add/edit form, or null (see openForm)
   var confirming = null; // key of the action waiting for its confirm click, or null
   var restarting = null; // { boot, since } while the page waits for a restart to finish
-  var SECTIONS = ['sources', 'mqtt', 'dashboard', 'alerts', 'bridge', 'secrets'];
+  var SECTIONS = ['sources', 'mqtt', 'dashboard', 'alerts', 'access', 'bridge', 'secrets'];
+  var access = null;     // last answer of api/auth/status (the Access section)
+  var accessNote = null; // result line and one-time key of the Access section
   var alertNote = null;  // result of the last test alert button press
 
   function el(tag, cls, text) {
@@ -674,7 +690,133 @@
     return card;
   }
 
-  var TITLES = { sources: 'Sources', mqtt: 'MQTT broker', dashboard: 'Dashboard', alerts: 'Alerts', bridge: 'Bridge and restart', secrets: 'Stored secrets' };
+  function loadAccess() {
+    return fetch('api/auth/status', { cache: 'no-store', credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (a) {
+        access = a;
+        var out = document.getElementById('signout');
+        if (out) out.hidden = a.state !== 'signed_in';
+        if (last) render(last);
+      }, function () { /* the section says it cannot load */ });
+  }
+
+  function accessCall(url, body, done) {
+    return post(url, body).then(function (j) {
+      if (j.error) { accessNote = { error: j.error }; }
+      else { accessNote = { ok: done || 'Saved.', key: j.key || null }; }
+      return loadAccess();
+    });
+  }
+
+  function labelled(text, input) {
+    var l = el('label', 'field');
+    l.appendChild(el('span', 'muted', text));
+    l.appendChild(input);
+    return l;
+  }
+
+  function input(type, name, auto) {
+    var i = el('input'); i.type = type; i.name = name; i.autocomplete = auto || 'off';
+    return i;
+  }
+
+  function accessForm(title, fields, button, onSubmit) {
+    var f = el('form', 'accessform');
+    if (title) f.appendChild(el('h3', null, title));
+    fields.forEach(function (x) { f.appendChild(x); });
+    var b = el('button', 'secondary', button); b.type = 'submit';
+    f.appendChild(b);
+    f.addEventListener('submit', function (ev) { ev.preventDefault(); onSubmit(f); });
+    return f;
+  }
+
+  function accessSection() {
+    var card = el('section', 'card');
+    if (!access) { loadAccess(); card.appendChild(el('p', 'muted', 'Loading…')); return card; }
+    if (accessNote) {
+      var n = el('p', accessNote.error ? 'err' : 'banner', accessNote.error || accessNote.ok);
+      n.setAttribute('role', 'status'); card.appendChild(n);
+      if (accessNote.key) {
+        card.appendChild(el('p', 'muted', 'Copy this key now. It is shown once and cannot be read again:'));
+        var code = el('code', null, accessNote.key); code.style.wordBreak = 'break-all';
+        card.appendChild(code);
+      }
+    }
+    var min = access.min_password || 12;
+    if (access.state === 'open') {
+      card.appendChild(el('p', 'muted', 'The login needs a data folder to save the password (see docs/data-dir.md). Until then the page only answers the local network.'));
+      return card;
+    }
+    if (access.state === 'first_run') {
+      card.appendChild(el('p', 'muted', 'No password is set. The page answers the local network only. Set an administrator password to require a sign-in for the dashboard and this page.'));
+      card.appendChild(accessForm(null, [
+        labelled('Username', Object.assign(input('text', 'username', 'username'), { value: 'admin' })),
+        labelled('New password (at least ' + min + ' characters)', input('password', 'password', 'new-password'))
+      ], 'Set password and sign in', function (f) {
+        accessNote = null;
+        post('api/auth/setup', { username: f.username.value, password: f.password.value }).then(function (j) {
+          if (j.error) { accessNote = { error: j.error }; } else { accessNote = { ok: 'The password is set. You are signed in.' }; }
+          loadAccess();
+        });
+      }));
+      return card;
+    }
+    var a = access.account;
+    if (!a) { card.appendChild(el('p', 'muted', 'Only the administrator can change the access settings.')); return card; }
+    var dl = el('dl');
+    row(dl, 'Administrator', a.admin);
+    row(dl, 'Viewer password', a.viewer_password ? 'set (user name "viewer")' : 'not set');
+    row(dl, 'Signed-in browsers', String(a.sessions));
+    card.appendChild(dl);
+
+    card.appendChild(accessForm('Change the administrator password', [
+      labelled('Current password', input('password', 'current', 'current-password')),
+      labelled('New password (at least ' + min + ' characters)', input('password', 'new', 'new-password'))
+    ], 'Change password', function (f) {
+      accessCall('api/auth/password', { current: f.current.value, new: f.new.value }, 'The password is changed.');
+    }));
+
+    card.appendChild(accessForm('Viewer password', [
+      el('p', 'muted', 'Optional. Lets a colleague or a screen open the dashboard (user name "viewer") but not this page and not change anything. Leave it empty to remove it.'),
+      labelled('Viewer password', input('password', 'password', 'new-password'))
+    ], a.viewer_password ? 'Change or remove' : 'Set viewer password', function (f) {
+      accessCall('api/auth/viewer', { password: f.password.value }, f.password.value ? 'The viewer password is set.' : 'The viewer password is removed.');
+    }));
+
+    var out = el('button', 'secondary', 'Sign out everywhere'); out.type = 'button';
+    out.addEventListener('click', function () {
+      post('api/auth/logout-all', {}).then(function () { location.href = '/login'; });
+    });
+    card.appendChild(el('h3', null, 'Sessions'));
+    card.appendChild(out);
+
+    card.appendChild(el('h3', null, 'API keys'));
+    card.appendChild(el('p', 'muted', 'For scripts and screens, so they never need a password. An "alert" key may send POST /api/alert (Authorization: Bearer <key>). A "viewer" key opens the dashboard once: https://host/?key=<key>.'));
+    if (!a.keys.length) card.appendChild(el('p', 'muted', 'No keys yet.'));
+    a.keys.forEach(function (k) {
+      var line = el('div', 'secret');
+      var left = el('span'); left.appendChild(document.createTextNode(k.name));
+      left.appendChild(el('br')); left.appendChild(el('small', null, k.scope + ' key'));
+      line.appendChild(left);
+      var del = el('button', 'secondary danger', 'Delete'); del.type = 'button';
+      del.addEventListener('click', function () { accessCall('api/auth/key/delete', { name: k.name }, 'The key is deleted.'); });
+      line.appendChild(del);
+      card.appendChild(line);
+    });
+    var scope = el('select'); scope.name = 'scope';
+    [['alert', 'alert (send alerts)'], ['viewer', 'viewer (open the dashboard)']].forEach(function (o) {
+      var op = el('option', null, o[1]); op.value = o[0]; scope.appendChild(op);
+    });
+    card.appendChild(accessForm('New key', [
+      labelled('Name', input('text', 'name')), labelled('What it may do', scope)
+    ], 'Create key', function (f) {
+      accessCall('api/auth/key', { name: f.name.value, scope: f.scope.value }, 'The key is created.');
+    }));
+    return card;
+  }
+
+  var TITLES = { sources: 'Sources', mqtt: 'MQTT broker', dashboard: 'Dashboard', alerts: 'Alerts', access: 'Access', bridge: 'Bridge and restart', secrets: 'Stored secrets' };
 
   function currentSection() {
     var id = (location.hash || '').replace('#', '');
@@ -722,7 +864,7 @@
     var content = el('div', 'content');
     content.appendChild(el('h2', 'sectiontitle', TITLES[section]));
     content.appendChild(({ sources: sourcesSection, mqtt: mqttSection, dashboard: dashboardSection, alerts: alertsSection,
-                           bridge: bridgeSection, secrets: secretsSection })[section](d));
+                           access: accessSection, bridge: bridgeSection, secrets: secretsSection })[section](d));
     layout.appendChild(content);
     app.appendChild(layout);
   }
@@ -732,7 +874,8 @@
   function load() {
     clearTimeout(timer);
     // A refresh would redraw (and lose the focus of) a form being filled in.
-    if (form && !form.busy && !restarting) { timer = setTimeout(load, REFRESH_MS); return Promise.resolve(); }
+    var typing = document.activeElement && app.contains(document.activeElement) && document.activeElement.tagName === 'INPUT';
+    if ((typing || form) && !(form && form.busy) && !restarting) { timer = setTimeout(load, REFRESH_MS); return Promise.resolve(); }
     return fetch('api/setup/status', { cache: 'no-store', credentials: 'same-origin' }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json().then(function (d) {
@@ -756,5 +899,10 @@
     });
   }
 
+  var signout = document.getElementById('signout');
+  signout.addEventListener('click', function () {
+    post('api/auth/logout', {}).then(function () { location.href = '/login'; });
+  });
+  loadAccess();
   load();
 })();
