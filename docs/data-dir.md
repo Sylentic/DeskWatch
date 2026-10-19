@@ -12,6 +12,7 @@ variable. The bridge creates the folder and stops at startup, with the reason, i
   sources.toml          [[source.*]] blocks, same format as in bridge.toml
   credentials/<name>    one secret per file, mode 0600, folder mode 0700
   auth.toml             login: password hashes and API key hashes, mode 0600 (auth.md)
+  oauth.toml            GitHub/Microsoft sign-in rules, no secrets (auth.md)
 ```
 
 - **`sources.toml`** holds `[[source.gitea]]`, `[[source.github]]`, `[[source.gitlab]]`, `[[source.bitbucket]]`, `[[source.azure_devops]]` and

@@ -85,3 +85,4 @@ form.accessform h3, .card h3 { font-size: 1rem; margin: 1.25rem 0 .25rem; }
 label.field { display: grid; gap: .2rem; font-size: .9rem; }
 select { padding: .5rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; }
 #signout[hidden] { display: none; }
+textarea { padding: .5rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; width: 100%; }

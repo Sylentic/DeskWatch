@@ -40,6 +40,8 @@ use tracing::{info, warn};
 use crate::kiosk::asset;
 use crate::kiosk::origin;
 
+pub mod oauth;
+
 const AUTH_FILE: &str = "auth.toml";
 const COOKIE: &str = "dw_session";
 const SESSION_IDLE: Duration = Duration::from_secs(7 * 24 * 3600);
@@ -104,6 +106,9 @@ struct Key {
 struct Session {
     role: Role,
     seen: Instant,
+    /// Shown in the page header (the name at the provider), if not a local account.
+    label: Option<String>,
+    idle: Duration,
 }
 
 struct Lock {
@@ -118,6 +123,7 @@ struct Inner {
     enabled: Arc<AtomicBool>,
     sessions: Mutex<HashMap<String, Session>>,
     locks: Mutex<HashMap<IpAddr, Lock>>,
+    oauth: oauth::OAuth,
     tls: bool,
 }
 
@@ -221,6 +227,7 @@ impl Auth {
             enabled,
             sessions: Mutex::default(),
             locks: Mutex::default(),
+            oauth: oauth::OAuth::open(dir)?,
             tls,
         })))
     }
@@ -384,12 +391,34 @@ impl Auth {
     }
 
     fn new_session(&self, role: Role) -> String {
+        self.new_session_with(role, None, SESSION_IDLE)
+    }
+
+    fn new_session_with(&self, role: Role, label: Option<String>, idle: Duration) -> String {
         let token = random_hex(32);
         let mut sessions = self.0.sessions.lock().unwrap_or_else(|e| e.into_inner());
         let now = Instant::now();
-        sessions.retain(|_, s| now.duration_since(s.seen) < SESSION_IDLE);
-        sessions.insert(token.clone(), Session { role, seen: now });
+        sessions.retain(|_, s| now.duration_since(s.seen) < s.idle);
+        sessions.insert(
+            token.clone(),
+            Session {
+                role,
+                seen: now,
+                label,
+                idle,
+            },
+        );
         token
+    }
+
+    /// The sign-in providers (GitHub, Microsoft).
+    pub fn oauth(&self) -> &oauth::OAuth {
+        &self.0.oauth
+    }
+
+    fn session_label(&self, token: &str) -> Option<String> {
+        let sessions = self.0.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        sessions.get(token)?.label.clone()
     }
 
     /// The role of a live session, refreshing its idle timer.
@@ -397,7 +426,7 @@ impl Auth {
         let mut sessions = self.0.sessions.lock().unwrap_or_else(|e| e.into_inner());
         let session = sessions.get_mut(token)?;
         let now = Instant::now();
-        if now.duration_since(session.seen) >= SESSION_IDLE {
+        if now.duration_since(session.seen) >= session.idle {
             sessions.remove(token);
             return None;
         }
@@ -737,6 +766,12 @@ async fn status(State(auth): State<Auth>, headers: HeaderMap) -> Response {
         "state": state,
         "role": role.map(Role::name),
         "min_password": MIN_PASSWORD,
+        "providers": if auth.enabled() {
+            auth.oauth().enabled().iter().map(|p| p.id()).collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        },
+        "user": cookie_token(&headers).and_then(|t| auth.session_label(&t)),
     });
     if role == Some(Role::Admin) {
         body["account"] = auth.describe();
@@ -908,6 +943,262 @@ async fn delete_key(State(auth): State<Auth>, Json(body): Json<NameBody>) -> Res
     }
 }
 
+// ---- sign in with GitHub or Microsoft ----------------------------------------
+
+const OAUTH_COOKIE: &str = "dw_oauth";
+const OAUTH_IDLE: Duration = Duration::from_secs(24 * 3600);
+
+/// A path on this site, never an address on another one.
+fn safe_next(next: Option<&str>) -> String {
+    match next {
+        Some(n) if n.starts_with('/') && !n.starts_with("//") && !n.starts_with("/\\") => {
+            n.to_string()
+        }
+        _ => "/".to_string(),
+    }
+}
+
+fn oauth_cookie(value: &str, secure: bool, max_age: u64) -> HeaderValue {
+    let secure = if secure { "; Secure" } else { "" };
+    HeaderValue::from_str(&format!(
+        "{OAUTH_COOKIE}={value}; Path=/auth; HttpOnly; SameSite=Lax; Max-Age={max_age}{secure}"
+    ))
+    .expect("cookie is ascii")
+}
+
+fn cookie_named(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get_all(header::COOKIE)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|v| v.split(';'))
+        .filter_map(|pair| pair.trim().split_once('='))
+        .find(|(n, _)| *n == name)
+        .map(|(_, v)| v.to_string())
+}
+
+fn login_error(code: &str) -> Response {
+    Redirect::to(&format!("/login?error={code}")).into_response()
+}
+
+async fn oauth_start(
+    State(auth): State<Auth>,
+    axum::extract::Path(name): axum::extract::Path<String>,
+    axum::extract::Query(query): axum::extract::Query<HashMap<String, String>>,
+    headers: HeaderMap,
+) -> Response {
+    let Some(provider) = oauth::Provider::parse(&name) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if !auth.enabled() || !auth.oauth().enabled().contains(&provider) {
+        return login_error("failed");
+    }
+    let next = safe_next(query.get("next").map(String::as_str));
+    match auth.oauth().begin(provider, &next) {
+        Ok((url, state)) => {
+            let mut response = Redirect::to(&url).into_response();
+            response.headers_mut().append(
+                header::SET_COOKIE,
+                oauth_cookie(&state, auth.secure_cookie(&headers), 600),
+            );
+            response
+        }
+        Err(e) => {
+            warn!("cannot start a {name} sign-in: {e:#}");
+            login_error("failed")
+        }
+    }
+}
+
+async fn oauth_callback(
+    State(auth): State<Auth>,
+    axum::extract::Path(name): axum::extract::Path<String>,
+    axum::extract::Query(query): axum::extract::Query<HashMap<String, String>>,
+    headers: HeaderMap,
+) -> Response {
+    let Some(provider) = oauth::Provider::parse(&name) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let secure = auth.secure_cookie(&headers);
+    let clear = oauth_cookie("", secure, 0);
+    let mut response = if query.contains_key("error") {
+        login_error("denied")
+    } else {
+        match (query.get("code"), query.get("state")) {
+            (Some(code), Some(state)) if auth.enabled() => {
+                let cookie = cookie_named(&headers, OAUTH_COOKIE);
+                match auth
+                    .oauth()
+                    .finish(provider, code, state, cookie.as_deref())
+                    .await
+                {
+                    Ok((role, label, next)) => {
+                        info!(provider = provider.id(), %label, role = role.name(), "signed in with a provider");
+                        let token = auth.new_session_with(role, Some(label), OAUTH_IDLE);
+                        let mut r = Redirect::to(&next).into_response();
+                        r.headers_mut().append(
+                            header::SET_COOKIE,
+                            session_cookie(&token, secure, OAUTH_IDLE.as_secs()),
+                        );
+                        r
+                    }
+                    Err(failure) => {
+                        match &failure {
+                            oauth::Failure::Failed(why) => {
+                                warn!(provider = provider.id(), "sign-in failed: {why}");
+                            }
+                            other => info!(
+                                provider = provider.id(),
+                                "sign-in refused: {}",
+                                other.code()
+                            ),
+                        }
+                        login_error(failure.code())
+                    }
+                }
+            }
+            _ => login_error("expired"),
+        }
+    };
+    response.headers_mut().append(header::SET_COOKIE, clear);
+    response
+}
+
+/// The provider settings for the setup page: never a secret, only whether one is set.
+async fn oauth_get(State(auth): State<Auth>) -> Response {
+    let o = auth.oauth();
+    let c = o.config();
+    let base = c.public_url.clone().unwrap_or_default();
+    let logins = |l: &[oauth::GhUser]| l.iter().map(|u| u.login.clone()).collect::<Vec<_>>();
+    Json(json!({
+        "public_url": c.public_url,
+        "github": c.github.as_ref().map(|g| json!({
+            "client_id": g.client_id,
+            "secret_set": o.secret_set(oauth::Provider::Github),
+            "users": logins(&g.users),
+            "orgs": g.orgs,
+            "teams": g.teams,
+            "admin_users": logins(&g.admin_users),
+            "admin_teams": g.admin_teams,
+        })),
+        "microsoft": c.microsoft.as_ref().map(|m| json!({
+            "tenant": m.tenant,
+            "client_id": m.client_id,
+            "secret_set": o.secret_set(oauth::Provider::Microsoft),
+            "groups": m.groups,
+            "admin_groups": m.admin_groups,
+        })),
+        "redirect": {
+            "github": format!("{}/auth/callback/github", base.trim_end_matches('/')),
+            "microsoft": format!("{}/auth/callback/microsoft", base.trim_end_matches('/')),
+        },
+    }))
+    .into_response()
+}
+
+#[derive(Deserialize)]
+struct GithubBody {
+    client_id: String,
+    secret: Option<String>,
+    #[serde(default)]
+    users: Vec<String>,
+    #[serde(default)]
+    orgs: Vec<String>,
+    #[serde(default)]
+    teams: Vec<String>,
+    #[serde(default)]
+    admin_users: Vec<String>,
+    #[serde(default)]
+    admin_teams: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct MicrosoftBody {
+    tenant: String,
+    client_id: String,
+    secret: Option<String>,
+    #[serde(default)]
+    groups: Vec<String>,
+    #[serde(default)]
+    admin_groups: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct OauthBody {
+    public_url: Option<String>,
+    github: Option<GithubBody>,
+    microsoft: Option<MicrosoftBody>,
+}
+
+fn clean(list: Vec<String>) -> Vec<String> {
+    list.into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+async fn oauth_save(State(auth): State<Auth>, Json(body): Json<OauthBody>) -> Response {
+    let o = auth.oauth().clone();
+    let current = o.config();
+    let mut github_secret = None;
+    let mut microsoft_secret = None;
+    let mut config = oauth::Config {
+        public_url: body
+            .public_url
+            .map(|u| u.trim().trim_end_matches('/').to_string())
+            .filter(|u| !u.is_empty()),
+        ..Default::default()
+    };
+    if let Some(g) = body.github {
+        let known = current.github.clone().unwrap_or_default();
+        let resolve =
+            async |logins: Vec<String>, known: &[oauth::GhUser]| -> Result<Vec<oauth::GhUser>> {
+                let mut out = Vec::new();
+                for login in clean(logins) {
+                    out.push(o.resolve_github_user(&login, known).await?);
+                }
+                Ok(out)
+            };
+        let users = match resolve(g.users, &known.users).await {
+            Ok(u) => u,
+            Err(e) => return text(StatusCode::BAD_REQUEST, format!("{e:#}")),
+        };
+        let admin_users = match resolve(g.admin_users, &known.admin_users).await {
+            Ok(u) => u,
+            Err(e) => return text(StatusCode::BAD_REQUEST, format!("{e:#}")),
+        };
+        github_secret = g.secret;
+        config.github = Some(oauth::Github {
+            client_id: g.client_id.trim().to_string(),
+            users,
+            orgs: clean(g.orgs),
+            teams: clean(g.teams),
+            admin_users,
+            admin_teams: clean(g.admin_teams),
+        });
+    }
+    if let Some(m) = body.microsoft {
+        microsoft_secret = m.secret;
+        config.microsoft = Some(oauth::Microsoft {
+            tenant: m.tenant.trim().to_string(),
+            client_id: m.client_id.trim().to_string(),
+            groups: clean(m.groups),
+            admin_groups: clean(m.admin_groups),
+        });
+    }
+    match o.save(
+        config,
+        github_secret.as_deref(),
+        microsoft_secret.as_deref(),
+    ) {
+        Ok(()) => {
+            info!("sign-in providers changed");
+            Json(json!({ "ok": true })).into_response()
+        }
+        Err(e) => text(StatusCode::BAD_REQUEST, format!("{e:#}")),
+    }
+}
+
 impl Auth {
     /// The routes: the login page and its API (open), and the account
     /// settings (administrator only).
@@ -928,13 +1219,16 @@ impl Auth {
             .route("/api/auth/status", get(status))
             .route("/api/auth/setup", post(setup_admin))
             .route("/api/auth/login", post(login))
-            .route("/api/auth/logout", post(logout));
+            .route("/api/auth/logout", post(logout))
+            .route("/auth/login/{provider}", get(oauth_start))
+            .route("/auth/callback/{provider}", get(oauth_callback));
         let admin = Router::new()
             .route("/api/auth/logout-all", post(logout_all))
             .route("/api/auth/viewer", post(set_viewer))
             .route("/api/auth/password", post(change_password))
             .route("/api/auth/key", post(create_key))
             .route("/api/auth/key/delete", post(delete_key))
+            .route("/api/auth/oauth", get(oauth_get).post(oauth_save))
             .route_layer(middleware::from_fn_with_state(
                 self.guard(Need::Admin),
                 enforce,
