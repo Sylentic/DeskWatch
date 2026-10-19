@@ -1,0 +1,26 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":dependencyDashboard"],
+  "schedule": ["before 6am on monday"],
+  "timezone": "Europe/Amsterdam",
+  "lockFileMaintenance": { "enabled": true },
+  "packageRules": [
+    {
+      "description": "Batch non-major Cargo updates into one PR",
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "cargo non-major"
+    },
+    {
+      "description": "Batch GitHub Actions updates into one PR",
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions"
+    },
+    {
+      "description": "Rust builder image is pinned to the workspace MSRV (1.88); bump it together with rust-version",
+      "matchDepNames": ["rust"],
+      "matchManagers": ["dockerfile"],
+      "enabled": false
+    }
+  ]
+}
