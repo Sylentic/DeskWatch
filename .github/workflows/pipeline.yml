@@ -1,9 +1,11 @@
 # The one DeskWatch pipeline: checks every pull request, every push to main,
 # and builds and publishes a release for every version tag (v1.2.3, v1.3.0-rc.1).
 #
-#   pull request, push to main:  from dev (PRs into main) + checks
+#   pull request:                from dev (PRs into main) + checks
 #   push to dev (a merge):       checks -> dev image (ghcr.io/...:dev, to try it)
-#   version tag:                 checks -> version -> packages + image -> publish
+#   push to main (dev -> main):  checks -> version: a new version in Cargo.toml
+#                                is tagged and released -> packages + image -> publish
+#   version tag pushed by hand:  the same release, for that tag
 #
 # Branches (docs/development.md): work goes into `dev` through a pull request,
 # and `main` only takes a pull request from `dev`. The "from dev" job enforces
@@ -35,7 +37,7 @@ permissions:
 # never cancelled halfway.
 concurrency:
   group: pipeline-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') && github.ref != 'refs/heads/main' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -264,34 +266,65 @@ jobs:
       - name: cargo build (tls-spike)
         run: cargo build --release --locked --features tls-spike --bin tls-spike
 
-  # ---- release (version tags only) -------------------------------------------
+  # ---- release (a merge into main with a new version, or a version tag) --------
 
-  # The tag must match the crate version, so a mistyped tag, or a tag on a
-  # commit from before the release PR, cannot ship a binary that reports
-  # another version.
+  # Decides whether this run releases, and which tag:
+  # - a push to main (the dev -> main merge): the crate version is the release.
+  #   When the tag v<version> does not exist yet, this job creates it on the
+  #   merged commit and the release runs right here (a tag pushed by the
+  #   pipeline's own token starts no new run). When it exists, nothing is
+  #   released: main got changes without a version bump.
+  # - a version tag pushed by hand: it must match the crate version, so a
+  #   mistyped tag, or one on a commit from before the release, cannot ship a
+  #   binary that reports another version.
+  # It runs after the checks, so a red main is never tagged.
   version:
     name: release version
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: [check, windows, docker]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release: ${{ steps.decide.outputs.release }}
+      tag: ${{ steps.decide.outputs.tag }}
     steps:
       - uses: actions/checkout@v5
 
-      - name: Check the tag against the crate version
+      - name: Decide the release
+        id: decide
         run: |
-          tag="${GITHUB_REF_NAME#v}"
           crate="$(cargo metadata --no-deps --format-version 1 \
             | jq -r '.packages[] | select(.name == "deskwatch-bridge") | .version')"
-          if [ "$tag" != "$crate" ]; then
-            echo "tag v$tag does not match deskwatch-bridge $crate" >&2
-            echo "The tag points at $(git rev-parse --short HEAD), which has version $crate." >&2
-            echo "Tag the merge commit of the release PR on main (git pull first), see docs/releasing.md." >&2
-            exit 1
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            if [ "${GITHUB_REF_NAME#v}" != "$crate" ]; then
+              echo "tag $GITHUB_REF_NAME does not match deskwatch-bridge $crate" >&2
+              echo "The tag points at $(git rev-parse --short HEAD), which has version $crate." >&2
+              echo "Releases happen on the merge into main by themselves, see docs/releasing.md." >&2
+              exit 1
+            fi
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="v$crate"
+            if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+              echo "::notice::$tag already exists: no release (bump the version in Cargo.toml to release)."
+              echo "release=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            git tag "$tag" "$GITHUB_SHA"
+            git push origin "refs/tags/$tag"
+            echo "::notice::Tagged $tag on $(git rev-parse --short "$GITHUB_SHA"); releasing it."
           fi
+          echo "release=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
   # One job per platform; the tests already ran in `check` and `windows`.
   package-linux:
     name: package (${{ matrix.arch }}-linux)
-    needs: [version, check, windows, docker]
+    needs: [version]
+    if: needs.version.outputs.release == 'true'
+    env:
+      TAG: ${{ needs.version.outputs.tag }}
     strategy:
       matrix:
         include:
@@ -314,7 +347,7 @@ jobs:
 
       - name: Package
         run: |
-          name="deskwatch-bridge-${GITHUB_REF_NAME}-${{ matrix.arch }}-linux"
+          name="deskwatch-bridge-${TAG}-${{ matrix.arch }}-linux"
           mkdir -p "dist/$name"
           cp target/release/deskwatch-bridge "dist/$name/"
           cp -r bridge/config.example.toml deploy homeassistant docs README.md CHANGELOG.md \
@@ -333,9 +366,11 @@ jobs:
 
   package-windows:
     name: package (x86_64-windows)
-    needs: [version, check, windows, docker]
+    needs: [version]
+    if: needs.version.outputs.release == 'true'
     runs-on: windows-latest
     env:
+      TAG: ${{ needs.version.outputs.tag }}
       # CMake 4 refuses the old minimum-version line in SDL2's CMakeLists.txt.
       CMAKE_POLICY_VERSION_MINIMUM: "3.5"
     steps:
@@ -356,7 +391,7 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
-          $tag = $env:GITHUB_REF_NAME
+          $tag = $env:TAG
           $name = "deskwatch-$tag-x86_64-windows"
           $dir = "dist/$name"
           New-Item -ItemType Directory -Force $dir | Out-Null
@@ -382,7 +417,8 @@ jobs:
   # such as -rc.1, `latest`. amd64 and arm64 in one manifest.
   image:
     name: publish image
-    needs: [version, check, docker]
+    needs: [version]
+    if: needs.version.outputs.release == 'true'
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -402,9 +438,10 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/sylentic/deskwatch-bridge
+          flavor: latest=false
           tags: |
-            type=semver,pattern={{version}}
-            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+            type=semver,pattern={{version}},value=${{ needs.version.outputs.tag }}
+            type=raw,value=latest,enable=${{ !contains(needs.version.outputs.tag, '-') }}
 
       - uses: docker/build-push-action@v7
         with:
@@ -462,10 +499,13 @@ jobs:
 
   publish:
     name: publish release
-    needs: [package-linux, package-windows, image]
+    needs: [version, package-linux, package-windows, image]
+    if: needs.version.outputs.release == 'true'
     runs-on: ubuntu-22.04
     permissions:
       contents: write
+    env:
+      TAG: ${{ needs.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v5
 
@@ -478,7 +518,7 @@ jobs:
       # Release notes: the CHANGELOG section for this version.
       - name: Extract release notes
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${TAG#v}"
           awk -v v="$version" '
             $0 ~ "^## \\[" v "\\]" { found = 1; next }
             found && /^## \[/ { exit }
@@ -495,8 +535,8 @@ jobs:
         run: |
           # 0.x tags and tags with a suffix such as -rc.1 are pre-releases.
           prerelease=""
-          case "$GITHUB_REF_NAME" in v0.*|*-*) prerelease="--prerelease" ;; esac
-          gh release create "$GITHUB_REF_NAME" $prerelease \
-            --title "DeskWatch ${GITHUB_REF_NAME}" \
+          case "$TAG" in v0.*|*-*) prerelease="--prerelease" ;; esac
+          gh release create "$TAG" $prerelease --verify-tag \
+            --title "DeskWatch ${TAG}" \
             --notes-file notes.md \
             dist/*.tar.gz dist/*.zip dist/*.sha256
