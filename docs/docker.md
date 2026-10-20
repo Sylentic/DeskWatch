@@ -483,6 +483,39 @@ the pipeline has finished for that tag; check that the pull works before you bum
 requests the `docker image` job only checks that the image builds and starts (and, for pull requests into main, that it
 builds for both CPUs); nothing is pushed from pull requests or branches.
 
+### The dev image: try what is not released yet
+
+Every merge into the `dev` branch publishes `ghcr.io/sylentic/deskwatch-bridge:dev` (always the newest) and
+`:dev-<short commit>` (to go back to one), for amd64 and arm64, once the checks are green. It never touches `latest`
+or a version tag, so a server that pins a release stays where it is. Run it next to your normal container, on another
+port, with the same config read-only and a data folder of its own:
+
+```yaml
+services:
+  deskwatch-dev:
+    image: ghcr.io/sylentic/deskwatch-bridge:dev
+    container_name: deskwatch-dev
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - ./bridge.toml:/etc/deskwatch/bridge.toml:ro
+      - ./credentials:/run/credentials:ro
+      - dev-data:/var/lib/deskwatch        # never the data folder of the normal container
+    environment:
+      DESKWATCH_DATA_DIR: /var/lib/deskwatch
+      DESKWATCH_NO_MQTT: "1"               # leave the broker and the ESP panel to the normal bridge
+    ports:
+      - "8788:8787"
+volumes:
+  dev-data:
+```
+
+Open `http://<docker host>:8788/` and update with `docker compose pull && docker compose up -d` (or let Komodo,
+Watchtower or Renovate do it). Webhooks (Gitea) still go to the normal bridge, so the dev container learns about runs
+by polling, a little later. Only use the dev image to try things: it can break between two merges.
+
 If the image does not suit you (your own changes, another CPU), section 1 builds it from the source.
 
 ## 11. Update and remove

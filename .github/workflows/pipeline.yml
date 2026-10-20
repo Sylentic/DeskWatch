@@ -2,6 +2,7 @@
 # and builds and publishes a release for every version tag (v1.2.3, v1.3.0-rc.1).
 #
 #   pull request, push to main:  from dev (PRs into main) + checks
+#   push to dev (a merge):       checks -> dev image (ghcr.io/...:dev, to try it)
 #   version tag:                 checks -> version -> packages + image -> publish
 #
 # Branches (docs/development.md): work goes into `dev` through a pull request,
@@ -24,7 +25,7 @@ on:
   pull_request:
     branches: [dev, main]
   push:
-    branches: [main]
+    branches: [dev, main]
     tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
 
 permissions:
@@ -404,6 +405,50 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ---- the dev image (pushes to dev only) --------------------------------------
+
+  # What is on dev, as an image to try before it is released:
+  # ghcr.io/sylentic/deskwatch-bridge:dev (always the newest merge) and
+  # :dev-<short commit> (to go back to one). Never `latest` or a version tag, so
+  # a server that pins a release does not change.
+  dev-image:
+    name: publish dev image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    needs: [check, windows, docker]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/sylentic/deskwatch-bridge
+          flavor: latest=false
+          tags: |
+            type=raw,value=dev
+            type=sha,prefix=dev-,format=short
 
       - uses: docker/build-push-action@v7
         with:
