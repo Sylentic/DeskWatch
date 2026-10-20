@@ -162,8 +162,14 @@
       '<div><span class="l">Net in</span><span>' + (s.net ? rate(s.net.rx_bps) : '--') + '</span></div>' +
       '<div><span class="l">Net out</span><span>' + (s.net ? rate(s.net.tx_bps) : '--') + '</span></div>' +
       '<div><span class="l">Cores</span><span>' + (s.cpu_count == null ? '--' : s.cpu_count) + '</span></div>' +
-      '</div><div class="sparkhead"><span>CPU &middot; ' + Math.round(HISTORY * 5 / 60) + ' MIN</span><span>PEAK ' + peak + '</span></div>' +
+      '</div><div class="sparkhead"><span>CPU &middot; ' + spanLabel(vals.length) + '</span><span>PEAK ' + peak + '</span></div>' +
       sparkline(vals);
+  }
+
+  // How much time the graph covers: one reading per 5 s, at most HISTORY.
+  function spanLabel(n) {
+    var s = Math.max(0, n - 1) * 5;
+    return s < 60 ? s + ' S' : Math.round(s / 60) + ' MIN';
   }
 
   // Does a host need a look: down, a value over its warning line, or rebooted.
@@ -227,8 +233,10 @@
 
   function sparkline(values) {
     if (!values || values.length < 2) return '<svg class="spark"></svg>';
-    var w = 100, h = 30, n = HISTORY;
-    var step = w / (n - 1), off = (n - values.length) * step;
+    // The readings so far fill the whole width, so the graph is not a small
+    // line at the right edge for the first minutes after a reload.
+    var w = 100, h = 30;
+    var step = w / (values.length - 1), off = 0;
     var pts = values.map(function (v, i) {
       return (off + i * step).toFixed(1) + ',' + (h - Math.max(0, Math.min(100, v)) / 100 * h).toFixed(1);
     });
@@ -333,7 +341,8 @@
           var r = it.done;
           return linkOpen(r.url, 'job done fresh ok') + '<div class="l1">' + src(r.source) + '<span class="name">' + esc(r.project) + '</span>' +
             '<span class="ref">' + esc(r.pipeline) + (r.ref ? ' &middot; ' + esc(r.ref) : '') + '</span></div>' +
-            '<div class="l2"><span class="steps"><i class="d"></i></span><span class="step">Done</span>' +
+            '<div class="l2"><span class="steps">' + new Array(Math.min(12, stepsSeen[r.project + '/' + r.pipeline] || 1) + 1).join('<i class="d"></i>') +
+            '</span><span class="step">Done</span>' +
             '<span class="el">' + clock((r.finished || r.started) - r.started) + '</span></div>' + linkClose(r.url);
         }
         var j = it.job;
@@ -799,6 +808,14 @@
   // Pipelines that failed recently (project/pipeline -> true), so a success
   // that follows can say Fixed. Kept for a day.
   var failedSeen = {}, failedSeenAt = {};
+  // How many steps each pipeline had while it ran (project/pipeline -> count),
+  // so a run that just finished shows the same segments, all green, as Done.
+  var stepsSeen = {};
+  function noteSteps() {
+    (snap.jobs || []).forEach(function (j) {
+      if (j.step_count) stepsSeen[j.project + '/' + j.pipeline] = j.step_count;
+    });
+  }
   function noteFailures() {
     var t = nowS();
     (snap.failed || []).forEach(function (f) {
@@ -862,6 +879,7 @@
       if (list.length > HISTORY) list.shift();
     });
 
+    noteSteps();
     var layout = snap.layout || { columns: 4, rows: 3, panels: [] };
     $('setup-link').hidden = !layout.setup;
     renderUpdate(snap.update);
