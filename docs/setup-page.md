@@ -27,7 +27,7 @@ When the dashboard is on too, it shows a small **Setup** link in its header that
 **Dashboard** link back.
 
 The page is dark. The **Light mode** button in the header switches to light and remembers the choice in that
-browser; the system's own light or dark setting is not followed.
+browser, for the dashboard too; the system's own light or dark setting is not followed.
 
 ## What it shows, and what it never shows
 

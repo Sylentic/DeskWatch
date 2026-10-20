@@ -762,6 +762,24 @@
         html = '<span class="tag">Notice</span>' + src(d.source) + '<span>' + esc(d.text) + '</span><span class="msg">' + esc(d.sub) + '</span>';
       }
     }
+    // A failed run that is not dismissed is a red pill until someone dismisses
+    // it, whatever the panel's screen shows: a running job, a quiet repository
+    // (no `interrupt`) or a failure older than ten minutes all keep it. Only a
+    // critical alert (the alert pill) comes before it.
+    var cfg = (snap.layout && snap.layout.alerts) || {};
+    var critical = cfg.ticker !== false && alertList().some(function (a) { return a.severity === 'critical'; });
+    var failed = visibleFailed().slice().sort(function (a, b) { return (b.finished || b.started || 0) - (a.finished || a.started || 0); });
+    if (failed.length && !critical && !(s && s.level === 0)) {
+      var f = failed[0], fh = href(f.url);
+      var fmsg = [f.step ? 'step ' + f.step : '', f.finished ? ago(nowS() - f.finished) : ''].filter(Boolean).join(' · ');
+      cls = '';
+      html = '<span class="tag">Failed</span>' + src(f.source) +
+        '<span>' + esc((f.project || '') + (f.pipeline ? ' · ' + f.pipeline : '')) + '</span>' +
+        (fmsg ? '<span class="msg">' + esc(fmsg) + '</span>' : '') +
+        (failed.length > 1 ? '<span class="meta">+' + (failed.length - 1) + '</span>' : '') +
+        (fh ? '<a class="act" href="' + esc(fh) + '" target="_blank" rel="noopener noreferrer">Open</a>' : '') +
+        '<button type="button" class="act x" data-dismiss="' + esc(failId(f)) + '" aria-label="Dismiss this failed run">&times;</button>';
+    }
     el.hidden = !html;
     // A new red result pulses once; the same one redrawn does not.
     var fresh = html && cls !== 'success' && cls !== 'note' && html !== bannerSeen;
@@ -770,6 +788,14 @@
     if (el.innerHTML !== html) el.innerHTML = html;
   }
   var bannerSeen = '';
+  // The failed pill: x dismisses that run, Open opens it, the rest of the pill
+  // opens the list of failed runs.
+  $('banner').addEventListener('click', function (e) {
+    var x = e.target.closest ? e.target.closest('[data-dismiss]') : null;
+    if (x) { dismissFailed(x.getAttribute('data-dismiss')); renderBanner(); renderTicker(); return; }
+    if (e.target.closest && e.target.closest('a')) return;
+    if (visibleFailed().length && $('banner').querySelector('[data-dismiss]')) { failedOpen = !failedOpen; alertsOpen = false; renderBadges(); }
+  });
   // Pipelines that failed recently (project/pipeline -> true), so a success
   // that follows can say Fixed. Kept for a day.
   var failedSeen = {}, failedSeenAt = {};
@@ -890,6 +916,27 @@
     var el = $('sources');
     if (el.innerHTML !== html) el.innerHTML = html;
   }
+
+  // ---- light or dark ------------------------------------------------------
+
+  // Light or dark is chosen with the button on the setup page and kept in this
+  // browser; the dashboard follows it (the same key, the same origin).
+  // `?scheme=light|dark` overrides it. The night theme still dims the page at
+  // night, whatever this says.
+  var SCHEME_KEY = 'deskwatch-theme', OLD_SCHEME_KEY = 'deskwatch-setup-theme';
+  function scheme() {
+    var p = params.get('scheme');
+    if (p === 'light' || p === 'dark') return p;
+    try { return (localStorage.getItem(SCHEME_KEY) || localStorage.getItem(OLD_SCHEME_KEY)) === 'light' ? 'light' : 'dark'; }
+    catch (e) { return 'dark'; }
+  }
+  function applyScheme() {
+    var light = scheme() === 'light', root = document.documentElement;
+    if (light) root.setAttribute('data-scheme', 'light'); else root.removeAttribute('data-scheme');
+  }
+  // The setup page open in another tab changes it too.
+  window.addEventListener('storage', function (e) { if (e.key === SCHEME_KEY || e.key === OLD_SCHEME_KEY) applyScheme(); });
+  applyScheme();
 
   // ---- day and night, pixel shift ----------------------------------------
 
