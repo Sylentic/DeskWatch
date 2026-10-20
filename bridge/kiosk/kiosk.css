@@ -46,10 +46,54 @@
   font-size: min(calc(100vw / 120), calc(100vh / 67.5));
 }
 
+/* Light mode (kiosk.js sets data-scheme="light" on <html>, chosen with the
+   button in the header or on the setup page, kept in this browser). The night
+   theme below comes after it and wins: a dark room stays dark. */
+:root[data-scheme="light"] {
+  color-scheme: light;
+  --bg: #eceef2;
+  --header: #eceef2;
+  --rail: #e4e7ec;
+  --card: #ffffff;
+  --card-hi: #f2f4f7;
+  --card-edge: #e0e4ea;
+  --line: #d9dee5;
+  --track: #e3e6eb;
+  --text: #111418;
+  --soft: #39414d;
+  --dim: #5b6472;
+  --green: #15803d;
+  --amber: #b45309;
+  --red: #b91c1c;
+  --blue: #2563eb;
+  --orange: #c2410c;
+  --purple: #6d28d9;
+  --grey: #6b7280;
+  --red-bg: #fdecec; --red-edge: #f5b5b5; --red-fg: #991b1b; --red-tint: #fdf1f1;
+  --amber-bg: #fdf6e3; --amber-edge: #f0d48a; --amber-fg: #92400e;
+  --green-bg: #e7f8ee; --green-edge: #a7e3bf; --green-fg: #166534;
+  --blue-bg: #e8f0fe; --blue-edge: #b7cdf7; --blue-fg: #1e40af;
+  --orange-bg: #ffedd5;
+}
+:root[data-scheme="light"] .mark.gitea { background: #e3f1d4; color: #3f6b12; }
+:root[data-scheme="light"] .mark.github { background: #e6e8ec; color: #24292f; }
+:root[data-scheme="light"] .mark.gitlab { background: #fde4d6; color: #a2410f; }
+:root[data-scheme="light"] .mark.bitbucket { background: #dbe8fd; color: #1d4ed8; }
+:root[data-scheme="light"] .mark.azure_devops { background: #d9ecfb; color: #075985; }
+:root[data-scheme="light"] .mark.prometheus { background: #fde1d9; color: #9a3412; }
+:root[data-scheme="light"] .mark.home_assistant { background: #d6f2fa; color: #0e7490; }
+:root[data-scheme="light"] .mark.local { background: #e6e8ec; color: #39414d; }
+:root[data-scheme="light"] .card { box-shadow: 0 1px 2px rgba(17, 20, 24, .05); }
+:root[data-scheme="light"] .tagnew { background: #ede9fe; color: #5b21b6; }
+:root[data-scheme="light"] a.link:hover, :root[data-scheme="light"] button.hostrow:hover { background: rgba(17, 20, 24, .04); }
+:root[data-scheme="light"] .banner .act, :root[data-scheme="light"] #src-pill .mute { background: rgba(17, 20, 24, .06); }
+:root[data-scheme="light"] .abox .ax:hover { background: rgba(17, 20, 24, .06); }
+
 /* Night theme (kiosk.js sets data-theme="night" on <html>): the same layout and
    colour meanings, about half as bright, for a dark room. Failures stay clearly red
    and a running job stays orange. */
-:root[data-theme="night"] {
+:root[data-theme="night"], :root[data-scheme="light"][data-theme="night"] {
+  color-scheme: dark;
   --bg: #060709;
   --header: #060709;
   --rail: #08090c;
@@ -200,6 +244,11 @@ button.chip.failed.action:not(:disabled):hover, button.chip.failed.action[aria-e
 .banner .tag { font-family: var(--mono); font-size: 0.66rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--tagc); }
 .banner .msg { font-weight: 400; color: var(--soft); flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .banner .meta, .banner .more { font-family: var(--mono); font-size: 0.8rem; font-weight: 400; color: var(--dim); }
+.banner .act { flex: none; display: inline-flex; align-items: center; height: 1.75rem; padding: 0 0.6rem; border-radius: 0.45rem;
+  background: rgba(255, 255, 255, .06); border: 0; color: var(--text); font: inherit; font-size: 0.8rem; font-weight: 500; text-decoration: none; cursor: pointer; }
+.banner .act:hover { background: rgba(255, 255, 255, .12); }
+.banner .act.x { width: 1.75rem; padding: 0; justify-content: center; font-size: 1rem; background: transparent; border: 1px solid var(--red-edge); }
+.banner:has([data-dismiss]) { cursor: pointer; }
 /* A new red event pulses once (not with reduced motion). */
 .banner.fresh { animation: once 1.2s ease-out 1; }
 @keyframes once { 0% { box-shadow: 0 0 0 0 var(--tagc); } 100% { box-shadow: 0 0 0 0.6rem transparent; } }

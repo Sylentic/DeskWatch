@@ -24,10 +24,12 @@
   var app = document.getElementById('app');
 
   // Dark is the default. The button switches to light and remembers it in this
-  // browser; the system's own light or dark setting is not consulted.
+  // browser, for the dashboard too (the same key); the system's own light or
+  // dark setting is not consulted. The old setup-only key still counts.
   var themeButton = document.getElementById('theme');
   function theme() {
-    try { return localStorage.getItem('deskwatch-setup-theme') === 'light' ? 'light' : 'dark'; } catch (e) { return 'dark'; }
+    try { return (localStorage.getItem('deskwatch-theme') || localStorage.getItem('deskwatch-setup-theme')) === 'light' ? 'light' : 'dark'; }
+    catch (e) { return 'dark'; }
   }
   function applyTheme(name) {
     if (name === 'light') document.documentElement.setAttribute('data-theme', 'light');
@@ -37,7 +39,7 @@
   applyTheme(theme());
   themeButton.addEventListener('click', function () {
     var next = theme() === 'light' ? 'dark' : 'light';
-    try { localStorage.setItem('deskwatch-setup-theme', next); } catch (e) { /* not kept */ }
+    try { localStorage.setItem('deskwatch-theme', next); } catch (e) { /* not kept */ }
     applyTheme(next);
   });
   var REFRESH_MS = 5000;
@@ -509,8 +511,8 @@
       return card;
     }
     var choice = el('select');
-    [['detailed', 'Detailed: one host in detail on top, every host as a list below (tap to switch)'],
-     ['compact', 'Compact: only the list of hosts, with network rates']].forEach(function (o) {
+    [['detailed', 'Detailed: a list of hosts with the chosen host in detail next to it (tap a host to switch)'],
+     ['compact', 'Compact: one table of all hosts, with uptime and network rates']].forEach(function (o) {
       var opt = el('option', null, o[1]);
       opt.value = o[0];
       opt.selected = d.host_view === o[0];

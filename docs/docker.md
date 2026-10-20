@@ -464,11 +464,11 @@ monitor such as Uptime Kuma pointed at the page can act on it.
 
 ## 10. The published image
 
-Every version tag (from 0.9.6 on, except 0.9.8, which was never built) is built for amd64 and arm64 by the `docker` job in
-[`release.yml`](../.github/workflows/release.yml) and pushed to GitHub's registry:
+Every version tag (from 0.9.6 on, except 0.9.8, which was never built) is built for amd64 and arm64 by the
+`publish image` job in [`pipeline.yml`](../.github/workflows/pipeline.yml) and pushed to GitHub's registry:
 
 ```sh
-docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 1.0.0; no "v"
+docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 1.0.1; no "v"
 docker run --rm -p 8787:8787 ghcr.io/sylentic/deskwatch-bridge:<version> --demo --kiosk --no-mqtt
 ```
 
@@ -479,8 +479,42 @@ repeatable as long as you stay on one commit; to use the image there, replace th
 `image: ghcr.io/sylentic/deskwatch-bridge:<version>`. An updater such as Renovate or Watchtower can bump the tag.
 The package on `ghcr.io` is public, so servers pull it without a login. (A fork publishing its own image has to make
 the package public once in its package settings, because a new package starts private.) The image exists only after
-the release workflow has finished for that tag; check that the pull works before you bump the pinned version. CI (the `docker` job in [`ci.yml`](../.github/workflows/ci.yml))
-only checks that the image builds and starts; nothing is pushed from pull requests or branches.
+the pipeline has finished for that tag; check that the pull works before you bump the pinned version. For pull
+requests the `docker image` job only checks that the image builds and starts (and, for pull requests into main, that it
+builds for both CPUs); nothing is pushed from pull requests or branches.
+
+### The dev image: try what is not released yet
+
+Every merge into the `dev` branch publishes `ghcr.io/sylentic/deskwatch-bridge:dev` (always the newest) and
+`:dev-<short commit>` (to go back to one), for amd64 and arm64, once the checks are green. It never touches `latest`
+or a version tag, so a server that pins a release stays where it is. Run it next to your normal container, on another
+port, with the same config read-only and a data folder of its own:
+
+```yaml
+services:
+  deskwatch-dev:
+    image: ghcr.io/sylentic/deskwatch-bridge:dev
+    container_name: deskwatch-dev
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - ./bridge.toml:/etc/deskwatch/bridge.toml:ro
+      - ./credentials:/run/credentials:ro
+      - dev-data:/var/lib/deskwatch        # never the data folder of the normal container
+    environment:
+      DESKWATCH_DATA_DIR: /var/lib/deskwatch
+      DESKWATCH_NO_MQTT: "1"               # leave the broker and the ESP panel to the normal bridge
+    ports:
+      - "8788:8787"
+volumes:
+  dev-data:
+```
+
+Open `http://<docker host>:8788/` and update with `docker compose pull && docker compose up -d` (or let Komodo,
+Watchtower or Renovate do it). Webhooks (Gitea) still go to the normal bridge, so the dev container learns about runs
+by polling, a little later. Only use the dev image to try things: it can break between two merges.
 
 If the image does not suit you (your own changes, another CPU), section 1 builds it from the source.
 
