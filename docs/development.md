@@ -97,9 +97,15 @@ cargo run --release --features tls-spike --bin tls-spike
 Setup (Xtensa toolchain, `cmake` and `ninja`, Windows and Linux specifics), how to read the output and a results
 template are in [firmware/README.md](../firmware/README.md#tls-spike).
 
+## Branches and pull requests
+
+`dev` is the default branch: start a branch from `dev` and open the pull request into `dev`. `main` only takes a pull
+request from `dev` (the release, see [releasing.md](releasing.md)); a pull request from any other branch into `main`
+fails the `from dev` check. Neither branch takes a direct push.
+
 ## Checks before a pull request
 
-The same as CI:
+The same as the pipeline (`.github/workflows/pipeline.yml`):
 
 ```sh
 cargo fmt --all --check

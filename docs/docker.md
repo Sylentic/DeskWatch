@@ -464,8 +464,8 @@ monitor such as Uptime Kuma pointed at the page can act on it.
 
 ## 10. The published image
 
-Every version tag (from 0.9.6 on, except 0.9.8, which was never built) is built for amd64 and arm64 by the `docker` job in
-[`release.yml`](../.github/workflows/release.yml) and pushed to GitHub's registry:
+Every version tag (from 0.9.6 on, except 0.9.8, which was never built) is built for amd64 and arm64 by the
+`publish image` job in [`pipeline.yml`](../.github/workflows/pipeline.yml) and pushed to GitHub's registry:
 
 ```sh
 docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 1.0.0; no "v"
@@ -479,8 +479,9 @@ repeatable as long as you stay on one commit; to use the image there, replace th
 `image: ghcr.io/sylentic/deskwatch-bridge:<version>`. An updater such as Renovate or Watchtower can bump the tag.
 The package on `ghcr.io` is public, so servers pull it without a login. (A fork publishing its own image has to make
 the package public once in its package settings, because a new package starts private.) The image exists only after
-the release workflow has finished for that tag; check that the pull works before you bump the pinned version. CI (the `docker` job in [`ci.yml`](../.github/workflows/ci.yml))
-only checks that the image builds and starts; nothing is pushed from pull requests or branches.
+the pipeline has finished for that tag; check that the pull works before you bump the pinned version. For pull
+requests the `docker image` job only checks that the image builds and starts (and, for pull requests into main, that it
+builds for both CPUs); nothing is pushed from pull requests or branches.
 
 If the image does not suit you (your own changes, another CPU), section 1 builds it from the source.
 
