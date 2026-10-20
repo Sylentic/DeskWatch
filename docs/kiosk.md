@@ -236,9 +236,13 @@ a widget with different filters is the way to split, for example, work and home 
 
 Drag and drop editing is not built.
 
-### Day and night theme
+### Light mode, day and night theme
 
-The default look is unchanged. A **night theme** keeps the layout and the colour meanings (green, red, running
+The page is dark. The **Light mode** button on the [setup page](setup-page.md) switches the dashboard to light as well
+(the choice is kept in that browser, and a dashboard open in another tab follows at once); `?scheme=light` or
+`?scheme=dark` on the address overrides it for one screen. The night theme below wins over light mode at night.
+
+A **night theme** keeps the layout and the colour meanings (green, red, running
 orange) at about half the brightness, for a dark room:
 
 ```toml

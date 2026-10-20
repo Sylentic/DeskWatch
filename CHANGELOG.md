@@ -8,6 +8,14 @@ hardware yet, and its MQTT schema (v2) may still change or the display may be dr
 
 ## [Unreleased]
 
+### Fixed
+
+- **A failed run now always shows as a red pill in the dashboard header**, until it is dismissed (× in the pill, or
+  Dismiss in the Failed list). Before, the pill only followed the panel's screen, so it stayed away while a job ran, for
+  repositories without `interrupt`, and after ten minutes. A critical alert still comes first.
+- **Light mode applies to the dashboard too.** The Light mode button on the setup page now switches both pages; the
+  night theme still wins at night. `?scheme=light|dark` overrides it on one screen.
+
 ## [1.0.0]
 
 The first stable release: the bridge, the dashboard (in a browser, on a Raspberry Pi or in Docker), the setup page and
