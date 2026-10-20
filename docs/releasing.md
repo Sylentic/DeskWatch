@@ -1,9 +1,10 @@
 # Releasing
 
-A release is a version tag on `main`. Everything runs in one workflow,
-[`.github/workflows/pipeline.yml`](../.github/workflows/pipeline.yml): for a tag like `v1.0.1` it runs the checks, checks
-the tag against the crate version, builds the Linux x86_64, Linux aarch64 and Windows archives and the multi-arch image
-`ghcr.io/sylentic/deskwatch-bridge`, and publishes the GitHub release.
+A release happens by itself when `dev` is merged into `main` with a new version number. Everything runs in one
+workflow, [`.github/workflows/pipeline.yml`](../.github/workflows/pipeline.yml): on the push to `main` it runs the
+checks, and when the version in `Cargo.toml` has no tag yet, it tags the merged commit (`v1.0.1`), builds the Linux
+x86_64, Linux aarch64 and Windows archives and the multi-arch image `ghcr.io/sylentic/deskwatch-bridge`, and publishes
+the GitHub release. A merge into `main` without a new version releases nothing.
 
 ## Branches
 
@@ -26,28 +27,21 @@ the tag against the crate version, builds the Linux x86_64, Linux aarch64 and Wi
      example in `docs/docker.md` section 10.
 2. Open the release pull request **from `dev` into `main`**, titled "Release x.y.z". Merge it with a merge commit
    once the pipeline is green (it also builds the image for both CPUs).
-3. Update your checkout so the tag lands on that merge commit:
+3. That is all. The run on `main` (Actions › Pipeline) tags the merge commit in its `release version` job and
+   publishes the release a few minutes later. Check the release page and that the image pulls (below).
 
-   ```sh
-   git checkout main
-   git pull
-   git log -1 --oneline    # must be "Merge pull request ... from Sylentic/dev"
-   ```
-
-4. Tag that commit and push the tag:
-
-   ```sh
-   git tag v1.0.1
-   git push origin v1.0.1
-   ```
-
-The `release version` job refuses to go on when the tag does not match the crate version at the tagged commit. That is
-what happens when the tag is made on a commit from before the release pull request was merged.
+A version tag pushed by hand still works too (for example to retry a release that never finished): the run checks
+that the tag matches the crate version at that commit, and refuses when it does not.
 
 ## A tag on the wrong commit
 
-Re-running the failed run does not help, because a re-run uses the same commit. Move the tag instead (this deletes and
-recreates it, so do it only when the release never finished and nobody has pulled the tag):
+When a release run on `main` fails after it made the tag (a package or the image), use **Re-run failed jobs** on that
+run: the jobs that passed, `release version` among them, keep their result, so the release continues with the same tag.
+(**Re-run all jobs** does not release: the tag exists by then.)
+
+A tag pushed by hand on the wrong commit is refused by `release version`; re-running does not help, because a re-run
+uses the same commit. Move the tag instead (this deletes and recreates it, so do it only when the release never
+finished and nobody has pulled the tag):
 
 ```sh
 git tag -d v1.0.1
