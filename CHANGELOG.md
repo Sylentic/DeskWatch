@@ -8,6 +8,8 @@ hardware yet, and its MQTT schema (v2) may still change or the display may be dr
 
 ## [Unreleased]
 
+## [1.0.1]
+
 ### Fixed
 
 - **A failed run now always shows as a red pill in the dashboard header**, until it is dismissed (× in the pill, or
@@ -15,6 +17,12 @@ hardware yet, and its MQTT schema (v2) may still change or the display may be dr
   repositories without `interrupt`, and after ten minutes. A critical alert still comes first.
 - **Light mode applies to the dashboard too.** The Light mode button on the setup page now switches both pages; the
   night theme still wins at night. `?scheme=light|dark` overrides it on one screen.
+
+### Changed (project)
+
+- **One pipeline** (`.github/workflows/pipeline.yml`) for pull requests and releases, and a **`dev` branch**: new
+  work goes into `dev` first, and `main` only takes a pull request from `dev`. `main` stays the default branch, the
+  released state. See `docs/releasing.md`.
 
 ## [1.0.0]
 
