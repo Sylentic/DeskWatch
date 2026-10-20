@@ -2,6 +2,12 @@
 // (no password yet), the sign-in form, or, when already signed in, it goes on.
 (function () {
   'use strict';
+  // Light or dark: the choice made on the setup page, kept in this browser.
+  try {
+    if ((localStorage.getItem('deskwatch-theme') || localStorage.getItem('deskwatch-setup-theme')) === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light');
+    }
+  } catch (e) { /* dark */ }
   var card = document.getElementById('card');
 
   function el(tag, attrs, text) {

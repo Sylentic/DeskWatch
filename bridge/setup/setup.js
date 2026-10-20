@@ -511,8 +511,8 @@
       return card;
     }
     var choice = el('select');
-    [['detailed', 'Detailed: one host in detail on top, every host as a list below (tap to switch)'],
-     ['compact', 'Compact: only the list of hosts, with network rates']].forEach(function (o) {
+    [['detailed', 'Detailed: a list of hosts with the chosen host in detail next to it (tap a host to switch)'],
+     ['compact', 'Compact: one table of all hosts, with uptime and network rates']].forEach(function (o) {
       var opt = el('option', null, o[1]);
       opt.value = o[0];
       opt.selected = d.host_view === o[0];

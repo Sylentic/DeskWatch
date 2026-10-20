@@ -15,8 +15,12 @@ hardware yet, and its MQTT schema (v2) may still change or the display may be dr
 - **A failed run now always shows as a red pill in the dashboard header**, until it is dismissed (× in the pill, or
   Dismiss in the Failed list). Before, the pill only followed the panel's screen, so it stayed away while a job ran, for
   repositories without `interrupt`, and after ten minutes. A critical alert still comes first.
-- **Light mode applies to the dashboard too.** The Light mode button on the setup page now switches both pages; the
-  night theme still wins at night. `?scheme=light|dark` overrides it on one screen.
+- **Light mode applies to the dashboard and the sign-in page too.** The Light mode button on the setup page now
+  switches all three pages; the night theme still wins at night. `?scheme=light|dark` overrides it on one screen.
+- **The CPU graph uses the full width from the start**, instead of a short line at the right edge for the first five
+  minutes after a reload. Its label says how much time it covers.
+- **A finished run shows its steps as Done**: the same segments it had while it ran, all green.
+- **Setup › Dashboard describes the host views as they are now** (a list next to the chosen host, or one table).
 
 ### Changed (project)
 
