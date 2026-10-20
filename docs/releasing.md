@@ -7,10 +7,12 @@ the tag against the crate version, builds the Linux x86_64, Linux aarch64 and Wi
 
 ## Branches
 
-- **`dev`** is the default branch. All work goes into `dev` through a pull request with a green pipeline.
-- **`main`** is what was released. It only takes a pull request **from `dev`**: the `from dev` job fails for any
-  other branch, and the repository's rulesets require that job and the checks. Nobody pushes to `main` or `dev`
-  directly, and neither can be deleted or force-pushed.
+- **`main`** is the default branch, the page people land on, and what was released. It only takes a pull request
+  **from `dev`**: the `from dev` job fails for any other branch, and the repository's rulesets require that job and
+  the checks.
+- **`dev`** is where work goes first: every new branch starts from `dev` and comes back through a pull request with a
+  green pipeline. Once it is tested there, it goes to `main` with the next pull request from `dev`.
+- Nobody pushes to `main` or `dev` directly, and neither can be deleted or force-pushed.
 
 ## Steps
 
