@@ -104,6 +104,10 @@ Start every branch from `dev` and open the pull request into `dev` (GitHub sugge
 [releasing.md](releasing.md)); a pull request from any other branch into `main` fails the `from dev` check. Neither
 branch takes a direct push.
 
+To test what is on `dev` before it goes to `main`, every merge into `dev` publishes the image
+`ghcr.io/sylentic/deskwatch-bridge:dev`; [docker.md](docker.md#the-dev-image-try-what-is-not-released-yet) shows how
+to run it next to the released one.
+
 ## Checks before a pull request
 
 The same as the pipeline (`.github/workflows/pipeline.yml`):
