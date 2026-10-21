@@ -371,7 +371,7 @@
   function addBar(d) {
     var bar = el('section', 'card addbar');
     bar.appendChild(el('h2', null, 'Add a source'));
-    var kind = el('select');
+    var kind = el('select'); kind.dataset.keep = 'add-kind';
     Object.keys(FORMS).forEach(function (k) { if (k === 'mqtt') return; var o = el('option', null, KIND[k]); o.value = k; kind.appendChild(o); });
     var go = el('button', null, 'Add');
     go.type = 'button'; go.addEventListener('click', function () { openForm(kind.value, null); });
@@ -510,7 +510,7 @@
       card.appendChild(el('p', 'muted', 'The dashboard is off ([kiosk] enabled in bridge.toml).'));
       return card;
     }
-    var choice = el('select');
+    var choice = el('select'); choice.dataset.keep = 'host-view';
     [['detailed', 'Detailed: a list of hosts with the chosen host in detail next to it (tap a host to switch)'],
      ['compact', 'Compact: one table of all hosts, with uptime and network rates']].forEach(function (o) {
       var opt = el('option', null, o[1]);
@@ -824,7 +824,7 @@
         }));
       }
     });
-    var newRole = el('select'); newRole.name = 'role';
+    var newRole = el('select'); newRole.name = 'role'; newRole.dataset.keep = 'new-user-role';
     [['viewer', 'Viewer (the dashboard only)'], ['operator', 'Operator (also dismiss alerts and failed runs)'], ['admin', 'Administrator (everything)']].forEach(function (o) {
       var op = el('option', null, o[1]); op.value = o[0]; if (o[0] === 'operator') op.selected = true; newRole.appendChild(op);
     });
@@ -859,7 +859,7 @@
       line.appendChild(del);
       card.appendChild(line);
     });
-    var scope = el('select'); scope.name = 'scope';
+    var scope = el('select'); scope.name = 'scope'; scope.dataset.keep = 'new-key-scope';
     [['alert', 'alert (send alerts)'], ['viewer', 'viewer (open the dashboard)']].forEach(function (o) {
       var op = el('option', null, o[1]); op.value = o[0]; scope.appendChild(op);
     });
@@ -970,7 +970,28 @@
     return SECTIONS.indexOf(id) >= 0 ? id : 'sources';
   }
 
+  // The page is redrawn every few seconds. A drop-down marked with
+  // `data-keep` that the user changed but did not save yet keeps its choice
+  // across a redraw, instead of jumping back to the first or saved value.
+  // (Drop-downs that save on change, such as a user's role, are not marked.)
+  function keptChoices() {
+    var kept = {};
+    app.querySelectorAll('select[data-keep]').forEach(function (s) {
+      if (s.value !== s.dataset.initial) kept[s.dataset.keep] = s.value;
+    });
+    return kept;
+  }
+  function restoreChoices(kept) {
+    app.querySelectorAll('select[data-keep]').forEach(function (s) {
+      var want = kept[s.dataset.keep];
+      var has = want != null && Array.prototype.some.call(s.options, function (o) { return o.value === want; });
+      s.dataset.initial = s.value;
+      if (has && !s.disabled) s.value = want;
+    });
+  }
+
   function render(d) {
+    var kept = keptChoices();
     last = d;
     document.getElementById('build').textContent = 'version ' + d.build;
     document.getElementById('dashboard-link').hidden = !d.kiosk;
@@ -1014,14 +1035,17 @@
                            access: accessSection, signin: signinSection, bridge: bridgeSection, secrets: secretsSection })[section](d));
     layout.appendChild(content);
     app.appendChild(layout);
+    restoreChoices(kept);
   }
 
   window.addEventListener('hashchange', function () { form = null; confirming = null; if (last) render(last); });
 
   function load() {
     clearTimeout(timer);
-    // A refresh would redraw (and lose the focus of) a form being filled in.
-    var typing = document.activeElement && app.contains(document.activeElement) && document.activeElement.tagName === 'INPUT';
+    // A refresh would redraw (and lose the focus of) a form being filled in,
+    // or close a drop-down that is open.
+    var active = document.activeElement;
+    var typing = active && app.contains(active) && ['INPUT', 'SELECT', 'TEXTAREA'].indexOf(active.tagName) >= 0;
     if ((typing || form) && !(form && form.busy) && !restarting) { timer = setTimeout(load, REFRESH_MS); return Promise.resolve(); }
     return fetch('api/setup/status', { cache: 'no-store', credentials: 'same-origin' }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
