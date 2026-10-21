@@ -91,7 +91,7 @@ client_secret_file = "azdo-work-secret"
 ```
 
 `token_file` is not used with `auth = "entra"`. `login_url` only changes for a national cloud or tests. A secret
-Entra refuses, or an app Azure DevOps does not know, lights the `warn` badge and the log says which. Real tenant,
+Entra refuses, or an app Azure DevOps does not know, shows the **Source down** pill and the log says which. Real tenant,
 client and organisation names stay out of the repository.
 
 Not built yet: choosing the sign-in method on the Setup page (edit `sources.toml` or `bridge.toml` by hand for now),

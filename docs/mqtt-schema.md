@@ -42,11 +42,11 @@ Raise ([sample](schema/alert-raise.json)) or clear ([sample](schema/alert-clear.
 
 How each severity shows on the kiosk page:
 
-| Severity | Banner | After it leaves the banner |
+| Severity | Header pill (a run result or notice in the header goes first) | After it leaves the pill |
 |---|---|---|
-| `critical` | Red, above running jobs, until it is dismissed or cleared | Alerts pill and list until cleared or `ttl_s` |
-| `warning` | Amber, until it is dismissed or 10 min | Alerts pill and list until cleared or `ttl_s` |
-| `info` | Short notice for 5 s | Alerts list until cleared or `ttl_s` (no pill) |
+| `critical` | Red, above running jobs, until it is dismissed or cleared | Alerts badge and list until cleared or `ttl_s` |
+| `warning` | Yellow, until it is dismissed or 10 min | Alerts badge and list until cleared or `ttl_s` |
+| `info` | Blue; the pill when nothing more urgent is active, and it stays until `ttl_s` or a clear | Alerts badge and list until cleared or `ttl_s` |
 
 Limits on the bridge side (`[alerts]` in the config): at most `max_active` alerts (default 10, the least urgent,
 oldest one is dropped first); one update per id per second; payloads over 1 KB and other schema versions are
