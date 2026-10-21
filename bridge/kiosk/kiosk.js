@@ -339,37 +339,22 @@
           !jobs.some(function (j) { return j.project === r.project && j.pipeline === r.pipeline; });
       });
       if (!jobs.length && !done.length) return { title: 'Running now', body: '<div class="empty">No jobs running</div>', stale: false, plain: true };
+      // One heading per run. Jobs of the same run (parallel jobs) share a
+      // `group` and are listed under it from `run_jobs`.
+      var lanes = snap.run_jobs || {};
+      var groups = [], byKey = {};
+      done.forEach(function (r) { groups.push({ done: r }); });
+      jobs.forEach(function (j) {
+        var g = j.group && lanes[j.group] ? j.group : j.key;
+        if (byKey[g]) { byKey[g].jobs.push(j); return; }
+        groups.push(byKey[g] = { jobs: [j], lanes: j.group ? lanes[j.group] : null });
+      });
       var max = p.rows;
-      var items = done.map(function (r) { return { done: r }; }).concat(jobs.map(function (j) { return { job: j }; }));
-      var shown = max ? items.slice(0, max) : items;
-      var html = shown.map(function (it) {
-        if (it.done) {
-          var r = it.done;
-          return linkOpen(r.url, 'job done fresh ok') + '<div class="l1">' + src(r.source) + '<span class="name">' + esc(r.project) + '</span>' +
-            '<span class="ref">' + esc(r.pipeline) + (r.ref ? ' &middot; ' + esc(r.ref) : '') + '</span></div>' +
-            '<div class="l2"><span class="steps">' + new Array(Math.min(12, stepsSeen[r.project + '/' + r.pipeline] || 1) + 1).join('<i class="d"></i>') +
-            '</span><span class="step">Done</span>' +
-            '<span class="el">' + clock((r.finished || r.started) - r.started) + '</span></div>' + linkClose(r.url);
-        }
-        var j = it.job;
-        var step = j.step ? esc(j.step) : 'starting';
-        var bar;
-        if (j.step_no && j.step_count && j.step_count <= 12) {
-          bar = '<span class="steps" title="step ' + j.step_no + ' of ' + j.step_count + '">';
-          for (var i = 1; i <= j.step_count; i++) bar += '<i class="' + (i < j.step_no ? 'd' : i === j.step_no ? 'c' : '') + '"></i>';
-          bar += '</span>';
-        } else {
-          bar = j.progress == null ? '<span class="pbar spin"><i></i></span>' :
-            '<span class="pbar"><i style="--p:' + Math.round(j.progress * 100) + '%"></i></span>';
-        }
-        return linkOpen(j.url, 'job') + '<div class="l1">' + src(j.source) + '<span class="name">' + esc(j.project) + '</span>' +
-          '<span class="kind ' + esc(j.kind) + '">' + esc(j.kind) + '</span>' +
-          '<span class="ref">' + esc(j.pipeline) + (j.ref ? ' &middot; ' + esc(j.ref) : '') + (j.commit ? ' @ ' + esc(j.commit) : '') + '</span></div>' +
-          '<div class="l2">' + bar + '<span class="step">' + step + '</span>' +
-          '<span class="el" data-since="' + j.started + '">' + clock(nowS() - j.started) + '</span></div>' + linkClose(j.url);
-      }).join('');
-      if (max && items.length > max) html += '<div class="more">+' + (items.length - max) + ' more running</div>';
-      return { title: 'Running now', count: jobs.length + (done.length ? ' · ' + done.length + ' done' : ''), stale: ciStale(), body: html };
+      var shown = max ? groups.slice(0, max) : groups;
+      var html = shown.map(function (g) { return g.done ? doneGroup(g.done) : runGroup(g); }).join('');
+      if (max && groups.length > max) html += '<div class="more">+' + (groups.length - max) + ' more running</div>';
+      var running = groups.length - done.length;
+      return { title: 'Running now', count: running + (done.length ? ' · ' + done.length + ' done' : ''), stale: ciStale(), body: html };
     },
 
     pipelines: function (p) {
@@ -465,6 +450,71 @@
   };
 
   function runStatus(s) { return s === 'success' ? 'ok' : s === 'waiting' ? 'review' : s; }
+
+  // ---- Running now: a heading per run, a row per job under it ----------
+
+  function groupHead(source, project, kind, ref, sum, url) {
+    return linkOpen(url, 'gh') + src(source) + '<span class="name">' + esc(project) + '</span>' +
+      (kind ? '<span class="kind ' + esc(kind) + '">' + esc(kind) + '</span>' : '') +
+      '<span class="ref">' + ref + '</span><span class="sum">' + sum + '</span>' + linkClose(url);
+  }
+
+  function jobRow(url, status, name, text, bar, time) {
+    return linkOpen(url, 'jrow ' + status) + dot(status) + '<span class="n">' + esc(name) + '</span>' +
+      '<span class="mid"><span class="s">' + text + '</span>' + bar + '</span><span class="t">' + time + '</span>' + linkClose(url);
+  }
+
+  // What a job of a run is doing, in a few words.
+  function laneText(l) {
+    var st = runStatus(l.status);
+    if (st === 'running') return esc(l.step || 'Running');
+    if (st === 'ok') return 'Passed';
+    if (st === 'failed') return l.step ? 'Failed at ' + esc(l.step) : 'Failed';
+    if (st === 'review') return 'Waiting for approval';
+    if (st === 'queued') return 'Queued';
+    return 'Skipped';
+  }
+
+  function laneTime(l) {
+    if (l.status === 'running' && l.started) return '<span data-since="' + l.started + '">' + clock(nowS() - l.started) + '</span>';
+    if (l.started && l.finished) return clock(l.finished - l.started);
+    return '';
+  }
+
+  function runGroup(g) {
+    var j = g.jobs[0];
+    var started = Math.min.apply(null, g.jobs.map(function (x) { return x.started; }));
+    var ref = esc(j.pipeline) + (j.ref ? ' &middot; ' + esc(j.ref) : '') + (j.commit ? ' @ ' + esc(j.commit) : '');
+    var since = '<span data-since="' + started + '">' + clock(nowS() - started) + '</span>';
+    var rows, sum;
+    if (g.lanes && g.lanes.length) {
+      var finished = g.lanes.filter(function (l) { return l.status === 'success' || l.status === 'failed' || l.status === 'neutral'; }).length;
+      sum = (g.lanes.length > 1 ? finished + ' of ' + g.lanes.length + ' done &middot; ' : '') + since;
+      rows = g.lanes.map(function (l) {
+        var st = runStatus(l.status);
+        var bar = st !== 'running' ? '' : l.progress == null ? '<span class="pbar spin"><i></i></span>' :
+          '<span class="pbar"><i style="--p:' + Math.round(l.progress * 100) + '%"></i></span>';
+        return jobRow(l.url || j.url, st, l.name, laneText(l), bar, laneTime(l));
+      });
+    } else {
+      // A source that only knows the run as one job: one row with its steps.
+      sum = since;
+      rows = g.jobs.map(function (x) {
+        var text = esc(x.step || 'Starting') + (x.step_no && x.step_count ? ' &middot; step ' + x.step_no + ' of ' + x.step_count : '');
+        var bar = x.progress == null ? '<span class="pbar spin"><i></i></span>' :
+          '<span class="pbar"><i style="--p:' + Math.round(x.progress * 100) + '%"></i></span>';
+        return jobRow(x.url, 'running', x.kind, text, bar, '<span data-since="' + x.started + '">' + clock(nowS() - x.started) + '</span>');
+      });
+    }
+    return '<div class="jgroup">' + groupHead(j.source, j.project, j.kind, ref, sum, j.url) + '<div class="jrows">' + rows.join('') + '</div></div>';
+  }
+
+  function doneGroup(r) {
+    var ref = esc(r.pipeline) + (r.ref ? ' &middot; ' + esc(r.ref) : '');
+    var took = clock((r.finished || r.started) - r.started);
+    return '<div class="jgroup">' + groupHead(r.source, r.project, '', ref, 'Done', r.url) +
+      '<div class="jrows">' + jobRow(r.url, 'ok', 'Done', 'Passed', '', took) + '</div></div>';
+  }
 
   // Rows that do not fit are cut off; `rows` caps the list from the config.
   function list(rows, cap, empty) {
@@ -817,14 +867,6 @@
   // Pipelines that failed recently (project/pipeline -> true), so a success
   // that follows can say Fixed. Kept for a day.
   var failedSeen = {}, failedSeenAt = {};
-  // How many steps each pipeline had while it ran (project/pipeline -> count),
-  // so a run that just finished shows the same segments, all green, as Done.
-  var stepsSeen = {};
-  function noteSteps() {
-    (snap.jobs || []).forEach(function (j) {
-      if (j.step_count) stepsSeen[j.project + '/' + j.pipeline] = j.step_count;
-    });
-  }
   function noteFailures() {
     var t = nowS();
     (snap.failed || []).forEach(function (f) {
@@ -888,7 +930,6 @@
       if (list.length > HISTORY) list.shift();
     });
 
-    noteSteps();
     var layout = snap.layout || { columns: 4, rows: 3, panels: [] };
     $('setup-link').hidden = !layout.setup;
     renderUpdate(snap.update);

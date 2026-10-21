@@ -118,6 +118,8 @@ pub struct Record {
     /// `succeeded`, `succeededWithIssues`, `failed`, `canceled`, `skipped` or `abandoned`.
     pub result: Option<String>,
     pub order: Option<i64>,
+    pub start_time: Option<String>,
+    pub finish_time: Option<String>,
 }
 
 #[cfg(test)]

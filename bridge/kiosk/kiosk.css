@@ -474,16 +474,13 @@ button.hostrow:focus-visible { outline: 2px solid var(--blue); outline-offset: -
 .row.rbox.failed .sub, .row.rbox.failed .when { color: var(--red-fg); }
 .row.rbox.running { background: var(--orange-bg); border-color: color-mix(in srgb, var(--orange) 35%, transparent); }
 .row.rbox.review { background: var(--amber-bg); border-color: var(--amber-edge); }
-/* A run that just finished in Running now gets the same green box. */
-.job.done { margin: 0 0 0.45rem; border: 1px solid var(--green-edge); border-radius: 0.6rem; }
 
 /* A row that just changed: tinted for a short while (kiosk.js adds .fresh). */
-.row.fresh.failed, .job.fresh.failed { background: var(--red-tint); }
-.row.fresh.ok, .job.fresh.ok { background: var(--green-bg); }
+.row.fresh.failed { background: var(--red-tint); }
+.row.fresh.ok { background: var(--green-bg); }
 
 /* Rows and cards that open their page on the source. */
 a.link { color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; }
-a.job { display: block; }
 a.link:hover, a.link:focus-visible { background: rgba(255, 255, 255, .04); }
 a.link:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 a.link:active { background: rgba(255, 255, 255, .08); }
@@ -501,24 +498,31 @@ a.link:active { background: rgba(255, 255, 255, .08); }
 
 /* ---- running jobs ------------------------------------------------------ */
 
-.job { padding: 0.6rem 0.6rem; margin: 0 -0.6rem; border-top: 1px solid var(--card-edge); border-radius: 0.5rem; }
-.job:first-child { border-top-color: transparent; }
-.job .l1 { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
-.job .l1 .name { font-size: 1.05rem; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.job .l1 .ref { font-family: var(--mono); font-size: 0.8rem; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
-.job .l1 .where { margin-left: auto; font-family: var(--mono); font-size: 0.8rem; color: var(--dim); white-space: nowrap; }
-.job .l2 { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.5rem; }
-.job .l2 .step { min-width: 8rem; max-width: 40%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.job .l2 .el { min-width: 3.5rem; text-align: right; font-family: var(--mono); font-size: 0.8rem; color: var(--dim); }
-.job.done .l2 .step { color: var(--green); font-weight: 600; }
+/* Running now: a heading per run, its jobs (parallel jobs, stages, steps)
+   as boxed rows under it, coloured like the Pipelines boxes. */
+.jgroup { margin-bottom: 0.75rem; }
+.jgroup:last-child { margin-bottom: 0; }
+.jgroup .gh { display: flex; align-items: center; gap: 0.5rem; min-width: 0; margin-bottom: 0.4rem; border-radius: 0.4rem; }
+.jgroup .gh .name { font-size: 1.05rem; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; }
+.jgroup .gh .ref { flex: 1 1 auto; min-width: 0; font-family: var(--mono); font-size: 0.8rem; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jgroup .gh .sum { font-family: var(--mono); font-size: 0.8rem; color: var(--dim); white-space: nowrap; }
+.jrows { display: flex; flex-direction: column; gap: 0.4rem; padding-left: 1.65rem; }
+.jrow { display: grid; grid-template-columns: 0.4rem minmax(5rem, 9rem) minmax(0, 1fr) auto; gap: 0 0.6rem; align-items: center;
+  padding: 0.5rem 0.65rem; border-radius: 0.6rem; border: 1px solid var(--card-edge); background: var(--card-hi); }
+.jrow .n { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jrow .mid { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
+.jrow .s { font-family: var(--mono); font-size: 0.78rem; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jrow .pbar { flex: none; height: 0.3rem; }
+.jrow .t { min-width: 3.5rem; text-align: right; font-family: var(--mono); font-size: 0.78rem; color: var(--dim); }
+.jrow.ok { background: var(--green-bg); border-color: var(--green-edge); }
+.jrow.failed { background: var(--red-bg); border-color: var(--red-edge); } .jrow.failed .s { color: var(--red-fg); }
+.jrow.running { background: var(--orange-bg); border-color: color-mix(in srgb, var(--orange) 35%, transparent); } .jrow.running .s { color: var(--text); }
+.jrow.review { background: var(--amber-bg); border-color: var(--amber-edge); }
+.jrow.queued .n, .jrow.neutral .n { color: var(--dim); }
+
 .kind { flex: none; font-family: var(--mono); font-size: 0.62rem; font-weight: 600; letter-spacing: 0.08em; padding: 0.12rem 0.38rem; border-radius: 0.3rem; background: var(--track); color: var(--text); text-transform: uppercase; }
 .kind.deploy, .kind.build { background: var(--orange-bg); color: var(--orange); }
-.job.done .kind { background: var(--green-bg); color: var(--green); }
-/* Progress: one segment per step when the source tells the steps, else a bar. */
-.steps { flex: 1; display: flex; gap: 0.2rem; }
-.steps i { flex: 1; height: 0.38rem; border-radius: 0.19rem; background: var(--track); }
-.steps i.d { background: var(--green); }
-.steps i.c { background: var(--orange); }
+/* Progress of a running job; a sweep when the source does not know how far. */
 .pbar { flex: 1; height: 0.38rem; border-radius: 0.19rem; background: var(--track); overflow: hidden; position: relative; }
 .pbar i { display: block; height: 100%; width: var(--p); border-radius: 0.19rem; transition: width .8s; background: var(--orange); }
 .pbar.spin i { width: 28%; animation: sweep 1.8s ease-in-out infinite alternate; }

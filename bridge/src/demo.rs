@@ -9,8 +9,9 @@
 //! - the stats page (fake, gently moving numbers), open PRs and pipelines;
 //! - an info alert (notice flash) that then joins the alerts page;
 //! - a "New PR" notice;
-//! - a running deploy job with step progress, a second job (`others`), long
-//!   presses cycling between them, and a step with unknown progress (spinner);
+//! - a running deploy job with step progress, a second job (`others`) whose
+//!   run has three parallel jobs, long presses cycling between them, and a
+//!   step with unknown progress (spinner);
 //! - the deploy failing (red alert), then a short press clearing it;
 //! - a retry that succeeds (green flash);
 //! - an amber warning alert and a red critical alert, each cleared with the
@@ -19,7 +20,9 @@
 //! Pressing the real (simulated) button during the demo works as usual.
 
 use crate::alerts::{AlertMessage, Severity};
-use crate::ci::{OpenPull, RepoPulls, Run, RunStatus, Runner, RunnerStatus, RunningJob, Update};
+use crate::ci::{
+    OpenPull, RepoPulls, Run, RunJob, RunStatus, Runner, RunnerStatus, RunningJob, Update,
+};
 use crate::composer::Composer;
 use crate::fleet::{HostFacts, StatsReport};
 use crate::model::{
@@ -220,6 +223,13 @@ fn shift(update: Update, base: u64) -> Update {
             job.updated += base;
             Update::JobRunning { key, job }
         }
+        Update::RunJobs { key, mut jobs } => {
+            for job in &mut jobs {
+                job.started = job.started.map(|s| s + base);
+                job.finished = job.finished.map(|f| f + base);
+            }
+            Update::RunJobs { key, jobs }
+        }
         Update::Run { key, mut run } => {
             run.started += base;
             run.finished = run.finished.map(|f| f + base);
@@ -278,7 +288,34 @@ fn job(
             interrupt: true,
             updated: started,
             url: Some(format!("{WEB}/actions/{pipeline}")),
+            group: Some(format!("demo:run:{pipeline}")),
         },
+    }
+}
+
+/// The parallel jobs of a running run, as (name, status, step, progress,
+/// started, finished).
+#[allow(clippy::type_complexity)]
+fn run_jobs(
+    pipeline: &str,
+    jobs: &[(&str, RunStatus, Option<&str>, Option<f32>, u64, Option<u64>)],
+) -> Update {
+    Update::RunJobs {
+        key: format!("demo:run:{pipeline}"),
+        jobs: jobs
+            .iter()
+            .map(
+                |&(name, status, step, progress, started, finished)| RunJob {
+                    name: name.into(),
+                    status,
+                    step: step.map(String::from),
+                    progress,
+                    started: (status != RunStatus::Queued).then_some(started),
+                    finished,
+                    url: Some(format!("{WEB}/actions/{pipeline}")),
+                },
+            )
+            .collect(),
     }
 }
 
@@ -353,7 +390,7 @@ fn pull(number: u64, title: &str) -> OpenPull {
 /// The loop, as (seconds into the loop, step). Must be sorted by time.
 fn script() -> Vec<(u64, Step)> {
     use JobKind::{Build, Deploy};
-    use RunStatus::{Failed, Running, Success};
+    use RunStatus::{Failed, Queued, Running, Success};
     use Step::{Button, Facts};
     let short = ButtonAction::Short;
     let long = ButtonAction::Long;
@@ -443,13 +480,17 @@ fn script() -> Vec<(u64, Step)> {
         ),
         (
             43,
-            Facts(vec![job(
-                "ci.yml",
-                Build,
-                ("cargo test", 2, 3),
-                Some(0.5),
-                43,
-            )]),
+            Facts(vec![
+                run_jobs(
+                    "ci.yml",
+                    &[
+                        ("stable", Running, Some("cargo test"), Some(0.5), 43, None),
+                        ("msrv", Running, Some("cargo build"), Some(0.3), 43, None),
+                        ("windows", Queued, None, None, 43, None),
+                    ],
+                ),
+                job("ci.yml", Build, ("cargo test", 2, 3), Some(0.5), 43),
+            ]),
         ),
         (45, Button(long)),
         (48, Button(long)),
@@ -461,6 +502,17 @@ fn script() -> Vec<(u64, Step)> {
                 ("Run migrations", 3, 5),
                 None,
                 38,
+            )]),
+        ),
+        (
+            49,
+            Facts(vec![run_jobs(
+                "ci.yml",
+                &[
+                    ("stable", Success, None, None, 43, Some(48)),
+                    ("msrv", Running, Some("cargo test"), Some(0.7), 43, None),
+                    ("windows", Running, Some("cargo test"), Some(0.4), 46, None),
+                ],
             )]),
         ),
         (

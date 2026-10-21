@@ -636,3 +636,28 @@ fn new_issues_raise_alerts_after_the_first_poll() {
         Some("https://bitbucket.org/team/app/issues/4")
     );
 }
+
+#[test]
+fn every_step_of_the_pipeline_is_listed() {
+    let mut source = state(false, 0);
+    let mut facts = CiFacts::default();
+    apply(
+        &mut facts,
+        source.on_runs(REPO, fixture_pipelines(), NOW),
+        NOW,
+    );
+    let (updates, _) = source.on_steps(REPO, 14, fixture_steps(), NOW + 5);
+    apply(&mut facts, updates, NOW + 5);
+    let list = facts.run_jobs(JOB_KEY).expect("the pipeline's steps");
+    let rows: Vec<_> = list.iter().map(|j| (j.name.as_str(), j.status)).collect();
+    assert_eq!(
+        rows,
+        [
+            ("Build", RunStatus::Success),
+            ("Unit tests", RunStatus::Success),
+            ("Integration tests", RunStatus::Running),
+            ("Deploy", RunStatus::Queued),
+        ]
+    );
+    assert_eq!(facts.jobs()[0].1.group.as_deref(), Some(JOB_KEY));
+}

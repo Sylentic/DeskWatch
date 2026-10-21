@@ -6,7 +6,9 @@ use tower::ServiceExt;
 
 use super::*;
 use crate::alerts::AlertMessage;
-use crate::ci::{OpenPull, RepoPulls, Run, RunStatus, Runner, RunnerStatus, RunningJob, Update};
+use crate::ci::{
+    OpenPull, RepoPulls, Run, RunJob, RunStatus, Runner, RunnerStatus, RunningJob, Update,
+};
 use crate::fleet::{Down, HostFacts, StatsReport};
 use crate::model::{JobData, JobKind, RotationEntry, StatsData};
 use crate::source::{Health, SourceId};
@@ -41,6 +43,7 @@ fn job(project: &str, started: u64, interrupt: bool) -> RunningJob {
         interrupt,
         updated: NOW,
         url: None,
+        group: None,
     }
 }
 
@@ -260,6 +263,69 @@ fn snapshot_carries_the_links_of_prs_runs_jobs_and_runners() {
 
 /// The Pipelines panel shows the latest run first, across sources, even when
 /// an older run failed. A running run counts from its start.
+#[test]
+fn snapshot_lists_the_parallel_jobs_of_a_run() {
+    let mut kiosk = kiosk();
+    let mut c = composer();
+    let lane = |name: &str, status| RunJob {
+        name: name.into(),
+        status,
+        step: None,
+        progress: None,
+        started: Some(NOW - 30),
+        finished: None,
+        url: None,
+    };
+    c.ci.apply(
+        Update::RunJobs {
+            key: "gitea:home:run:2".into(),
+            jobs: vec![
+                lane("stable", RunStatus::Success),
+                lane("msrv", RunStatus::Running),
+            ],
+        },
+        NOW,
+    );
+    // A list nobody's job points at stays out of the snapshot.
+    c.ci.apply(
+        Update::RunJobs {
+            key: "gitea:home:run:3".into(),
+            jobs: vec![lane("lint", RunStatus::Queued)],
+        },
+        NOW,
+    );
+    let mut running = job("webshop", NOW - 30, false);
+    running.group = Some("gitea:home:run:2".into());
+    c.ci.apply(
+        Update::JobRunning {
+            key: "gitea:home:me/webshop:8".into(),
+            job: running,
+        },
+        NOW,
+    );
+    kiosk.update(&mut c, NOW);
+    let snap = json_of(&kiosk);
+    assert_eq!(snap["jobs"][0]["group"], "gitea:home:run:2");
+    let lanes = snap["run_jobs"].as_object().unwrap();
+    assert_eq!(lanes.len(), 1);
+    let rows: Vec<(&str, &str)> = lanes["gitea:home:run:2"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| (l["name"].as_str().unwrap(), l["status"].as_str().unwrap()))
+        .collect();
+    assert_eq!(rows, [("stable", "success"), ("msrv", "running")]);
+
+    // The last job of the run ends: its list goes too.
+    c.ci.apply(
+        Update::JobDone {
+            key: "gitea:home:me/webshop:8".into(),
+        },
+        NOW + 5,
+    );
+    assert!(c.ci.run_jobs("gitea:home:run:2").is_none());
+}
+
 #[test]
 fn runs_are_listed_newest_first() {
     let mut kiosk = kiosk();

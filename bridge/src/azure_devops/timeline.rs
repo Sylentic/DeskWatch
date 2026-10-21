@@ -15,6 +15,8 @@
 use std::collections::HashMap;
 
 use super::payload::Record;
+use crate::ci::RunStatus;
+use crate::gitea::payload::unix_seconds;
 
 /// What the panel needs to know about one build timeline.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -40,6 +42,68 @@ pub struct View {
     pub failing_step: Option<String>,
     /// Every stage is completed, so the build result is worth fetching now.
     pub finished: bool,
+    /// Every job in stage and run order. Jobs of one stage run side by side.
+    pub jobs: Vec<JobLine>,
+}
+
+/// One job of the timeline, for the kiosk's "Running now" list.
+#[derive(Debug, Clone, PartialEq)]
+pub struct JobLine {
+    /// `stage: job`, like `step`.
+    pub name: String,
+    pub status: RunStatus,
+    /// Current task while it runs, first failed task once it failed.
+    pub step: Option<String>,
+    pub started: Option<u64>,
+    pub finished: Option<u64>,
+}
+
+fn job_status(record: &Record) -> RunStatus {
+    match record.state.as_deref() {
+        Some("inProgress") => RunStatus::Running,
+        Some("completed") => match record.result.as_deref() {
+            Some("succeeded" | "succeededWithIssues") => RunStatus::Success,
+            Some("failed") => RunStatus::Failed,
+            _ => RunStatus::Neutral,
+        },
+        _ => RunStatus::Queued,
+    }
+}
+
+fn job_lines(by_id: &HashMap<&str, &Record>, records: &[Record]) -> Vec<JobLine> {
+    let mut jobs: Vec<(&Record, Option<&Record>)> = records
+        .iter()
+        .filter(|r| r.kind == "Job")
+        .map(|r| (r, stage_of(by_id, r)))
+        .collect();
+    jobs.sort_by_key(|(job, stage)| {
+        (
+            stage.and_then(|s| s.order).unwrap_or(0),
+            job.order.unwrap_or(0),
+        )
+    });
+    jobs.into_iter()
+        .map(|(job, stage)| {
+            let mut tasks: Vec<&Record> = records
+                .iter()
+                .filter(|r| r.kind == "Task" && r.parent_id.as_deref() == Some(job.id.as_str()))
+                .collect();
+            tasks.sort_by_key(|t| t.order.unwrap_or(0));
+            let status = job_status(job);
+            let step = match status {
+                RunStatus::Running => tasks.iter().find(|t| is_state(t, "inProgress")),
+                RunStatus::Failed => tasks.iter().find(|t| is_failed(t)),
+                _ => None,
+            };
+            JobLine {
+                name: label(stage, &job.name),
+                status,
+                step: step.map(|t| t.name.clone()),
+                started: unix_seconds(job.start_time.as_deref()),
+                finished: unix_seconds(job.finish_time.as_deref()),
+            }
+        })
+        .collect()
 }
 
 fn is_state(record: &Record, state: &str) -> bool {
@@ -154,6 +218,7 @@ pub fn analyse(records: &[Record]) -> View {
         fraction,
         failing_step,
         finished: !stages.is_empty() && stages.iter().all(|s| is_state(s, "completed")),
+        jobs: job_lines(&by_id, records),
     }
 }
 
@@ -175,6 +240,19 @@ mod tests {
         assert!((v.fraction.unwrap() - 0.8).abs() < 1e-6);
         assert!(!v.waiting_approval && !v.finished);
         assert_eq!(v.failing_step, None);
+        // One line per job, in stage order, for the kiosk list.
+        let jobs: Vec<_> = v
+            .jobs
+            .iter()
+            .map(|j| (j.name.as_str(), j.status, j.step.as_deref()))
+            .collect();
+        assert_eq!(
+            jobs,
+            [
+                ("plan: Plan", RunStatus::Success, None),
+                ("apply: Apply", RunStatus::Running, Some("terraform apply")),
+            ]
+        );
     }
 
     #[test]

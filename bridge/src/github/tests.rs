@@ -601,3 +601,44 @@ fn new_issues_raise_alerts_after_the_first_poll() {
             .is_empty()
     );
 }
+
+#[test]
+fn parallel_jobs_are_listed_under_their_run() {
+    let mut source = state(false, 0);
+    let mut facts = CiFacts::default();
+    apply(&mut facts, source.on_runs(REPO, fixture_runs(), NOW), NOW);
+    let mut jobs = fixture_jobs();
+    let mut done = jobs[0].clone();
+    done.id = 2002;
+    done.name = "msrv".into();
+    done.status = "completed".into();
+    done.conclusion = Some("failure".into());
+    done.completed_at = Some("2026-10-08T18:01:10Z".into());
+    done.steps[2].status = "completed".into();
+    done.steps[2].conclusion = Some("failure".into());
+    jobs.push(done);
+    let (updates, _) = source.on_jobs(REPO, 1003, jobs, NOW + 5);
+    apply(&mut facts, updates, NOW + 5);
+
+    let group = facts.jobs()[0].1.group.clone();
+    let group = group.as_deref().expect("a running job names its run");
+    let list = facts.run_jobs(group).expect("the run's jobs");
+    let names: Vec<_> = list.iter().map(|j| (j.name.as_str(), j.status)).collect();
+    assert_eq!(
+        names,
+        [("test", RunStatus::Running), ("msrv", RunStatus::Failed)]
+    );
+    assert_eq!(list[0].step.as_deref(), Some("cargo test"));
+    assert_eq!(list[1].step.as_deref(), Some("cargo test"));
+    assert_eq!(
+        list[1].finished.zip(list[1].started).map(|(f, s)| f - s),
+        Some(60)
+    );
+
+    // The run ends: the list goes with its jobs.
+    let mut runs = fixture_runs();
+    runs[0].status = Some("completed".into());
+    runs[0].conclusion = Some("failure".into());
+    apply(&mut facts, source.on_runs(REPO, runs, NOW + 60), NOW + 60);
+    assert!(facts.run_jobs(group).is_none());
+}

@@ -32,7 +32,7 @@ use crate::alerts::{IssueWatch, NewIssue};
 use tokio::time::{Instant, MissedTickBehavior};
 use tracing::{debug, info, warn};
 
-use crate::ci::{OpenPull, RepoPulls, Run, RunStatus, RunningJob, Update};
+use crate::ci::{OpenPull, RepoPulls, Run, RunJob, RunStatus, RunningJob, Update};
 use crate::config::GithubConfig;
 use crate::gitea::payload::{unix_seconds, workflow_file};
 use crate::gitea::runners::RunnerScope;
@@ -543,6 +543,10 @@ impl GithubState {
                         key: self.job_key(&run_ref.0, job_id),
                     });
                 }
+                out.push(Update::RunJobs {
+                    key: self.run_key(&run_ref.0, run_ref.1),
+                    jobs: Vec::new(),
+                });
             }
             self.finished.push(run_ref);
         }
@@ -570,6 +574,11 @@ impl GithubState {
             return (out, false);
         };
         let interrupt = self.interrupt.allows(repo);
+        let group = self.run_key(repo, run_id);
+        out.push(Update::RunJobs {
+            key: group.clone(),
+            jobs: run_jobs(&jobs),
+        });
         for job in &jobs {
             let key = self.job_key(repo, job.id);
             match job.status.as_str() {
@@ -588,6 +597,7 @@ impl GithubState {
                                 .as_deref()
                                 .and_then(source::safe_url)
                                 .or_else(|| watched.url.clone()),
+                            group: Some(group.clone()),
                         },
                     });
                 }
@@ -630,6 +640,11 @@ impl GithubState {
     /// Key for a job in the fact store.
     fn job_key(&self, repo: &str, job_id: u64) -> String {
         format!("{}:{repo}:job:{job_id}", self.id)
+    }
+
+    /// Key for the job list of a running run, shared by its jobs.
+    fn run_key(&self, repo: &str, run_id: u64) -> String {
+        format!("{}:{repo}:run:{run_id}", self.id)
     }
 
     /// Key for a repository's PRs in the fact store.
@@ -685,6 +700,30 @@ fn job_status(status: &str, conclusion: Option<&str>) -> RunStatus {
         // requested, queued, waiting, pending
         _ => RunStatus::Queued,
     }
+}
+
+/// Every job of a run, for the kiosk: parallel jobs side by side.
+fn run_jobs(jobs: &[Job]) -> Vec<RunJob> {
+    jobs.iter()
+        .map(|job| {
+            let status = job_status(&job.status, job.conclusion.as_deref());
+            let progress = step_progress(&job.steps);
+            let step = match status {
+                RunStatus::Running => progress.step,
+                RunStatus::Failed => failing_step(std::slice::from_ref(job)),
+                _ => None,
+            };
+            RunJob {
+                name: truncate(&job.name, MAX_TITLE_CHARS),
+                status,
+                step: step.map(|s| truncate(&s, MAX_TITLE_CHARS)),
+                progress: progress.fraction.filter(|_| status == RunStatus::Running),
+                started: unix_seconds(job.started_at.as_deref()),
+                finished: unix_seconds(job.completed_at.as_deref()),
+                url: job.html_url.as_deref().and_then(source::safe_url),
+            }
+        })
+        .collect()
 }
 
 /// The first failed step over a run's jobs, for the red alert.
