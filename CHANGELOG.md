@@ -7,6 +7,11 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **The icons and the clock in the header stay on the right** on narrow windows, tablets and phones (up to 900 px wide).
+  There they used to jump to the left, because the spacer that pushes them right is switched off at that width.
+
 ### Removed
 
 - **The ESP32 desk display is dropped.** Its firmware never ran on a board, so `firmware/` (with the TLS spike), the
