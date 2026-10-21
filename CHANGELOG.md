@@ -7,10 +7,11 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
-### Fixed
+## [1.0.3]
 
-- **The icons and the clock in the header stay on the right** on narrow windows, tablets and phones (up to 900 px wide).
-  There they used to jump to the left, because the spacer that pushes them right is switched off at that width.
+This release removes the ESP32 desk display (see Removed: a `[[rotation]]` block in `bridge.toml` is now ignored with a
+warning) and makes the dashboard more useful day to day: alerts and pipelines are coloured by status, Running now shows
+every job of a run, and each user can arrange their own dashboard.
 
 ### Removed
 
@@ -71,11 +72,16 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ### Fixed
 
+- **The icons and the clock in the header stay on the right** on narrow windows, tablets and phones (up to 900 px wide).
+  There they used to jump to the left, because the spacer that pushes them right is switched off at that width.
 - **Signing in over the bridge's own HTTPS (`[http.tls]`) works in a browser.** Browsers talk HTTP/2 there and send no
   `Host` header, so the origin check refused the sign-in, Setup changes and dismissing alerts with "cross-origin request
   refused". The check now uses the request's authority too. Behind Caddy or another proxy nothing changes.
 - **Setup, Access on a phone** no longer scrolls sideways: the user rows wrap and the forms keep to the card width. The
   "My account" link follows the theme colour.
+- **Viewers and operators no longer see buttons that do nothing.** The dashboard hid nothing by role, so Dismiss and Mute
+  (Viewer) and the Setup link (Viewer and Operator) were shown although the bridge answers those requests with 403. They
+  are now left out for the roles that cannot use them.
 
 ## [1.0.2]
 
