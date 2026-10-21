@@ -377,8 +377,8 @@
       var rows = runs.map(function (r) {
         var when = r.status === 'running' ? 'running' : ago(nowS() - (r.finished || r.started));
         var status = runStatus(r.status);
-        var fresh = r.finished && nowS() - r.finished < FRESH_S && (status === 'failed' || status === 'ok') ? ' fresh ' + status : '';
-        return linkOpen(r.url, 'row' + fresh) + dot(status) + src(r.source) +
+        // Every run sits in a box tinted by its status, like the alert boxes.
+        return linkOpen(r.url, 'row rbox ' + status) + dot(status) + src(r.source) +
           '<span class="main">' + esc(r.project) + ' <span class="wf">&middot; ' + esc(r.pipeline) + '</span></span>' +
           '<span class="when">' + when + '</span>' +
           (r.ref || r.step ? '<span class="sub">' + esc(r.ref) + (r.step ? ' &middot; failed at ' + esc(r.step) : '') + '</span>' : '') + linkClose(r.url);
@@ -417,8 +417,6 @@
         // An alert from a git source links to its issue or comment.
         var txt = '<span class="main">' + esc(a.title) + '</span><span class="sub">' + sub + '</span>';
         var h = href(a.url);
-        // Info alerts (new issues, PR comments, a washer that is done) are news,
-        // not trouble: a plain row. Warnings and criticals keep their tint.
         return '<div class="abox ' + esc(a.severity) + '">' + src(alertKind(a)) +
           (h ? '<a class="txt link" href="' + esc(h) + '" target="_blank" rel="noopener noreferrer">' + txt + '</a>' : '<span class="txt">' + txt + '</span>') +
           (canDismiss() ? '<button type="button" class="ax" data-dismiss-alert="' + esc(a.id) + '" aria-label="Dismiss ' + esc(a.title) + '">&times;</button>' : '') +
@@ -692,7 +690,7 @@
     });
     // The Alerts chip: every active alert, worst colour wins. Gone at 0, like Failed and Open PRs.
     var alerts = alertList(), worst = alerts.some(function (a) { return a.severity === 'critical'; }) ? 'failed'
-      : alerts.some(function (a) { return a.severity === 'warn'; }) ? 'review' : alerts.length ? 'open' : 'ok';
+      : alerts.some(function (a) { return a.severity === 'warn'; }) ? 'warn' : alerts.length ? 'open' : 'ok';
     if (alerts.length) html += '<button type="button" class="chip ' + worst + ' action" data-alerts-toggle="1" aria-expanded="' + (alertsOpen ? 'true' : 'false') +
       '" title="Show the alerts">' + alerts.length + ' alerts</button>';
     if (!alerts.length) alertsOpen = false;

@@ -40,6 +40,8 @@
   --green-bg: #10241b; --green-edge: #1e4d36; --green-fg: #34d399;
   --blue-bg: #10233a; --blue-edge: #1e3a5f; --blue-fg: #93c5fd;
   --orange-bg: #2b1a0e;
+  /* Warning alerts: yellow, apart from amber (waiting for approval) and orange (running). */
+  --yellow: #facc15; --yellow-bg: #26240c; --yellow-edge: #57500f; --yellow-fg: #fde047;
   --sans: "Geist", system-ui, "Segoe UI", "Noto Sans", "DejaVu Sans", sans-serif;
   --mono: "Geist Mono", ui-monospace, Menlo, Consolas, "DejaVu Sans Mono", monospace;
   --brand: "Space Grotesk", var(--sans);
@@ -74,6 +76,7 @@
   --green-bg: #e7f8ee; --green-edge: #a7e3bf; --green-fg: #166534;
   --blue-bg: #e8f0fe; --blue-edge: #b7cdf7; --blue-fg: #1e40af;
   --orange-bg: #ffedd5;
+  --yellow: #a16207; --yellow-bg: #fefce8; --yellow-edge: #f3e27a; --yellow-fg: #854d0e;
 }
 :root[data-scheme="light"] .mark.gitea { background: #e3f1d4; color: #3f6b12; }
 :root[data-scheme="light"] .mark.github { background: #e6e8ec; color: #24292f; }
@@ -117,6 +120,7 @@
   --green-bg: #0a1711; --green-edge: #133224; --green-fg: #2a9d68;
   --blue-bg: #0a1624; --blue-edge: #13263e; --blue-fg: #6d97c2;
   --orange-bg: #1a1009;
+  --yellow: #b8a42a; --yellow-bg: #15140a; --yellow-edge: #302c0e; --yellow-fg: #b8a42a;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -194,6 +198,7 @@ a.chip[href]:hover, a.chip[href]:focus-visible { color: var(--text); }
 .chip.running { --c: var(--orange); }
 .chip.failed { --c: var(--red); color: var(--text); background: var(--red-bg); }
 .chip.review { --c: var(--amber); color: var(--text); }
+.chip.warn { --c: var(--yellow); color: var(--text); }
 .chip.open { --c: var(--purple); color: var(--text); }
 .chip.bad { --c: var(--red); color: var(--text); }
 .badges .chip { color: var(--text); }
@@ -222,7 +227,7 @@ button.chip.failed.action:not(:disabled):hover, button.chip.failed.action[aria-e
 .failed-pop .x { font: inherit; font-size: 0.8rem; color: var(--text); background: transparent; border: 1px solid var(--track); border-radius: 0.45rem; padding: 0.3rem 0.7rem; cursor: pointer; }
 .failed-pop .x:hover { border-color: var(--dim); }
 .failed-pop .sev { font-family: var(--mono); font-size: 0.66rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--c, var(--dim)); }
-.failed-pop .sev.critical { --c: var(--red); } .failed-pop .sev.warn { --c: var(--amber); } .failed-pop .sev.info { --c: var(--blue); }
+.failed-pop .sev.critical { --c: var(--red); } .failed-pop .sev.warn { --c: var(--yellow); } .failed-pop .sev.info { --c: var(--blue); }
 .failed-pop .foot { margin-top: 0.5rem; color: var(--dim); font-size: 0.8rem; }
 
 /* ---- pills: one event in the header ---------------------------------------
@@ -238,7 +243,7 @@ button.chip.failed.action:not(:disabled):hover, button.chip.failed.action[aria-e
 }
 .banner[hidden], .offline[hidden], .notice[hidden], .topbar[hidden], .setup-link[hidden] { display: none; }
 .banner.critical { background: var(--red-bg); border-color: var(--red-edge); --tagc: var(--red-fg); }
-.banner.warn { background: var(--amber-bg); border-color: var(--amber-edge); --tagc: var(--amber-fg); }
+.banner.warn { background: var(--yellow-bg); border-color: var(--yellow-edge); --tagc: var(--yellow-fg); }
 .banner.success { background: var(--green-bg); border-color: var(--green-edge); --tagc: var(--green-fg); }
 .banner.note { background: var(--blue-bg); border-color: var(--blue-edge); --tagc: var(--blue-fg); }
 .banner .tag { font-family: var(--mono); font-size: 0.66rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--tagc); }
@@ -450,15 +455,27 @@ button.hostrow:focus-visible { outline: 2px solid var(--blue); outline-offset: -
 .abox { display: flex; align-items: center; gap: 0.55rem; padding: 0.55rem 0.65rem; border-radius: 0.6rem;
   background: var(--card-hi); border: 1px solid var(--card-edge); }
 .abox.critical { background: var(--red-bg); border-color: var(--red-edge); }
-.abox.warn { background: var(--amber-bg); border-color: var(--amber-edge); }
-.abox.info { background: transparent; border-color: transparent; border-bottom-color: var(--card-edge); border-radius: 0; }
+.abox.warn { background: var(--yellow-bg); border-color: var(--yellow-edge); }
+.abox.info { background: var(--blue-bg); border-color: var(--blue-edge); }
 .abox .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
 .abox .main { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .abox .sub { font-family: var(--mono); font-size: 0.75rem; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.abox.critical .sub { color: var(--red-fg); } .abox.warn .sub { color: var(--amber-fg); }
+.abox.critical .sub { color: var(--red-fg); } .abox.warn .sub { color: var(--yellow-fg); }
 .abox .ax { flex: none; width: 2rem; height: 2rem; border-radius: 0.45rem; border: 1px solid var(--card-edge); background: transparent;
   color: var(--text); font: inherit; font-size: 1.05rem; line-height: 1; cursor: pointer; }
 .abox .ax:hover { background: rgba(255, 255, 255, .08); }
+
+/* Pipelines card: one box per run, tinted by its status (same shape as the alert boxes). */
+.w-pipelines .rows { gap: 0.45rem; }
+.row.rbox { margin: 0; padding: 0.55rem 0.65rem; border-radius: 0.6rem; background: var(--card-hi); border: 1px solid var(--card-edge); }
+.row.rbox:first-child { border-top-color: var(--card-edge); }
+.row.rbox.ok { background: var(--green-bg); border-color: var(--green-edge); }
+.row.rbox.failed { background: var(--red-bg); border-color: var(--red-edge); }
+.row.rbox.failed .sub, .row.rbox.failed .when { color: var(--red-fg); }
+.row.rbox.running { background: var(--orange-bg); border-color: color-mix(in srgb, var(--orange) 35%, transparent); }
+.row.rbox.review { background: var(--amber-bg); border-color: var(--amber-edge); }
+/* A run that just finished in Running now gets the same green box. */
+.job.done { margin: 0 0 0.45rem; border: 1px solid var(--green-edge); border-radius: 0.6rem; }
 
 /* A row that just changed: tinted for a short while (kiosk.js adds .fresh). */
 .row.fresh.failed, .job.fresh.failed { background: var(--red-tint); }
@@ -479,7 +496,7 @@ a.link:active { background: rgba(255, 255, 255, .08); }
 .neutral, .queued { --c: var(--grey); }
 .success { --c: var(--green); }
 .info { --c: var(--blue); }
-.warn { --c: var(--amber); }
+.warn { --c: var(--yellow); }
 .critical { --c: var(--red); }
 
 /* ---- running jobs ------------------------------------------------------ */
