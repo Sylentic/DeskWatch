@@ -15,7 +15,7 @@ What you get:
 - A stage that waits for an approval raises one "Approval needed" notice (another check, such as business hours, "Check pending") and a `review` row on the pipelines page.
   It does not hold the screen, because an approval can take hours.
 - Open pull requests count in the PR badge and appear on the `prs` page.
-- A refused or expired token, or an unreachable service, lights the `warn` badge.
+- A refused or expired token, or an unreachable service, shows the **Source down** pill.
 
 Self-hosted agent pools can be shown on the kiosk `runners` widget (optional, needs one more token scope, see
 [runners.md](runners.md#4-azure-devops-agent-pools-in-this-version)). Not in this version: classic release pipelines, Azure DevOps Server
@@ -42,7 +42,7 @@ is never written to the config, the logs or MQTT.
 1. In Azure DevOps, open **User settings** (top right) > **Personal access tokens** > **New Token**.
 2. **Organization**: pick the one organisation to watch. A token for "All accessible organizations" is more than
    DeskWatch needs.
-3. **Expiration**: choose a date you will remember. When the token lapses the dashboard shows the `warn` badge.
+3. **Expiration**: choose a date you will remember. When the token lapses the dashboard shows the **Source down** pill.
 4. **Scopes**: choose **Custom defined**, then **Show all scopes**, and tick only:
 
    | Scope | Access | Used for |
@@ -146,8 +146,8 @@ project may show as the banner on the dashboard).
 
 | Symptom | Likely cause |
 |---|---|
-| `warn` badge, journal says the sign-in page was returned or the request was refused | Token expired, revoked, created for a different organisation, or missing the **Build: Read** scope |
+| **Source down** pill, journal says the sign-in page was returned or the request was refused | Token expired, revoked, created for a different organisation, or missing the **Build: Read** scope |
 | `warn` badge only with `pull_requests = true` | Token lacks **Code: Read**; add it or set `pull_requests = false` |
-| `warn` badge, journal says `404` | Wrong `organization` or project name (spaces are fine, the bridge sends them as `%20`). The test button on the setup page shows the path that was asked for and lists the projects the token can see: copy the name from there exactly |
+| **Source down** pill, journal says `404` | Wrong `organization` or project name (spaces are fine, the bridge sends them as `%20`). The test button on the setup page shows the path that was asked for and lists the projects the token can see: copy the name from there exactly |
 | Pipeline never appears | It has not run among the newest 50 builds of the project |
 | Deploy shows "running" while it waits for an approval or check | The record type is not one the bridge knows. Run with `RUST_LOG=debug`, or look at the build timeline (`.../builds/{id}/timeline`) for the `type` of the record that is `inProgress`, and open an issue |

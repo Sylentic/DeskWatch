@@ -18,12 +18,12 @@ reachable from the network without one. **Never expose the port to the internet*
 shows a secret (only whether a credential exists), token fields are write-only, and a page from another website cannot
 make changes in your browser (the `Origin` check, below).
 
-The page uses the whole screen: a menu on the left (**Sources**, **MQTT broker**, **Dashboard**, **Bridge and
-restart**, **Stored secrets**) and the chosen section next to it, in several columns on a wide screen and one column on
+The page uses the whole screen: a menu on the left (**Sources**, **MQTT broker**, **Dashboard**, **Alerts**,
+**Access**, **Sign-in providers**, **Bridge and restart**, **Stored secrets**) and the chosen section next to it, in several columns on a wide screen and one column on
 a phone. **Add a source** is the first thing in the first section. The menu entry is kept in the address
 (`/setup#mqtt`), so a link opens that section.
 
-When the dashboard is on too, it shows a small **Setup** link in its header that opens this page, and this page has a
+When the dashboard is on too, its header has a cogwheel that opens this page, and this page has a
 **Dashboard** link back.
 
 The page is dark. The **Light mode** button in the header switches to light and remembers the choice in that
@@ -47,6 +47,7 @@ source, and lists every check with a plain message. A test is read-only and make
 | GitHub | the token can see each repository (up to 10); each `runners` scope, with a hint about the extra rights it needs |
 | Gitea | the server answers; the token is accepted; each repository; each `runners` scope; the webhook secret exists (its value cannot be checked from here) |
 | Azure DevOps | builds of each project; pull requests if enabled (Code: Read); each `agent_pools` entry exists (Agent Pools: Read) |
+| GitLab, Bitbucket Cloud | each project or repository is checked with the token ([gitlab.md](gitlab.md), [bitbucket.md](bitbucket.md)) |
 | Prometheus | the server answers a query; each host's `instance` is a known target |
 | MQTT broker | connects and logs in (see below) |
 
@@ -61,7 +62,9 @@ subscribe to, so an ACL mistake still shows up as a source of trouble in the bro
 
 With a data folder configured ([data-dir.md](data-dir.md)) the page can change sources that live in the data folder:
 
-- **Add a source** (GitHub, Gitea, Azure DevOps, Prometheus), **Edit** it, **Remove** it.
+- **Add a source** (Gitea, GitHub, GitLab, Bitbucket Cloud, Azure DevOps, Prometheus), **Edit** it, **Remove** it. Options
+  the form does not show, such as `alert_new_issues`, `alert_pr_comments` or Azure DevOps `auth = "entra"`, are set in
+  `sources.toml` by hand; the page keeps them on an edit.
 - A token field is write-only. Leave it empty on an edit to keep the current token; fill it in to replace it. The value
   goes to the bridge once and is stored as `credentials/<kind>-<name>-<key>` (0600). It is never sent back.
 - **Validate before save**: the whole configuration, as it would be, must load, and the connection test runs with the
@@ -78,7 +81,7 @@ With a data folder configured ([data-dir.md](data-dir.md)) the page can change s
   one off, removing the broker login, resetting the broker settings, deleting a stored secret and restarting.
 - Every save or removal is logged (source id, which secret files were written; never a value).
 - **No restart needed.** A saved source starts at once, an edited one is replaced (its facts and warnings are dropped
-  first), a removed one stops and disappears from the dashboard and the `warn` badge. A new Gitea source
+  first), a removed one stops and disappears from the dashboard and the Source down pill. A new Gitea source
   gets its webhook route (`/webhook/gitea/<name>`) immediately, and a removed one answers 404. If a saved source
   cannot be started (for example a credential file vanished), the old version keeps running, the page says why, and a
   restart will show the same error. Settings outside `[[source.*]]` (the MQTT broker, the listen address)
@@ -107,6 +110,15 @@ The **Alerts** section has three cards.
   is no way to create any other alert from here (without a password the setup page has no login). It needs no data folder.
 - **Where alerts come from**: whether MQTT is on and connected. Alerts arrive on the MQTT topic `deskpanel/alert`
   ([home-assistant.md](home-assistant.md)). Failed pipeline runs are not alerts; they count in the Failed badge.
+
+## Access and sign-in providers
+
+With a data folder, the **Access** section is where the login is turned on and managed ([auth.md](auth.md)): the first
+administrator password, **users** with a role each (viewer, operator or administrator; a link to **My account** where a
+person changes their own password), and **API keys** for scripts (alerts) and screens (viewer keys). **Sign-in
+providers** adds sign-in with GitHub or Microsoft and who may use it. Only an administrator sees these two sections once
+a login is set; without a password the page says so and offers the first-run form. Your own dashboard layout is not
+set here: every signed-in person customizes it with the grid icon on the dashboard ([kiosk.md](kiosk.md#customize-your-own-dashboard)).
 
 ## MQTT broker settings
 
@@ -159,8 +171,8 @@ restart once by hand (`docker compose restart deskwatch-bridge`). It needs the s
 ## Not yet
 
 - The kiosk layout and the listen address stay in `bridge.toml`; the page does not edit them.
-- Everything here is tested against mock servers and a fake broker, not against a real GitHub, Azure DevOps or
-  Mosquitto.
+- Everything here is tested against mock servers and a fake broker, not against a real GitHub, GitLab, Bitbucket,
+  Azure DevOps or Mosquitto.
 
 ## Security
 
@@ -182,6 +194,3 @@ restart once by hand (`docker compose restart deskwatch-bridge`). It needs the s
   `127.0.0.1` or on a network you trust.
 - The page is built with `textContent` only, so nothing from the config can inject markup, and it loads nothing from
   other sites (CSP).
-
-## Open points
-

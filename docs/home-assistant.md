@@ -30,7 +30,7 @@ In any automation, add the action **Run script: DeskWatch alert** and fill in:
 |---|---|
 | Title | Required. Short heading, cut to 40 characters |
 | Message | One line of detail, cut to 40 characters |
-| Severity | `info` flashes a notice, `warning` shows amber until it is dismissed, `critical` shows red above running jobs |
+| Severity | `info` flashes a notice, `warning` shows yellow until it is dismissed, `critical` shows red above running jobs |
 | Id | Optional name such as `washer`. The same id replaces the earlier alert; needed to clear it |
 | Duration | Optional minutes the alert stays. Empty: `info` 30 minutes, warning and critical until cleared |
 

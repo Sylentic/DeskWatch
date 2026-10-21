@@ -24,10 +24,10 @@ Contents: [1. Before you start](#1-before-you-start) · [2. Route A: systemd](#2
   as "Raspberry Pi OS (64-bit)"). Pi 3, 4, 5, Zero 2 W and 400 all support it.
 - **A broker.** Mosquitto on the Pi itself, or another machine, see [section 4](#4-mosquitto-on-the-pi).
 - **Storage wear.** The bridge writes nothing to disk unless you turn on the [data folder](data-dir.md), so an SD card is fine. Journald logs are the main writes.
-- **A fixed address.** Give the Pi a DHCP reservation on your router (or a static address) so the panel and Gitea
+- **A fixed address.** Give the Pi a DHCP reservation on your router (or a static address) so the dashboard and Gitea
   webhooks keep finding it.
 
-The local stats page (CPU, memory, disk, temperature of the machine the bridge runs on) works on the Pi because
+The local host card (CPU, memory, disk, temperature of the machine the bridge runs on) works on the Pi because
 it reads `/proc` and `/sys`, like on any Linux server.
 
 ## 2. Route A: systemd, release binary
@@ -114,7 +114,7 @@ If the Pi is also the broker host:
 sudo apt install mosquitto mosquitto-clients
 ```
 
-Then follow [mosquitto.md](mosquitto.md) for logins and topic limits (do that before the panel arrives; an open
+Then follow [mosquitto.md](mosquitto.md) for logins and topic limits (do that before you put the broker on a shared network; an open
 broker on a home network lets anything raise alerts). The Pi's package is the same Mosquitto 2.0 the guide
 assumes. The bridge's `[mqtt] host` is then `localhost` for Route A, or see the broker table in
 [docker.md section 6](docker.md#6-reaching-the-broker) for Route B.

@@ -17,7 +17,7 @@ What you get:
 - A failed pipeline raises the usual red alert naming the first failed job that is not allowed to fail; a good one
   flashes green. Both leave a count in the header badge until you dismiss it.
 - A pipeline stopped at a manual gate (`manual`) shows as `review` on the pipelines page. It raises no notice yet.
-- A refused or expired token, or an unreachable server, lights the `warn` badge.
+- A refused or expired token, or an unreachable server, shows the **Source down** pill.
 
 Self-hosted runners can be shown on the kiosk `runners` widget (optional, needs more rights, see
 [runners.md](runners.md#5-gitlab-runners-in-this-version)).
@@ -33,7 +33,7 @@ Use a token that can only read.
 
 1. In GitLab open **Preferences > Access tokens** (a personal token), or **Settings > Access tokens** of a
    project or group (a project or group token acts as its own bot user, which is tidier on a shared server).
-2. Give it a name and an expiry date you will remember. When the token lapses the dashboard shows the `warn` badge.
+2. Give it a name and an expiry date you will remember. When the token lapses the dashboard shows the **Source down** pill.
 3. Role (project and group tokens): **Reporter** is enough to read merge requests and pipelines.
 4. Scope: tick only **`read_api`**. Do not tick `api`, `write_repository` or any other scope.
 5. Create the token and copy it once; GitLab does not show it again.

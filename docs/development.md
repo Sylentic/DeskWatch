@@ -27,7 +27,7 @@ password can also come from `DESKWATCH_MQTT_PASSWORD`.
 
 `--demo` plays a loop of fake data of a little over two minutes, so you can watch every page without Gitea or Home
 Assistant: stats, open PRs, pipelines and alerts, notices, a running deploy with a second job, a failure, a green
-success flash, and an amber and a red home alert. No sources run; the rest of the config (`[mqtt]`, `[alerts]`, `[kiosk]`, ...) applies, and the config file is optional.
+success flash, and a yellow and a red home alert. No sources run; the rest of the config (`[mqtt]`, `[alerts]`, `[kiosk]`, ...) applies, and the config file is optional.
 
 ```sh
 cargo run -p deskwatch-bridge -- --demo --kiosk --no-mqtt   # the dashboard on http://localhost:8787/

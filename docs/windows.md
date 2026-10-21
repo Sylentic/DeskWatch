@@ -261,7 +261,7 @@ To rehearse alerts from Home Assistant or a script with your real bridge:
 
 ## 7. What differs from Linux
 
-- **Local server stats.** The stats page of the `[server]` source reads `/proc` and `/sys`, which Windows does not
+- **Local server stats.** The bridge machine's own host card (the `[server]` stats) reads `/proc` and `/sys`, which Windows does not
   have. On Windows the bridge runs fine, but it knows only the machine name (from `COMPUTERNAME`, or
   `server.display_name`); CPU, load, memory, disk, uptime and network show as unknown (dashes). To see a Windows
   PC's numbers, run [windows_exporter](https://github.com/prometheus-community/windows_exporter) on it and add a

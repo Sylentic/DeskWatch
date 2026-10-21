@@ -14,13 +14,16 @@ or in Docker, and needs no internet beyond the sources you point it at.
 - **Running now:** every CI job with its steps, elapsed time and where it runs. A run that just finished well stays for
   a moment as *Done*.
 - **Pipelines and pull requests** from Gitea, GitHub (and GitHub Enterprise), GitLab, Bitbucket Cloud and Azure DevOps.
-- **Hosts** from Prometheus and the bridge machine itself: CPU, memory, disk, uptime, temperature, network. Hosts that
+- **Hosts** from Prometheus and the bridge machine itself: CPU, memory, disk, GPU and VRAM (NVIDIA through the DCGM
+  exporter, AMD on the bridge machine), uptime, temperature, network. Hosts that
   need a look (down, nearly full, just rebooted) come first.
 - **One event at a time in the header:** a failed run or critical alert in red until you dismiss it, a warning in
-  amber, a success (or a *Fixed* after a failure) in green that goes away by itself.
-- **Alerts from Home Assistant** or any script, over MQTT or HTTP.
+  yellow, a success (or a *Fixed* after a failure) in green that goes away by itself.
+- **Alerts** from Home Assistant or any script, over MQTT or HTTP, and from your Git hosts: a new issue, or a new
+  comment on an open Azure DevOps pull request. Info is blue, warning yellow, critical red.
+- **Your own layout:** every user hides, moves and resizes panels with the grid icon in the header, kept per user.
 - **A setup page** to add sources, test connections and change settings from the browser, and an optional login
-  (password, API keys, or sign-in with GitHub or Microsoft).
+  with viewer, operator and administrator roles (passwords, API keys, or sign-in with GitHub or Microsoft).
 
 ## Try it in a minute
 
@@ -55,7 +58,7 @@ page and `POST /api/alert` only answer the local network.
 |---|---|---|
 | Gitea | Webhooks (instant start and end) plus polling for steps and PRs | On a real server |
 | GitHub, GitHub Enterprise | Polling with ETags | On real repositories |
-| Azure DevOps Services | Polling: runs with stages, approvals, PRs, agent pools ([guide](docs/azure-devops.md)) | On a real organisation |
+| Azure DevOps Services | Polling: runs with stages, approvals, PRs, PR comments, agent pools; sign in with a PAT or a Microsoft Entra service principal ([guide](docs/azure-devops.md)) | On a real organisation |
 | GitLab (gitlab.com and self-managed) | Polling: merge requests, pipelines, runners ([guide](docs/gitlab.md)) | Against mock answers only |
 | Bitbucket Cloud | Polling: PRs, pipelines, runners ([guide](docs/bitbucket.md)) | Against mock answers only |
 | Prometheus | node_exporter and cAdvisor through the HTTP API | On a real server |

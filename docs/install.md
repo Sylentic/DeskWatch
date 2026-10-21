@@ -15,7 +15,7 @@ The source setup in [section 5](#5-sources) (Gitea, GitHub, GitLab, Bitbucket Cl
 Home Assistant steps are the same on both systems apart from how secrets are stored; [windows.md](windows.md)
 points back here for them.
 
-This guide takes a Linux server from nothing to a bridge that publishes pages to your Mosquitto broker. Every
+This guide takes a Linux server from nothing to a bridge that serves the dashboard and listens for alerts on your Mosquitto broker. Every
 host name, address, port and name below is a placeholder: replace `gitea.example.com`, `broker.example.lan` and
 friends with your own.
 
@@ -109,7 +109,7 @@ key; every key is optional. Unknown keys are an error, so a typo stops the bridg
 ignored. The parts you will touch:
 
 - `[mqtt]`: `host` and `port` of your broker. `username` and `password_file` once you turn on broker logins (step 4).
-- `[server]`: the name shown on the stats page and which network interface and disk to report.
+- `[server]`: the name shown on the host card and which network interface and disk to report.
 - `[http]`: the address webhooks arrive on (default `0.0.0.0:8787`). It also serves the dashboard, the setup page and the health check, so it is open whenever MQTT is on, and
   that is the case by default. If the server has a firewall, allow this port from the Gitea host only. Behind a reverse proxy, set
   `listen = "127.0.0.1:8787"`.
@@ -130,7 +130,6 @@ examples in [`deploy/mosquitto/`](../deploy/mosquitto). In short:
 
 ```sh
 sudo mosquitto_passwd -c /etc/mosquitto/passwd deskwatch-bridge     # -c only for the first user
-sudo mosquitto_passwd /etc/mosquitto/passwd deskwatch-panel
 sudo mosquitto_passwd /etc/mosquitto/passwd homeassistant
 # install deploy/mosquitto/acl.example as the acl_file, then reload Mosquitto
 ```
@@ -149,7 +148,7 @@ password_file = "mqtt-password"
 ```
 
 If your broker still allows anonymous clients, you can leave `username` out and start there. Do move to logins
-before you put the panel on a shared network.
+before you put the broker on a shared network.
 
 ## 5. Sources
 
@@ -196,7 +195,7 @@ Gitea tells the bridge about runs the moment they start and end, by webhook. Git
 The bridge rejects any request without a valid `X-Gitea-Signature`. Step progress comes from polling the Actions
 API every 5 seconds while a job runs, and open PRs are re-polled every 60 seconds as a safety net. Cancelled runs
 show no alert. `interrupt` limits which repositories may take over the screen (`true`, `false`, or a list of
-`owner/repo` names) and `alias` gives repositories short panel labels. For several Gitea instances add one block
+`owner/repo` names) and `alias` gives repositories short labels on the dashboard. For several Gitea instances add one block
 per instance, each with its own `name` and webhook URL.
 
 ### GitHub and GitHub Enterprise
@@ -214,7 +213,7 @@ Enterprise Server and GHE.com; only `base_url` differs:
 
 1. Create a fine-grained personal access token limited to the repositories you want on the dashboard, with read-only
    permissions **Metadata**, **Pull requests** and **Actions**. Nothing else is needed. Set an expiry you will
-   remember; when it lapses the panel shows the `warn` badge.
+   remember; when it lapses the dashboard shows a **Source down** pill.
 2. Store it: `/etc/deskwatch/credentials/github-personal` (mode 600), and add
    `LoadCredential=github-personal:/etc/deskwatch/credentials/github-personal` to the unit.
 3. Add the block, one per account or Enterprise instance:
@@ -226,9 +225,9 @@ Enterprise Server and GHE.com; only `base_url` differs:
    repos = ["your-user/repo-a"]
    ```
 
-A refused token or an unreachable server shows as the `warn` badge; polling backs off (1, 2, 5 minutes) and slows
-down when less than 10 % of the rate limit is left. Runs that finished before the bridge started show on the
-pipelines page and count in the red badge but do not take over the screen. `interrupt` and `alias` work as for
+A refused token or an unreachable server shows as a **Source down** pill; polling backs off (1, 2, 5 minutes) and slows
+down when less than 10 % of the rate limit is left. Runs that finished before the bridge started show in the
+Pipelines card and count in the red Failed badge but do not take over the screen. `interrupt` and `alias` work as for
 Gitea; a new non-draft PR flashes "New PR" unless `notify_new_prs = false`. Only the first 100 open PRs per
 repository are counted. A new issue goes to the alerts list until dismissed, unless `alert_new_issues = false` (one
 extra request per repository per poll; the token needs **Issues: Read**).
@@ -278,9 +277,9 @@ token_file = "azdo-work"
 
 ### Prometheus (host stats and containers)
 
-The built-in `stats` page shows the machine the bridge runs on, read from `/proc`. If you run Prometheus with
-node_exporter (and cAdvisor for containers), a `[[source.prometheus]]` block adds one `stats:<name>` page per
-machine and a `containers` page listing expected containers that stopped. The bridge only reads, over the HTTP
+The built-in host card shows the machine the bridge runs on, read from `/proc`. If you run Prometheus with
+node_exporter (and cAdvisor for containers), a `[[source.prometheus]]` block adds a host card per
+machine and a list of expected containers that stopped. The bridge only reads, over the HTTP
 API. A bearer token (`token_file`) is only needed behind a reverse proxy.
 
 ```toml
@@ -295,8 +294,12 @@ hosts = [
 
 `instance` is the label Prometheus gives the node_exporter target. A stopped container disappears from cAdvisor,
 so only names in `expect_containers` can be reported, and they must match the container name exactly. Each host
-gets a card on the dashboard and what is down is listed there. Hosts and containers that are down count in the
-`server` header badge. The PromQL for each field is in `bridge/src/prometheus/mod.rs` and can be replaced per field
+gets a card on the dashboard and what is down is listed there. Hosts and containers that are down appear in the Containers list. GPU usage, VRAM and GPU temperature show on
+the card of any host that reports them: by default they are read from the NVIDIA DCGM exporter
+(`DCGM_FI_DEV_GPU_UTIL`, framebuffer used and free, `DCGM_FI_DEV_GPU_TEMP`), so add that exporter as a Prometheus
+target; otherwise replace `gpu_pct`, `gpu_mem_pct` and `gpu_temp_c` under `queries`. The bridge machine itself reads
+AMD GPUs from sysfs; Intel and NVIDIA GPUs on the bridge machine need a Prometheus host. Not yet tried on a real GPU.
+The PromQL for each field is in `bridge/src/prometheus/mod.rs` and can be replaced per field
 with `queries`.
 
 ## 6. Home Assistant
@@ -363,9 +366,9 @@ and delete the broker users you created.
 | `MQTT connection error`, retries every 5 s | Wrong host, port or login, or the broker's ACL/listener settings; see [mosquitto.md](mosquitto.md) |
 | Gitea says delivery failed | `ALLOWED_HOST_LIST` not set, firewall blocks the port, or the URL's last part does not match the source `name` |
 | Webhook answers 401 | The secret in Gitea differs from the credential file |
-| "Source down" pill on the dashboard | A source cannot log in or connect: check the journal for the source's name; a GitHub token may have expired |
-| Panel shows nothing new after a Gitea run | Check the repository is not excluded by `interrupt`, and that the webhook has the **Workflow Run** and **Workflow Job** events |
-| Stats page shows `--` for CPU on the first screen | Normal: CPU use and network rates need two samples |
+| **Source down** pill on the dashboard | A source cannot log in or connect: check the journal for the source's name; a GitHub token may have expired |
+| The dashboard shows nothing new after a Gitea run | Check the repository is not excluded by `interrupt`, and that the webhook has the **Workflow Run** and **Workflow Job** events |
+| The host card shows `--` for CPU on the first screen | Normal: CPU use and network rates need two samples |
 
 Logs are verbose on request: set `Environment=RUST_LOG=debug` in the unit (or `deskwatch_bridge=debug` to leave
 other crates quiet).

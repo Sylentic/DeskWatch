@@ -40,8 +40,8 @@ fields:
   severity:
     name: Severity
     description: >-
-      info flashes a notice, warning shows an amber screen, critical shows a
-      red screen above everything else.
+      info is blue, warning yellow and critical red; critical shows above
+      everything else.
     required: false
     default: info
     selector:

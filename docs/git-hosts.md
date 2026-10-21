@@ -15,6 +15,21 @@ take.
 | Bitbucket Data Center / Server | none | Not built, see below. |
 | Gogs, Gitee, SourceHut, others | none | Not planned. |
 
+## What each host adds to the alerts list
+
+Besides runs and pull requests, a source can put activity in the Alerts list as info alerts (blue, with the source's mark,
+linking to the item, kept until dismissed or for a week). Items that existed at startup do not alert.
+
+| Source | New issues (`alert_new_issues`) | New PR comments (`alert_pr_comments`) |
+|---|---|---|
+| Gitea | Yes, from the **Issues** webhook event | No |
+| GitHub, GitHub Enterprise | Yes, polled (token needs **Issues: Read**) | No |
+| GitLab | Yes, polled | No |
+| Bitbucket Cloud | Yes, polled (issue tracker on, token needs **Issues: Read**) | No |
+| Azure DevOps | No | Yes, polled (your own comments are skipped) |
+
+Both are on by default and can be turned off per source. All of this has been tried against mock answers only.
+
 ## Using only one host (Azure DevOps or GitHub Enterprise)
 
 An organisation that only uses Azure DevOps, or only GitHub Enterprise, needs none of the others: no Gitea, no

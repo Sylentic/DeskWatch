@@ -123,9 +123,8 @@ interrupt = true                # true, false, or a list such as ["owner/repo"]
 check = true
 
 # Alerts that Home Assistant or any script publishes on <topic_prefix>/alert.
-# Severity info flashes a notice, warning shows an amber screen, critical a
-# red screen above running jobs. Dismiss takes an alert off the screen; it
-# stays in the header and the alerts list until cleared.
+# Severity info is blue, warning yellow and critical red (critical goes above
+# running jobs). Dismiss takes an alert off the dashboard for every screen.
 [alerts]
 enabled = true
 max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped first

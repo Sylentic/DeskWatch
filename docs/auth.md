@@ -27,6 +27,7 @@ Each local user has a name, a password and one role:
 |---|---|---|---|
 | Look at the dashboard | yes | yes | yes |
 | Dismiss alerts and failed runs, mute | no | yes | yes |
+| Customize your own dashboard layout | yes | yes | yes |
 | Setup, users and API keys | no | no | yes |
 
 Add users under Setup, **Access**. You choose a first password (at least 12 characters); the person must replace it at
@@ -36,6 +37,10 @@ role or password signs that user out at once. You cannot remove or lower the las
 The user name `viewer` is kept for an install that already had a viewer password: it was turned into a viewer user
 when the file was first read. The file `auth.toml` is rewritten in the new format at the next change; nothing else has to
 be done.
+
+Everyone has a **My account** page at `/account` (change your own password, sign out). Each user's dashboard
+layout is stored per user too ([kiosk.md](kiosk.md#customize-your-own-dashboard)); a screen opened with a viewer key
+keeps its layout in that browser instead.
 
 ## Scripts and screens use keys, not passwords
 
