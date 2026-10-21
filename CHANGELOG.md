@@ -10,6 +10,14 @@ hardware yet, and its MQTT schema (v2) may still change or the display may be dr
 
 ### Added
 
+- **GPU usage, VRAM and GPU temperature on the host card** (#115). Prometheus hosts read them from the NVIDIA DCGM
+  exporter by default, and `gpu_pct`, `gpu_mem_pct` and `gpu_temp_c` can be replaced under `queries`. The bridge machine
+  reads AMD GPUs from sysfs. The rows only show for hosts that report a GPU. Intel and NVIDIA on the bridge machine
+  itself need a Prometheus host.
+- **New issues and new PR comments in the alerts list** (#118). GitHub (polled) and Gitea (the **Issues** webhook event)
+  add a new issue; Azure DevOps adds a new comment on an open PR, skipping your own. They show as info alerts with the
+  source's mark, link to the issue or PR, and stay until dismissed (or a week). Existing issues and comments do not
+  alert at startup. `alert_new_issues = false` or `alert_pr_comments = false` turns them off per source.
 - **Several users with their own role.** Setup › Access now lists local users. A **viewer** looks at the dashboard, a new
   **operator** may also dismiss alerts and failed runs, an **administrator** can do everything, including Setup, users
   and keys. A new user gets a password the administrator chooses and replaces it at the first sign-in; everyone has a
@@ -18,6 +26,9 @@ hardware yet, and its MQTT schema (v2) may still change or the display may be dr
   viewer and administrator rules. With several matches the highest role wins.
 
 ### Changed
+
+- **Info alerts are plain rows in the dashboard's Alerts card**, without the blue box. Warnings and critical alerts
+  keep their amber and red boxes.
 
 - An existing `auth.toml` is read as before: the administrator and the viewer password become the first two users
   (the viewer keeps the user name `viewer`). Without a password nothing changes.

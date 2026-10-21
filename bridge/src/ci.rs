@@ -9,6 +9,7 @@
 //! Every key starts with the source id (`gitea:home:...`), so two instances of
 //! the same adapter never overwrite each other.
 
+use crate::alerts::AlertMessage;
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
 
@@ -58,6 +59,9 @@ pub enum Update {
     /// A short flash that is not about a PR, such as a deploy waiting for
     /// approval.
     Notice { notice: NoticeData },
+    /// A new issue or comment, for the alerts list. The composer hands it to
+    /// the alerts; the CI facts never see it.
+    Alert { alert: AlertMessage },
     /// Every runner of one scope (a user, an organisation, a repository, a
     /// pool). Replaces what was known for `key`, so a runner that was removed
     /// disappears and an empty list clears the scope.
@@ -305,6 +309,7 @@ impl CiFacts {
             } => self.pull_opened(key, project, source, pull, notify, now),
             Update::PullClosed { key, number } => self.pull_closed(&key, number),
             Update::Notice { notice } => self.notices.push((notice, now)),
+            Update::Alert { .. } => {}
             Update::QueuedJobs {
                 key,
                 source,

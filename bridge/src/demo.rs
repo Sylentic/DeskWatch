@@ -199,6 +199,9 @@ pub fn stats(now: u64) -> StatsData {
         cpu_count: Some(4),
         ram_pct: Some(round(38.0 + 20.0 * wave(23.0, 1.0))),
         disk_pct: Some(63.0),
+        gpu_pct: Some(round(5.0 + 70.0 * wave(13.0, 0.7))),
+        gpu_mem_pct: Some(round(30.0 + 25.0 * wave(29.0, 0.2))),
+        gpu_temp_c: Some(round(38.0 + 30.0 * wave(13.0, 0.7))),
         uptime_s: Some(1_234_567 + now % 100_000),
         net: Some(NetData {
             iface: "eth0".into(),
@@ -320,6 +323,7 @@ fn alert(id: &str, severity: Severity, title: &str, message: &str) -> Step {
         ttl_s: None,
         source: Some("homeassistant".into()),
         clear: false,
+        url: None,
     })
 }
 
@@ -333,6 +337,7 @@ fn clear(id: &str) -> Step {
         ttl_s: None,
         source: None,
         clear: true,
+        url: None,
     })
 }
 
@@ -383,6 +388,27 @@ fn script() -> Vec<(u64, Step)> {
         (
             2,
             alert("washer", Severity::Info, "Washing machine", "Done, 58 min"),
+        ),
+        // A new issue and a PR comment, as the git sources raise them.
+        (
+            3,
+            Step::Alert(AlertMessage::activity(
+                "demo:issue:46".into(),
+                "Checkout button hidden on phones".into(),
+                format!("New issue #46 in {PROJECT} by dana"),
+                SOURCE,
+                Some(format!("{WEB}/issues/46")),
+            )),
+        ),
+        (
+            4,
+            Step::Alert(AlertMessage::activity(
+                "demo:comment:44".into(),
+                "Sam on !44 dark mode for the checkout".into(),
+                "Looks good, can you add a screenshot?".into(),
+                "azure_devops",
+                None,
+            )),
         ),
         (
             31,

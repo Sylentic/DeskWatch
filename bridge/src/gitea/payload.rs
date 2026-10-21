@@ -100,6 +100,30 @@ pub struct PullRequestEvent {
     pub repository: Repository,
 }
 
+/// `X-Gitea-Event: issues`. Only `opened` is used.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct IssueEvent {
+    pub action: String,
+    pub issue: Issue,
+    pub repository: Repository,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct Issue {
+    pub number: u64,
+    pub title: String,
+    pub html_url: Option<String>,
+    pub user: Option<User>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct User {
+    pub login: String,
+}
+
 /// A pull request, as in webhooks and `GET /repos/{owner}/{repo}/pulls`.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
