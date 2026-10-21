@@ -72,6 +72,8 @@ every job of a run, and each user can arrange their own dashboard.
 
 ### Fixed
 
+- **The icons and the clock in the header stay on the right** on narrow windows, tablets and phones (up to 900 px wide).
+  There they used to jump to the left, because the spacer that pushes them right is switched off at that width.
 - **Signing in over the bridge's own HTTPS (`[http.tls]`) works in a browser.** Browsers talk HTTP/2 there and send no
   `Host` header, so the origin check refused the sign-in, Setup changes and dismissing alerts with "cross-origin request
   refused". The check now uses the request's authority too. Behind Caddy or another proxy nothing changes.
