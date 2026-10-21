@@ -489,7 +489,7 @@ impl BitbucketState {
         // Watch pipelines in progress; stop watching the ones that finished or
         // dropped off the list. A paused pipeline waits for a person and is
         // not polled. Quiet repositories are watched too, for the kiosk's
-        // "Running now" list; `interrupt` only decides about the ESP.
+        // "Running now" list; `interrupt` only decides about the banner.
         let running: HashMap<u64, &Pipeline> = pipelines
             .iter()
             .filter(|p| status_of(p) == RunStatus::Running)

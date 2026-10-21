@@ -327,7 +327,7 @@ fn quiet_repos_are_step_polled_but_stay_off_the_esp_screen() {
     apply(&mut facts, updates, NOW + 5);
     assert!(facts.has_job(JOB_KEY));
     assert_eq!(facts.jobs().len(), 1, "the kiosk list sees it");
-    assert!(facts.candidates().is_empty(), "the ESP screen does not");
+    assert!(facts.candidates().is_empty(), "the banner does not");
 }
 
 #[test]

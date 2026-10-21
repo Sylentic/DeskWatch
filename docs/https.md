@@ -57,4 +57,4 @@ You have no public DNS for `*.lan` names, so a normal certificate authority cann
 - **Bookmarks and compose files** that say `http://` have to change.
 - The same-origin check on the WebSocket and POSTs keeps working: it compares `Origin` with `Host`.
 
-Not covered here: TLS between the bridge and the MQTT broker (see [mosquitto.md](mosquitto.md)) and the ESP panel.
+Not covered here: TLS between the bridge and the MQTT broker (see [mosquitto.md](mosquitto.md)).
