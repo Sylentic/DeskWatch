@@ -1790,7 +1790,7 @@ organization = \"o\"\nprojects = [\"p\"]\ntoken_file = \"azdo\"\n";
         // Nothing configured: the stats page alone, as before.
         assert_eq!(pages(""), ["stats"]);
         // A Git host adds the PR and pipeline pages, which skip themselves while empty.
-        let with_ci = format!("{AZURE_ONLY}").replace("enabled = false", "enabled = true");
+        let with_ci = AZURE_ONLY.replace("enabled = false", "enabled = true");
         assert_eq!(pages(&with_ci), ["stats", "prs", "pipelines"]);
         // Only a Git host: no stats page of this machine.
         assert_eq!(pages(AZURE_ONLY), ["prs", "pipelines"]);
