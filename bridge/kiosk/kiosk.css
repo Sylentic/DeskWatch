@@ -538,6 +538,8 @@ a.link:active { background: rgba(255, 255, 255, .08); }
   body { overflow: auto; }
   #top { flex-wrap: wrap; height: auto; padding: 0.6rem 1rem; gap: 0.6rem; }
   .spacer { display: none; }
+  /* With the spacer gone, the icons and the clock stay at the right end of the line. */
+  #edit-btn { margin-left: auto; }
   .banner { flex-basis: 100%; max-width: none; }
   .badges { flex-wrap: wrap; }
   .rail { overflow-x: auto; padding: 0 1rem; }
