@@ -690,7 +690,7 @@
     });
     // The Alerts chip: every active alert, worst colour wins. Gone at 0, like Failed and Open PRs.
     var alerts = alertList(), worst = alerts.some(function (a) { return a.severity === 'critical'; }) ? 'failed'
-      : alerts.some(function (a) { return a.severity === 'warn'; }) ? 'review' : alerts.length ? 'open' : 'ok';
+      : alerts.some(function (a) { return a.severity === 'warn'; }) ? 'warn' : alerts.length ? 'open' : 'ok';
     if (alerts.length) html += '<button type="button" class="chip ' + worst + ' action" data-alerts-toggle="1" aria-expanded="' + (alertsOpen ? 'true' : 'false') +
       '" title="Show the alerts">' + alerts.length + ' alerts</button>';
     if (!alerts.length) alertsOpen = false;

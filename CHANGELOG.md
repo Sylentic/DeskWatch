@@ -10,8 +10,9 @@ hardware yet, and its MQTT schema (v2) may still change or the display may be dr
 
 ### Changed
 
-- **Info alerts have their blue box again** in the dashboard's Alerts card, as before 1.0.2: new issues, PR comments
-  and Home Assistant info alerts. Warnings stay amber and critical alerts red.
+- **Alerts are coloured by severity** in the dashboard's Alerts card and the header Alerts menu: info alerts are blue
+  (their box is back, as before 1.0.2), warnings are yellow and critical alerts red. Warning yellow is its own colour,
+  apart from orange (running) and amber (waiting for approval).
 
 ## [1.0.2]
 
