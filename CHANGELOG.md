@@ -37,6 +37,24 @@ All notable changes to DeskWatch are listed here. The format follows
   time. Works for GitHub and Gitea jobs, GitLab jobs (with their stage), Bitbucket steps and Azure DevOps jobs; a
   source that only knows the run as a whole shows one row. The Pipelines card stays one row per pipeline.
 
+### Removed
+
+- **The bridge no longer talks to an ESP desk panel.** It stops publishing `deskpanel/screen` and `deskpanel/badges`,
+  no longer reads `deskpanel/panel/status` and `deskpanel/panel/event`, and the idle page rotation, the button
+  handling and the page data types behind them are gone. The dashboard is unchanged: the bridge now only decides
+  whether something interrupts the idle page (a running job, a failed or successful run, an alert, a notice).
+  MQTT stays for alerts: `deskpanel/alert`, the Home Assistant blueprints, broker logins and TLS, and
+  `deskpanel/bridge/status` (online and the Last Will) all work as before. If a script of your own listened to
+  `deskpanel/screen` or `deskpanel/badges`, it will stop receiving them; clear the leftover retained messages with
+  `mosquitto_pub -r -n -t deskpanel/screen` (and `deskpanel/badges`).
+- **`[[rotation]]` is ignored.** A config that still has `[[rotation]]` blocks keeps starting; the bridge logs one
+  warning and ignores them. Delete them from `bridge.toml`: the key will be refused in a later version.
+  `bridge/config.example.toml` no longer contains them.
+- **The `deskwatch-panel` broker login is no longer needed.** `deploy/mosquitto/acl.example` now gives the bridge
+  `read deskpanel/alert` and `write deskpanel/bridge/status` only. An existing ACL that gives the bridge
+  `readwrite deskpanel/#` keeps working. `docs/mqtt-schema.md` now describes only the alert topic.
+- The sample payloads for screens, badges and panel events in `docs/schema/` are removed; the alert samples stay.
+
 ## [1.0.2]
 
 ### Added

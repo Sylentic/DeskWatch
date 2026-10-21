@@ -1,16 +1,16 @@
-//! Alerts raised over MQTT on `deskpanel/alert` (schema section 4) by Home
-//! Assistant or any script on the LAN.
+//! Alerts raised over MQTT on `deskpanel/alert` (docs/mqtt-schema.md) or with
+//! `POST /api/alert`, by Home Assistant or any script on the LAN.
 //!
 //! The severity decides how loud an alert is:
 //!
 //! | Severity   | Level | Screen                         | Leaves the screen          |
 //! |------------|-------|--------------------------------|----------------------------|
-//! | `critical` | 0     | red `alert`, above running jobs | button press               |
-//! | `warning`  | 2     | amber `alert`                  | button press or 10 minutes |
+//! | `critical` | 0     | red `alert`, above running jobs | Dismiss or clear           |
+//! | `warning`  | 2     | amber `alert`                  | Dismiss or 10 minutes      |
 //! | `info`     | 4     | `notice` flash                 | 5 seconds                  |
 //!
-//! Leaving the screen does not end an alert: it stays on the `alerts` rotation
-//! page, and warnings and criticals stay in the `home` header badge, until it
+//! Leaving the screen does not end an alert: it stays in the kiosk's alerts
+//! list, and warnings and criticals stay in the `home` header badge, until it
 //! is cleared with `{"id": ..., "clear": true}` or its `ttl_s` runs out.
 
 use std::collections::{BTreeMap, HashMap};
@@ -28,8 +28,8 @@ use tracing::{debug, info, warn};
 
 use crate::config::AlertsConfig;
 use crate::model::{
-    AlertData, AlertStatus, Badge, BadgeIcon, Candidate, Level, ListData, ListRow, MAX_TITLE_CHARS,
-    NoticeData, RowStatus, SCHEMA_VERSION, ScreenData, truncate,
+    AlertData, AlertStatus, Badge, BadgeIcon, Candidate, Level, MAX_TITLE_CHARS, NoticeData,
+    RowStatus, SCHEMA_VERSION, ScreenData, truncate,
 };
 use crate::mqtt::Inbound;
 
@@ -83,14 +83,6 @@ impl Severity {
             Severity::Critical => Level::Critical,
             Severity::Warning => Level::AlertFailed,
             Severity::Info => Level::Notice,
-        }
-    }
-
-    fn row_status(self) -> RowStatus {
-        match self {
-            Severity::Critical => RowStatus::Failed,
-            Severity::Warning => RowStatus::Review, // amber on the panel
-            Severity::Info => RowStatus::Neutral,
         }
     }
 }
@@ -153,7 +145,7 @@ impl AlertMessage {
 
     /// A quiet alert from a git source about a new issue or comment. It stays
     /// in the alerts list until dismissed (or for `ACTIVITY_TTL_S`), but does
-    /// not count in the header badge of the ESP panel.
+    /// not count in the header badge.
     pub fn activity(
         id: String,
         title: String,
@@ -265,9 +257,6 @@ struct Active {
     raised_at: u64,
     /// Unix seconds when it ends on its own, or `None` to wait for `clear`.
     expires: Option<u64>,
-    /// False once the button acknowledged it: it keeps its badge and its row
-    /// on the alerts page but no longer takes the screen.
-    on_screen: bool,
 }
 
 /// Every active alert, by id.
@@ -305,7 +294,7 @@ impl Alerts {
             }
         };
         // One update per id per second, so a looping automation cannot
-        // flicker the panel.
+        // flicker the page.
         if self.active.get(&id).is_some_and(|a| a.raised_at == now) {
             debug!(id, "alert repeated within a second, ignored");
             return;
@@ -332,7 +321,6 @@ impl Alerts {
             url: msg.url.clone(),
             raised_at: now,
             expires: ttl.map(|ttl| now.saturating_add(ttl)),
-            on_screen: true,
         };
         info!(id, ?severity, title = alert.title, "alert raised");
         self.active.insert(id, alert);
@@ -356,16 +344,6 @@ impl Alerts {
             .retain(|_, a| a.expires.is_none_or(|expires| now < expires));
     }
 
-    /// Button press on a screen of `level`: every alert shown at that level
-    /// leaves the screen. They stay in the badge and on the alerts page.
-    pub fn acknowledge(&mut self, level: Level) {
-        for alert in self.active.values_mut() {
-            if alert.severity.level() == level {
-                alert.on_screen = false;
-            }
-        }
-    }
-
     /// Forget every alert (used by the demo when it starts over).
     pub fn clear_all(&mut self) {
         self.active.clear();
@@ -374,7 +352,7 @@ impl Alerts {
     /// Alerts that want the screen. `model::pick` chooses among these and the
     /// CI candidates.
     pub fn candidates(&self, now: u64) -> Vec<Candidate> {
-        let showing = |a: &Active| a.on_screen && !candidate(a).is_expired(now);
+        let showing = |a: &Active| !candidate(a).is_expired(now);
         self.active
             .values()
             .filter(|a| showing(a))
@@ -391,7 +369,6 @@ impl Alerts {
     }
 
     /// Every active alert for the kiosk page, most urgent first, then newest.
-    /// Unlike the rotation page this keeps the full message.
     pub fn views(&self) -> Vec<AlertView> {
         let mut alerts: Vec<(&String, &Active)> = self.active.iter().collect();
         alerts.sort_by_key(|(_, a)| (a.severity, std::cmp::Reverse(a.raised_at)));
@@ -428,22 +405,6 @@ impl Alerts {
                 RowStatus::Review
             },
         }
-    }
-
-    /// The `alerts` rotation page: most urgent first, then newest.
-    pub fn page(&self) -> ListData {
-        let mut alerts: Vec<&Active> = self.active.values().collect();
-        alerts.sort_by_key(|a| (a.severity, std::cmp::Reverse(a.raised_at)));
-        let rows = alerts
-            .into_iter()
-            .map(|a| ListRow {
-                text: a.title.clone(),
-                sub: a.message.clone(),
-                status: a.severity.row_status(),
-                source: a.source.clone(),
-            })
-            .collect();
-        ListData::new("Alerts", self.active.len() as u32, rows)
     }
 }
 
@@ -632,15 +593,15 @@ mod tests {
     }
 
     #[test]
-    fn info_flashes_then_stays_on_the_page_until_its_ttl() {
+    fn info_flashes_then_stays_in_the_list_until_its_ttl() {
         let mut alerts = Alerts::default();
         alerts.apply(raise("washer", "info"), 100);
         assert!(top(&alerts, 104).is_some());
         assert!(top(&alerts, 105).is_none(), "notice flash is 5 s");
-        assert_eq!(alerts.page().count, 1);
+        assert_eq!(alerts.views().len(), 1);
         assert_eq!(alerts.badge().count, 0, "info is not in the home badge");
         alerts.expire(100 + INFO_TTL_S);
-        assert_eq!(alerts.page().count, 0);
+        assert_eq!(alerts.views().len(), 0);
     }
 
     #[test]
@@ -652,28 +613,6 @@ mod tests {
         alerts.expire(10_000);
         assert_eq!(alerts.badge().count, 1, "stays until cleared");
         assert_eq!(alerts.badge().status, RowStatus::Review);
-    }
-
-    #[test]
-    fn button_acknowledges_only_the_shown_level() {
-        let mut alerts = Alerts::default();
-        alerts.apply(raise("freezer", "warning"), 0);
-        alerts.apply(raise("leak", "critical"), 0);
-        assert_eq!(alerts.badge().status, RowStatus::Failed);
-
-        alerts.acknowledge(Level::Critical);
-        assert_eq!(top(&alerts, 1).unwrap().0, Level::AlertFailed);
-        alerts.acknowledge(Level::AlertFailed);
-        assert!(top(&alerts, 1).is_none());
-        assert_eq!(
-            alerts.badge().count,
-            2,
-            "acknowledged alerts keep the badge"
-        );
-
-        // Raising the same id again puts it back on screen.
-        alerts.apply(raise("leak", "critical"), 5);
-        assert_eq!(top(&alerts, 5).unwrap().0, Level::Critical);
     }
 
     #[test]
@@ -699,7 +638,7 @@ mod tests {
         alerts.apply(raise("a", "warning"), 0);
         alerts.apply(raise("a", "warning"), 1);
         alerts.apply(raise("b", "warning"), 2);
-        assert_eq!(alerts.page().count, 2);
+        assert_eq!(alerts.views().len(), 2);
         let Some((_, ScreenData::Alert(alert))) = top(&alerts, 2) else {
             panic!("expected an alert")
         };
@@ -723,11 +662,11 @@ mod tests {
         let mut again = raise("leak", "critical");
         again.title = Some("changed".into());
         alerts.apply(again, 0);
-        assert_eq!(alerts.page().rows[0].text, "leak title");
+        assert_eq!(alerts.views()[0].title, "leak title");
 
         // Over the cap, the least urgent, oldest alert goes first.
         alerts.apply(raise("washer", "info"), 1);
-        let ids: Vec<String> = alerts.page().rows.into_iter().map(|r| r.text).collect();
+        let ids: Vec<String> = alerts.views().into_iter().map(|a| a.title).collect();
         assert_eq!(ids, ["leak title", "door title"]);
     }
 
@@ -737,10 +676,10 @@ mod tests {
         let long = "x".repeat(100);
         let json = format!(r#"{{"v":2,"title":"{long}"}}"#);
         alerts.apply(AlertMessage::parse(json.as_bytes()).unwrap(), 0);
-        let row = &alerts.page().rows[0];
-        assert_eq!(row.text.chars().count(), MAX_TITLE_CHARS);
-        assert_eq!(row.source, "mqtt");
-        assert_eq!(row.status, RowStatus::Neutral, "default severity is info");
+        let view = &alerts.views()[0];
+        assert_eq!(view.title.chars().count(), MAX_TITLE_CHARS);
+        assert_eq!(view.source, "mqtt");
+        assert_eq!(view.severity, "info", "default severity is info");
     }
 
     async fn post_alert(router: &Router, headers: &[(&str, &str)], body: &str) -> StatusCode {

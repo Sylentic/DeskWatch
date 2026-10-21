@@ -114,7 +114,7 @@ ignored. The parts you will touch:
   that is the case by default. If the server has a firewall, allow this port from the Gitea host only. Behind a reverse proxy, set
   `listen = "127.0.0.1:8787"`.
 - `[[source.gitea]]`, `[[source.github]]`, `[[source.gitlab]]`, `[[source.bitbucket]]`, `[[source.azure_devops]]`, `[[source.prometheus]]`: one block per instance (step 5).
-- `[alerts]` and `[[rotation]]`: which pages rotate and for how long.
+- `[alerts]`: alerts raised over MQTT or HTTP (Home Assistant, scripts). `[[rotation]]` blocks from older versions are ignored with a warning; delete them.
 
 **The example config ships with a Gitea block switched on.** Without a Gitea server, delete that
 `[[source.gitea]]` block (or the bridge stops at start, asking for the `gitea-webhook-secret` credential), and
@@ -123,7 +123,7 @@ at all is valid.
 
 ## 4. Mosquitto logins
 
-A broker that accepts anyone lets anything on your network draw on the panel. Give the bridge, the panel and
+A broker that accepts anyone lets anything on your network raise alerts on your dashboard. Give the bridge and
 Home Assistant each their own login with topic limits. The full guide, including how to find the other clients
 using your broker before you turn anonymous access off (do not skip that), is [mosquitto.md](mosquitto.md), with
 examples in [`deploy/mosquitto/`](../deploy/mosquitto). In short:
@@ -291,20 +291,11 @@ hosts = [
   { instance = "node-exporter:9100", name = "home", cadvisor = "cadvisor:8080", expect_containers = ["db", "web"] },
 ]
 
-[[rotation]]
-page = "stats:home"
-dwell_s = 15
-skip_when_empty = true
-
-[[rotation]]
-page = "containers"
-dwell_s = 10
-skip_when_empty = true
 ```
 
 `instance` is the label Prometheus gives the node_exporter target. A stopped container disappears from cAdvisor,
-so only names in `expect_containers` can be reported, and they must match the container name exactly. The pages
-only join the rotation when you list them in `[[rotation]]`. Hosts and containers that are down count in the
+so only names in `expect_containers` can be reported, and they must match the container name exactly. Each host
+gets a card on the dashboard and what is down is listed there. Hosts and containers that are down count in the
 `server` header badge. The PromQL for each field is in `bridge/src/prometheus/mod.rs` and can be replaced per field
 with `queries`.
 
@@ -312,8 +303,7 @@ with `queries`.
 
 Home Assistant raises and clears alerts on `deskpanel/alert` through two script blueprints. Setup (broker
 login limited to that one topic, MQTT integration, importing the blueprints, creating the scripts) is in
-[home-assistant.md](home-assistant.md). Alerts are on by default in the bridge; add `page = "alerts"` to
-`[[rotation]]` to show the list in the idle rotation. Without Home Assistant, any script can do the same with
+[home-assistant.md](home-assistant.md). Alerts are on by default in the bridge and show on the dashboard. Without Home Assistant, any script can do the same with
 `mosquitto_pub`, see [home-assistant.md](home-assistant.md).
 
 ## 7. Start and check
@@ -328,14 +318,14 @@ Look for `loaded config from /etc/deskwatch/bridge.toml` and `connected to MQTT 
 sources before it connects, so a missing credential or a port already in use stops it right away with a message
 naming the problem.
 
-Then watch what it publishes, with the login that may read `deskpanel/#`:
+Then watch the broker, with a login that may read `deskpanel/#`:
 
 ```sh
 mosquitto_sub -h broker.example.lan -u deskwatch-bridge -P '...' -t 'deskpanel/#' -v
 ```
 
-You should see `deskpanel/bridge/status online`, a `deskpanel/badges` message and a `deskpanel/screen` message
-with the stats page that changes every few seconds. To test a Gitea webhook, use "Test delivery" on the webhook in
+You should see `deskpanel/bridge/status online`, and an alert you raise on `deskpanel/alert` (see
+[home-assistant.md](home-assistant.md#check-it-without-an-automation)). To test a Gitea webhook, use "Test delivery" on the webhook in
 Gitea and look for a 2xx answer there; run a workflow to see a job page appear.
 
 ## 8. Try it with the demo

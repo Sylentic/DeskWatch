@@ -38,7 +38,7 @@ pub const CREDENTIALS_DIR_ENV: &str = "CREDENTIALS_DIRECTORY";
 /// Which source instance something came from: adapter type plus config name.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SourceId {
-    /// Adapter type, such as `gitea`. Also the `source` field on panel pages.
+    /// Adapter type, such as `gitea`. Also the `source` shown on the kiosk page.
     pub kind: &'static str,
     /// Instance name from the config, such as `home`.
     pub name: String,
@@ -409,7 +409,7 @@ impl Interrupt {
     }
 }
 
-/// Short label for a repository or pipeline on the panel: its `alias` if one
+/// Short label for a repository or pipeline on the kiosk page: its `alias` if one
 /// is set, otherwise the last part of the name (`owner/repo` shows `repo`).
 pub fn label(alias: &BTreeMap<String, String>, full_name: &str) -> String {
     match alias.get(full_name) {

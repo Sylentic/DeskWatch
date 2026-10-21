@@ -193,7 +193,7 @@ dashboard-only config and no broker. The Compose files, the token and the revers
 
 ## 3. Choose the widgets
 
-`[[kiosk.panel]]` blocks place widgets on the grid, left to right and top to bottom, like the `[[rotation]]` list.
+`[[kiosk.panel]]` blocks place widgets on the grid, left to right and top to bottom.
 Without any, the default layout is used: `jobs` (Running now, 2 wide, 2 tall) and one `hosts` panel (2 wide, 2 tall,
 see [Hosts](#hosts-detailed-or-compact)) on top, `pipelines` (2 wide), `prs` and `alerts` (1 cell each) below them.
 The Alerts panel shows every active alert as a coloured box with a Dismiss button (when `[alerts] dismiss` is on). There
@@ -391,10 +391,9 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
 
 `GET /api/kiosk` returns the latest snapshot, and `/api/kiosk/ws` sends a snapshot over a WebSocket on every change
 and at least every 5 seconds (a heartbeat, so the page can tell quiet from gone). Snapshots are versioned with `"v"`
-(1), separately from the MQTT schema. Fields: `build` (bridge version; the page reloads when it changes), `now`
-(Unix seconds), `layout` (the grid, the widgets with their filters, `theme` and `pixel_shift_s` from the config), `screen` (the composer's pick as an MQTT v2
-screen payload, or `null` when idle), `badges`, `failed` (the failed runs behind the badge, minus the dismissed ones: `key`, `source`, `project`, `pipeline`, `ref`, `step`, `started`, `finished`, `url`), `hosts`, `down`, `jobs`, `run_jobs`, `runs`, `pulls`, `runners`, `queued_jobs`, `alerts` and `sources` (`id`, `health`, and `muted: true` when the pill was muted). `jobs`, `runs`, `pulls[].items[]` and `runners` each carry a `url` (an `http(s)` address, or `null`). A job's `group` names its run; `run_jobs` maps that group to every job of the run (`name`, `status`, `step`, `progress`, `started`, `finished`, `url`), so jobs that run side by side are listed together.
-Lists are not capped to the ESP panel's five rows. The structure is in `bridge/src/kiosk.rs` (`snapshot`) and
+(1), independent of the alert topic. Fields: `build` (bridge version; the page reloads when it changes), `now`
+(Unix seconds), `layout` (the grid, the widgets with their filters, `theme` and `pixel_shift_s` from the config), `screen` (the composer's pick: `level`, `template`, `page` and `data`, or `null` when idle), `badges`, `failed` (the failed runs behind the badge, minus the dismissed ones: `key`, `source`, `project`, `pipeline`, `ref`, `step`, `started`, `finished`, `url`), `hosts`, `down`, `jobs`, `run_jobs`, `runs`, `pulls`, `runners`, `queued_jobs`, `alerts` and `sources` (`id`, `health`, and `muted: true` when the pill was muted). `jobs`, `runs`, `pulls[].items[]` and `runners` each carry a `url` (an `http(s)` address, or `null`). A job's `group` names its run; `run_jobs` maps that group to every job of the run (`name`, `status`, `step`, `progress`, `started`, `finished`, `url`), so jobs that run side by side are listed together.
+The structure is in `bridge/src/kiosk.rs` (`snapshot`) and
 covered by the tests next to it. It is made for this page and may change between versions; scripts should use `POST /api/alert` instead.
 
 Status colours (the dots in Pipelines, the Running now bars and the header counters use the same ones): orange and

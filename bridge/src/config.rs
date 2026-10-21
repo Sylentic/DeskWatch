@@ -16,7 +16,6 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::gitea::runners::RunnerScope;
-use crate::model::RotationEntry;
 use crate::source::{Interrupt, valid_name};
 
 /// Environment variable that holds the MQTT password, when `mqtt.password_file`
@@ -224,10 +223,10 @@ pub struct Config {
     /// The browser dashboard for a big screen, served on `[http]`. Off by default.
     #[serde(default)]
     pub kiosk: KioskConfig,
-    /// Idle pages in the order they rotate. See `[[rotation]]` in the example
-    /// config. Empty means the default: use [`Config::rotation`].
+    /// `[[rotation]]` belonged to the removed ESP panel. Still accepted so an
+    /// old config keeps starting; the value is ignored (see `from_toml`).
     #[serde(default)]
-    pub rotation: Vec<RotationEntry>,
+    pub rotation: Option<toml::Value>,
 }
 
 /// Connection to the Mosquitto broker.
@@ -236,7 +235,7 @@ pub struct Config {
 pub struct MqttConfig {
     /// Connect to the broker at all. Set to false for a bridge that only
     /// serves the kiosk page (docs/docker.md): no connection attempts, no
-    /// warnings, and no ESP panel, button or MQTT alerts.
+    /// warnings, and no MQTT alerts.
     pub enabled: bool,
     pub host: String,
     pub port: u16,
@@ -741,17 +740,6 @@ pub struct Sources {
     pub prometheus: Vec<PrometheusConfig>,
 }
 
-impl Sources {
-    /// Is any Git host (a source with PRs and CI runs) configured?
-    pub fn has_ci(&self) -> bool {
-        !(self.gitea.is_empty()
-            && self.github.is_empty()
-            && self.gitlab.is_empty()
-            && self.bitbucket.is_empty()
-            && self.azure_devops.is_empty())
-    }
-}
-
 /// One `[[source.gitea]]` block: Actions webhooks, job step polling and open PRs.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -790,7 +778,7 @@ pub struct GiteaConfig {
     /// `false`, or a list of repositories that may.
     #[serde(default = "interrupt_all")]
     pub interrupt: Interrupt,
-    /// Short panel labels for repositories, such as `{ "team/service-a" = "work A" }`.
+    /// Short labels for repositories, such as `{ "team/service-a" = "work A" }`.
     #[serde(default)]
     pub alias: BTreeMap<String, String>,
     /// Put a new issue in the alerts list until it is dismissed. Needs the
@@ -853,7 +841,7 @@ pub struct GithubConfig {
     /// Seconds between runner polls.
     #[serde(default = "default_github_runner_poll_s")]
     pub runner_poll_s: u64,
-    /// Short panel labels for repositories, such as `{ "team/service-a" = "work A" }`.
+    /// Short labels for repositories, such as `{ "team/service-a" = "work A" }`.
     #[serde(default)]
     pub alias: BTreeMap<String, String>,
 }
@@ -918,7 +906,7 @@ pub struct GitlabConfig {
     /// Seconds between runner polls.
     #[serde(default = "default_github_runner_poll_s")]
     pub runner_poll_s: u64,
-    /// Short panel labels for projects, such as `{ "team/service-a" = "work A" }`.
+    /// Short labels for projects, such as `{ "team/service-a" = "work A" }`.
     #[serde(default)]
     pub alias: BTreeMap<String, String>,
 }
@@ -977,7 +965,7 @@ pub struct BitbucketConfig {
     /// Seconds between runner polls.
     #[serde(default = "default_github_runner_poll_s")]
     pub runner_poll_s: u64,
-    /// Short panel labels for repositories, such as `{ "team/service-a" = "work A" }`.
+    /// Short labels for repositories, such as `{ "team/service-a" = "work A" }`.
     #[serde(default)]
     pub alias: BTreeMap<String, String>,
 }
@@ -1066,7 +1054,7 @@ pub struct AzureDevopsConfig {
     /// deploys; the rest are builds.
     #[serde(default = "default_deploy_words")]
     pub deploy_words: Vec<String>,
-    /// Short panel labels: for a project by its name, for the PRs of a
+    /// Short labels: for a project by its name, for the PRs of a
     /// repository by `project/repository`.
     #[serde(default)]
     pub alias: BTreeMap<String, String>,
@@ -1125,7 +1113,7 @@ fn default_disk_mountpoint() -> String {
 pub struct HostConfig {
     /// The `instance` label of its node_exporter target.
     pub instance: String,
-    /// Page name (`stats:<name>`) and the host name shown on the panel.
+    /// The host name shown on the kiosk page.
     /// Defaults to the instance without its port.
     pub name: String,
     /// The `instance` label of the cAdvisor target on this machine.
@@ -1257,15 +1245,6 @@ fn default_gitea_runner_poll_s() -> u64 {
     30
 }
 
-/// One rotation page of the default rotation.
-fn rotation_page(page: &str, dwell_s: u64, skip_when_empty: bool) -> RotationEntry {
-    RotationEntry {
-        page: page.into(),
-        dwell_s,
-        skip_when_empty,
-    }
-}
-
 /// `owner/name` with no empty part. The name goes into API URLs.
 /// Organisation and project names: not empty, no slash, no control characters.
 /// Project names may contain spaces.
@@ -1311,6 +1290,12 @@ impl Config {
     /// Parse a config from TOML text.
     pub fn from_toml(text: &str) -> Result<Self> {
         let config: Config = toml::from_str(text).context("invalid config")?;
+        if config.rotation.is_some() {
+            tracing::warn!(
+                "[[rotation]] is ignored: the ESP panel was removed, so there is no idle rotation any more; \
+                 delete the [[rotation]] blocks from the config"
+            );
+        }
         config.validate()?;
         Ok(config)
     }
@@ -1681,24 +1666,6 @@ impl Config {
     }
 
     /// Read and parse a config file.
-    /// The idle rotation: the `[[rotation]]` blocks, or when there are none a
-    /// default that fits what is configured: the stats page, and the open PRs and
-    /// pipelines pages when a CI source exists (they skip themselves while
-    /// empty). A bridge that is only Azure DevOps or only GitHub Enterprise
-    /// therefore rotates the pages it can fill, with no config.
-    pub fn rotation(&self) -> Vec<RotationEntry> {
-        if !self.rotation.is_empty() {
-            return self.rotation.clone();
-        }
-        let mut pages = Vec::new();
-        pages.push(rotation_page("stats", 20, false));
-        if self.source.has_ci() {
-            pages.push(rotation_page("prs", 8, true));
-            pages.push(rotation_page("pipelines", 10, true));
-        }
-        pages
-    }
-
     pub fn load(path: &Path) -> Result<Self> {
         let text = std::fs::read_to_string(path)
             .with_context(|| format!("cannot read config file {}", path.display()))?;
@@ -1734,9 +1701,7 @@ mod tests {
         );
         assert_eq!(config.mqtt.topic_prefix, "deskpanel");
         assert_eq!(config.server.interval_s, 5);
-        assert!(config.rotation.is_empty());
-        assert_eq!(config.rotation().len(), 1);
-        assert_eq!(config.rotation()[0].page, "stats");
+        assert!(config.rotation.is_none());
         assert!(config.source.gitea.is_empty());
         assert_eq!(config.http.listen.port(), 8787);
         assert!(config.http.tls.is_none());
@@ -1807,29 +1772,18 @@ mod tests {
     }
 
     #[test]
-    fn default_rotation_adds_ci_pages_when_a_git_host_is_configured() {
-        let pages = |text: &str| -> Vec<String> {
-            Config::from_toml(text)
-                .unwrap()
-                .rotation()
-                .into_iter()
-                .map(|r| r.page)
-                .collect()
-        };
-        assert_eq!(pages(""), ["stats"]);
-        let azure = "[[source.azure_devops]]\nname = \"work\"\norganization = \"o\"\n\
-projects = [\"p\"]\ntoken_file = \"azdo\"\n";
-        assert_eq!(pages(azure), ["stats", "prs", "pipelines"]);
-        let explicit = format!("{azure}\n[[rotation]]\npage = \"alerts\"\ndwell_s = 5\n");
-        assert_eq!(pages(&explicit), ["alerts"]);
+    fn a_leftover_rotation_block_is_accepted_and_ignored() {
+        let text = "[[rotation]]\npage = \"stats\"\ndwell_s = 20\n\n\
+[[rotation]]\npage = \"prs\"\ndwell_s = 8\nskip_when_empty = true\n";
+        let config = Config::from_toml(text).unwrap();
+        assert!(config.rotation.is_some());
     }
 
     #[test]
     fn example_config_parses() {
         let text = include_str!("../config.example.toml");
         let config = Config::from_toml(text).unwrap();
-        assert_eq!(config.rotation.len(), 4);
-        assert!(config.rotation[1].skip_when_empty);
+        assert!(config.rotation.is_none(), "the example has no [[rotation]]");
         let gitea = &config.source.gitea[0];
         assert_eq!(gitea.name, "home");
         assert_eq!(gitea.job_poll_s, 5);
@@ -2104,8 +2058,7 @@ projects = [\"p\"]\ntoken_file = \"azdo\"\n";
             "Azure DevOps block is commented out"
         );
         let start = text.find("# [[source.azure_devops]]").unwrap();
-        let end = text.find("# Idle pages").unwrap();
-        let block: String = text[start..end]
+        let block: String = text[start..]
             .lines()
             .map(|l| l.strip_prefix("# ").unwrap_or(l.trim_start_matches('#')))
             .collect::<Vec<_>>()

@@ -41,7 +41,7 @@ use api::HttpApi;
 use payload::{Issue, Job, MergeRequest, Pipeline};
 use runners::RunnerScope;
 
-/// Adapter type: `[[source.gitlab]]` in the config and `source` on panel pages.
+/// Adapter type: `[[source.gitlab]]` in the config and the `source` of what it reports.
 pub const KIND: &str = "gitlab";
 
 /// Shown as the pipeline name when the project does not name its pipelines.
@@ -486,7 +486,7 @@ impl GitlabState {
 
         // Watch running pipelines; stop watching the ones that finished or
         // dropped off the list. Quiet projects are watched too, for the
-        // kiosk's "Running now" list; `interrupt` only decides about the ESP.
+        // kiosk's "Running now" list; `interrupt` only decides about the banner.
         let running: HashMap<u64, &Pipeline> = pipelines
             .iter()
             .filter(|p| status_of(p) == RunStatus::Running)

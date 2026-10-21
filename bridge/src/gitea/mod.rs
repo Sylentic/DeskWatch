@@ -1000,11 +1000,11 @@ mod tests {
     }
 
     #[test]
-    fn runs_fill_the_pipelines_page() {
+    fn runs_fill_the_pipeline_rows() {
         let mut source = state(true);
         let mut facts = CiFacts::default();
         feed(&mut source, &mut facts, run_event("in_progress", None), 100);
-        let page = facts.pipelines_page();
+        let page = facts.pipeline_rows();
         assert_eq!(page.count, 1);
         assert_eq!(page.rows[0].text, "deploy.yml");
         assert_eq!(page.rows[0].sub, "demo main");
@@ -1017,7 +1017,7 @@ mod tests {
             run_event("completed", Some("success")),
             200,
         );
-        let page = facts.pipelines_page();
+        let page = facts.pipeline_rows();
         assert_eq!(page.count, 1);
         assert_eq!(page.rows[0].status, crate::model::RowStatus::Ok);
     }
@@ -1047,7 +1047,7 @@ mod tests {
         );
         assert!(facts.candidates().is_empty());
         assert_eq!(facts.failed_count(), 1);
-        assert_eq!(facts.pipelines_page().rows[0].sub, "Demo main");
+        assert_eq!(facts.pipeline_rows().rows[0].sub, "Demo main");
     }
 
     #[test]

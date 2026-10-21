@@ -1,6 +1,6 @@
 # GitLab source
 
-The `gitlab` source shows open merge requests and pipelines from gitlab.com or a self-managed GitLab on the panel.
+The `gitlab` source shows open merge requests and pipelines from gitlab.com or a self-managed GitLab on the dashboard.
 It only reads, and only polls: nothing at home is exposed to the internet and no webhook is needed.
 
 What you get:
@@ -12,10 +12,10 @@ What you get:
 - The latest **pipeline** of each pipeline name on the `pipelines` page, next to Gitea, GitHub and Azure DevOps.
 - A running pipeline shows on the kiosk dashboard as one "Running now" card, however many jobs run side by side.
   GitLab jobs have no steps, so the card counts **stages**: the step reads `test` (or `test: integration` when one
-  job of the stage runs) and the bar is the share of finished stages. With `interrupt` on it also takes over the
-  ESP screen. A pipeline or job whose name contains `deploy` shows as a deploy.
+  job of the stage runs) and the bar is the share of finished stages. With `interrupt` on it also shows as the
+  banner on the dashboard. A pipeline or job whose name contains `deploy` shows as a deploy.
 - A failed pipeline raises the usual red alert naming the first failed job that is not allowed to fail; a good one
-  flashes green. Both leave a count in the header badge until you press the button.
+  flashes green. Both leave a count in the header badge until you dismiss it.
 - A pipeline stopped at a manual gate (`manual`) shows as `review` on the pipelines page. It raises no notice yet.
 - A refused or expired token, or an unreachable server, lights the `warn` badge.
 
@@ -33,7 +33,7 @@ Use a token that can only read.
 
 1. In GitLab open **Preferences > Access tokens** (a personal token), or **Settings > Access tokens** of a
    project or group (a project or group token acts as its own bot user, which is tidier on a shared server).
-2. Give it a name and an expiry date you will remember. When the token lapses the panel shows the `warn` badge.
+2. Give it a name and an expiry date you will remember. When the token lapses the dashboard shows the `warn` badge.
 3. Role (project and group tokens): **Reporter** is enough to read merge requests and pipelines.
 4. Scope: tick only **`read_api`**. Do not tick `api`, `write_repository` or any other scope.
 5. Create the token and copy it once; GitLab does not show it again.
@@ -66,12 +66,12 @@ projects = ["your-group/project-a", "your-group/subgroup/project-b"]
 | `base_url` | `https://gitlab.com` | The site. Self-managed: `https://gitlab.example.com`, with a sub path if GitLab runs under one. `/api/v4` is added for you (and accepted when you write it). |
 | `poll_s` | 60 | Seconds between polls of merge requests and recent pipelines (2 requests per project). |
 | `job_poll_s` | 5 | Seconds between job polls while a pipeline is running. |
-| `interrupt` | `true` | May a running pipeline and a finished run take over the ESP screen? `true`, `false` or a list of projects. |
+| `interrupt` | `true` | May a running pipeline and a finished run show as the banner on the dashboard? `true`, `false` or a list of projects. |
 | `notify_new_prs` | `true` | Flash "New PR" for a new non-draft merge request. |
 | `alert_new_issues` | `true` | Put a new issue in the alerts list until it is dismissed. One extra request per project per poll; issues that were open at startup do not alert. |
 | `runners` | none | Runner lists for the kiosk `runners` widget. |
 | `runner_poll_s` | 300 | Seconds between runner polls. |
-| `alias` | none | Short panel labels, such as `{ "your-group/project-a" = "A" }`. |
+| `alias` | none | Short labels, such as `{ "your-group/project-a" = "A" }`. |
 
 Self-managed example:
 

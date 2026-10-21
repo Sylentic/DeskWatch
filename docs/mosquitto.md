@@ -1,7 +1,7 @@
 # Mosquitto logins and topic limits
 
 DeskWatch works with or without broker logins, but a broker that accepts clients without a login lets anything
-on the network publish `deskpanel/screen` and draw on the panel. This guide gives the bridge, the panel and
+on the network raise alerts on your dashboard. This guide gives the bridge and
 Home Assistant each their own login, limited to their own topics. All names, paths and hosts below are
 placeholders.
 
@@ -21,12 +21,10 @@ the broker's config and password file live under `C:\Program Files\mosquitto`, s
 
 | User | Reads | Writes |
 |---|---|---|
-| `deskwatch-bridge` | `deskpanel/#` | `deskpanel/#` |
-| `deskwatch-panel` | `deskpanel/screen`, `deskpanel/badges`, `deskpanel/bridge/status` | `deskpanel/panel/status`, `deskpanel/panel/event` |
+| `deskwatch-bridge` | `deskpanel/alert` | `deskpanel/bridge/status` |
 | `homeassistant` | nothing under `deskpanel/` | `deskpanel/alert` |
 
-So Home Assistant (or a script with the same rule) can raise and clear alerts, but cannot write
-`deskpanel/screen`, and a stolen panel login cannot raise alerts.
+So Home Assistant (or a script with the same rule) can raise and clear alerts, but cannot pretend to be the bridge.
 
 ## 2. Migration: check who uses the broker first
 
@@ -88,7 +86,6 @@ file and overwrites an existing one, so use it only for the first user.
 
 ```sh
 sudo mosquitto_passwd -c /etc/mosquitto/passwd deskwatch-bridge
-sudo mosquitto_passwd /etc/mosquitto/passwd deskwatch-panel
 sudo mosquitto_passwd /etc/mosquitto/passwd homeassistant
 sudo chown mosquitto: /etc/mosquitto/passwd && sudo chmod 600 /etc/mosquitto/passwd
 ```
@@ -147,13 +144,13 @@ mosquitto_pub -h <broker> -t deskpanel/alert -m '{}'
 # Home Assistant's login may write the alert topic ...
 mosquitto_pub -h <broker> -u homeassistant -P '...' -t deskpanel/alert \
   -m '{"v":2,"id":"test","severity":"info","title":"Test"}'
-# ... but a write to the screen topic is dropped silently (publish is accepted, nobody receives it).
-mosquitto_pub -h <broker> -u homeassistant -P '...' -t deskpanel/screen -m '{}'
+# ... but a write to the bridge's status topic is dropped silently (publish is accepted, nobody receives it).
+mosquitto_pub -h <broker> -u homeassistant -P '...' -t deskpanel/bridge/status -m 'offline'
 ```
 
 Mosquitto drops ACL-denied publishes without telling the publisher at QoS 0, so confirm with
 `mosquitto_sub -u deskwatch-bridge -P '...' -t 'deskpanel/#' -v` in another terminal: the alert shows up, the
-screen message does not.
+status message does not.
 
 ## 7. Switching over a broker in Docker
 
@@ -173,7 +170,7 @@ placeholders: use your own. In this example `./mosquitto/` is the folder you mou
      mosquitto_passwd /mosquitto/config/passwd homeassistant
    ```
 
-   Add `deskwatch-panel` the same way, and a login for every other client from step 2. Copy `acl.example` to
+   Add a login for every other client from step 2. Copy `acl.example` to
    `mosquitto/acl` and add lines for those clients too.
 4. **Add a second listener** to `mosquitto.conf` and keep the old one unchanged:
 

@@ -520,7 +520,7 @@ impl GithubState {
             .map(|r| (r.id, r))
             .collect();
         // Quiet repositories are watched too, for the kiosk's "Running now"
-        // list; `interrupt` only decides about the ESP screen.
+        // list; `interrupt` only decides about the banner.
         for (id, run) in &in_progress {
             self.watched
                 .entry((repo.to_string(), *id))

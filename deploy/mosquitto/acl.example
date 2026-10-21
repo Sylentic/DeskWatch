@@ -2,26 +2,15 @@
 # the topics it needs. "deskpanel" is the default topic_prefix.
 #
 # Topics, from docs/mqtt-schema.md:
-#   deskpanel/screen, deskpanel/badges, deskpanel/bridge/status  bridge -> panel
-#   deskpanel/panel/status, deskpanel/panel/event                panel -> bridge
-#   deskpanel/alert                                              Home Assistant, scripts -> bridge
+#   deskpanel/alert           Home Assistant, scripts -> bridge
+#   deskpanel/bridge/status   bridge -> anyone (online / offline)
 
-# The bridge owns everything under deskpanel/ (publishes screens, reads
-# button events and alerts).
+# The bridge reads alerts and announces itself.
 user deskwatch-bridge
-topic readwrite deskpanel/#
+topic read deskpanel/alert
+topic write deskpanel/bridge/status
 
-# The panel draws what the bridge publishes and reports its own state and
-# button presses. It cannot raise alerts or overwrite the screen.
-user deskwatch-panel
-topic read deskpanel/screen
-topic read deskpanel/badges
-topic read deskpanel/bridge/status
-topic write deskpanel/panel/status
-topic write deskpanel/panel/event
-
-# Home Assistant may only raise and clear alerts, so it can never draw on the
-# panel directly. HA's own MQTT features (discovery, other devices) use their
+# Home Assistant may only raise and clear alerts. HA's own MQTT features (discovery, other devices) use their
 # own topics, which belong in the HA rules of your own setup, for example:
 #   topic readwrite homeassistant/#
 user homeassistant

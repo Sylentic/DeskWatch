@@ -122,7 +122,7 @@ Copy-Item config.example.toml "C:\ProgramData\DeskWatch\bridge.toml"      # Opti
 ```
 
 Edit `bridge.toml` as described in [install.md, section 3](install.md#3-configure-the-bridge) and the comments in
-the file; sources, rotation and alerts are the same on Windows. Two Windows details:
+the file; sources and alerts are the same on Windows. Two Windows details:
 
 - In TOML, a backslash starts an escape in a normal string. Write Windows paths in single quotes
   (`ca_file = 'C:\ProgramData\DeskWatch\ca.pem'`) or with forward slashes (`"C:/ProgramData/DeskWatch/ca.pem"`).

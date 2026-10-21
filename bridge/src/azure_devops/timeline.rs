@@ -6,7 +6,7 @@
 //! child that stays in progress until someone approves.
 //!
 //! For a Terraform pipeline the stages are typically `plan` and `apply`, so
-//! the panel shows "apply: terraform apply" and a bar that moves with the
+//! the kiosk shows "apply: terraform apply" and a bar that moves with the
 //! stages, and "Approval needed" while the apply waits for a person. Other
 //! checks on the same stage (branch control, business hours, an invoked
 //! function or REST call) appear as sibling `Checkpoint.*` records; those are
@@ -18,7 +18,7 @@ use super::payload::Record;
 use crate::ci::RunStatus;
 use crate::gitea::payload::unix_seconds;
 
-/// What the panel needs to know about one build timeline.
+/// What the kiosk needs to know about one build timeline.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct View {
     /// A stage is waiting for an approval.
@@ -126,7 +126,7 @@ fn stage_of<'a>(by_id: &HashMap<&str, &'a Record>, record: &'a Record) -> Option
     None
 }
 
-/// Name for the panel: the stage in front, unless it is the implicit one a
+/// Name for the kiosk: the stage in front, unless it is the implicit one a
 /// pipeline without `stages:` gets.
 fn label(stage: Option<&Record>, task: &str) -> String {
     match stage {

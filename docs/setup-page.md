@@ -70,7 +70,7 @@ With a data folder configured ([data-dir.md](data-dir.md)) the page can change s
 - Settings the page does not know (hand-added keys in `sources.toml`) are kept on an edit.
 - Sources from `bridge.toml` are shown but cannot be edited or deleted from the page, because the page never writes
   `bridge.toml` (it can be a read-only mount, and it is yours). Instead they get **Switch off here**: the source
-  stops, leaves the dashboard and the panel, and its id is listed under `hidden = [...]` in `sources.toml`. Its
+  stops, leaves the dashboard, and its id is listed under `hidden = [...]` in `sources.toml`. Its
   token file belongs to `bridge.toml` and stays. **Switch on again** undoes it. To delete such a source for good,
   remove its block from `bridge.toml` and restart. A mounted credential with the same name
   as a page-managed one is refused, because the mounted one would win and hide the change.
@@ -78,10 +78,10 @@ With a data folder configured ([data-dir.md](data-dir.md)) the page can change s
   one off, removing the broker login, resetting the broker settings, deleting a stored secret and restarting.
 - Every save or removal is logged (source id, which secret files were written; never a value).
 - **No restart needed.** A saved source starts at once, an edited one is replaced (its facts and warnings are dropped
-  first), a removed one stops and disappears from the dashboard, the panel and the `warn` badge. A new Gitea source
+  first), a removed one stops and disappears from the dashboard and the `warn` badge. A new Gitea source
   gets its webhook route (`/webhook/gitea/<name>`) immediately, and a removed one answers 404. If a saved source
   cannot be started (for example a credential file vanished), the old version keeps running, the page says why, and a
-  restart will show the same error. Settings outside `[[source.*]]` (the MQTT broker, the listen address, the rotation)
+  restart will show the same error. Settings outside `[[source.*]]` (the MQTT broker, the listen address)
   are still read at startup.
 
 ## Dashboard hosts
@@ -158,7 +158,7 @@ restart once by hand (`docker compose restart deskwatch-bridge`). It needs the s
 
 ## Not yet
 
-- The kiosk layout, the rotation and the listen address stay in `bridge.toml`; the page does not edit them.
+- The kiosk layout and the listen address stay in `bridge.toml`; the page does not edit them.
 - Everything here is tested against mock servers and a fake broker, not against a real GitHub, Azure DevOps or
   Mosquitto.
 
@@ -185,5 +185,3 @@ restart once by hand (`docker compose restart deskwatch-bridge`). It needs the s
 
 ## Open points
 
-- Authentication for the ESP panel's own setup mode (step 8 of the plan) is still to be worked out when that option
-  exists.

@@ -95,4 +95,4 @@ same name is never deleted by the page.
 ## Not covered yet
 
 `sources.toml` is read at startup and whenever the setup page saves a change; a hand edit of the file is picked up at the
-next save or restart. The listen address, the rotation and the kiosk settings stay in `bridge.toml`.
+next save or restart. The listen address and the kiosk settings stay in `bridge.toml`.
