@@ -15,6 +15,58 @@ take.
 | Bitbucket Data Center / Server | none | Not built, see below. |
 | Gogs, Gitee, SourceHut, others | none | Not planned. |
 
+## Using only one host (Azure DevOps or GitHub Enterprise)
+
+An organisation that only uses Azure DevOps, or only GitHub Enterprise, needs none of the others: no Gitea, no
+Prometheus, no ESP panel. Each source is its own block, so unused ones are simply not configured. A bridge with one
+source and the dashboard looks like this (see [docker.md](docker.md) for the container side, [setup-page.md](setup-page.md)
+to fill it in from the browser instead):
+
+```toml
+[mqtt]
+enabled = false          # no broker, no warnings about one
+
+[kiosk]
+enabled = true
+
+# Azure DevOps ...
+[[source.azure_devops]]
+name = "work"
+organization = "your-org"
+projects = ["project-a"]
+token_file = "azdo-work"     # or a service principal, see azure-devops-auth.md
+
+# ... or GitHub Enterprise Server (use `https://api.<subdomain>.ghe.com` for GHE.com)
+# [[source.github]]
+# name = "work"
+# base_url = "https://ghe.example.com/api/v3"
+# token_file = "ghe-work"
+# repos = ["org/repo-a"]
+```
+
+Several at once also works: add one block per host, and every page, the kiosk and the badges merge them (the `source`
+filter of a `[[kiosk.panel]]` shows one host only). The Hosts panel stays; it shows this machine and any Prometheus
+hosts, and the `runners` widget shows self-hosted runners and agents of every source that has them listed.
+
+Without `[[rotation]]` blocks the ESP rotation is the stats page, plus the `prs` and `pipelines` pages (skipped while
+empty) as soon as any Git host is configured.
+
+## Signing in without a person's token
+
+A personal token acts as one person and stops when they leave or lose access. What each source offers instead:
+
+| Source | Not tied to a person | In DeskWatch |
+|---|---|---|
+| Azure DevOps | Entra service principal (Basic licence per identity, two admins). [azure-devops-auth.md](azure-devops-auth.md) | **Built**: `auth = "entra"` |
+| GitLab | Project or group access token: a bot user with its own role (Reporter is enough), no licence on most plans | Works today, it is a token like any other. [gitlab.md](gitlab.md) |
+| Bitbucket Cloud | Repository, project or workspace access token (bearer). App passwords stopped working on 9 June 2026; API tokens are tied to a user | Works today, same token field. [bitbucket.md](bitbucket.md) |
+| GitHub, GitHub Enterprise | A GitHub App installed on the organisation (an hour-long installation token made from the app's private key), or a fine-grained token on a dedicated machine user | **Not built.** A GitHub App mode would be the next one; say if you want it |
+| Gitea | A token of a dedicated bot user | Works today |
+
+GitLab, Bitbucket and Gitea already have the "service account" option, as a token you create on the bot or on the
+project, so they need no code. GitHub and Azure DevOps are the two where the token is easily a person's, which is why
+Azure DevOps got a real alternative.
+
 ## Forgejo and Codeberg
 
 Forgejo is a fork of Gitea, and Codeberg runs Forgejo. Nobody has tried DeskWatch against one, so this is what the

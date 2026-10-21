@@ -336,7 +336,7 @@ async fn main() -> Result<()> {
         composer = Composer::new(demo::rotation(), unix_now());
         demo = Some(Demo::new(unix_now()));
     } else {
-        composer = Composer::new(config.rotation.clone(), unix_now());
+        composer = Composer::new(config.rotation(), unix_now());
         composer.alerts = Alerts::new(config.alerts.clone());
     }
     let mut shown = Shown::default();

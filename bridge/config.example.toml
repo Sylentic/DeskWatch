@@ -3,7 +3,7 @@
 # Copy to /etc/deskwatch/bridge.toml (Linux) or
 # C:\ProgramData\DeskWatch\bridge.toml (Windows) and adjust. Every key is
 # optional; the values below are the defaults unless noted (the [[rotation]]
-# blocks at the end are an example: without any, only the stats page rotates). Never put
+# blocks at the end are an example: without any, the stats page rotates, plus the PR and pipeline pages when a Git host is set up). Never put
 # passwords or tokens in this file. Keys ending in `_file` name a credential:
 # a plain name is read from systemd's credentials folder (LoadCredential= in
 # deploy/deskwatch-bridge.service) or, on Windows, from
@@ -234,7 +234,13 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 # name = "work"                 # required: used in logs
 # organization = "your-org"     # required: dev.azure.com/<organization>
 # projects = ["project-a"]      # required: projects to watch
-# token_file = "azdo-work"      # required: read-only PAT (Build: Read, Code: Read)
+# token_file = "azdo-work"      # read-only PAT (Build: Read, Code: Read), the default way to sign in
+# # Or sign in as a Microsoft Entra service principal instead of with a person's PAT
+# # (docs/azure-devops-auth.md): leave out token_file and set
+# # auth = "entra"
+# # tenant_id = "00000000-0000-0000-0000-000000000000"
+# # client_id = "00000000-0000-0000-0000-000000000000"
+# # client_secret_file = "azdo-work-secret"
 # poll_s = 60                   # builds, approvals and open PRs
 # job_poll_s = 5                # step progress while a build may take over the screen
 # interrupt = false             # default; true, or a list such as ["project-a"]

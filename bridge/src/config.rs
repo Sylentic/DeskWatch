@@ -224,8 +224,9 @@ pub struct Config {
     /// The browser dashboard for a big screen, served on `[http]`. Off by default.
     #[serde(default)]
     pub kiosk: KioskConfig,
-    /// Idle pages in the order they rotate. See `[[rotation]]` in the example config.
-    #[serde(default = "default_rotation")]
+    /// Idle pages in the order they rotate. See `[[rotation]]` in the example
+    /// config. Empty means the default: use [`Config::rotation`].
+    #[serde(default)]
     pub rotation: Vec<RotationEntry>,
 }
 
@@ -740,6 +741,17 @@ pub struct Sources {
     pub prometheus: Vec<PrometheusConfig>,
 }
 
+impl Sources {
+    /// Is any Git host (a source with PRs and CI runs) configured?
+    pub fn has_ci(&self) -> bool {
+        !(self.gitea.is_empty()
+            && self.github.is_empty()
+            && self.gitlab.is_empty()
+            && self.bitbucket.is_empty()
+            && self.azure_devops.is_empty())
+    }
+}
+
 /// One `[[source.gitea]]` block: Actions webhooks, job step polling and open PRs.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -983,6 +995,18 @@ impl BitbucketConfig {
     }
 }
 
+/// How an Azure DevOps source proves who it is.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AzureDevopsAuth {
+    /// A personal access token (`token_file`): acts as one person.
+    #[default]
+    Pat,
+    /// A Microsoft Entra service principal (`tenant_id`, `client_id`,
+    /// `client_secret_file`): acts as an app, not as a person.
+    Entra,
+}
+
 /// One `[[source.azure_devops]]` block: pipeline runs and open PRs from Azure
 /// DevOps Services, by polling.
 #[derive(Debug, Clone, Deserialize)]
@@ -997,9 +1021,25 @@ pub struct AzureDevopsConfig {
     pub base_url: String,
     /// Projects of the organisation to watch.
     pub projects: Vec<String>,
+    /// How the bridge signs in: `pat` (default) or `entra`.
+    #[serde(default)]
+    pub auth: AzureDevopsAuth,
     /// Credential with a read-only personal access token (Build: Read,
-    /// Code: Read).
+    /// Code: Read). For `auth = "pat"`.
+    #[serde(default)]
     pub token_file: String,
+    /// Microsoft Entra tenant (directory) id or domain. For `auth = "entra"`.
+    #[serde(default)]
+    pub tenant_id: String,
+    /// Application (client) id of the service principal. For `auth = "entra"`.
+    #[serde(default)]
+    pub client_id: String,
+    /// Credential holding the service principal's client secret. For `auth = "entra"`.
+    #[serde(default)]
+    pub client_secret_file: String,
+    /// Entra sign-in address. Only changes for tests or a national cloud.
+    #[serde(default = "default_entra_login_url")]
+    pub login_url: String,
     /// Seconds between polls of builds and open PRs.
     #[serde(default = "default_github_poll_s")]
     pub poll_s: u64,
@@ -1169,6 +1209,10 @@ fn default_azure_devops_agent_poll_s() -> u64 {
     60
 }
 
+fn default_entra_login_url() -> String {
+    crate::azure_devops::api::ENTRA_LOGIN.into()
+}
+
 fn default_azure_devops_base_url() -> String {
     crate::azure_devops::api::AZURE_DEVOPS_COM.into()
 }
@@ -1213,13 +1257,13 @@ fn default_gitea_runner_poll_s() -> u64 {
     30
 }
 
-/// Rotation used when the config has no `[[rotation]]` blocks: the stats page only.
-fn default_rotation() -> Vec<RotationEntry> {
-    vec![RotationEntry {
-        page: "stats".into(),
-        dwell_s: 20,
-        skip_when_empty: false,
-    }]
+/// One rotation page of the default rotation.
+fn rotation_page(page: &str, dwell_s: u64, skip_when_empty: bool) -> RotationEntry {
+    RotationEntry {
+        page: page.into(),
+        dwell_s,
+        skip_when_empty,
+    }
 }
 
 /// `owner/name` with no empty part. The name goes into API URLs.
@@ -1398,10 +1442,6 @@ impl Config {
             self.server.interval_s > 0,
             "server.interval_s must be above 0"
         );
-        anyhow::ensure!(
-            !self.rotation.is_empty(),
-            "rotation needs at least one page"
-        );
         let mqtt = &self.mqtt;
         anyhow::ensure!(
             mqtt.client_cert_file.is_some() == mqtt.client_key_file.is_some(),
@@ -1535,6 +1575,25 @@ impl Config {
                 azure.base_url.starts_with("https://") || azure.base_url.starts_with("http://"),
                 "source.azure_devops {name}: base_url must start with https://"
             );
+            match azure.auth {
+                AzureDevopsAuth::Pat => anyhow::ensure!(
+                    !azure.token_file.trim().is_empty(),
+                    "source.azure_devops {name}: token_file is needed (or set auth = \"entra\")"
+                ),
+                AzureDevopsAuth::Entra => {
+                    anyhow::ensure!(
+                        !azure.tenant_id.trim().is_empty()
+                            && !azure.client_id.trim().is_empty()
+                            && !azure.client_secret_file.trim().is_empty(),
+                        "source.azure_devops {name}: auth = \"entra\" needs tenant_id, client_id and client_secret_file"
+                    );
+                    anyhow::ensure!(
+                        azure.login_url.starts_with("https://")
+                            || azure.login_url.starts_with("http://"),
+                        "source.azure_devops {name}: login_url must start with https://"
+                    );
+                }
+            }
             anyhow::ensure!(
                 valid_azure_name(&azure.organization),
                 "source.azure_devops {name}: organization must be the name from dev.azure.com/<organization>"
@@ -1622,6 +1681,24 @@ impl Config {
     }
 
     /// Read and parse a config file.
+    /// The idle rotation: the `[[rotation]]` blocks, or when there are none a
+    /// default that fits what is configured: the stats page, and the open PRs and
+    /// pipelines pages when a CI source exists (they skip themselves while
+    /// empty). A bridge that is only Azure DevOps or only GitHub Enterprise
+    /// therefore rotates the pages it can fill, with no config.
+    pub fn rotation(&self) -> Vec<RotationEntry> {
+        if !self.rotation.is_empty() {
+            return self.rotation.clone();
+        }
+        let mut pages = Vec::new();
+        pages.push(rotation_page("stats", 20, false));
+        if self.source.has_ci() {
+            pages.push(rotation_page("prs", 8, true));
+            pages.push(rotation_page("pipelines", 10, true));
+        }
+        pages
+    }
+
     pub fn load(path: &Path) -> Result<Self> {
         let text = std::fs::read_to_string(path)
             .with_context(|| format!("cannot read config file {}", path.display()))?;
@@ -1657,8 +1734,9 @@ mod tests {
         );
         assert_eq!(config.mqtt.topic_prefix, "deskpanel");
         assert_eq!(config.server.interval_s, 5);
-        assert_eq!(config.rotation.len(), 1);
-        assert_eq!(config.rotation[0].page, "stats");
+        assert!(config.rotation.is_empty());
+        assert_eq!(config.rotation().len(), 1);
+        assert_eq!(config.rotation()[0].page, "stats");
         assert!(config.source.gitea.is_empty());
         assert_eq!(config.http.listen.port(), 8787);
         assert!(config.http.tls.is_none());
@@ -1726,6 +1804,24 @@ mod tests {
         let config = Config::from_toml("[alerts]\ncritical_ids = [\"leak\"]\n").unwrap();
         assert!(config.alerts.allows_critical("leak"));
         assert!(!config.alerts.allows_critical("door"));
+    }
+
+    #[test]
+    fn default_rotation_adds_ci_pages_when_a_git_host_is_configured() {
+        let pages = |text: &str| -> Vec<String> {
+            Config::from_toml(text)
+                .unwrap()
+                .rotation()
+                .into_iter()
+                .map(|r| r.page)
+                .collect()
+        };
+        assert_eq!(pages(""), ["stats"]);
+        let azure = "[[source.azure_devops]]\nname = \"work\"\norganization = \"o\"\n\
+projects = [\"p\"]\ntoken_file = \"azdo\"\n";
+        assert_eq!(pages(azure), ["stats", "prs", "pipelines"]);
+        let explicit = format!("{azure}\n[[rotation]]\npage = \"alerts\"\ndwell_s = 5\n");
+        assert_eq!(pages(&explicit), ["alerts"]);
     }
 
     #[test]
@@ -2047,6 +2143,26 @@ mod tests {
         assert_eq!(pools.source.azure_devops[0].agent_pools.len(), 2);
         assert!(Config::from_toml(&block("agent_pools = [\" \"]")).is_err());
         assert!(Config::from_toml(&block("agent_poll_s = 0")).is_err());
+
+        // Sign in as a service principal instead of with a token.
+        let entra = |extra: &str| {
+            format!(
+                "[[source.azure_devops]]\nname = \"work\"\norganization = \"your-org\"\n\
+                 projects = [\"project-a\"]\nauth = \"entra\"\n{extra}"
+            )
+        };
+        let full = "tenant_id = \"t\"\nclient_id = \"c\"\nclient_secret_file = \"azdo-secret\"\n";
+        let sp = Config::from_toml(&entra(full)).unwrap();
+        let sp = &sp.source.azure_devops[0];
+        assert_eq!(sp.auth, AzureDevopsAuth::Entra);
+        assert_eq!(sp.login_url, "https://login.microsoftonline.com");
+        assert_eq!(config.source.azure_devops[0].auth, AzureDevopsAuth::Pat);
+        // Each way needs its own credentials, and says so.
+        let err = Config::from_toml(&entra("tenant_id = \"t\"\n")).unwrap_err();
+        assert!(format!("{err:#}").contains("client_secret_file"), "{err:#}");
+        let no_token = block("").replace("token_file = \"azdo-token\"\n", "");
+        let err = Config::from_toml(&no_token).unwrap_err();
+        assert!(format!("{err:#}").contains("token_file"), "{err:#}");
 
         let some = Config::from_toml(&block("interrupt = [\"project-a\"]")).unwrap();
         assert!(some.source.azure_devops[0].interrupt.allows("project-a"));

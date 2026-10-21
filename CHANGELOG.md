@@ -18,6 +18,14 @@ hardware yet, and its MQTT schema (v2) may still change or the display may be dr
   **Issues** webhook event) add a new issue (Bitbucket: issue tracker on, token with **Issues: Read**); Azure DevOps adds a new comment on an open PR, skipping your own. They show as info alerts with the
   source's mark, link to the issue or PR, and stay until dismissed (or a week). Existing issues and comments do not
   alert at startup. `alert_new_issues = false` or `alert_pr_comments = false` turns them off per source.
+- **Azure DevOps can sign in as a Microsoft Entra service principal** instead of a personal access token:
+  `auth = "entra"` with `tenant_id`, `client_id` and `client_secret_file`. The bridge fetches a short-lived token with
+  the client-credentials flow, keeps it in memory, renews it before it expires and once when Azure DevOps refuses it.
+  Nothing changes for existing `token_file` setups. Tested against mock Entra and Azure DevOps answers only. Research
+  and the other options (managed identity, Entra OAuth, GitLab, Bitbucket, GitHub) in `docs/azure-devops-auth.md` and
+  `docs/git-hosts.md`.
+- **A bridge that only reads Azure DevOps (or only GitHub Enterprise) is documented**, and without `[[rotation]]` blocks
+  the ESP rotation now adds the PR and pipeline pages when a Git host is configured.
 - **Several users with their own role.** Setup › Access now lists local users. A **viewer** looks at the dashboard, a new
   **operator** may also dismiss alerts and failed runs, an **administrator** can do everything, including Setup, users
   and keys. A new user gets a password the administrator chooses and replaces it at the first sign-in; everyone has a
