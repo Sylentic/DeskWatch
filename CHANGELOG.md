@@ -37,6 +37,14 @@ All notable changes to DeskWatch are listed here. The format follows
   time. Works for GitHub and Gitea jobs, GitLab jobs (with their stage), Bitbucket steps and Azure DevOps jobs; a
   source that only knows the run as a whole shows one row. The Pipelines card stays one row per pipeline.
 
+### Fixed
+
+- **Signing in over the bridge's own HTTPS (`[http.tls]`) works in a browser.** Browsers talk HTTP/2 there and send no
+  `Host` header, so the origin check refused the sign-in, Setup changes and dismissing alerts with "cross-origin request
+  refused". The check now uses the request's authority too. Behind Caddy or another proxy nothing changes.
+- **Setup, Access on a phone** no longer scrolls sideways: the user rows wrap and the forms keep to the card width. The
+  "My account" link follows the theme colour.
+
 ## [1.0.2]
 
 ### Added
