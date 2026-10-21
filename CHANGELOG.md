@@ -8,6 +8,13 @@ hardware yet, and its MQTT schema (v2) may still change or the display may be dr
 
 ## [Unreleased]
 
+### Added
+
+- **GPU usage, VRAM and GPU temperature on the host card** (#115). Prometheus hosts read them from the NVIDIA DCGM
+  exporter by default, and `gpu_pct`, `gpu_mem_pct` and `gpu_temp_c` can be replaced under `queries`. The bridge machine
+  reads AMD GPUs from sysfs. The rows only show for hosts that report a GPU. Intel and NVIDIA on the bridge machine
+  itself need a Prometheus host.
+
 ## [1.0.1]
 
 ### Fixed

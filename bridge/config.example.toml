@@ -157,7 +157,8 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 #   "nas.example.lan:9100",
 # ]
 # # Replace the PromQL of a field; it must return one value per `instance`.
-# # Fields: cpu_pct, cpu_temp_c, cpu_count, ram_pct, disk_pct, uptime_s.
+# # Fields: cpu_pct, cpu_temp_c, cpu_count, ram_pct, disk_pct, gpu_pct, gpu_mem_pct, gpu_temp_c, uptime_s.
+# # GPU figures default to the NVIDIA DCGM exporter and only show when it returns data.
 # # queries = { cpu_temp_c = 'max by (instance) (node_thermal_zone_temp)' }
 
 # GitHub, GitHub Enterprise Server or GHE.com: open PRs and Actions runs, by

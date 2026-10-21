@@ -174,6 +174,14 @@ pub struct StatsData {
     pub cpu_count: Option<u32>,
     pub ram_pct: Option<f32>,
     pub disk_pct: Option<f32>,
+    /// GPU figures are left out of the payload when unknown, so hosts
+    /// without a GPU look like they did before.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpu_pct: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpu_mem_pct: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpu_temp_c: Option<f32>,
     pub uptime_s: Option<u64>,
     pub net: Option<NetData>,
 }
@@ -572,6 +580,9 @@ mod tests {
                 cpu_count: Some(4),
                 ram_pct: Some(41.0),
                 disk_pct: Some(63.0),
+                gpu_pct: None,
+                gpu_mem_pct: None,
+                gpu_temp_c: None,
                 uptime_s: Some(1234567),
                 net: Some(NetData {
                     iface: "eth0".into(),

@@ -69,6 +69,8 @@ impl StatsCollector {
         };
         self.prev_cpu = cpu_now;
 
+        let gpu = read_gpu();
+
         StatsData {
             host: self.host.clone(),
             cpu_pct,
@@ -77,6 +79,9 @@ impl StatsCollector {
             cpu_count: proc_stat.as_deref().and_then(parse_cpu_count),
             ram_pct: read("/proc/meminfo").as_deref().and_then(parse_ram_pct),
             disk_pct: disk_used_pct(&self.disk_path),
+            gpu_pct: gpu.pct,
+            gpu_mem_pct: gpu.mem_pct,
+            gpu_temp_c: gpu.temp_c,
             uptime_s: read("/proc/uptime").as_deref().and_then(parse_uptime),
             net: self.sample_net(),
         }
@@ -269,6 +274,58 @@ fn read_cpu_temp_c() -> Option<f32> {
     read("/sys/class/thermal/thermal_zone0/temp")
         .as_deref()
         .and_then(parse_millidegrees)
+}
+
+/// GPU figures of the bridge machine, all `None` when no readable GPU exists.
+#[derive(Debug, Default, PartialEq)]
+struct GpuStats {
+    pct: Option<f32>,
+    mem_pct: Option<f32>,
+    temp_c: Option<f32>,
+}
+
+/// GPU usage, VRAM and temperature from `/sys/class/drm/card*/device`.
+///
+/// Only AMD (`amdgpu`) exposes utilisation as a plain file. Intel iGPUs and
+/// NVIDIA need `intel_gpu_top` or NVML, so for those use a Prometheus host.
+/// With several GPUs the busiest one is shown.
+fn read_gpu() -> GpuStats {
+    let Ok(cards) = fs::read_dir("/sys/class/drm") else {
+        return GpuStats::default();
+    };
+    let mut best = GpuStats::default();
+    for card in cards.flatten() {
+        let name = card.file_name().to_string_lossy().into_owned();
+        // `card0`, `card1`, ... but not `card0-HDMI-A-1` (connectors).
+        if !name.starts_with("card") || name.contains('-') {
+            continue;
+        }
+        let dev = card.path().join("device");
+        let Some(pct) = read(dev.join("gpu_busy_percent"))
+            .and_then(|t| t.trim().parse::<f32>().ok())
+        else {
+            continue;
+        };
+        let mem = |file: &str| read(dev.join(file)).and_then(|t| t.trim().parse::<f64>().ok());
+        let mem_pct = match (mem("mem_info_vram_used"), mem("mem_info_vram_total")) {
+            (Some(used), Some(total)) if total > 0.0 => Some(round1(used / total * 100.0)),
+            _ => None,
+        };
+        let temp_c = fs::read_dir(dev.join("hwmon"))
+            .ok()
+            .and_then(|dirs| dirs.flatten().next())
+            .and_then(|d| read(d.path().join("temp1_input")))
+            .as_deref()
+            .and_then(parse_millidegrees);
+        if best.pct.is_none_or(|b| pct > b) {
+            best = GpuStats {
+                pct: Some(pct),
+                mem_pct,
+                temp_c,
+            };
+        }
+    }
+    best
 }
 
 /// Sysfs temperatures are in millidegrees Celsius.

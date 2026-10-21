@@ -199,6 +199,9 @@ pub fn stats(now: u64) -> StatsData {
         cpu_count: Some(4),
         ram_pct: Some(round(38.0 + 20.0 * wave(23.0, 1.0))),
         disk_pct: Some(63.0),
+        gpu_pct: Some(round(5.0 + 70.0 * wave(13.0, 0.7))),
+        gpu_mem_pct: Some(round(30.0 + 25.0 * wave(29.0, 0.2))),
+        gpu_temp_c: Some(round(38.0 + 30.0 * wave(13.0, 0.7))),
         uptime_s: Some(1_234_567 + now % 100_000),
         net: Some(NetData {
             iface: "eth0".into(),

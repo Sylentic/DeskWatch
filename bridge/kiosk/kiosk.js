@@ -154,10 +154,14 @@
     var vals = history[host.name] || [];
     var peak = vals.length ? Math.round(Math.max.apply(null, vals)) + '%' : '--';
     var fresh = s.uptime_s != null && s.uptime_s < REBOOT_S;
-    return '<div class="gauges">' + gauge('CPU', s.cpu_pct, 70, 90) + gauge('MEM', s.ram_pct, 80, 90) + gauge('DISK', s.disk_pct, 80, 90) + '</div>' +
+    return '<div class="gauges">' + gauge('CPU', s.cpu_pct, 70, 90) + gauge('MEM', s.ram_pct, 80, 90) + gauge('DISK', s.disk_pct, 80, 90) +
+      // GPU rows only for hosts that report a GPU.
+      (s.gpu_pct == null ? '' : gauge('GPU', s.gpu_pct, 80, 95)) +
+      (s.gpu_mem_pct == null ? '' : gauge('VRAM', s.gpu_mem_pct, 80, 95)) + '</div>' +
       '<div class="stat-grid">' +
       '<div><span class="l">Uptime</span><span' + (fresh ? ' class="warn-text"' : '') + '>' + uptime(s.uptime_s) + '</span></div>' +
       '<div><span class="l">Temp</span><span>' + (s.cpu_temp_c == null ? '--' : Math.round(s.cpu_temp_c) + ' &deg;C') + '</span></div>' +
+      (s.gpu_temp_c == null ? '' : '<div><span class="l">GPU temp</span><span>' + Math.round(s.gpu_temp_c) + ' &deg;C</span></div>') +
       '<div><span class="l">Load</span><span>' + load + '</span></div>' +
       '<div><span class="l">Net in</span><span>' + (s.net ? rate(s.net.rx_bps) : '--') + '</span></div>' +
       '<div><span class="l">Net out</span><span>' + (s.net ? rate(s.net.tx_bps) : '--') + '</span></div>' +
@@ -176,7 +180,7 @@
   function hostLook(h) {
     var s = h.stats || {};
     if (!h.up) return 'off';
-    if (s.cpu_pct >= 70 || s.ram_pct >= 80 || s.disk_pct >= 80) return 'look';
+    if (s.cpu_pct >= 70 || s.ram_pct >= 80 || s.disk_pct >= 80 || s.gpu_pct >= 95) return 'look';
     if (s.uptime_s != null && s.uptime_s < REBOOT_S) return 'look';
     return '';
   }
