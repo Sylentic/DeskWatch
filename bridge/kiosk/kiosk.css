@@ -584,3 +584,6 @@ a.link:active { background: rgba(255, 255, 255, .08); }
 .edit-bar .tray .none { color: var(--dim); font-size: 0.85rem; }
 .edit-bar button.add { border-style: dashed; }
 .edit-bar .cells { margin-left: 0; }
+
+/* A viewer cannot dismiss or mute (the bridge says no); hide those buttons. */
+.ro [data-dismiss], .ro [data-dismiss-all], .ro [data-dismiss-alert], .ro [data-dismiss-all-alerts], .ro [data-mute] { display: none; }
