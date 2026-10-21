@@ -19,7 +19,7 @@ use reqwest::StatusCode;
 use reqwest::header::{ACCEPT, ETAG, HeaderMap, IF_NONE_MATCH};
 use serde::de::DeserializeOwned;
 
-use super::payload::{Job, Jobs, PullRequest, WorkflowRun, WorkflowRuns};
+use super::payload::{Issue, Job, Jobs, PullRequest, WorkflowRun, WorkflowRuns};
 use crate::gitea::runners::{ApiRunner, RunnerList, RunnerScope};
 use crate::source::Secret;
 
@@ -32,6 +32,9 @@ const API_VERSION: &str = "2022-11-28";
 /// Most open PRs fetched per repository. GitHub has no total count header,
 /// so a repository with more open PRs shows this many.
 pub const PULLS_PAGE_SIZE: u32 = 100;
+
+/// Issues fetched per poll for "new issue" alerts. Only the newest matter.
+pub const ISSUES_PAGE_SIZE: u32 = 20;
 
 /// Recent runs fetched per repository: enough to find the latest run of
 /// each workflow in a busy repository.
@@ -114,6 +117,15 @@ impl HttpApi {
     pub async fn open_pulls(&self, repo: &str) -> Result<Vec<PullRequest>> {
         let path = format!("/repos/{repo}/pulls?state=open&per_page={PULLS_PAGE_SIZE}");
         self.get_json(&path).await.context("open pulls")
+    }
+
+    /// The newest open issues of `owner/name` (pull requests included, the
+    /// caller skips them).
+    pub async fn recent_issues(&self, repo: &str) -> Result<Vec<Issue>> {
+        let path = format!(
+            "/repos/{repo}/issues?state=open&sort=created&direction=desc&per_page={ISSUES_PAGE_SIZE}"
+        );
+        self.get_json(&path).await.context("open issues")
     }
 
     /// Recent workflow runs of `owner/name`, newest first.

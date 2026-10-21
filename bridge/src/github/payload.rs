@@ -22,6 +22,26 @@ pub struct PullRequest {
     pub html_url: Option<String>,
 }
 
+/// One item of `GET /repos/{owner}/{repo}/issues`. That list also holds pull
+/// requests; those have a `pull_request` field and are skipped.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct Issue {
+    pub number: u64,
+    pub title: String,
+    /// Web page of the issue.
+    pub html_url: Option<String>,
+    pub user: Option<User>,
+    pub pull_request: Option<serde_json::Value>,
+}
+
+/// The author of an issue.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct User {
+    pub login: String,
+}
+
 /// `GET /repos/{owner}/{repo}/actions/runs`.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]

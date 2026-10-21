@@ -6,7 +6,7 @@
 //! sources and button presses from the panel come in here too.
 
 use crate::alerts::{AlertMessage, Alerts};
-use crate::ci::CiFacts;
+use crate::ci::{CiFacts, Update};
 use crate::fleet::Fleet;
 use crate::model::{
     AlertStatus, Badge, BadgeIcon, Badges, ButtonAction, Level, ListData, Rotation, RotationEntry,
@@ -46,7 +46,10 @@ impl Composer {
         match msg.body {
             SourceBody::Facts(updates) => {
                 for update in updates {
-                    self.ci.apply(update, now);
+                    match update {
+                        Update::Alert { alert } => self.alerts.apply(alert, now),
+                        update => self.ci.apply(update, now),
+                    }
                 }
             }
             SourceBody::Stats(report) => self.fleet.apply(&msg.source, report),

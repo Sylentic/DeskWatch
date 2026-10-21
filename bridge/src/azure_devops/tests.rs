@@ -859,3 +859,60 @@ fn agent_pool_page_is_in_the_organisation_settings() {
         Some("https://dev.azure.com/your-org/_settings/agentpools?poolId=7")
     );
 }
+
+fn threads(json: serde_json::Value) -> Vec<Thread> {
+    serde_json::from_value::<List<Thread>>(json).unwrap().value
+}
+
+fn comment(id: u64, author: &str, kind: &str, text: &str) -> serde_json::Value {
+    serde_json::json!({
+        "id": id,
+        "author": { "id": author, "displayName": author.to_uppercase() },
+        "content": text,
+        "commentType": kind,
+    })
+}
+
+#[test]
+fn new_pr_comments_raise_alerts_but_not_your_own() {
+    let mut state = state("", NOW);
+    state.set_me("me".into());
+    let first = threads(serde_json::json!({ "value": [
+        { "id": 1, "comments": [comment(1, "dana", "text", "old remark")] }
+    ]}));
+    assert!(
+        state
+            .on_threads(PROJECT, "shop", 12, "fix login", &first)
+            .is_empty(),
+        "first look only remembers"
+    );
+
+    let later = threads(serde_json::json!({ "value": [
+        { "id": 1, "comments": [
+            comment(1, "dana", "text", "old remark"),
+            comment(2, "dana", "text", "  please add a test  "),
+            comment(3, "me", "text", "done"),
+        ]},
+        { "id": 2, "comments": [comment(1, "dana", "system", "voted 10")] },
+    ]}));
+    let updates = state.on_threads(PROJECT, "shop", 12, "fix login", &later);
+    let [Update::Alert { alert }] = updates.as_slice() else {
+        panic!("one alert expected, got {updates:?}");
+    };
+    assert_eq!(alert.title.as_deref(), Some("DANA on !12 fix login"));
+    assert_eq!(alert.message.as_deref(), Some("please add a test"));
+    assert_eq!(alert.source.as_deref(), Some("azure_devops"));
+    assert!(
+        state
+            .on_threads(PROJECT, "shop", 12, "fix login", &later)
+            .is_empty()
+    );
+
+    // A closed PR is forgotten; reopened, it starts with a fresh first look.
+    state.keep_comments_of(PROJECT, &[]);
+    assert!(
+        state
+            .on_threads(PROJECT, "shop", 12, "fix login", &later)
+            .is_empty()
+    );
+}

@@ -106,6 +106,9 @@ fn stats_screen() {
         cpu_count: Some(4),
         ram_pct: Some(41.0),
         disk_pct: Some(63.0),
+        gpu_pct: None,
+        gpu_mem_pct: None,
+        gpu_temp_c: None,
         uptime_s: Some(1_234_567),
         net: Some(NetData {
             iface: "eth0".into(),
