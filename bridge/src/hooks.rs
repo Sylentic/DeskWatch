@@ -12,7 +12,7 @@ use std::sync::{Arc, RwLock};
 use anyhow::{Context, Result};
 use axum::Router;
 use axum::extract::{Request, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum_server::tls_rustls::RustlsConfig;
 use tokio::net::TcpListener;
@@ -144,6 +144,9 @@ impl Hooks {
             "/webhook/{*rest}",
             axum::routing::any(dispatch).with_state(self.webhooks.clone()),
         );
+        // Browsers speak HTTP/2 to the TLS listener and send no `Host` header
+        // there, only the authority; the `Origin` checks read `Host`.
+        let router = router.layer(axum::middleware::map_request(fill_host));
         let app = router.into_make_service_with_connect_info::<SocketAddr>();
         tokio::spawn(async move {
             let result = match rustls {
@@ -172,6 +175,48 @@ impl Hooks {
             }
         });
         Ok(())
+    }
+}
+
+/// HTTP/2 carries the host as the `:authority` pseudo header, which hyper puts
+/// in the request URI and not in a `Host` header. Copy it over so every check
+/// that reads `Host` (the `Origin` match on sign-in, Setup and the alert input)
+/// works for a browser that talks HTTP/2 to `[http.tls]`.
+async fn fill_host(mut request: Request) -> Request {
+    if !request.headers().contains_key(header::HOST)
+        && let Some(authority) = request.uri().authority()
+        && let Ok(value) = HeaderValue::from_str(authority.as_str())
+    {
+        request.headers_mut().insert(header::HOST, value);
+    }
+    request
+}
+
+#[cfg(test)]
+mod host_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn http2_authority_becomes_the_host_header() {
+        let request = Request::builder()
+            .uri("https://dash.example:8787/api/auth/login")
+            .header(header::ORIGIN, "https://dash.example:8787")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert!(!crate::kiosk::origin::same_origin(request.headers()));
+        let request = fill_host(request).await;
+        assert!(crate::kiosk::origin::same_origin(request.headers()));
+    }
+
+    #[tokio::test]
+    async fn an_existing_host_header_is_kept() {
+        let request = Request::builder()
+            .uri("/")
+            .header(header::HOST, "real.example")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let request = fill_host(request).await;
+        assert_eq!(request.headers()[header::HOST], "real.example");
     }
 }
 
