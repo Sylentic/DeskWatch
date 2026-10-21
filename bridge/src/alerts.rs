@@ -13,7 +13,7 @@
 //! page, and warnings and criticals stay in the `home` header badge, until it
 //! is cleared with `{"id": ..., "clear": true}` or its `ttl_s` runs out.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use anyhow::{Context, Result, bail};
 use axum::Router;
@@ -62,6 +62,9 @@ pub struct AlertView {
     pub message: String,
     pub source: String,
     pub since: u64,
+    /// Page of the issue or comment, for alerts raised by a git source.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 impl Severity {
@@ -116,6 +119,10 @@ pub struct AlertMessage {
     /// True to remove the alert with this `id`.
     #[serde(default)]
     pub clear: bool,
+    /// Web page behind the alert. Only set by the bridge's own sources, never
+    /// read from a payload, so an outside script cannot plant a link.
+    #[serde(skip)]
+    pub url: Option<String>,
 }
 
 /// Id of the alert the setup page's test button raises.
@@ -123,6 +130,10 @@ pub const TEST_ALERT_ID: &str = "setup-test";
 
 /// How long the test alert stays, in seconds.
 pub const TEST_ALERT_TTL_S: u64 = 60;
+
+/// How long a "new issue" or "new comment" alert stays when nobody dismisses
+/// it: a week.
+pub const ACTIVITY_TTL_S: u64 = 7 * 24 * 3600;
 
 impl AlertMessage {
     /// A message that removes the alert with this id.
@@ -136,6 +147,30 @@ impl AlertMessage {
             ttl_s: None,
             source: None,
             clear: true,
+            url: None,
+        }
+    }
+
+    /// A quiet alert from a git source about a new issue or comment. It stays
+    /// in the alerts list until dismissed (or for `ACTIVITY_TTL_S`), but does
+    /// not count in the header badge of the ESP panel.
+    pub fn activity(
+        id: String,
+        title: String,
+        message: String,
+        source: &str,
+        url: Option<String>,
+    ) -> Self {
+        Self {
+            v: SCHEMA_VERSION,
+            id: Some(id),
+            severity: Some(Severity::Info),
+            title: Some(title),
+            message: Some(message),
+            ttl_s: Some(ACTIVITY_TTL_S),
+            source: Some(source.to_string()),
+            clear: false,
+            url,
         }
     }
 
@@ -151,6 +186,7 @@ impl AlertMessage {
             ttl_s: Some(TEST_ALERT_TTL_S),
             source: Some("setup".to_string()),
             clear: false,
+            url: None,
         }
     }
 
@@ -224,6 +260,7 @@ struct Active {
     title: String,
     message: String,
     source: String,
+    url: Option<String>,
     /// Unix seconds of the last raise. Screen timers count from here.
     raised_at: u64,
     /// Unix seconds when it ends on its own, or `None` to wait for `clear`.
@@ -292,6 +329,7 @@ impl Alerts {
             title: truncate(title, MAX_TITLE_CHARS),
             message: truncate(msg.message.as_deref().unwrap_or(""), MAX_TITLE_CHARS),
             source: truncate(msg.source.as_deref().unwrap_or("mqtt"), MAX_TITLE_CHARS),
+            url: msg.url.clone(),
             raised_at: now,
             expires: ttl.map(|ttl| now.saturating_add(ttl)),
             on_screen: true,
@@ -366,6 +404,7 @@ impl Alerts {
                 message: a.message.clone(),
                 source: a.source.clone(),
                 since: a.raised_at,
+                url: a.url.clone(),
             })
             .collect()
     }
@@ -452,6 +491,75 @@ fn alert_id(id: &str) -> String {
     truncate(id.trim(), MAX_ID_CHARS)
 }
 
+/// An open issue as a polling git source sees it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NewIssue {
+    pub number: u64,
+    pub title: String,
+    pub url: Option<String>,
+    /// Who opened it, if known.
+    pub by: Option<String>,
+}
+
+/// "New issue" alerts for sources that poll (GitHub, GitLab, Bitbucket):
+/// remembers the highest issue number per repository and raises an alert for
+/// each higher one. The first poll of a repository only remembers, so
+/// existing issues do not all alert at startup.
+#[derive(Debug, Default)]
+pub struct IssueWatch {
+    last: HashMap<String, u64>,
+}
+
+impl IssueWatch {
+    /// `source` is the source id (`github:home`), `kind` its adapter type for
+    /// the mark, `label` the repository's short name on the dashboard.
+    pub fn check(
+        &mut self,
+        source: &str,
+        kind: &str,
+        repo: &str,
+        label: &str,
+        issues: Vec<NewIssue>,
+    ) -> Vec<AlertMessage> {
+        let newest = issues.iter().map(|i| i.number).max().unwrap_or(0);
+        let Some(last) = self.last.get(repo).copied() else {
+            self.last.insert(repo.to_string(), newest);
+            return Vec::new();
+        };
+        self.last.insert(repo.to_string(), last.max(newest));
+        let mut issues: Vec<NewIssue> = issues.into_iter().filter(|i| i.number > last).collect();
+        // Oldest first, so the newest ends up on top of the list.
+        issues.sort_by_key(|i| i.number);
+        issues
+            .into_iter()
+            .map(|i| {
+                let by = i.by.map(|by| format!(" by {by}")).unwrap_or_default();
+                AlertMessage::activity(
+                    activity_id(&format!("{source}:issue:{repo}#{}", i.number)),
+                    i.title,
+                    format!("New issue #{} in {label}{by}", i.number),
+                    kind,
+                    i.url,
+                )
+            })
+            .collect()
+    }
+}
+
+/// An alert id for a source's own alert that stays unique when it is longer
+/// than `MAX_ID_CHARS`: the tail is replaced by a hash of the whole id
+/// (FNV-1a, stable across restarts and builds).
+pub fn activity_id(id: &str) -> String {
+    if id.chars().count() <= MAX_ID_CHARS {
+        return id.to_string();
+    }
+    let hash = id.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    });
+    let head: String = id.chars().take(MAX_ID_CHARS - 17).collect();
+    format!("{head}~{hash:016x}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -474,6 +582,19 @@ mod tests {
     fn top(alerts: &Alerts, now: u64) -> Option<(Level, ScreenData)> {
         let candidates = alerts.candidates(now);
         pick(&candidates, now).map(|c| (c.level, c.data.clone()))
+    }
+
+    #[test]
+    fn long_activity_ids_stay_unique_and_fit() {
+        let a = activity_id(&format!("github:work:issue:{}#1", "x".repeat(80)));
+        let b = activity_id(&format!("github:work:issue:{}#2", "x".repeat(80)));
+        assert_ne!(a, b);
+        assert_eq!(a.chars().count(), MAX_ID_CHARS);
+        assert_eq!(alert_id(&a), a, "not cut again");
+        assert_eq!(
+            activity_id("gitea:home:issue:me/app#3"),
+            "gitea:home:issue:me/app#3"
+        );
     }
 
     #[test]

@@ -61,6 +61,40 @@ pub struct Repository {
     pub name: String,
 }
 
+/// One discussion of `GET .../pullRequests/{id}/threads`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Thread {
+    pub id: u64,
+    pub is_deleted: bool,
+    pub comments: Vec<Comment>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Comment {
+    pub id: u64,
+    pub author: Identity,
+    pub content: String,
+    /// `text` for people; `system` for votes, pushes and status changes.
+    pub comment_type: String,
+    pub is_deleted: bool,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Identity {
+    pub id: String,
+    pub display_name: String,
+}
+
+/// `GET _apis/connectionData`: who the token belongs to.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ConnectionData {
+    pub authenticated_user: Identity,
+}
+
 /// `GET {project}/_apis/build/builds/{id}/timeline`.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]

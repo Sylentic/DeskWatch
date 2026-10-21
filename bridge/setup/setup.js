@@ -371,7 +371,7 @@
   function addBar(d) {
     var bar = el('section', 'card addbar');
     bar.appendChild(el('h2', null, 'Add a source'));
-    var kind = el('select');
+    var kind = el('select'); kind.dataset.keep = 'add-kind';
     Object.keys(FORMS).forEach(function (k) { if (k === 'mqtt') return; var o = el('option', null, KIND[k]); o.value = k; kind.appendChild(o); });
     var go = el('button', null, 'Add');
     go.type = 'button'; go.addEventListener('click', function () { openForm(kind.value, null); });
@@ -510,7 +510,7 @@
       card.appendChild(el('p', 'muted', 'The dashboard is off ([kiosk] enabled in bridge.toml).'));
       return card;
     }
-    var choice = el('select');
+    var choice = el('select'); choice.dataset.keep = 'host-view';
     [['detailed', 'Detailed: a list of hosts with the chosen host in detail next to it (tap a host to switch)'],
      ['compact', 'Compact: one table of all hosts, with uptime and network rates']].forEach(function (o) {
       var opt = el('option', null, o[1]);
@@ -783,24 +783,61 @@
     var a = access.account;
     if (!a) { card.appendChild(el('p', 'muted', 'Only the administrator can change the access settings.')); return card; }
     var dl = el('dl');
-    row(dl, 'Administrator', a.admin);
-    row(dl, 'Viewer password', a.viewer_password ? 'set (user name "viewer")' : 'not set');
+    row(dl, 'Users', String(a.users.length));
     row(dl, 'Signed-in browsers', String(a.sessions));
     card.appendChild(dl);
 
-    card.appendChild(accessForm('Change the administrator password', [
-      labelled('Current password', input('password', 'current', 'current-password')),
-      labelled('New password (at least ' + min + ' characters)', input('password', 'new', 'new-password'))
-    ], 'Change password', function (f) {
-      accessCall('api/auth/password', { current: f.current.value, new: f.new.value }, 'The password is changed.');
+    var ROLE_NAMES = { admin: 'Administrator', operator: 'Operator', viewer: 'Viewer' };
+    card.appendChild(el('h3', null, 'Users'));
+    card.appendChild(el('p', 'muted', 'A viewer can look at the dashboard. An operator can also dismiss alerts and failed runs. An administrator can do everything, including this page. A new user gets the password you choose and must replace it at the first sign-in.'));
+    a.users.forEach(function (u) {
+      var line = el('div', 'secret');
+      var left = el('span'); left.appendChild(document.createTextNode(u.name));
+      left.appendChild(el('br'));
+      left.appendChild(el('small', null, (ROLE_NAMES[u.role] || u.role) + (u.must_change ? ', has to choose a new password' : '')));
+      line.appendChild(left);
+      var role = el('select'); role.setAttribute('aria-label', 'Role of ' + u.name);
+      ['viewer', 'operator', 'admin'].forEach(function (r) {
+        var op = el('option', null, ROLE_NAMES[r]); op.value = r; if (r === u.role) op.selected = true; role.appendChild(op);
+      });
+      role.addEventListener('change', function () {
+        accessCall('api/auth/user/role', { name: u.name, role: role.value }, 'The role is changed.');
+      });
+      line.appendChild(role);
+      var reset = el('button', 'secondary', 'New password'); reset.type = 'button';
+      reset.addEventListener('click', function () { ask('userpw:' + u.name); });
+      line.appendChild(reset);
+      var del = el('button', 'secondary danger', 'Delete'); del.type = 'button';
+      del.addEventListener('click', function () { ask('userdel:' + u.name); });
+      line.appendChild(del);
+      card.appendChild(line);
+      if (confirming === 'userdel:' + u.name) card.appendChild(confirmBox('userdel:' + u.name, 'Remove ' + u.name + '?',
+        'They are signed out right away.', 'Yes, remove',
+        function () { accessCall('api/auth/user/delete', { name: u.name }, 'The user is removed.'); }));
+      if (confirming === 'userpw:' + u.name) {
+        card.appendChild(accessForm('New password for ' + u.name, [
+          el('p', 'muted', 'They are signed out and must replace it at the next sign-in.'),
+          labelled('Password (at least ' + min + ' characters)', input('password', 'password', 'new-password'))
+        ], 'Set password', function (f) {
+          confirming = null;
+          accessCall('api/auth/user/password', { name: u.name, password: f.password.value }, 'The password is changed.');
+        }));
+      }
+    });
+    var newRole = el('select'); newRole.name = 'role'; newRole.dataset.keep = 'new-user-role';
+    [['viewer', 'Viewer (the dashboard only)'], ['operator', 'Operator (also dismiss alerts and failed runs)'], ['admin', 'Administrator (everything)']].forEach(function (o) {
+      var op = el('option', null, o[1]); op.value = o[0]; if (o[0] === 'operator') op.selected = true; newRole.appendChild(op);
+    });
+    card.appendChild(accessForm('New user', [
+      labelled('User name', input('text', 'name', 'off')),
+      labelled('Role', newRole),
+      labelled('Password (at least ' + min + ' characters, they replace it at the first sign-in)', input('password', 'password', 'new-password'))
+    ], 'Create user', function (f) {
+      accessCall('api/auth/user', { name: f.name.value, role: f.role.value, password: f.password.value }, 'The user is created.');
     }));
-
-    card.appendChild(accessForm('Viewer password', [
-      el('p', 'muted', 'Optional. Lets a colleague or a screen open the dashboard (user name "viewer") but not this page and not change anything. Leave it empty to remove it.'),
-      labelled('Viewer password', input('password', 'password', 'new-password'))
-    ], a.viewer_password ? 'Change or remove' : 'Set viewer password', function (f) {
-      accessCall('api/auth/viewer', { password: f.password.value }, f.password.value ? 'The viewer password is set.' : 'The viewer password is removed.');
-    }));
+    var me = el('p', 'muted'); var meLink = el('a', null, 'My account'); meLink.href = '/account';
+    me.appendChild(document.createTextNode('To change your own password: ')); me.appendChild(meLink); me.appendChild(document.createTextNode('.'));
+    card.appendChild(me);
 
     var out = el('button', 'secondary', 'Sign out everywhere'); out.type = 'button';
     out.addEventListener('click', function () {
@@ -822,7 +859,7 @@
       line.appendChild(del);
       card.appendChild(line);
     });
-    var scope = el('select'); scope.name = 'scope';
+    var scope = el('select'); scope.name = 'scope'; scope.dataset.keep = 'new-key-scope';
     [['alert', 'alert (send alerts)'], ['viewer', 'viewer (open the dashboard)']].forEach(function (o) {
       var op = el('option', null, o[1]); op.value = o[0]; scope.appendChild(op);
     });
@@ -862,7 +899,7 @@
       var n = el('p', oauthNote.error ? 'err' : 'banner', oauthNote.error || oauthNote.ok);
       n.setAttribute('role', 'status'); card.appendChild(n);
     }
-    card.appendChild(el('p', 'muted', 'Let people sign in with GitHub or Microsoft. Nobody gets in by default: list who is allowed. A person who matches an administrator rule is an administrator, anyone else who is allowed can only look. The local administrator password always keeps working. The sign-in needs the public address below, over HTTPS.'));
+    card.appendChild(el('p', 'muted', 'Let people sign in with GitHub or Microsoft. Nobody gets in by default: list who is allowed. A person who matches an administrator rule is an administrator, one who matches an operator rule can also dismiss alerts and failed runs, and anyone else who is allowed can only look. With several matches the highest role wins. The local administrator password always keeps working. The sign-in needs the public address below, over HTTPS.'));
     var g = oauth.github, m = oauth.microsoft;
     var url = input('text', 'public_url'); url.value = oauth.public_url || ''; url.placeholder = 'https://deskwatch.example.org';
     var gOn = el('input'); gOn.type = 'checkbox'; gOn.checked = !!g;
@@ -881,10 +918,13 @@
     f.appendChild(labelled('Client ID', gid));
     f.appendChild(labelled('Client secret (never shown again)', gsec));
     var gUsers = textarea('g_users', 3, g && g.users), gOrgs = textarea('g_orgs', 2, g && g.orgs), gTeams = textarea('g_teams', 3, g && g.teams);
+    var gOU = textarea('g_ou', 2, g && g.operator_users), gOT = textarea('g_ot', 2, g && g.operator_teams);
     var gAU = textarea('g_au', 2, g && g.admin_users), gAT = textarea('g_at', 2, g && g.admin_teams);
     f.appendChild(labelled('Allowed users (GitHub user names, one per line)', gUsers));
     f.appendChild(labelled('Allowed organisations (one per line)', gOrgs));
     f.appendChild(labelled('Allowed teams (organisation/team, one per line)', gTeams));
+    f.appendChild(labelled('Operators: users', gOU));
+    f.appendChild(labelled('Operators: teams (organisation/team)', gOT));
     f.appendChild(labelled('Administrators: users', gAU));
     f.appendChild(labelled('Administrators: teams (organisation/team)', gAT));
     f.appendChild(el('p', 'muted', 'Organisations and teams are only visible if the organisation approves this OAuth app (GitHub, Organization settings, Third-party access). Personal users always work.'));
@@ -896,10 +936,12 @@
     var mid = input('text', 'm_id'); mid.value = m ? m.client_id : '';
     var msec = input('password', 'm_secret', 'new-password'); msec.placeholder = m && m.secret_set ? '(set, leave empty to keep)' : '';
     var mg = textarea('m_groups', 3, m && m.groups), mag = textarea('m_admin', 2, m && m.admin_groups);
+    var mog = textarea('m_op', 2, m && m.operator_groups);
     f.appendChild(labelled('Directory (tenant) ID', mt));
     f.appendChild(labelled('Application (client) ID', mid));
     f.appendChild(labelled('Client secret (never shown again)', msec));
     f.appendChild(labelled('Allowed groups (Object Id of each group, one per line)', mg));
+    f.appendChild(labelled('Operator groups (Object Id)', mog));
     f.appendChild(labelled('Administrator groups (Object Id)', mag));
 
     var b = el('button', null, 'Save'); b.type = 'submit'; f.appendChild(b);
@@ -907,9 +949,9 @@
       ev.preventDefault();
       var body = { public_url: url.value.trim() || null, github: null, microsoft: null };
       if (gOn.checked) body.github = { client_id: gid.value, secret: gsec.value || null, users: lines(gUsers.value),
-        orgs: lines(gOrgs.value), teams: lines(gTeams.value), admin_users: lines(gAU.value), admin_teams: lines(gAT.value) };
+        orgs: lines(gOrgs.value), teams: lines(gTeams.value), operator_users: lines(gOU.value), operator_teams: lines(gOT.value), admin_users: lines(gAU.value), admin_teams: lines(gAT.value) };
       if (mOn.checked) body.microsoft = { tenant: mt.value, client_id: mid.value, secret: msec.value || null,
-        groups: lines(mg.value), admin_groups: lines(mag.value) };
+        groups: lines(mg.value), operator_groups: lines(mog.value), admin_groups: lines(mag.value) };
       b.disabled = true;
       post('api/auth/oauth', body).then(function (j) {
         oauthNote = j.error ? { error: j.error } : { ok: 'Saved. The sign-in buttons are on the login page now.' };
@@ -928,7 +970,28 @@
     return SECTIONS.indexOf(id) >= 0 ? id : 'sources';
   }
 
+  // The page is redrawn every few seconds. A drop-down marked with
+  // `data-keep` that the user changed but did not save yet keeps its choice
+  // across a redraw, instead of jumping back to the first or saved value.
+  // (Drop-downs that save on change, such as a user's role, are not marked.)
+  function keptChoices() {
+    var kept = {};
+    app.querySelectorAll('select[data-keep]').forEach(function (s) {
+      if (s.value !== s.dataset.initial) kept[s.dataset.keep] = s.value;
+    });
+    return kept;
+  }
+  function restoreChoices(kept) {
+    app.querySelectorAll('select[data-keep]').forEach(function (s) {
+      var want = kept[s.dataset.keep];
+      var has = want != null && Array.prototype.some.call(s.options, function (o) { return o.value === want; });
+      s.dataset.initial = s.value;
+      if (has && !s.disabled) s.value = want;
+    });
+  }
+
   function render(d) {
+    var kept = keptChoices();
     last = d;
     document.getElementById('build').textContent = 'version ' + d.build;
     document.getElementById('dashboard-link').hidden = !d.kiosk;
@@ -972,14 +1035,17 @@
                            access: accessSection, signin: signinSection, bridge: bridgeSection, secrets: secretsSection })[section](d));
     layout.appendChild(content);
     app.appendChild(layout);
+    restoreChoices(kept);
   }
 
   window.addEventListener('hashchange', function () { form = null; confirming = null; if (last) render(last); });
 
   function load() {
     clearTimeout(timer);
-    // A refresh would redraw (and lose the focus of) a form being filled in.
-    var typing = document.activeElement && app.contains(document.activeElement) && document.activeElement.tagName === 'INPUT';
+    // A refresh would redraw (and lose the focus of) a form being filled in,
+    // or close a drop-down that is open.
+    var active = document.activeElement;
+    var typing = active && app.contains(active) && ['INPUT', 'SELECT', 'TEXTAREA'].indexOf(active.tagName) >= 0;
     if ((typing || form) && !(form && form.busy) && !restarting) { timer = setTimeout(load, REFRESH_MS); return Promise.resolve(); }
     return fetch('api/setup/status', { cache: 'no-store', credentials: 'same-origin' }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);

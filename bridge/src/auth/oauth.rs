@@ -61,6 +61,9 @@ pub struct Github {
     pub orgs: Vec<String>,
     /// `org/team-slug`
     pub teams: Vec<String>,
+    /// May dismiss and mute (the operator role), without being an administrator.
+    pub operator_users: Vec<GhUser>,
+    pub operator_teams: Vec<String>,
     pub admin_users: Vec<GhUser>,
     pub admin_teams: Vec<String>,
 }
@@ -72,6 +75,7 @@ pub struct Microsoft {
     pub tenant: String,
     pub client_id: String,
     pub groups: Vec<String>,
+    pub operator_groups: Vec<String>,
     pub admin_groups: Vec<String>,
 }
 
@@ -217,7 +221,12 @@ impl Config {
             if g.client_id.trim().is_empty() || g.client_id.len() > 100 {
                 bail!("GitHub needs a client id");
             }
-            for team in g.teams.iter().chain(&g.admin_teams) {
+            for team in g
+                .teams
+                .iter()
+                .chain(&g.operator_teams)
+                .chain(&g.admin_teams)
+            {
                 let ok = team
                     .split_once('/')
                     .is_some_and(|(o, t)| valid_name(o) && valid_name(t));
@@ -228,10 +237,10 @@ impl Config {
             if g.orgs.iter().any(|o| !valid_name(o)) {
                 bail!("a GitHub organisation name may use letters, digits, - . _");
             }
-            if [&g.users, &g.admin_users]
+            if [&g.users, &g.operator_users, &g.admin_users]
                 .iter()
                 .any(|l| l.len() > MAX_LIST)
-                || [&g.orgs, &g.teams, &g.admin_teams]
+                || [&g.orgs, &g.teams, &g.operator_teams, &g.admin_teams]
                     .iter()
                     .any(|l| l.len() > MAX_LIST)
             {
@@ -249,12 +258,13 @@ impl Config {
             }
             if m.groups
                 .iter()
+                .chain(&m.operator_groups)
                 .chain(&m.admin_groups)
                 .any(|g| !valid_guid(g))
             {
                 bail!("a Microsoft group is written as its Object Id (a GUID)");
             }
-            if m.groups.len() + m.admin_groups.len() > MAX_GROUPS {
+            if m.groups.len() + m.operator_groups.len() + m.admin_groups.len() > MAX_GROUPS {
                 bail!("at most {MAX_GROUPS} groups in total");
             }
         }
@@ -286,6 +296,11 @@ pub fn decide_github(cfg: &Github, who: &GithubIdentity) -> Option<Role> {
     if admin {
         return Some(Role::Admin);
     }
+    // The highest role of any matching rule wins.
+    if cfg.operator_users.iter().any(|u| u.id == who.id) || any_in(&who.teams, &cfg.operator_teams)
+    {
+        return Some(Role::Operator);
+    }
     let allowed = cfg.users.iter().any(|u| u.id == who.id)
         || any_in(&who.orgs, &cfg.orgs)
         || any_in(&who.teams, &cfg.teams);
@@ -298,6 +313,9 @@ pub fn decide_microsoft(cfg: &Microsoft, member_of: &[String]) -> Option<Role> {
     let member_of: Vec<String> = member_of.iter().map(|g| g.to_ascii_lowercase()).collect();
     if any_in(&member_of, &cfg.admin_groups) {
         return Some(Role::Admin);
+    }
+    if any_in(&member_of, &cfg.operator_groups) {
+        return Some(Role::Operator);
     }
     any_in(&member_of, &cfg.groups).then_some(Role::Viewer)
 }
@@ -679,7 +697,12 @@ impl OAuth {
             .or(claims["preferred_username"].as_str())
             .unwrap_or("?")
             .to_string();
-        let wanted: Vec<&String> = cfg.groups.iter().chain(&cfg.admin_groups).collect();
+        let wanted: Vec<&String> = cfg
+            .groups
+            .iter()
+            .chain(&cfg.operator_groups)
+            .chain(&cfg.admin_groups)
+            .collect();
         let member_of: Vec<String> = if wanted.is_empty() {
             Vec::new()
         } else {

@@ -36,7 +36,7 @@ enum Built {
     Github(Github),
     Gitlab(Gitlab),
     Bitbucket(Bitbucket),
-    AzureDevops(AzureDevops),
+    AzureDevops(Box<AzureDevops>),
     Prometheus(Prometheus),
 }
 
@@ -47,7 +47,7 @@ impl Built {
             Built::Github(s) => source::spawn(s, tx),
             Built::Gitlab(s) => source::spawn(s, tx),
             Built::Bitbucket(s) => source::spawn(s, tx),
-            Built::AzureDevops(s) => source::spawn(s, tx),
+            Built::AzureDevops(s) => source::spawn(*s, tx),
             Built::Prometheus(s) => source::spawn(s, tx),
         }
     }
@@ -102,7 +102,7 @@ fn wanted(config: &Config) -> Vec<Wanted> {
         out.push(Wanted {
             id: SourceId::new("azure_devops", &c.name),
             fingerprint: format!("{c:?}"),
-            build: Box::new(move |_| Ok(Built::AzureDevops(AzureDevops::new(&c)?))),
+            build: Box::new(move |_| Ok(Built::AzureDevops(Box::new(AzureDevops::new(&c)?)))),
         });
     }
     for c in &config.source.prometheus {

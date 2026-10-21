@@ -40,7 +40,7 @@ Use an access token that can only read. Bitbucket is phasing out app passwords, 
    plan offers). A repository token is the tidiest: it can only see that repository.
 2. Give it a name and an expiry date you will remember. When the token lapses the panel shows the `warn` badge.
 3. Rights: **Pull requests: Read** and **Pipelines: Read**. Add **Runners: Read** only if you want the `runners`
-   widget. Nothing with Write or Admin.
+   widget, and **Issues: Read** for new issues in the alerts list. Nothing with Write or Admin.
 4. Create the token and copy it once; Bitbucket does not show it again.
 
 The token is sent as a bearer token. A token only sees the repositories it was made for, and a repository it
@@ -73,6 +73,7 @@ repos = ["your-workspace/repo-a", "your-workspace/repo-b"]
 | `job_poll_s` | 10 | Seconds between step polls while a pipeline is in progress. |
 | `interrupt` | `true` | May a running pipeline and a finished run take over the ESP screen? `true`, `false` or a list of repositories. |
 | `notify_new_prs` | `true` | Flash "New PR" for a new non-draft pull request. |
+| `alert_new_issues` | `true` | Put a new issue in the alerts list until it is dismissed. Only for repositories with the issue tracker on, and the token needs **Issues: Read**. One extra request per repository per poll; issues that existed at startup do not alert. |
 | `runners` | none | Runner lists for the kiosk `runners` widget. |
 | `runner_poll_s` | 300 | Seconds between runner polls. |
 | `alias` | none | Short panel labels, such as `{ "your-workspace/repo-a" = "A" }`. |

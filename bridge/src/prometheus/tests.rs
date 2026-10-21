@@ -74,6 +74,18 @@ async fn mock_prometheus(queries: &Queries, mock: Arc<Mock>) -> String {
             include_str!("testdata/disk_pct.json"),
         ),
         (
+            queries.gpu_pct.clone(),
+            include_str!("testdata/gpu_pct.json"),
+        ),
+        (
+            queries.gpu_mem_pct.clone(),
+            include_str!("testdata/gpu_mem_pct.json"),
+        ),
+        (
+            queries.gpu_temp_c.clone(),
+            include_str!("testdata/gpu_temp_c.json"),
+        ),
+        (
             queries.uptime_s.clone(),
             include_str!("testdata/uptime_s.json"),
         ),
@@ -145,6 +157,9 @@ async fn collects_stats_for_every_host() {
     assert_eq!(stats.load, Some([0.42, 0.38, 0.3]));
     assert_eq!(stats.ram_pct, Some(62.3));
     assert_eq!(stats.disk_pct, Some(41.8));
+    assert_eq!(stats.gpu_pct, Some(73.0));
+    assert_eq!(stats.gpu_mem_pct, Some(41.3));
+    assert_eq!(stats.gpu_temp_c, Some(66.4));
     assert_eq!(stats.uptime_s, Some(1_234_567));
     let net = stats.net.as_ref().unwrap();
     assert_eq!(net.iface, "eth0", "the busiest device wins");
@@ -158,7 +173,7 @@ async fn collects_stats_for_every_host() {
     assert_eq!(nas.stats.net, None);
 
     // One query per field, not per host, and the token went with each.
-    assert_eq!(mock.queries.lock().unwrap().len(), 11);
+    assert_eq!(mock.queries.lock().unwrap().len(), 14);
     assert!(
         mock.auth
             .lock()
@@ -301,7 +316,7 @@ async fn skips_container_query_without_expectations() {
     let url = mock_prometheus(&queries, mock.clone()).await;
     let api = HttpApi::new(&url, None).unwrap();
     let report = collect(&api, &queries, &config.hosts).await.unwrap();
-    assert_eq!(mock.queries.lock().unwrap().len(), 10);
+    assert_eq!(mock.queries.lock().unwrap().len(), 13);
     // Only the dead host is down.
     assert_eq!(report.down.len(), 1);
     assert!(mock.auth.lock().unwrap().iter().all(Option::is_none));

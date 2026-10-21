@@ -27,6 +27,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+
+use crate::alerts::{IssueWatch, NewIssue};
 use tokio::time::{Instant, MissedTickBehavior};
 use tracing::{debug, info, warn};
 
@@ -38,7 +40,7 @@ use crate::gitea::{job_kind, step_progress};
 use crate::model::{JobData, MAX_TITLE_CHARS, truncate};
 use crate::source::{self, FactSink, Health, Interrupt, Source, SourceId, unix_now};
 use api::HttpApi;
-use payload::{Job, PullRequest, WorkflowRun};
+use payload::{Issue, Job, PullRequest, WorkflowRun};
 
 /// Adapter type: `[[source.github]]` in the config and `source` on panel pages.
 pub const KIND: &str = "github";
@@ -93,7 +95,8 @@ impl Source for Github {
             config.notify_new_prs,
             unix_now(),
         )
-        .with_api_base(&config.base_url);
+        .with_api_base(&config.base_url)
+        .with_issue_alerts(config.alert_new_issues);
 
         let mut next_poll = Instant::now();
         let mut failures = 0;
@@ -173,6 +176,15 @@ async fn poll_repo(api: &HttpApi, state: &mut GithubState, repo: &str) -> Vec<Up
     };
     debug!(%repo, open = pulls.len(), "polled open PRs");
     out.extend(state.on_pulls(repo, pulls, unix_now()));
+
+    // New issues only add alerts: a repository with issues switched off
+    // answers 410, which must not mark the source as broken.
+    if state.alert_new_issues {
+        match api.recent_issues(repo).await {
+            Ok(issues) => out.extend(state.on_issues(repo, issues)),
+            Err(err) => debug!(%repo, "cannot poll GitHub issues: {err:#}"),
+        }
+    }
 
     let runs = match api.runs(repo).await {
         Ok(runs) => runs,
@@ -288,6 +300,10 @@ pub struct GithubState {
     interrupt: Interrupt,
     alias: BTreeMap<String, String>,
     notify_new_prs: bool,
+    /// Raise an alert for each new issue.
+    alert_new_issues: bool,
+    /// Issue numbers seen, for "new issue" alerts.
+    issues: IssueWatch,
     /// Unix seconds when the source started. Runs that finished before then
     /// show on the pipelines page and in the badge, but do not take over
     /// the screen: they are old news after a bridge restart.
@@ -324,6 +340,8 @@ impl GithubState {
             interrupt,
             alias,
             notify_new_prs,
+            alert_new_issues: false,
+            issues: IssueWatch::default(),
             since,
             known_pulls: HashMap::new(),
             runs: HashMap::new(),
@@ -333,6 +351,33 @@ impl GithubState {
             web: String::new(),
             health: BTreeMap::new(),
         }
+    }
+
+    /// Raise an alert for each new issue (`alert_new_issues`).
+    pub fn with_issue_alerts(mut self, on: bool) -> Self {
+        self.alert_new_issues = on;
+        self
+    }
+
+    /// The newest open issues of one repository from a poll: an alert for
+    /// each issue above the highest number seen before.
+    pub fn on_issues(&mut self, repo: &str, issues: Vec<Issue>) -> Vec<Update> {
+        let issues = issues
+            .into_iter()
+            .filter(|i| i.pull_request.is_none())
+            .map(|i| NewIssue {
+                number: i.number,
+                title: i.title,
+                url: i.html_url,
+                by: i.user.map(|u| u.login),
+            })
+            .collect();
+        let label = source::label(&self.alias, repo);
+        self.issues
+            .check(&self.id.to_string(), KIND, repo, &label, issues)
+            .into_iter()
+            .map(|alert| Update::Alert { alert })
+            .collect()
     }
 
     /// Give the kiosk links to runner settings, from the API address.

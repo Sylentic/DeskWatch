@@ -8,6 +8,48 @@ hardware yet, and its MQTT schema (v2) may still change or the display may be dr
 
 ## [Unreleased]
 
+## [1.0.2]
+
+### Added
+
+- **GPU usage, VRAM and GPU temperature on the host card** (#115). Prometheus hosts read them from the NVIDIA DCGM
+  exporter by default, and `gpu_pct`, `gpu_mem_pct` and `gpu_temp_c` can be replaced under `queries`. The bridge machine
+  reads AMD GPUs from sysfs. The rows only show for hosts that report a GPU. Intel and NVIDIA on the bridge machine
+  itself need a Prometheus host.
+- **New issues and new PR comments in the alerts list** (#118). GitHub, GitLab and Bitbucket (polled) and Gitea (the
+  **Issues** webhook event) add a new issue (Bitbucket: issue tracker on, token with **Issues: Read**); Azure DevOps adds a new comment on an open PR, skipping your own. They show as info alerts with the
+  source's mark, link to the issue or PR, and stay until dismissed (or a week). Existing issues and comments do not
+  alert at startup. `alert_new_issues = false` or `alert_pr_comments = false` turns them off per source.
+- **Azure DevOps can sign in as a Microsoft Entra service principal** instead of a personal access token:
+  `auth = "entra"` with `tenant_id`, `client_id` and `client_secret_file`. The bridge fetches a short-lived token with
+  the client-credentials flow, keeps it in memory, renews it before it expires and once when Azure DevOps refuses it.
+  Nothing changes for existing `token_file` setups. Tested against mock Entra and Azure DevOps answers only. Research
+  and the other options (managed identity, Entra OAuth, GitLab, Bitbucket, GitHub) in `docs/azure-devops-auth.md` and
+  `docs/git-hosts.md`.
+- **A bridge that only reads Azure DevOps (or only GitHub Enterprise) is documented**, and without `[[rotation]]` blocks
+  the ESP rotation now adds the PR and pipeline pages when a Git host is configured.
+- **Several users with their own role.** Setup › Access now lists local users. A **viewer** looks at the dashboard, a new
+  **operator** may also dismiss alerts and failed runs, an **administrator** can do everything, including Setup, users
+  and keys. A new user gets a password the administrator chooses and replaces it at the first sign-in; everyone has a
+  **My account** page (`/account`) to change their own password. The last administrator cannot be removed or lowered.
+- **A role per sign-in rule.** GitHub and Microsoft sign-in got operator users, teams and groups next to the existing
+  viewer and administrator rules. With several matches the highest role wins.
+
+### Changed
+
+- **Info alerts are plain rows in the dashboard's Alerts card**, without the blue box. Warnings and critical alerts
+  keep their amber and red boxes.
+
+- An existing `auth.toml` is read as before: the administrator and the viewer password become the first two users
+  (the viewer keeps the user name `viewer`). Without a password nothing changes.
+- The single "viewer password" box is gone from Setup; add a viewer user instead.
+
+### Fixed
+
+- **Drop-downs on the setup page no longer jump back** to their first or saved value when the page refreshes itself
+  every few seconds (#120), for example the source type under "Add a source". A refresh also waits while a drop-down
+  is open.
+
 ## [1.0.1]
 
 ### Fixed

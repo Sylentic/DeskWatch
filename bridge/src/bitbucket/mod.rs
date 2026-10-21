@@ -29,6 +29,7 @@ use anyhow::{Context, Result};
 use tokio::time::{Instant, MissedTickBehavior};
 use tracing::{debug, info, warn};
 
+use crate::alerts::{IssueWatch, NewIssue};
 use crate::ci::{OpenPull, RepoPulls, Run, RunStatus, RunningJob, Update};
 use crate::config::BitbucketConfig;
 use crate::gitea::job_kind;
@@ -36,7 +37,7 @@ use crate::gitea::payload::unix_seconds;
 use crate::model::{JobData, MAX_TITLE_CHARS, truncate};
 use crate::source::{self, FactSink, Health, Interrupt, Source, SourceId, unix_now};
 use api::HttpApi;
-use payload::{Pipeline, PullRequest, Step};
+use payload::{Issue, Pipeline, PullRequest, Step};
 use runners::RunnerScope;
 
 /// Adapter type: `[[source.bitbucket]]` in the config and `source` on panel pages.
@@ -95,7 +96,8 @@ impl Source for Bitbucket {
             config.notify_new_prs,
             unix_now(),
         )
-        .with_api_base(&config.base_url);
+        .with_api_base(&config.base_url)
+        .with_issue_alerts(config.alert_new_issues);
 
         let mut next_poll = Instant::now();
         let mut failures = 0;
@@ -167,6 +169,15 @@ async fn poll_repo(api: &HttpApi, state: &mut BitbucketState, repo: &str) -> Vec
     };
     debug!(%repo, open = pulls.len(), "polled open pull requests");
     out.extend(state.on_pulls(repo, pulls, total, unix_now()));
+
+    // New issues only add alerts: a failure here (issues switched off, a
+    // token without the right) must not mark the source as broken.
+    if state.alert_new_issues {
+        match api.recent_issues(repo).await {
+            Ok(issues) => out.extend(state.on_issues(repo, issues)),
+            Err(err) => debug!(%repo, "cannot poll issues: {err:#}"),
+        }
+    }
 
     let pipelines = match api.pipelines(repo).await {
         Ok(pipelines) => pipelines,
@@ -267,6 +278,10 @@ pub struct BitbucketState {
     interrupt: Interrupt,
     alias: BTreeMap<String, String>,
     notify_new_prs: bool,
+    /// Raise an alert for each new issue.
+    alert_new_issues: bool,
+    /// Issue numbers seen, for "new issue" alerts.
+    issues: IssueWatch,
     /// Unix seconds when the source started. Pipelines that finished before
     /// then show on the pipelines page and in the badge, but do not take over
     /// the screen: they are old news after a bridge restart.
@@ -299,6 +314,8 @@ impl BitbucketState {
             interrupt,
             alias,
             notify_new_prs,
+            alert_new_issues: false,
+            issues: IssueWatch::default(),
             since,
             known_pulls: HashMap::new(),
             runs: HashMap::new(),
@@ -307,6 +324,32 @@ impl BitbucketState {
             web: String::new(),
             health: BTreeMap::new(),
         }
+    }
+
+    /// Raise an alert for each new issue (`alert_new_issues`).
+    pub fn with_issue_alerts(mut self, on: bool) -> Self {
+        self.alert_new_issues = on;
+        self
+    }
+
+    /// The newest issues of one repo from a poll: an alert for each
+    /// issue above the highest number seen before.
+    pub fn on_issues(&mut self, repo: &str, issues: Vec<Issue>) -> Vec<Update> {
+        let issues = issues
+            .into_iter()
+            .map(|i| NewIssue {
+                number: i.id,
+                title: i.title,
+                url: i.links.html.href,
+                by: i.reporter.map(|a| a.display_name),
+            })
+            .collect();
+        let label = source::label(&self.alias, repo);
+        self.issues
+            .check(&self.id.to_string(), KIND, repo, &label, issues)
+            .into_iter()
+            .map(|alert| Update::Alert { alert })
+            .collect()
     }
 
     /// Give the cards links to the pipeline pages, from the API address.

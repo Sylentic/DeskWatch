@@ -26,13 +26,15 @@ use anyhow::{Context, Result};
 use tokio::sync::{mpsc, watch};
 use tracing::{debug, info};
 
+use crate::alerts::{self, AlertMessage};
 use crate::ci::{OpenPull, RepoPulls, Run, RunStatus, RunningJob, Update};
 use crate::config::GiteaConfig;
 use crate::hooks::Hooks;
 use crate::model::{JobData, JobKind, MAX_TITLE_CHARS, truncate};
 use crate::source::{self, FactSink, Health, Interrupt, Source, SourceId, unix_now};
 use payload::{
-    Job, PullRequestEvent, WorkflowJobEvent, WorkflowRunEvent, unix_seconds, workflow_file,
+    IssueEvent, Job, PullRequestEvent, WorkflowJobEvent, WorkflowRunEvent, unix_seconds,
+    workflow_file,
 };
 
 /// Adapter type: `[[source.gitea]]` in the config and `source` on panel pages.
@@ -44,6 +46,7 @@ pub enum GiteaEvent {
     WorkflowRun(WorkflowRunEvent),
     WorkflowJob(WorkflowJobEvent),
     PullRequest(PullRequestEvent),
+    Issue(IssueEvent),
     /// Fresh job state from the jobs API, for step progress.
     JobPolled {
         repo: String,
@@ -140,8 +143,9 @@ impl Source for Gitea {
             api, polling, jobs_rx, events_tx,
         )));
 
-        let mut state =
-            GiteaState::new(id, config.interrupt, config.alias).with_web(&config.base_url);
+        let mut state = GiteaState::new(id, config.interrupt, config.alias)
+            .with_web(&config.base_url)
+            .with_issue_alerts(config.alert_new_issues);
         let mut reported = None;
         while let Some(event) = events_rx.recv().await {
             if !sink.facts(state.apply(event, unix_now())).await {
@@ -187,6 +191,8 @@ pub struct GiteaState {
     web: String,
     /// Result of the last PR poll per repository.
     polls: BTreeMap<String, Health>,
+    /// Raise an alert for each new issue.
+    alert_new_issues: bool,
 }
 
 impl GiteaState {
@@ -200,7 +206,14 @@ impl GiteaState {
             failed_steps: HashMap::new(),
             web: String::new(),
             polls: BTreeMap::new(),
+            alert_new_issues: false,
         }
+    }
+
+    /// Raise an alert for each new issue (`alert_new_issues`).
+    pub fn with_issue_alerts(mut self, on: bool) -> Self {
+        self.alert_new_issues = on;
+        self
     }
 
     /// Give the kiosk links to this instance's web pages (`base_url`).
@@ -265,6 +278,7 @@ impl GiteaState {
                 }
             }
             GiteaEvent::PullRequest(event) => self.on_pull_request(event, now, &mut out),
+            GiteaEvent::Issue(event) => self.on_issue(event, &mut out),
             GiteaEvent::RunnersPolled { scope, runners } => out.push(Update::Runners {
                 key: format!("{}:runners:{scope}", self.id),
                 runners: runners
@@ -412,6 +426,36 @@ impl GiteaState {
             started: unix_seconds(job.started_at.as_deref()).unwrap_or(now),
             others: 0,
         }
+    }
+
+    /// A newly opened issue goes to the alerts list. Edits, closes and
+    /// comments are ignored.
+    fn on_issue(&self, event: IssueEvent, out: &mut Vec<Update>) {
+        if !self.alert_new_issues || event.action != "opened" {
+            return;
+        }
+        let repo = &event.repository.full_name;
+        let issue = event.issue;
+        let by = issue
+            .user
+            .map(|u| format!(" by {}", u.login))
+            .unwrap_or_default();
+        let url = issue
+            .html_url
+            .or_else(|| self.repo_url(repo, &["issues", &issue.number.to_string()]));
+        out.push(Update::Alert {
+            alert: AlertMessage::activity(
+                alerts::activity_id(&format!("{}:issue:{repo}#{}", self.id, issue.number)),
+                issue.title,
+                format!(
+                    "New issue #{} in {}{by}",
+                    issue.number,
+                    source::label(&self.alias, repo)
+                ),
+                KIND,
+                url,
+            ),
+        });
     }
 
     fn on_pull_request(&self, event: PullRequestEvent, now: u64, out: &mut Vec<Update>) {
@@ -1017,5 +1061,42 @@ mod tests {
         let progress = step_progress(&all_done);
         assert_eq!(progress.fraction, Some(1.0));
         assert_eq!(progress.step, None);
+    }
+
+    #[test]
+    fn issue_webhook_raises_an_alert_when_opened() {
+        let mut source = state(true)
+            .with_web("https://git.example")
+            .with_issue_alerts(true);
+        let event = |action: &str| {
+            let value = json!({
+                "action": action,
+                "issue": { "number": 7, "title": "login loops", "user": { "login": "dana" } },
+                "repository": repo()
+            });
+            webhook::parse_event("issues", value.to_string().as_bytes())
+                .unwrap()
+                .unwrap()
+        };
+        let updates = source.apply(event("opened"), 100);
+        let [Update::Alert { alert }] = updates.as_slice() else {
+            panic!("one alert expected, got {updates:?}");
+        };
+        assert_eq!(alert.title.as_deref(), Some("login loops"));
+        assert_eq!(
+            alert.message.as_deref(),
+            Some("New issue #7 in demo by dana")
+        );
+        assert_eq!(
+            alert.url.as_deref(),
+            Some("https://git.example/me/demo/issues/7")
+        );
+        assert!(source.apply(event("closed"), 110).is_empty());
+
+        let mut quiet = state(true);
+        assert!(
+            quiet.apply(event("opened"), 100).is_empty(),
+            "off by default in the state"
+        );
     }
 }
