@@ -1,3 +1,0 @@
-# The Xtensa fork of Rust, installed by `espup` (see README.md).
-[toolchain]
-channel = "esp"

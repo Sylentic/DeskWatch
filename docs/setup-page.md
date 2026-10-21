@@ -158,8 +158,6 @@ restart once by hand (`docker compose restart deskwatch-bridge`). It needs the s
 
 ## Not yet
 
-- **Setup on the ESP panel itself** (a setup-mode access point with its own page, for the bridgeless variant) is not
-  built. It waits for the screen and the firmware work on real hardware.
 - The kiosk layout, the rotation and the listen address stay in `bridge.toml`; the page does not edit them.
 - Everything here is tested against mock servers and a fake broker, not against a real GitHub, Azure DevOps or
   Mosquitto.

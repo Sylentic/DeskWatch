@@ -7,7 +7,7 @@ Start with the [project README](../README.md) for what DeskWatch is, a quick dem
 - [docker.md](docker.md): the container, Compose files, the dashboard on a homelab (the easiest start)
 - [install.md](install.md): the whole setup on a Linux server with systemd
 - [raspberry-pi.md](raspberry-pi.md): 64-bit Raspberry Pi OS, a monitor or TV as a wall display
-- [windows.md](windows.md): the release zip, Mosquitto, the simulator
+- [windows.md](windows.md): the release zip, Mosquitto
 - [updates.md](updates.md): the quiet "update available" notice
 
 ## Using the dashboard
@@ -28,16 +28,15 @@ Start with the [project README](../README.md) for what DeskWatch is, a quick dem
 - [gitlab.md](gitlab.md), [bitbucket.md](bitbucket.md), [azure-devops.md](azure-devops.md): setup per source
 - [azure-devops-verify.md](azure-devops-verify.md): checklist for trying Azure DevOps on a real organisation
 
-## Alerts, MQTT and the desk display
+## Alerts and MQTT
 
 - [home-assistant.md](home-assistant.md): alerts from Home Assistant and scripts, `POST /api/alert`
 - [mosquitto.md](mosquitto.md): broker logins, ACL and TLS
-- [mqtt-schema.md](mqtt-schema.md): the contract between bridge and panel, with samples in [schema/](schema/)
-- [firmware README](../firmware/README.md): the firmware and the TLS spike
+- [mqtt-schema.md](mqtt-schema.md): the MQTT topics and the alert message format, with samples in [schema/](schema/)
 
 ## Working on DeskWatch
 
-- [development.md](development.md): running from source, the demo, the dashboard files, the simulator, the firmware,
+- [development.md](development.md): running from source, the demo, the dashboard files,
   the checks before a pull request
 - [releasing.md](releasing.md): how a release is made (for maintainers)
 - [CHANGELOG](../CHANGELOG.md): what changed in each version

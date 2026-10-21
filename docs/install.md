@@ -8,7 +8,7 @@ DeskWatch supports **Linux and Windows** (x86_64 release binaries for both). Pic
 | Windows 10 and 11, Windows Server 2019 or newer | [windows.md](windows.md) covers the programs, Mosquitto, a config, running the bridge as a service and what differs from Linux |
 | Raspberry Pi (64-bit Raspberry Pi OS) | [raspberry-pi.md](raspberry-pi.md) covers the aarch64 release binary with systemd, and the Docker route |
 | Any Linux or Windows machine with Docker | [docker.md](docker.md) covers building the image, a Compose file, secrets as files and reaching the broker; sources, Mosquitto and Home Assistant stay as on this page |
-| A full-size status page in a browser (no ESP panel, no broker) | [docker.md](docker.md#3-the-dashboard-on-your-homelab) for a container on a homelab, [kiosk.md](kiosk.md) for the page itself and a Raspberry Pi with a screen; skip the Mosquitto steps below and set `[mqtt] enabled = false` |
+| A full-size status page in a browser (no broker) | [docker.md](docker.md#3-the-dashboard-on-your-homelab) for a container on a homelab, [kiosk.md](kiosk.md) for the page itself and a Raspberry Pi with a screen; skip the Mosquitto steps below and set `[mqtt] enabled = false` |
 | macOS | Not covered yet; contributions are welcome |
 
 The source setup in [section 5](#5-sources) (Gitea, GitHub, GitLab, Bitbucket Cloud, Azure DevOps, Prometheus), the Mosquitto logins and
@@ -19,8 +19,7 @@ This guide takes a Linux server from nothing to a bridge that publishes pages to
 host name, address, port and name below is a placeholder: replace `gitea.example.com`, `broker.example.lan` and
 friends with your own.
 
-The desk display itself (the ESP32-S3 firmware) is experimental and not part of 1.0, see [the README](../README.md#the-desk-display-experimental).
-Until it exists you can watch everything in the desktop simulator, see [Try it without hardware](#8-try-it-without-hardware).
+You can watch everything on the dashboard without any sources, see [Try it with the demo](#8-try-it-with-the-demo).
 
 What you need:
 
@@ -32,7 +31,7 @@ What you need:
 Contents: [1. Get the binary](#1-get-the-binary) · [2. Install it](#2-install-the-bridge) ·
 [3. Configure](#3-configure-the-bridge) · [4. Mosquitto](#4-mosquitto-logins) · [5. Sources](#5-sources) ·
 [6. Home Assistant](#6-home-assistant) · [7. Start and check](#7-start-and-check) ·
-[8. Try it without hardware](#8-try-it-without-hardware) · [9. Update, roll back, remove](#9-update-roll-back-remove) ·
+[8. Try it with the demo](#8-try-it-with-the-demo) · [9. Update, roll back, remove](#9-update-roll-back-remove) ·
 [10. Troubleshooting](#10-troubleshooting)
 
 Prefer a browser to a text editor for the sources? The optional [setup page](setup-page.md) can add, test and remove
@@ -77,8 +76,7 @@ git checkout v1.0.2             # or dev for the newest code that is not release
 cargo build --release --locked -p deskwatch-bridge
 ```
 
-The binary is `target/release/deskwatch-bridge`. Building only the bridge (`-p deskwatch-bridge`) does not need
-SDL2; that is only for the simulator. The steps below run from the repository root; where Option A says
+The binary is `target/release/deskwatch-bridge`. The steps below run from the repository root; where Option A says
 `./deskwatch-bridge`, use `target/release/deskwatch-bridge`.
 
 ## 2. Install the bridge
@@ -340,20 +338,11 @@ You should see `deskpanel/bridge/status online`, a `deskpanel/badges` message an
 with the stats page that changes every few seconds. To test a Gitea webhook, use "Test delivery" on the webhook in
 Gitea and look for a 2xx answer there; run a workflow to see a job page appear.
 
-## 8. Try it without hardware
+## 8. Try it with the demo
 
-Until the firmware exists, the desktop simulator draws the exact pixels the panel will. On a Linux desktop or
-laptop (not the server) with Rust and SDL2 (`sudo apt install libsdl2-dev`); on Windows the release zip has
-`deskwatch-sim.exe` with SDL2 built in, see [windows.md](windows.md#3-quick-test-the-demo-and-the-simulator):
-
-```sh
-export DESKWATCH_MQTT_PASSWORD='...'    # the panel login's password
-cargo run -p deskwatch-sim -- --host broker.example.lan --user deskwatch-panel
-```
-
-Or play the built-in demo: `deskwatch-bridge --demo` publishes a loop of fake data to a broker on localhost
-(`[mqtt]` from a config file if you pass one), `cargo run -p deskwatch-sim -- --host localhost` shows it. The
-[development.md](development.md#demo-mode) has the details of both.
+`deskwatch-bridge --demo --kiosk` plays a loop of fake data (a running job, a failed run, PRs, an alert) on the
+dashboard page, with no sources and no broker needed. Open `http://localhost:8787/`. The
+[development.md](development.md#demo-mode) has the details.
 
 ## 9. Update, roll back, remove
 

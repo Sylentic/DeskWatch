@@ -42,8 +42,6 @@ The kiosk snapshot has a top-level `runners` list (version stays 1, a page that 
 
 ### What is not built
 
-- **The ESP panel.** A `runners` page and an offline count in the `warn` badge change the MQTT schema, which has a
-  contract with the firmware. That waits until the three sources are in, so the schema is changed once.
 - **"Waiting for runner" on the pipelines page** (a queued run with no online runner that has its label). Best
   effort and label matching differs per system, so it follows the schema change.
 - **Queued jobs per pool** are in for Azure DevOps (section 4), on the `runners` widget only. Gitea and GitHub do

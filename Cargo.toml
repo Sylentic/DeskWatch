@@ -1,8 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["bridge", "sim", "ui"]
-# The firmware needs the Xtensa toolchain, so it builds on its own (see firmware/README.md).
-exclude = ["firmware"]
+members = ["bridge"]
 
 [workspace.package]
 edition = "2024"

@@ -1,13 +1,11 @@
 # The kiosk dashboard (big screens)
 
-The ESP panel shows one page at a time on a 4 inch screen. The **kiosk dashboard** is the other output: one web page
-that shows everything at once, with no rotation, for a monitor or TV (a Raspberry Pi with a browser in kiosk mode, a
+The **kiosk dashboard** is one web page that shows everything at once, for a monitor or TV (a Raspberry Pi with a browser in kiosk mode, a
 wall tablet, or any browser on your desk). It is built into the bridge, so there is nothing extra to install, and
 it works on a LAN with no internet access (no CDN or scripts are loaded from elsewhere; the typefaces, Geist, Geist Mono
 and Space Grotesk, are built into the bridge and served on `/fonts/`, see `bridge/fonts/`).
 
-It reads the same facts as the ESP panel, so the two always agree, but it is its own design: the MQTT schema (v2)
-and the panel do not change, and the page does not need a broker.
+The page does not need a broker.
 
 Contents: [1. What you get](#1-what-you-get) · [2. Turn it on](#2-turn-it-on) ·
 [3. Choose the widgets](#3-choose-the-widgets) · [4. Autostart on a Raspberry Pi](#4-autostart-on-a-raspberry-pi) ·
@@ -73,7 +71,7 @@ shows that host, without one it has arrows (`‹ 1/3 ›`) to step through the h
 ### Failed runs: look and dismiss
 
 The red **failed** counter in the header counts pipelines whose latest finished run failed. It used to stay until the
-pipeline turned green (or until the button on the ESP panel was pressed, which the kiosk does not have), so an old
+pipeline turned green, so an old
 failure could sit there forever. Now the counter is a button: click or tap it for a list with, per failed run, the
 source, project and pipeline, branch, failing step and how long ago, each opening the run on its source in a new tab.
 **Dismiss** removes one run from the list and the counter, **Dismiss all** clears the list. Escape or a click outside
@@ -145,7 +143,7 @@ At the end of the bar the connection state says whether the page gets live data 
 
 ### Run results in the header
 
-Interrupts do not take over the whole screen as they do on the ESP panel, because the other widgets are still
+Interrupts do not take over the whole screen, because the other widgets are still
 useful. The bridge's normal priority decides (critical alert, running job, failed, warning, success, notice), and
 the page shows the winner as a coloured **pill in the header**:
 
@@ -356,7 +354,7 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
   proxy that adds TLS and a login. Do not expose the port to the internet; use a VPN or an authenticating proxy.
   Details in [docker.md](docker.md#protecting-the-page).
 - Names shown come from your sources after their `alias` setting. If a work project name should not appear on a
-  visible screen, give it an alias, exactly as for the ESP panel. The page has no other redaction.
+  visible screen, give it an alias. The page has no other redaction.
 - The page sets a strict Content Security Policy: scripts, styles and fonts only from the bridge itself.
 
 ## 6. When something goes wrong
