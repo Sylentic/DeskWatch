@@ -377,8 +377,8 @@
       var rows = runs.map(function (r) {
         var when = r.status === 'running' ? 'running' : ago(nowS() - (r.finished || r.started));
         var status = runStatus(r.status);
-        var fresh = r.finished && nowS() - r.finished < FRESH_S && (status === 'failed' || status === 'ok') ? ' fresh ' + status : '';
-        return linkOpen(r.url, 'row' + fresh) + dot(status) + src(r.source) +
+        // Every run sits in a box tinted by its status, like the alert boxes.
+        return linkOpen(r.url, 'row rbox ' + status) + dot(status) + src(r.source) +
           '<span class="main">' + esc(r.project) + ' <span class="wf">&middot; ' + esc(r.pipeline) + '</span></span>' +
           '<span class="when">' + when + '</span>' +
           (r.ref || r.step ? '<span class="sub">' + esc(r.ref) + (r.step ? ' &middot; failed at ' + esc(r.step) : '') + '</span>' : '') + linkClose(r.url);

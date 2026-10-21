@@ -465,6 +465,18 @@ button.hostrow:focus-visible { outline: 2px solid var(--blue); outline-offset: -
   color: var(--text); font: inherit; font-size: 1.05rem; line-height: 1; cursor: pointer; }
 .abox .ax:hover { background: rgba(255, 255, 255, .08); }
 
+/* Pipelines card: one box per run, tinted by its status (same shape as the alert boxes). */
+.w-pipelines .rows { gap: 0.45rem; }
+.row.rbox { margin: 0; padding: 0.55rem 0.65rem; border-radius: 0.6rem; background: var(--card-hi); border: 1px solid var(--card-edge); }
+.row.rbox:first-child { border-top-color: var(--card-edge); }
+.row.rbox.ok { background: var(--green-bg); border-color: var(--green-edge); }
+.row.rbox.failed { background: var(--red-bg); border-color: var(--red-edge); }
+.row.rbox.failed .sub, .row.rbox.failed .when { color: var(--red-fg); }
+.row.rbox.running { background: var(--orange-bg); border-color: color-mix(in srgb, var(--orange) 35%, transparent); }
+.row.rbox.review { background: var(--amber-bg); border-color: var(--amber-edge); }
+/* A run that just finished in Running now gets the same green box. */
+.job.done { margin: 0 0 0.45rem; border: 1px solid var(--green-edge); border-radius: 0.6rem; }
+
 /* A row that just changed: tinted for a short while (kiosk.js adds .fresh). */
 .row.fresh.failed, .job.fresh.failed { background: var(--red-tint); }
 .row.fresh.ok, .job.fresh.ok { background: var(--green-bg); }

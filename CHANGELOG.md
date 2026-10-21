@@ -13,6 +13,9 @@ hardware yet, and its MQTT schema (v2) may still change or the display may be dr
 - **Alerts are coloured by severity** in the dashboard's Alerts card and the header Alerts menu: info alerts are blue
   (their box is back, as before 1.0.2), warnings are yellow and critical alerts red. Warning yellow is its own colour,
   apart from orange (running) and amber (waiting for approval).
+- **Pipelines get the same boxes**: every run in the Pipelines card sits in a box tinted by its status (failed red,
+  success green, running orange, waiting for approval amber), and a build that just finished in Running now gets a
+  green box.
 
 ## [1.0.2]
 
