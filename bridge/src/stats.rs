@@ -301,8 +301,8 @@ fn read_gpu() -> GpuStats {
             continue;
         }
         let dev = card.path().join("device");
-        let Some(pct) = read(dev.join("gpu_busy_percent"))
-            .and_then(|t| t.trim().parse::<f32>().ok())
+        let Some(pct) =
+            read(dev.join("gpu_busy_percent")).and_then(|t| t.trim().parse::<f32>().ok())
         else {
             continue;
         };
