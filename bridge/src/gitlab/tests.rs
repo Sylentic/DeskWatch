@@ -63,7 +63,7 @@ fn merge_requests_count_as_pull_requests_with_a_new_mr_flash() {
     );
     assert_eq!(facts.open_pull_count(), 2);
     assert!(facts.candidates().is_empty());
-    assert_eq!(facts.pulls_page().rows[0].sub, "demo #43");
+    assert_eq!(facts.pull_rows().rows[0].sub, "demo #43");
 
     // A new MR appears: one flash. A new draft does not flash but counts.
     let mut mrs = fixture_mrs();
@@ -141,7 +141,7 @@ fn pipelines_fill_the_pipelines_page_with_the_latest_per_name() {
         NOW,
     );
 
-    let page = facts.pipelines_page();
+    let page = facts.pipeline_rows();
     let rows: Vec<(&str, RowStatus)> = page
         .rows
         .iter()
@@ -311,7 +311,7 @@ fn quiet_projects_are_job_polled_but_stay_off_the_esp_screen() {
     apply(&mut facts, updates, NOW + 5);
     assert!(facts.has_job(JOB_KEY));
     assert_eq!(facts.jobs().len(), 1, "the kiosk list sees it");
-    assert!(facts.candidates().is_empty(), "the ESP screen does not");
+    assert!(facts.candidates().is_empty(), "the banner does not");
 }
 
 #[test]
@@ -664,4 +664,37 @@ fn new_issues_raise_alerts_after_the_first_poll() {
         alert.url.as_deref(),
         Some("https://gitlab.example/group/app/-/issues/5")
     );
+}
+
+#[test]
+fn every_job_of_the_pipeline_is_listed_with_its_stage() {
+    let mut source = state(false, 0);
+    let mut facts = CiFacts::default();
+    apply(
+        &mut facts,
+        source.on_runs(PROJECT, fixture_pipelines(), NOW),
+        NOW,
+    );
+    let mut jobs = fixture_jobs();
+    // A failure that is allowed does not count as a failure.
+    jobs[2].status = "failed".into();
+    jobs[2].allow_failure = true;
+    let (updates, _) = source.on_jobs(PROJECT, 1004, jobs, NOW + 5);
+    apply(&mut facts, updates, NOW + 5);
+    let list = facts.run_jobs(JOB_KEY).expect("the pipeline's jobs");
+    let rows: Vec<_> = list
+        .iter()
+        .map(|j| (j.name.as_str(), j.step.as_deref(), j.status))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("lint", Some("build"), RunStatus::Success),
+            ("compile", Some("build"), RunStatus::Success),
+            ("unit", Some("test"), RunStatus::Neutral),
+            ("integration", Some("test"), RunStatus::Running),
+            ("deploy-prod", Some("deploy"), RunStatus::Queued),
+        ]
+    );
+    assert_eq!(facts.jobs()[0].1.group.as_deref(), Some(JOB_KEY));
 }

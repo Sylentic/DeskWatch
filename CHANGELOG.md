@@ -3,10 +3,85 @@
 All notable changes to DeskWatch are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/). From 1.0.0 on, a change that breaks an existing bridge config file or the
-`POST /api/alert` format needs a new major version. The ESP desk display is not part of 1.0: its firmware has not run on
-hardware yet, and its MQTT schema (v2) may still change or the display may be dropped.
+`POST /api/alert` format needs a new major version.
 
 ## [Unreleased]
+
+## [1.0.3]
+
+This release removes the ESP32 desk display (see Removed: a `[[rotation]]` block in `bridge.toml` is now ignored with a
+warning) and makes the dashboard more useful day to day: alerts and pipelines are coloured by status, Running now shows
+every job of a run, and each user can arrange their own dashboard.
+
+### Removed
+
+- **The ESP32 desk display is dropped.** Its firmware never ran on a board, so `firmware/` (with the TLS spike), the
+  panel drawing crate `ui/` and the desktop simulator `sim/` (`deskwatch-sim`, also gone from the Windows zip) are
+  removed, together with the firmware CI job and the SDL2 builds. The last commit that still has them is the one
+  before this change in the history. MQTT stays for alerts (`deskpanel/alert`, Home Assistant).
+- **The bridge no longer talks to an ESP desk panel.** It stops publishing `deskpanel/screen` and `deskpanel/badges`,
+  no longer reads `deskpanel/panel/status` and `deskpanel/panel/event`, and the idle page rotation, the button
+  handling and the page data types behind them are gone. The dashboard is unchanged: the bridge now only decides
+  whether something interrupts the idle page (a running job, a failed or successful run, an alert, a notice).
+  MQTT stays for alerts: `deskpanel/alert`, the Home Assistant blueprints, broker logins and TLS, and
+  `deskpanel/bridge/status` (online and the Last Will) all work as before. If a script of your own listened to
+  `deskpanel/screen` or `deskpanel/badges`, it will stop receiving them; clear the leftover retained messages with
+  `mosquitto_pub -r -n -t deskpanel/screen` (and `deskpanel/badges`).
+- **`[[rotation]]` is ignored.** A config that still has `[[rotation]]` blocks keeps starting; the bridge logs one
+  warning and ignores them. Delete them from `bridge.toml`: the key will be refused in a later version.
+  `bridge/config.example.toml` no longer contains them.
+- **The `deskwatch-panel` broker login is no longer needed.** `deploy/mosquitto/acl.example` now gives the bridge
+  `read deskpanel/alert` and `write deskpanel/bridge/status` only. An existing ACL that gives the bridge
+  `readwrite deskpanel/#` keeps working. `docs/mqtt-schema.md` now describes only the alert topic.
+- The sample payloads for screens, badges and panel events in `docs/schema/` are removed; the alert samples stay.
+
+### Added
+
+- **DeskWatch has an icon.** The dashboard, Setup, the login page and My account now show the status ring in the
+  browser tab (`/favicon.svg`, with a PNG fallback and an `apple-touch-icon.png` for a phone home screen). The icon
+  routes need no login. The logo and a GitHub social preview image are in `docs/logo/`.
+- **Everyone can customize the dashboard.** The grid icon in the header opens edit mode: hide a panel, drag it (or use
+  the arrows) to move it, and make it wider, narrower, taller or shorter. Hidden panels wait under "Hidden panels" in the
+  edit bar, one click brings them back, and "Reset to default" restores the administrator's layout. The choice is kept per
+  user on the bridge (`layouts.json` in the data folder), so it follows a signed-in user to any browser, and in the
+  browser without a login. Every role, Viewer included, changes only their own layout.
+
+### Changed
+
+- **Setup in the header is a cogwheel icon**, and every item in the header bar (badges, pills, icons, update notice) is
+  now the same height and centred on one line.
+- **Alerts are coloured by severity** in the dashboard's Alerts card and the header Alerts menu: info alerts are blue
+  (their box is back, as before 1.0.2), warnings are yellow and critical alerts red. Warning yellow is its own colour,
+  apart from orange (running) and amber (waiting for approval).
+- **Pipelines get the same boxes**: every run in the Pipelines card sits in a box tinted by its status (failed red,
+  success green, running orange, waiting for approval amber), and a build that just finished in Running now gets a
+  green box.
+- **Running now lists the jobs of each run**: one heading per run (project, pipeline, branch, commit, how many jobs
+  are done) with a coloured row per job under it, so parallel jobs show side by side with their own status, step and
+  time. Works for GitHub and Gitea jobs, GitLab jobs (with their stage), Bitbucket steps and Azure DevOps jobs; a
+  source that only knows the run as a whole shows one row. The Pipelines card stays one row per pipeline.
+
+### Documentation
+
+- The guides, the README and `config.example.toml` were swept for the removed ESP panel (pages, the `warn` badge, the
+  `deskwatch-panel` login, the simulator), the new alert colours and the cogwheel and grid icons in the header. New:
+  the GPU rows (`docs/kiosk.md`, `docs/install.md`), a table of what each Git host adds to the alerts list
+  (`docs/git-hosts.md`), the Access and Sign-in sections of Setup, roles and My account (`docs/setup-page.md`,
+  `docs/auth.md`), and links for GitLab merge requests and pipelines. The dashboard screenshot in `docs/` is new and
+  the unused panel picture is gone.
+
+### Fixed
+
+- **The icons and the clock in the header stay on the right** on narrow windows, tablets and phones (up to 900 px wide).
+  There they used to jump to the left, because the spacer that pushes them right is switched off at that width.
+- **Signing in over the bridge's own HTTPS (`[http.tls]`) works in a browser.** Browsers talk HTTP/2 there and send no
+  `Host` header, so the origin check refused the sign-in, Setup changes and dismissing alerts with "cross-origin request
+  refused". The check now uses the request's authority too. Behind Caddy or another proxy nothing changes.
+- **Setup, Access on a phone** no longer scrolls sideways: the user rows wrap and the forms keep to the card width. The
+  "My account" link follows the theme colour.
+- **Viewers and operators no longer see buttons that do nothing.** The dashboard hid nothing by role, so Dismiss and Mute
+  (Viewer) and the Setup link (Viewer and Operator) were shown although the bridge answers those requests with 403. They
+  are now left out for the roles that cannot use them.
 
 ## [1.0.2]
 

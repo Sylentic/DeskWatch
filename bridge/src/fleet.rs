@@ -4,20 +4,20 @@
 //! A source that sees more machines sends a `StatsReport` with one entry per
 //! host and the containers or hosts that are down. Each report replaces the
 //! previous one from the same source, so a host that disappears from a
-//! report disappears from the panel too.
+//! report disappears from the kiosk too.
 //!
-//! The composer reads this store to fill the `stats:<host>` pages and the
-//! `containers` page, and for the `server` badge.
+//! The kiosk reads this store for the host cards and the "down" list, and the
+//! composer for the `server` badge.
 
 use std::collections::BTreeMap;
 
-use crate::model::{ListData, ListRow, MAX_TITLE_CHARS, RowStatus, StatsData, truncate};
+use crate::model::StatsData;
 use crate::source::SourceId;
 
 /// One machine, as a source sees it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HostFacts {
-    /// Page name: the panel shows this host on `stats:<name>`.
+    /// Name the kiosk shows for this host.
     pub name: String,
     /// Is the machine answering its scrapes? When not, the page is greyed out.
     pub up: bool,
@@ -110,25 +110,6 @@ impl Fleet {
             .collect()
     }
 
-    /// Rows for the `containers` page: what is down, newest report only.
-    pub fn down_page(&self) -> ListData {
-        let down: Vec<&Down> = self
-            .sources
-            .values()
-            .flat_map(|entry| &entry.report.down)
-            .collect();
-        let rows = down
-            .iter()
-            .map(|d| ListRow {
-                text: truncate(&d.text, MAX_TITLE_CHARS),
-                sub: truncate(&d.sub, MAX_TITLE_CHARS),
-                status: RowStatus::Failed,
-                source: "prometheus".into(),
-            })
-            .collect();
-        ListData::new("Down", down.len() as u32, rows)
-    }
-
     /// Number of things that are down, for the `server` badge.
     pub fn down_count(&self) -> u32 {
         self.sources
@@ -184,7 +165,7 @@ mod tests {
         );
         assert!(fleet.host("nas").is_none());
         assert_eq!(fleet.down_count(), 0);
-        assert_eq!(fleet.down_page().count, 0);
+        assert!(fleet.down().is_empty());
     }
 
     #[test]
@@ -211,7 +192,7 @@ mod tests {
     }
 
     #[test]
-    fn down_page_lists_rows_as_failed() {
+    fn down_lists_what_the_sources_report() {
         let id = SourceId::new("prometheus", "home");
         let mut fleet = Fleet::default();
         fleet.apply(
@@ -221,10 +202,9 @@ mod tests {
                 down: vec![down("db"), down("web")],
             },
         );
-        let page = fleet.down_page();
-        assert_eq!(page.count, 2);
-        assert_eq!(page.rows[0].text, "db");
-        assert_eq!(page.rows[0].sub, "home");
-        assert_eq!(page.rows[0].status, RowStatus::Failed);
+        let list = fleet.down();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].text, "db");
+        assert_eq!(list[0].sub, "home");
     }
 }

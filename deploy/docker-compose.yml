@@ -16,7 +16,7 @@ services:
     # changes the version by surprise. Bump the number to update (read the
     # CHANGELOG first). `latest` also exists but moves; see docs/docker.md,
     # section 10.
-    image: ghcr.io/sylentic/deskwatch-bridge:1.0.2
+    image: ghcr.io/sylentic/deskwatch-bridge:1.0.3
     #
     # To build from the source instead (for your own changes), replace the
     # line above with these two, run from a checkout of the version you want:
@@ -67,7 +67,7 @@ services:
   #   image: eclipse-mosquitto:2
   #   restart: unless-stopped
   #   ports:
-  #     - "1883:1883"           # the panel connects here
+  #     - "1883:1883"           # Home Assistant and scripts connect here
   #   volumes:
   #     - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
   #     - ./mosquitto/passwd:/mosquitto/config/passwd:ro

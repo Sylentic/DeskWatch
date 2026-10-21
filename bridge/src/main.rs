@@ -1,18 +1,18 @@
-//! DeskWatch bridge: collects data on the home server and tells the desk panel
-//! what to draw over MQTT. See `mqtt-schema.md` (schema v2) for the contract.
+//! DeskWatch bridge: collects data on the home server and serves the dashboard
+//! page. MQTT carries alerts in (`docs/mqtt-schema.md`).
 //!
 //! The main loop owns all state, so there are no locks. Sources and the MQTT
 //! connection run as tasks and send what they learn over channels:
 //!
-//! - every second, and after every event, the composer picks the screen and
-//!   badges; they are published only when they change;
+//! - every second, and after every event, the kiosk page gets a fresh snapshot
+//!   of what the composer knows;
 //! - every `server.interval_s` the local stats are sampled;
 //! - each `[[source.*]]` block runs as its own task and sends fact updates
 //!   and its health as `SourceMsg`s;
-//! - button presses and alerts arrive from the MQTT task as `Inbound`s.
+//! - alerts arrive from the MQTT task and `POST /api/alert` as `Inbound`s.
 //!
 //! With `--demo` no sources run: a scripted loop of fake data feeds the
-//! composer instead, for watching the panel in the desktop simulator.
+//! composer instead, for watching the dashboard page.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -25,25 +25,19 @@ use tracing_subscriber::EnvFilter;
 use deskwatch_bridge::alerts::Alerts;
 use deskwatch_bridge::composer::Composer;
 use deskwatch_bridge::config::Config;
-use deskwatch_bridge::demo::{self, Demo};
+use deskwatch_bridge::demo::Demo;
 use deskwatch_bridge::health;
 use deskwatch_bridge::hooks::Hooks;
 use deskwatch_bridge::kiosk::Kiosk;
-use deskwatch_bridge::model::{Badges, Screen};
-use deskwatch_bridge::mqtt::{self, Inbound, Publisher};
+use deskwatch_bridge::mqtt::{self, Inbound};
 use deskwatch_bridge::setup::Setup;
 use deskwatch_bridge::source::unix_now;
 use deskwatch_bridge::stats::StatsCollector;
 use deskwatch_bridge::store::Store;
 use deskwatch_bridge::supervisor::Supervisor;
 
-/// How often the composer re-checks timers (alert expiry, rotation dwell).
+/// How often the composer re-checks timers (alert expiry).
 const COMPOSE_INTERVAL: Duration = Duration::from_secs(1);
-
-/// Republish unchanged badges this often (seconds), so a broker that lost its
-/// retained messages in a restart gets them back. The screen needs no such
-/// refresh: stats change every few seconds.
-const BADGES_REFRESH_S: u64 = 60;
 
 const USAGE: &str = "\
 usage: deskwatch-bridge [--demo] [--kiosk] [--no-mqtt] [--healthcheck] [CONFIG]
@@ -53,7 +47,7 @@ usage: deskwatch-bridge [--demo] [--kiosk] [--no-mqtt] [--healthcheck] [CONFIG]
 CONFIG defaults to $DESKWATCH_CONFIG, then /etc/deskwatch/bridge.toml
 (on Windows %ProgramData%\\DeskWatch\\bridge.toml).
 --demo  play a loop of fake data instead of running the sources; the sources
-        and rotation of CONFIG are ignored, and CONFIG is optional
+        of CONFIG are ignored, and CONFIG is optional
 --kiosk serve the browser dashboard even if [kiosk] enabled is not set
         (see docs/kiosk.md)
 --no-mqtt  do not connect to a broker (same as [mqtt] enabled = false), for a
@@ -188,7 +182,7 @@ async fn main() -> Result<()> {
     let (source_tx, mut source_rx) = mpsc::channel(64);
     let mut hooks = Hooks::default();
     let supervisor = Supervisor::new(source_tx.clone(), hooks.webhooks());
-    // Alerts and button presses reach the main loop here: from MQTT, and
+    // Alerts reach the main loop here: from MQTT, and
     // from the kiosk page (dismiss) and the setup page (test alert). The
     // sender stays alive here either way, so with MQTT off the receiver just
     // waits forever.
@@ -230,6 +224,8 @@ async fn main() -> Result<()> {
     hooks.add("/login", auth.router());
     // The pages' typefaces: no login, the login page needs them too.
     hooks.add("/fonts", deskwatch_bridge::fonts::router());
+    // The tab icon: no login either, the login page shows it.
+    hooks.add("/favicon.svg", deskwatch_bridge::icons::router());
     let mut kiosk = None;
     if config.kiosk.enabled {
         if warn_no_login(auth.enabled(), config.http.listen.ip().is_loopback()) {
@@ -248,7 +244,7 @@ async fn main() -> Result<()> {
         kiosk = Some(built);
     }
     // `/healthz` (the Docker health probe) reports the broker connection, so
-    // the listener also opens for a bridge that only talks to an ESP panel.
+    // the listener also opens for a bridge that only talks to a broker.
     let mqtt_link = health::MqttLink::default();
     // Alerts over HTTP: off unless `[alerts] http_input`.
     if config.alerts.enabled && config.alerts.http_input {
@@ -324,7 +320,7 @@ async fn main() -> Result<()> {
         ));
         Some(publisher)
     } else {
-        info!("MQTT is off: serving the dashboard page only, no panel, button or MQTT alerts");
+        info!("MQTT is off: serving the dashboard page only, no MQTT alerts");
         None
     };
 
@@ -333,13 +329,12 @@ async fn main() -> Result<()> {
     let mut demo = None;
     if args.demo {
         info!("demo mode: playing fake data, sources are not started");
-        composer = Composer::new(demo::rotation(), unix_now());
+        composer = Composer::default();
         demo = Some(Demo::new(unix_now()));
     } else {
-        composer = Composer::new(config.rotation(), unix_now());
+        composer = Composer::default();
         composer.alerts = Alerts::new(config.alerts.clone());
     }
-    let mut shown = Shown::default();
 
     let mut stats_ticker = tokio::time::interval(Duration::from_secs(config.server.interval_s));
     let mut compose_ticker = tokio::time::interval(COMPOSE_INTERVAL);
@@ -353,7 +348,6 @@ async fn main() -> Result<()> {
             _ = compose_ticker.tick() => {}
             Some(msg) = source_rx.recv() => composer.apply(msg, unix_now()),
             Some(msg) = inbound_rx.recv() => match msg {
-                Inbound::Button(event) => composer.on_button(event.action, unix_now()),
                 Inbound::Alert(alert) => composer.alert(alert, unix_now()),
             },
             _ = shutdown.wait() => break,
@@ -380,9 +374,6 @@ async fn main() -> Result<()> {
                     .iter()
                     .map(|(id, health)| (id.to_string(), health.name())),
             );
-        }
-        if let Some(publisher) = &publisher {
-            shown.publish(publisher, &mut composer, unix_now()).await;
         }
     }
 
@@ -451,55 +442,6 @@ impl Shutdown {
             _ = self.close.recv() => {}
             _ = self.logoff.recv() => {}
             _ = self.shutdown.recv() => {}
-        }
-    }
-}
-
-/// What was published last, so only changes go out.
-#[derive(Default)]
-struct Shown {
-    /// Did the last publish fail? Only the first failure of a streak is
-    /// logged, so a broker that is down does not fill the log.
-    failing: bool,
-    screen: Option<Screen>,
-    badges: Option<Badges>,
-    /// Unix seconds of the last badges publish.
-    badges_at: u64,
-}
-
-impl Shown {
-    fn failed(&mut self, what: &str, err: &anyhow::Error) {
-        if !self.failing {
-            warn!(
-                "cannot publish {what}: {err:#} (retrying every turn, not logged again until it works)"
-            );
-        }
-        self.failing = true;
-    }
-
-    async fn publish(&mut self, publisher: &Publisher, composer: &mut Composer, now: u64) {
-        // `seq` is set by the publisher, so compare with it zeroed.
-        let screen = composer.screen(now);
-        if self.screen.as_ref() != Some(&screen) {
-            match publisher.publish_screen(screen.clone()).await {
-                Ok(()) => {
-                    self.screen = Some(screen);
-                    self.failing = false;
-                }
-                Err(err) => self.failed("screen", &err),
-            }
-        }
-        let badges = composer.badges();
-        let due = now.saturating_sub(self.badges_at) >= BADGES_REFRESH_S;
-        if self.badges.as_ref() != Some(&badges) || due {
-            match publisher.publish_badges(&badges).await {
-                Ok(()) => {
-                    self.badges = Some(badges);
-                    self.badges_at = now;
-                    self.failing = false;
-                }
-                Err(err) => self.failed("badges", &err),
-            }
         }
     }
 }

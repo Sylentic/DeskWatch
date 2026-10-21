@@ -339,37 +339,22 @@
           !jobs.some(function (j) { return j.project === r.project && j.pipeline === r.pipeline; });
       });
       if (!jobs.length && !done.length) return { title: 'Running now', body: '<div class="empty">No jobs running</div>', stale: false, plain: true };
+      // One heading per run. Jobs of the same run (parallel jobs) share a
+      // `group` and are listed under it from `run_jobs`.
+      var lanes = snap.run_jobs || {};
+      var groups = [], byKey = {};
+      done.forEach(function (r) { groups.push({ done: r }); });
+      jobs.forEach(function (j) {
+        var g = j.group && lanes[j.group] ? j.group : j.key;
+        if (byKey[g]) { byKey[g].jobs.push(j); return; }
+        groups.push(byKey[g] = { jobs: [j], lanes: j.group ? lanes[j.group] : null });
+      });
       var max = p.rows;
-      var items = done.map(function (r) { return { done: r }; }).concat(jobs.map(function (j) { return { job: j }; }));
-      var shown = max ? items.slice(0, max) : items;
-      var html = shown.map(function (it) {
-        if (it.done) {
-          var r = it.done;
-          return linkOpen(r.url, 'job done fresh ok') + '<div class="l1">' + src(r.source) + '<span class="name">' + esc(r.project) + '</span>' +
-            '<span class="ref">' + esc(r.pipeline) + (r.ref ? ' &middot; ' + esc(r.ref) : '') + '</span></div>' +
-            '<div class="l2"><span class="steps">' + new Array(Math.min(12, stepsSeen[r.project + '/' + r.pipeline] || 1) + 1).join('<i class="d"></i>') +
-            '</span><span class="step">Done</span>' +
-            '<span class="el">' + clock((r.finished || r.started) - r.started) + '</span></div>' + linkClose(r.url);
-        }
-        var j = it.job;
-        var step = j.step ? esc(j.step) : 'starting';
-        var bar;
-        if (j.step_no && j.step_count && j.step_count <= 12) {
-          bar = '<span class="steps" title="step ' + j.step_no + ' of ' + j.step_count + '">';
-          for (var i = 1; i <= j.step_count; i++) bar += '<i class="' + (i < j.step_no ? 'd' : i === j.step_no ? 'c' : '') + '"></i>';
-          bar += '</span>';
-        } else {
-          bar = j.progress == null ? '<span class="pbar spin"><i></i></span>' :
-            '<span class="pbar"><i style="--p:' + Math.round(j.progress * 100) + '%"></i></span>';
-        }
-        return linkOpen(j.url, 'job') + '<div class="l1">' + src(j.source) + '<span class="name">' + esc(j.project) + '</span>' +
-          '<span class="kind ' + esc(j.kind) + '">' + esc(j.kind) + '</span>' +
-          '<span class="ref">' + esc(j.pipeline) + (j.ref ? ' &middot; ' + esc(j.ref) : '') + (j.commit ? ' @ ' + esc(j.commit) : '') + '</span></div>' +
-          '<div class="l2">' + bar + '<span class="step">' + step + '</span>' +
-          '<span class="el" data-since="' + j.started + '">' + clock(nowS() - j.started) + '</span></div>' + linkClose(j.url);
-      }).join('');
-      if (max && items.length > max) html += '<div class="more">+' + (items.length - max) + ' more running</div>';
-      return { title: 'Running now', count: jobs.length + (done.length ? ' · ' + done.length + ' done' : ''), stale: ciStale(), body: html };
+      var shown = max ? groups.slice(0, max) : groups;
+      var html = shown.map(function (g) { return g.done ? doneGroup(g.done) : runGroup(g); }).join('');
+      if (max && groups.length > max) html += '<div class="more">+' + (groups.length - max) + ' more running</div>';
+      var running = groups.length - done.length;
+      return { title: 'Running now', count: running + (done.length ? ' · ' + done.length + ' done' : ''), stale: ciStale(), body: html };
     },
 
     pipelines: function (p) {
@@ -377,8 +362,8 @@
       var rows = runs.map(function (r) {
         var when = r.status === 'running' ? 'running' : ago(nowS() - (r.finished || r.started));
         var status = runStatus(r.status);
-        var fresh = r.finished && nowS() - r.finished < FRESH_S && (status === 'failed' || status === 'ok') ? ' fresh ' + status : '';
-        return linkOpen(r.url, 'row' + fresh) + dot(status) + src(r.source) +
+        // Every run sits in a box tinted by its status, like the alert boxes.
+        return linkOpen(r.url, 'row rbox ' + status) + dot(status) + src(r.source) +
           '<span class="main">' + esc(r.project) + ' <span class="wf">&middot; ' + esc(r.pipeline) + '</span></span>' +
           '<span class="when">' + when + '</span>' +
           (r.ref || r.step ? '<span class="sub">' + esc(r.ref) + (r.step ? ' &middot; failed at ' + esc(r.step) : '') + '</span>' : '') + linkClose(r.url);
@@ -417,8 +402,6 @@
         // An alert from a git source links to its issue or comment.
         var txt = '<span class="main">' + esc(a.title) + '</span><span class="sub">' + sub + '</span>';
         var h = href(a.url);
-        // Info alerts (new issues, PR comments, a washer that is done) are news,
-        // not trouble: a plain row. Warnings and criticals keep their tint.
         return '<div class="abox ' + esc(a.severity) + '">' + src(alertKind(a)) +
           (h ? '<a class="txt link" href="' + esc(h) + '" target="_blank" rel="noopener noreferrer">' + txt + '</a>' : '<span class="txt">' + txt + '</span>') +
           (canDismiss() ? '<button type="button" class="ax" data-dismiss-alert="' + esc(a.id) + '" aria-label="Dismiss ' + esc(a.title) + '">&times;</button>' : '') +
@@ -468,6 +451,71 @@
 
   function runStatus(s) { return s === 'success' ? 'ok' : s === 'waiting' ? 'review' : s; }
 
+  // ---- Running now: a heading per run, a row per job under it ----------
+
+  function groupHead(source, project, kind, ref, sum, url) {
+    return linkOpen(url, 'gh') + src(source) + '<span class="name">' + esc(project) + '</span>' +
+      (kind ? '<span class="kind ' + esc(kind) + '">' + esc(kind) + '</span>' : '') +
+      '<span class="ref">' + ref + '</span><span class="sum">' + sum + '</span>' + linkClose(url);
+  }
+
+  function jobRow(url, status, name, text, bar, time) {
+    return linkOpen(url, 'jrow ' + status) + dot(status) + '<span class="n">' + esc(name) + '</span>' +
+      '<span class="mid"><span class="s">' + text + '</span>' + bar + '</span><span class="t">' + time + '</span>' + linkClose(url);
+  }
+
+  // What a job of a run is doing, in a few words.
+  function laneText(l) {
+    var st = runStatus(l.status);
+    if (st === 'running') return esc(l.step || 'Running');
+    if (st === 'ok') return 'Passed';
+    if (st === 'failed') return l.step ? 'Failed at ' + esc(l.step) : 'Failed';
+    if (st === 'review') return 'Waiting for approval';
+    if (st === 'queued') return 'Queued';
+    return 'Skipped';
+  }
+
+  function laneTime(l) {
+    if (l.status === 'running' && l.started) return '<span data-since="' + l.started + '">' + clock(nowS() - l.started) + '</span>';
+    if (l.started && l.finished) return clock(l.finished - l.started);
+    return '';
+  }
+
+  function runGroup(g) {
+    var j = g.jobs[0];
+    var started = Math.min.apply(null, g.jobs.map(function (x) { return x.started; }));
+    var ref = esc(j.pipeline) + (j.ref ? ' &middot; ' + esc(j.ref) : '') + (j.commit ? ' @ ' + esc(j.commit) : '');
+    var since = '<span data-since="' + started + '">' + clock(nowS() - started) + '</span>';
+    var rows, sum;
+    if (g.lanes && g.lanes.length) {
+      var finished = g.lanes.filter(function (l) { return l.status === 'success' || l.status === 'failed' || l.status === 'neutral'; }).length;
+      sum = (g.lanes.length > 1 ? finished + ' of ' + g.lanes.length + ' done &middot; ' : '') + since;
+      rows = g.lanes.map(function (l) {
+        var st = runStatus(l.status);
+        var bar = st !== 'running' ? '' : l.progress == null ? '<span class="pbar spin"><i></i></span>' :
+          '<span class="pbar"><i style="--p:' + Math.round(l.progress * 100) + '%"></i></span>';
+        return jobRow(l.url || j.url, st, l.name, laneText(l), bar, laneTime(l));
+      });
+    } else {
+      // A source that only knows the run as one job: one row with its steps.
+      sum = since;
+      rows = g.jobs.map(function (x) {
+        var text = esc(x.step || 'Starting') + (x.step_no && x.step_count ? ' &middot; step ' + x.step_no + ' of ' + x.step_count : '');
+        var bar = x.progress == null ? '<span class="pbar spin"><i></i></span>' :
+          '<span class="pbar"><i style="--p:' + Math.round(x.progress * 100) + '%"></i></span>';
+        return jobRow(x.url, 'running', x.kind, text, bar, '<span data-since="' + x.started + '">' + clock(nowS() - x.started) + '</span>');
+      });
+    }
+    return '<div class="jgroup">' + groupHead(j.source, j.project, j.kind, ref, sum, j.url) + '<div class="jrows">' + rows.join('') + '</div></div>';
+  }
+
+  function doneGroup(r) {
+    var ref = esc(r.pipeline) + (r.ref ? ' &middot; ' + esc(r.ref) : '');
+    var took = clock((r.finished || r.started) - r.started);
+    return '<div class="jgroup">' + groupHead(r.source, r.project, '', ref, 'Done', r.url) +
+      '<div class="jrows">' + jobRow(r.url, 'ok', 'Done', 'Passed', '', took) + '</div></div>';
+  }
+
   // Rows that do not fit are cut off; `rows` caps the list from the config.
   function list(rows, cap, empty) {
     if (!rows.length) return empty;
@@ -478,17 +526,19 @@
 
   // ---- drawing ------------------------------------------------------------
 
-  function renderCard(key, panel, grid) {
+  function renderCard(key, panel, grid, pos) {
     var make = widgets[panel.widget];
     var out = make ? make(panel) : { title: panel.widget, body: '<div class="empty">Unknown widget</div>' };
     var html = '<header><h2>' + esc(panel.title || out.title) + '</h2>' + (out.nav || '') +
       (out.tag ? '<span class="tag">' + esc(out.tag) + '</span>' : '') +
       (out.count !== undefined && out.count !== '' ? '<span class="count">' + esc(out.count) + '</span>' : '') +
-      '</header><div class="body">' + out.body + '</div>';
+      '</header><div class="body">' + out.body + '</div>' + (editing ? editControls(panel, pos) : '');
     var entry = cards[key];
     if (!entry) {
       var el = document.createElement('section');
       el.setAttribute('data-key', key);
+      el.setAttribute('data-id', panel.id);
+      if (editing) el.setAttribute('draggable', 'true');
       var span = panel.span || [1, 1];
       el.style.gridColumn = 'span ' + span[0];
       el.style.gridRow = 'span ' + span[1];
@@ -635,7 +685,7 @@
   }
   function canDismiss() {
     var cfg = (snap.layout && snap.layout.alerts) || {};
-    return !!cfg.dismiss;
+    return !!cfg.dismiss && myRole !== 'viewer';
   }
   function dismissAlerts(ids) {
     // One after the other, so the bridge never has more than one clear in flight.
@@ -692,7 +742,7 @@
     });
     // The Alerts chip: every active alert, worst colour wins. Gone at 0, like Failed and Open PRs.
     var alerts = alertList(), worst = alerts.some(function (a) { return a.severity === 'critical'; }) ? 'failed'
-      : alerts.some(function (a) { return a.severity === 'warn'; }) ? 'review' : alerts.length ? 'open' : 'ok';
+      : alerts.some(function (a) { return a.severity === 'warn'; }) ? 'warn' : alerts.length ? 'open' : 'ok';
     if (alerts.length) html += '<button type="button" class="chip ' + worst + ' action" data-alerts-toggle="1" aria-expanded="' + (alertsOpen ? 'true' : 'false') +
       '" title="Show the alerts">' + alerts.length + ' alerts</button>';
     if (!alerts.length) alertsOpen = false;
@@ -819,14 +869,6 @@
   // Pipelines that failed recently (project/pipeline -> true), so a success
   // that follows can say Fixed. Kept for a day.
   var failedSeen = {}, failedSeenAt = {};
-  // How many steps each pipeline had while it ran (project/pipeline -> count),
-  // so a run that just finished shows the same segments, all green, as Done.
-  var stepsSeen = {};
-  function noteSteps() {
-    (snap.jobs || []).forEach(function (j) {
-      if (j.step_count) stepsSeen[j.project + '/' + j.pipeline] = j.step_count;
-    });
-  }
   function noteFailures() {
     var t = nowS();
     (snap.failed || []).forEach(function (f) {
@@ -890,15 +932,15 @@
       if (list.length > HISTORY) list.shift();
     });
 
-    noteSteps();
     var layout = snap.layout || { columns: 4, rows: 3, panels: [] };
-    $('setup-link').hidden = !layout.setup;
+    var setupOk = layout.setup && (myRole == null || myRole === 'admin');
+    $('setup-link').hidden = !setupOk;
     renderUpdate(snap.update);
     renderSourcePill();
     renderSources();
     // With the setup page on, the sources chip opens it: that is where every
     // source and its status are listed.
-    if (layout.setup) { $('conn').setAttribute('href', 'setup'); $('conn').setAttribute('title', 'Sources and their status: Setup'); }
+    if (setupOk) { $('conn').setAttribute('href', 'setup'); $('conn').setAttribute('title', 'Sources and their status: Setup'); }
     else { $('conn').removeAttribute('href'); $('conn').removeAttribute('title'); }
     drawGrid();
     renderBadges();
@@ -908,6 +950,160 @@
     tick();
   }
 
+  // ---- customizing: hide, move and resize panels ---------------------------
+
+  // The administrator's layout (the bridge's panels) is the default. A person
+  // can hide panels, move them and change their size; only that difference is
+  // kept (docs/kiosk.md), so new panels in the default still show up. A signed-in
+  // user's choice is kept by the bridge, per user; without a login it stays in
+  // this browser.
+  var TITLES = { jobs: 'Running now', hosts: 'Hosts', stats: 'Host', pipelines: 'Pipelines', prs: 'Open PRs', alerts: 'Alerts', containers: 'Containers', health: 'Health', runners: 'Runners' };
+  var editing = false;
+  var custom = null;           // { order: [id], hidden: [id], span: { id: [c, r] } } or null
+  var CUSTOM_KEY = 'deskwatch.layout';
+  // The signed-in role (viewer, operator, admin), or null without a login. A
+  // viewer gets no Dismiss or Mute buttons and Setup is for administrators:
+  // the bridge refuses them anyway, this only keeps buttons that do nothing
+  // off the page.
+  var myRole = null;
+  fetch('/api/auth/status').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+    myRole = (j && j.state === 'signed_in' && j.role) || null;
+    document.documentElement.classList.toggle('ro', myRole === 'viewer');
+    if (snap) render(snap);
+  }).catch(function () {});
+  var onServer = false;        // a signed-in person: the bridge keeps the layout, per user
+  try { custom = JSON.parse(localStorage.getItem(CUSTOM_KEY) || 'null'); } catch (e) { custom = null; }
+  // A signed-in person's layout lives on the bridge. Without a login, or with a
+  // screen key, the answer is an error and the layout stays in this browser.
+  fetch('/api/auth/layout').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+    if (!j) return;
+    onServer = true;
+    custom = j.layout || null;
+    if (snap) drawGrid();
+  }).catch(function () {});
+
+  function withIds(panels) {
+    var seen = {};
+    return (panels || []).map(function (p) {
+      var base = p.widget + (p.host ? ':' + p.host : '');
+      seen[base] = (seen[base] || 0) + 1;
+      return Object.assign({}, p, { id: base + '#' + seen[base] });
+    });
+  }
+  function customPanels(layout) {
+    var all = withIds(layout.panels);
+    if (!custom) return all;
+    var hidden = custom.hidden || [], order = custom.order || [];
+    var out = all.filter(function (p) { return hidden.indexOf(p.id) < 0; });
+    out.sort(function (a, b) {
+      var x = order.indexOf(a.id), y = order.indexOf(b.id);
+      return (x < 0 ? 999 : x) - (y < 0 ? 999 : y);
+    });
+    return out.map(function (p) {
+      var sp = custom.span && custom.span[p.id];
+      if (sp) p.span = [Math.min(sp[0], layout.columns), Math.min(sp[1], layout.rows)];
+      p.hidden = hidden.indexOf(p.id) >= 0;
+      return p;
+    });
+  }
+  function saveCustom() {
+    if (onServer) {
+      fetch('/api/auth/layout', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(custom) }).catch(function () {});
+      return;
+    }
+    try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); } catch (e) {}
+  }
+  function resetCustom() {
+    custom = null;
+    if (onServer) fetch('/api/auth/layout/reset', { method: 'POST' }).catch(function () {});
+    else try { localStorage.removeItem(CUSTOM_KEY); } catch (x) {}
+  }
+  function ensureCustom() {
+    if (!custom) custom = { order: customPanels(snap.layout).map(function (p) { return p.id; }), hidden: [], span: {} };
+    custom.hidden = custom.hidden || []; custom.span = custom.span || {};
+    return custom;
+  }
+  function usedCells(layout) {
+    return customPanels(layout).filter(function (p) { return !p.hidden; })
+      .reduce(function (n, p) { var s = p.span || [1, 1]; return n + s[0] * s[1]; }, 0);
+  }
+  function editControls(panel, pos) {
+    var s = panel.span || [1, 1];
+    var b = function (act, label, title) { return '<button type="button" data-edit="' + act + '" data-id="' + esc(panel.id) + '" title="' + title + '" aria-label="' + title + '">' + label + '</button>'; };
+    return '<div class="edit-tools"><span class="grip" title="Drag to move">&#10303;</span>' +
+      b('earlier', '&lsaquo;', 'Move earlier') + b('later', '&rsaquo;', 'Move later') +
+      '<span class="gap"></span>' +
+      '<span class="sz">W</span>' + b('w-', '&minus;', 'Narrower') + '<span class="n">' + s[0] + '</span>' + b('w+', '+', 'Wider') +
+      '<span class="sz">H</span>' + b('h-', '&minus;', 'Shorter') + '<span class="n">' + s[1] + '</span>' + b('h+', '+', 'Taller') +
+      '<span class="gap"></span>' + b('hide', '&times;', 'Hide this panel') + '</div>';
+  }
+  function renderEditBar(layout) {
+    var bar = $('edit-bar');
+    bar.hidden = !editing;
+    $('edit-btn').classList.toggle('on', editing);
+    if (!editing) return;
+    var cap = layout.columns * layout.rows, used = usedCells(layout);
+    var gone = withIds(layout.panels).filter(function (p) { return custom && (custom.hidden || []).indexOf(p.id) >= 0; });
+    var tray = gone.length ? gone.map(function (p) {
+      return '<button type="button" class="add" data-edit="show" data-id="' + esc(p.id) + '" title="Show this panel again">+ ' + esc(p.title || TITLES[p.widget] || p.widget) + '</button>';
+    }).join('') : '<span class="none">none</span>';
+    bar.innerHTML = '<span class="t">Customize</span>' +
+      '<span class="hint">Drag a panel or use the arrows to move it. W and H set its size. Saved ' + (onServer ? 'for your account.' : 'in this browser.') + '</span>' +
+      '<span class="tray"><span class="lbl">Hidden panels</span>' + tray + '</span>' +
+      '<span class="cells' + (used > cap ? ' over' : '') + '">' + used + ' of ' + cap + ' cells' + (used > cap ? ' &middot; too big, the grid will scroll' : '') + '</span>' +
+      '<button type="button" data-edit="reset"' + (custom ? '' : ' disabled') + '>Reset to default</button>' +
+      '<button type="button" data-edit="done" class="primary">Done</button>';
+  }
+  function editAct(act, id) {
+    var c = ensureCustom(), layout = snap.layout, order = c.order.slice();
+    customPanels(layout).forEach(function (p) { if (order.indexOf(p.id) < 0) order.push(p.id); });
+    c.order = order;
+    var i = order.indexOf(id), sp = (c.span[id] || ((customPanels(layout).filter(function (p) { return p.id === id; })[0] || {}).span) || [1, 1]).slice();
+    if (act === 'hide' && c.hidden.indexOf(id) < 0) c.hidden.push(id);
+    if (act === 'show') c.hidden = c.hidden.filter(function (x) { return x !== id; });
+    if (act === 'earlier' && i > 0) { order.splice(i, 1); order.splice(i - 1, 0, id); }
+    if (act === 'later' && i < order.length - 1) { order.splice(i, 1); order.splice(i + 1, 0, id); }
+    if (act === 'w+') sp[0] = Math.min(layout.columns, sp[0] + 1);
+    if (act === 'w-') sp[0] = Math.max(1, sp[0] - 1);
+    if (act === 'h+') sp[1] = Math.min(layout.rows, sp[1] + 1);
+    if (act === 'h-') sp[1] = Math.max(1, sp[1] - 1);
+    if (/^[wh][+-]$/.test(act)) c.span[id] = sp;
+    saveCustom(); drawGrid();
+  }
+  $('edit-btn').addEventListener('click', function () { editing = !editing; drawGrid(); });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('[data-edit]') : null;
+    if (!b) return;
+    var act = b.getAttribute('data-edit');
+    if (act === 'done') { editing = false; drawGrid(); }
+    else if (act === 'reset') { resetCustom(); drawGrid(); }
+    else editAct(act, b.getAttribute('data-id'));
+  });
+  var dragId = null;
+  document.addEventListener('dragstart', function (e) {
+    var el = e.target.closest ? e.target.closest('.card[data-id]') : null;
+    if (!editing || !el) return;
+    dragId = el.getAttribute('data-id');
+    el.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', dragId); } catch (x) {}
+  });
+  document.addEventListener('dragover', function (e) {
+    var el = e.target.closest ? e.target.closest('.card[data-id]') : null;
+    if (editing && dragId && el) { e.preventDefault(); }
+  });
+  document.addEventListener('dragend', function () { dragId = null; var d = document.querySelector('.dragging'); if (d) d.classList.remove('dragging'); });
+  document.addEventListener('drop', function (e) {
+    var el = e.target.closest ? e.target.closest('.card[data-id]') : null;
+    if (!editing || !dragId || !el) return;
+    e.preventDefault();
+    var c = ensureCustom(), target = el.getAttribute('data-id');
+    var order = customPanels(snap.layout).map(function (p) { return p.id; });
+    order.splice(order.indexOf(dragId), 1);
+    order.splice(order.indexOf(target) + (order.indexOf(target) < 0 ? 0 : 0), 0, dragId);
+    c.order = order; dragId = null; saveCustom(); drawGrid();
+  });
+
   // The cards. Also redrawn every few seconds without a new snapshot, so a
   // "Done" job and a tinted row go away on time.
   function drawGrid() {
@@ -916,12 +1112,20 @@
     grid.style.setProperty('--cols', layout.columns);
     grid.style.setProperty('--rows', layout.rows);
     var keep = {};
-    (layout.panels || []).forEach(function (panel, i) {
+    var shown = customPanels(layout);
+    grid.classList.toggle('editing', editing);
+    shown.forEach(function (panel, i) {
       // The span is in the key: a card is placed once, so a new size needs a new card.
-      var key = i + ':' + panel.widget + ':' + (panel.host || '') + ':' + (panel.span || [1, 1]).join('x');
+      var key = panel.id + ':' + (panel.span || [1, 1]).join('x') + (editing ? ':e' : '');
       keep[key] = true;
-      renderCard(key, panel, grid);
+      renderCard(key, panel, grid, i);
     });
+    // Cards are placed in order, so the DOM order follows the layout.
+    shown.forEach(function (panel) {
+      var entry = cards[panel.id + ':' + (panel.span || [1, 1]).join('x') + (editing ? ':e' : '')];
+      if (entry) grid.appendChild(entry.el);
+    });
+    renderEditBar(layout);
     Object.keys(cards).forEach(function (key) {
       if (!keep[key]) { grid.removeChild(cards[key].el); delete cards[key]; }
     });

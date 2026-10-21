@@ -72,6 +72,9 @@ pub struct Job {
     /// A failed job that does not fail the pipeline.
     pub allow_failure: bool,
     pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+    /// Web page of the job.
+    pub web_url: Option<String>,
 }
 
 #[cfg(test)]

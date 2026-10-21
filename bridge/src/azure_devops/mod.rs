@@ -42,7 +42,9 @@ use tokio::time::{Instant, MissedTickBehavior};
 use tracing::{debug, info, warn};
 
 use crate::alerts::{self, AlertMessage};
-use crate::ci::{OpenPull, RepoPulls, Run, RunStatus, Runner, RunnerStatus, RunningJob, Update};
+use crate::ci::{
+    OpenPull, RepoPulls, Run, RunJob, RunStatus, Runner, RunnerStatus, RunningJob, Update,
+};
 use crate::config::{AzureDevopsAuth, AzureDevopsConfig};
 use crate::gitea::payload::unix_seconds;
 use crate::model::{JobData, JobKind, MAX_TITLE_CHARS, NoticeData, truncate};
@@ -51,7 +53,7 @@ use api::{EntraApp, HttpApi};
 use payload::{Agent, Build, PullRequest, Record, Thread};
 use timeline::View;
 
-/// Adapter type: `[[source.azure_devops]]` in the config and `source` on panel pages.
+/// Adapter type: `[[source.azure_devops]]` in the config and the `source` of what it reports.
 pub const KIND: &str = "azure_devops";
 
 /// A check other than an approval (branch control, business hours) has to be
@@ -524,7 +526,7 @@ impl AzdoState {
 
     /// Builds whose timeline to poll every few seconds: every one in progress.
     /// Quiet projects are polled too, so the kiosk's "Running now" list sees
-    /// them; only `interrupt` decides whether they take over the ESP screen.
+    /// them; only `interrupt` decides whether they take over the page.
     pub fn watched_builds(&self) -> Vec<(String, u64)> {
         self.live.keys().cloned().collect()
     }
@@ -796,17 +798,34 @@ impl AzdoState {
             }
         } else {
             // Quiet projects get a job too (for the kiosk list); the flag
-            // keeps it off the ESP screen.
+            // keeps it off the banner.
             let data = job_data(live, &project_label, &view);
             debug!(key = %job_key, step = ?data.step, progress = ?data.progress, "build running");
             live.job_shown = true;
+            out.push(Update::RunJobs {
+                key: job_key.clone(),
+                jobs: view
+                    .jobs
+                    .iter()
+                    .map(|j| RunJob {
+                        name: truncate(&j.name, MAX_TITLE_CHARS),
+                        status: j.status,
+                        step: j.step.as_deref().map(|s| truncate(s, MAX_TITLE_CHARS)),
+                        progress: None,
+                        started: j.started,
+                        finished: j.finished,
+                        url: None,
+                    })
+                    .collect(),
+            });
             out.push(Update::JobRunning {
-                key: job_key,
+                key: job_key.clone(),
                 job: RunningJob {
                     data,
                     interrupt: live.interrupt,
                     updated: now,
                     url: live.url.clone(),
+                    group: Some(job_key),
                 },
             });
         }

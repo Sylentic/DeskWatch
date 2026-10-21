@@ -1,5 +1,5 @@
 # DeskWatch dashboard in Docker: the full-size status page, served by the
-# bridge, opened in any browser. No MQTT broker and no ESP needed.
+# bridge, opened in any browser. No MQTT broker needed.
 # Guide: docs/docker.md (section 3)
 #
 #   git clone https://github.com/Sylentic/DeskWatch.git && cd DeskWatch

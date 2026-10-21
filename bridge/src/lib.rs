@@ -17,6 +17,7 @@ pub mod github;
 pub mod gitlab;
 pub mod health;
 pub mod hooks;
+pub mod icons;
 pub mod kiosk;
 pub mod model;
 pub mod mqtt;

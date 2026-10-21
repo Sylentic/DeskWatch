@@ -94,6 +94,7 @@ pub struct Job {
     pub status: String,
     pub conclusion: Option<String>,
     pub started_at: Option<String>,
+    pub completed_at: Option<String>,
     /// Web page of the job.
     pub html_url: Option<String>,
     pub steps: Vec<Step>,

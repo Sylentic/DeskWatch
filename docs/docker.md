@@ -3,9 +3,9 @@
 DeskWatch runs in one small container. There are two ways to use it, and they differ only in the config file:
 
 - **The dashboard** (this page's quick start): the full-size status page in a browser, served by the bridge. Put the
-  container on your homelab, open `http://<docker host>:8787/` from any screen. It needs **no MQTT broker and no ESP**.
-- **The bridge for the ESP panel**: the same container publishing screens to your Mosquitto broker for the desk
-  panel (sections 4 to 9). It can serve the dashboard page at the same time.
+  container on your homelab, open `http://<docker host>:8787/` from any screen. It needs **no MQTT broker**.
+- **The dashboard with a broker**: the same container also listens for alerts on your Mosquitto broker, for example
+  from Home Assistant (sections 4 to 9).
 
 Sources (Gitea, GitHub, GitLab, Bitbucket Cloud, Azure DevOps, Prometheus), Mosquitto logins and Home Assistant are the same as in
 [install.md](install.md); only how the bridge is started and fed its files changes. All host names below are
@@ -33,9 +33,9 @@ publishes the port on `127.0.0.1` only. Section 3 covers who can see the page in
 
 Contents: [1. Build the image](#1-build-the-image) · [2. Try the demo](#2-try-the-demo) ·
 [3. The dashboard on your homelab](#3-the-dashboard-on-your-homelab) (also [Komodo and Portainer](#komodo-portainer-and-inline-configs)) ·
-[4. Config and secrets](#4-config-and-secrets) · [5. Compose for the ESP bridge](#5-compose-for-the-esp-bridge) ·
+[4. Config and secrets](#4-config-and-secrets) · [5. Compose with a broker](#5-compose-with-a-broker) ·
 [6. Reaching the broker](#6-reaching-the-broker) · [7. Webhooks](#7-webhooks-gitea) ·
-[8. The stats page](#8-the-stats-page-in-a-container) · [9. Health and restarts](#9-health-and-restarts) ·
+[8. Host stats](#8-host-stats-in-a-container) · [9. Health and restarts](#9-health-and-restarts) ·
 [10. The published image](#10-the-published-image) · [11. Update and remove](#11-update-and-remove)
 
 ## 1. Build the image
@@ -52,8 +52,8 @@ docker build -t deskwatch-bridge .
 ```
 
 The first build takes a few minutes (it compiles all dependencies). The Dockerfile builds in two steps: first the
-dependencies, from the manifests and `Cargo.lock` only, then your sources. A rebuild after a change in the bridge,
-`sim` or `ui` code therefore reuses the cached dependency layer and only compiles the bridge itself; the dependencies
+dependencies, from the manifests and `Cargo.lock` only, then your sources. A rebuild after a change in the bridge
+code therefore reuses the cached dependency layer and only compiles the bridge itself; the dependencies
 are rebuilt only when a `Cargo.toml` or `Cargo.lock` changes. The image is for the CPU you build it on, so
 building on a Raspberry Pi gives an arm64 image with no extra steps; `docker buildx` can build for another CPU. CI
 builds the image for amd64 and arm64 on every change (nothing pushed). The build stage cross-compiles instead of
@@ -68,20 +68,6 @@ emulating the other CPU, so a multi-arch build is not much slower than a single 
 # The dashboard page only (no broker): open http://localhost:8787/
 docker run --rm -p 8787:8787 deskwatch-bridge --demo --kiosk --no-mqtt
 ```
-
-For the ESP panel or the desktop simulator the demo needs a broker. With one reachable as `broker.example.lan`:
-
-```sh
-cat > demo.toml <<'TOML'
-[mqtt]
-host = "broker.example.lan"
-TOML
-docker run --rm -v "$PWD/demo.toml:/etc/deskwatch/bridge.toml:ro" deskwatch-bridge --demo /etc/deskwatch/bridge.toml
-```
-
-You should see `connected to MQTT broker` and `demo mode: playing fake data`. Look at it with the simulator, see
-[install.md](install.md#8-try-it-without-hardware). If your broker needs a login, use the config and secrets from
-section 4.
 
 ## 3. The dashboard on your homelab
 
@@ -112,11 +98,11 @@ on the [built-in login](auth.md) (and HTTPS, [https.md](https.md)); see "Protect
 the bridge logs one warning at startup that the page has no login.
 
 **What the config does.** `[mqtt] enabled = false` makes the bridge skip the broker completely: no connection, no
-warnings every few seconds. It keeps working without one; the only things that need MQTT are the ESP panel, its
-button and alerts sent over MQTT (Home Assistant). `[kiosk] enabled = true` serves the page, and `[http] listen =
+warnings every few seconds. It keeps working without one; the only thing that needs MQTT is
+alerts sent over MQTT (Home Assistant). `[kiosk] enabled = true` serves the page, and `[http] listen =
 "0.0.0.0:8787"` is the right bind inside a container, because the port you *publish* decides who can reach it. The
-layout and widgets are in [kiosk.md](kiosk.md#3-choose-the-widgets). The dashboard and the ESP panel can share one
-bridge: set `enabled = true` (or delete the line) and give `[mqtt]` the broker's host, as in section 6.
+layout and widgets are in [kiosk.md](kiosk.md#3-choose-the-widgets). To also take alerts from MQTT,
+set `enabled = true` (or delete the line) and give `[mqtt]` the broker's host, as in section 6.
 
 **Your own data.** Without any `[[source.*]]` block the page shows the container's own stats and nothing else. Add
 the sources you use (GitHub, Azure DevOps, Gitea, Prometheus) exactly as in
@@ -359,7 +345,7 @@ secrets:
 
 (A file-based Compose secret keeps the host file's owner and mode, so the same uid rule applies.)
 
-## 5. Compose for the ESP bridge
+## 5. Compose with a broker
 
 [`deploy/docker-compose.yml`](../deploy/docker-compose.yml) is a ready example: it pulls the published image (pinned to a release, section 10), mounts the
 config and the `credentials/` folder read-only, runs with a read-only root filesystem, drops all capabilities, and
@@ -387,7 +373,7 @@ Set `[mqtt] host` and `port` in `bridge.toml`. Which host to use depends on wher
 |---|---|---|
 | On another machine | its name or address | none |
 | On the Docker host itself | `"host.docker.internal"` | Keep the `extra_hosts` line of the Compose file. Mosquitto must listen on more than localhost (a `listener 1883` line, with logins, see [mosquitto.md](mosquitto.md)) and the host firewall must allow the Docker network |
-| In the same Compose file | the service name, for example `"mosquitto"` | Uncomment the `mosquitto` service in the example and put it in the same file. The panel reaches it through the published port 1883 |
+| In the same Compose file | the service name, for example `"mosquitto"` | Uncomment the `mosquitto` service in the example and put it in the same file. Other clients reach it through the published port 1883 |
 | On the Docker host, simplest | `"localhost"` | Run the bridge with `network_mode: host` instead of the default network (Linux only). Then `ports:` and `extra_hosts` are not used |
 
 Broker logins and TLS work exactly as described in [mosquitto.md](mosquitto.md); put the password in
@@ -412,9 +398,9 @@ Only a Gitea source needs an incoming connection from outside. The listener it u
 rest, including `ALLOWED_HOST_LIST`, is in [install.md](install.md#gitea-actions-and-pull-requests)). Allow that port in the firewall from the Gitea host only. GitHub, Azure DevOps and
 Prometheus sources only make outgoing requests and need no published port.
 
-## 8. The stats page in a container
+## 8. Host stats in a container
 
-The built-in `stats` page reads `/proc` and `/sys`, and a container sees only part of the real machine:
+The bridge machine's own host card reads `/proc` and `/sys`, and a container sees only part of the real machine:
 
 - **Host name:** the container id by default. Set `display_name = "homeserver"` under `[server]`.
 - **RAM and uptime:** the host's numbers (Docker does not virtualize `/proc/meminfo` and `/proc/uptime`).
@@ -426,7 +412,7 @@ The built-in `stats` page reads `/proc` and `/sys`, and a container sees only pa
 - **CPU temperature:** often empty, because the thermal sensors are not always visible inside a container.
 
 If you want exact numbers for several machines, use a Prometheus source with node_exporter instead
-([install.md](install.md#prometheus-host-stats-and-containers)) and leave the local page as is.
+([install.md](install.md#prometheus-host-stats-and-containers)) and leave the local card as is.
 
 ## 9. Health and restarts
 
@@ -437,7 +423,7 @@ loopback every 30 seconds (over HTTPS when `[http.tls]` is set, without checking
 
 - **Dashboard on** (`[kiosk] enabled = true`): healthy when the page answers 200.
 - **MQTT on** (the default): also healthy only while the bridge is connected to the broker. `GET /healthz` answers
-  200 `ok` then and 503 `mqtt down` otherwise, so an ESP bridge with a dead broker shows `unhealthy` in `docker ps`.
+  200 `ok` then and 503 `mqtt down` otherwise, so a bridge with a dead broker shows `unhealthy` in `docker ps`.
   This route is added whenever MQTT is on, which means the HTTP listener (`[http] listen`, port 8787 by default)
   also opens for a bridge that has no dashboard or Gitea source. It serves nothing else; to keep it off the network
   publish no port for it, or set `[http] listen = "127.0.0.1:8787"` outside a container. With `[mqtt] enabled =
@@ -455,9 +441,8 @@ loopback every 30 seconds (over HTTPS when `[http.tls]` is set, without checking
   exit immediately with a message naming the problem, so `restart: unless-stopped` (or `docker ps` showing
   `Restarting`) is the signal. A source that cannot reach its service does not stop the bridge; it shows as the
   `warn` badge, and on the dashboard the `health` widget names it.
-- **The broker is the health signal for the panel.** The bridge publishes `deskpanel/bridge/status` (`online`,
-  and a retained `offline` as its last will when the connection drops). The panel already shows a red bar when it
-  goes `offline`, and Home Assistant or a monitor can watch that topic.
+- **The broker shows the bridge's state.** The bridge publishes `deskpanel/bridge/status` (`online`,
+  and a retained `offline` as its last will when the connection drops). Home Assistant or a monitor can watch that topic.
 
 The check does not restart a container by itself (plain Docker only reports it); an autoheal container or a
 monitor such as Uptime Kuma pointed at the page can act on it.
@@ -468,7 +453,7 @@ Every version tag (from 0.9.6 on, except 0.9.8, which was never built) is built 
 `publish image` job in [`pipeline.yml`](../.github/workflows/pipeline.yml) and pushed to GitHub's registry:
 
 ```sh
-docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 1.0.2; no "v"
+docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 1.0.3; no "v"
 docker run --rm -p 8787:8787 ghcr.io/sylentic/deskwatch-bridge:<version> --demo --kiosk --no-mqtt
 ```
 
@@ -505,7 +490,7 @@ services:
       - dev-data:/var/lib/deskwatch        # never the data folder of the normal container
     environment:
       DESKWATCH_DATA_DIR: /var/lib/deskwatch
-      DESKWATCH_NO_MQTT: "1"               # leave the broker and the ESP panel to the normal bridge
+      DESKWATCH_NO_MQTT: "1"               # leave the broker to the normal bridge
     ports:
       - "8788:8787"
 volumes:

@@ -31,7 +31,7 @@ use tokio::time::{Instant, MissedTickBehavior};
 use tracing::{debug, info, warn};
 
 use crate::alerts::{IssueWatch, NewIssue};
-use crate::ci::{OpenPull, RepoPulls, Run, RunStatus, RunningJob, Update};
+use crate::ci::{OpenPull, RepoPulls, Run, RunJob, RunStatus, RunningJob, Update};
 use crate::config::GitlabConfig;
 use crate::gitea::job_kind;
 use crate::gitea::payload::unix_seconds;
@@ -41,7 +41,7 @@ use api::HttpApi;
 use payload::{Issue, Job, MergeRequest, Pipeline};
 use runners::RunnerScope;
 
-/// Adapter type: `[[source.gitlab]]` in the config and `source` on panel pages.
+/// Adapter type: `[[source.gitlab]]` in the config and the `source` of what it reports.
 pub const KIND: &str = "gitlab";
 
 /// Shown as the pipeline name when the project does not name its pipelines.
@@ -486,7 +486,7 @@ impl GitlabState {
 
         // Watch running pipelines; stop watching the ones that finished or
         // dropped off the list. Quiet projects are watched too, for the
-        // kiosk's "Running now" list; `interrupt` only decides about the ESP.
+        // kiosk's "Running now" list; `interrupt` only decides about the banner.
         let running: HashMap<u64, &Pipeline> = pipelines
             .iter()
             .filter(|p| status_of(p) == RunStatus::Running)
@@ -547,13 +547,18 @@ impl GitlabState {
             let data = self.job_data(project, &watched, &jobs, now);
             debug!(%key, step = ?data.step, progress = ?data.progress, "pipeline running");
             watched.shown = true;
+            out.push(Update::RunJobs {
+                key: key.clone(),
+                jobs: run_jobs(&jobs),
+            });
             out.push(Update::JobRunning {
-                key,
+                key: key.clone(),
                 job: RunningJob {
                     data,
                     interrupt: self.interrupt.allows(project),
                     updated: now,
                     url: watched.url.clone(),
+                    group: Some(key),
                 },
             });
         }
@@ -671,6 +676,31 @@ fn pipeline_status(status: &str) -> RunStatus {
         // canceled, canceling, skipped, and anything GitLab adds later
         _ => RunStatus::Neutral,
     }
+}
+
+/// Every job of a running pipeline in pipeline order, for the kiosk. A
+/// running job shows its stage; a failure that is allowed does not count.
+fn run_jobs(jobs: &[Job]) -> Vec<RunJob> {
+    let mut by_id: Vec<&Job> = jobs.iter().collect();
+    by_id.sort_by_key(|j| j.id);
+    by_id
+        .into_iter()
+        .map(|j| {
+            let status = match pipeline_status(&j.status) {
+                RunStatus::Failed if j.allow_failure => RunStatus::Neutral,
+                s => s,
+            };
+            RunJob {
+                name: truncate(&j.name, MAX_TITLE_CHARS),
+                status,
+                step: Some(truncate(&j.stage, MAX_TITLE_CHARS)).filter(|s| !s.is_empty()),
+                progress: None,
+                started: unix_seconds(j.started_at.as_deref()),
+                finished: unix_seconds(j.finished_at.as_deref()),
+                url: j.web_url.as_deref().and_then(source::safe_url),
+            }
+        })
+        .collect()
 }
 
 /// Has this job stopped for good? A `manual` job waits for a person and does

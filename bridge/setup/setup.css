@@ -61,6 +61,8 @@ textarea, select { padding: .55rem .75rem; border: 1px solid var(--field-line); 
 textarea { font-family: var(--mono); font-size: .85rem; line-height: 1.6; }
 .form { display: grid; gap: .9rem; }
 .field { display: grid; gap: .35rem; }
+.field select, form.accessform select { width: 100%; }
+.muted a { color: var(--fg); }
 .field span { color: var(--muted); font-size: .85rem; }
 .field input, .field textarea { width: 100%; flex: none; }
 .check { display: flex; align-items: center; gap: .5rem; }
@@ -95,8 +97,9 @@ button.restart { background: #b91c1c; color: #fff; }
 .banner { margin: 0 0 1rem; }
 code { font-family: var(--mono); font-size: .9em; }
 @media (max-width: 720px) {
-  .sidebar { grid-template-columns: 1fr; }
+  .sidebar { grid-template-columns: minmax(0, 1fr); }
   nav.side { position: static; display: flex; flex-wrap: wrap; }
+  .secret { flex-wrap: wrap; }
 }
 .setting { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .75rem 0; border-top: 1px solid var(--line); }
 .setting:first-of-type { border-top: 0; }
@@ -104,7 +107,7 @@ code { font-family: var(--mono); font-size: .9em; }
 .setting input[type=checkbox] { width: 18px; height: 18px; flex: none; }
 .setting select, .setting input.narrow { flex: 0 0 8rem; width: 8rem; }
 
-form.accessform { display: grid; gap: .75rem; margin-top: 1rem; max-width: 30rem; }
+form.accessform { display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; margin-top: 1rem; max-width: 30rem; }
 form.accessform h3, .card h3 { font-size: .93rem; font-weight: 600; margin: 1.25rem 0 .25rem; }
 label.field { display: grid; gap: .3rem; font-size: .85rem; color: var(--muted); }
 #signout[hidden] { display: none; }

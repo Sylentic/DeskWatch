@@ -17,7 +17,7 @@
 #   sudo chmod 600 /etc/deskwatch/credentials/*
 
 [Unit]
-Description=DeskWatch bridge (desk panel MQTT publisher)
+Description=DeskWatch bridge (dashboard and alert listener)
 After=network-online.target mosquitto.service
 Wants=network-online.target
 

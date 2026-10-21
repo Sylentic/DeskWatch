@@ -10,7 +10,6 @@ systems and the guide for the parts that exist today: **Gitea runners**, **GitHu
 | Azure DevOps | Agents of the self-hosted agent pools | In this version, built against mock responses only, with the number of jobs waiting per pool |
 | GitLab | Runners of a project, a group or the whole instance | In this version, built against mock responses only |
 | Bitbucket Cloud | Self-hosted runners of a repository or a workspace | In this version, built against mock responses only |
-| ESP panel | A `runners` page and an offline count in the `warn` badge | Not built, needs a schema change |
 
 ## 1. How it fits
 
@@ -42,10 +41,8 @@ The kiosk snapshot has a top-level `runners` list (version stays 1, a page that 
 
 ### What is not built
 
-- **The ESP panel.** A `runners` page and an offline count in the `warn` badge change the MQTT schema, which has a
-  contract with the firmware. That waits until the three sources are in, so the schema is changed once.
 - **"Waiting for runner" on the pipelines page** (a queued run with no online runner that has its label). Best
-  effort and label matching differs per system, so it follows the schema change.
+  effort and label matching differs per system, so it is not built.
 - **Queued jobs per pool** are in for Azure DevOps (section 4), on the `runners` widget only. Gitea and GitHub do
   not offer a cheap count.
 
@@ -175,7 +172,7 @@ from the documented API. Check on first use that `status` is `online`/`offline`,
 only while an agent runs a job, that `completedRequestCount=0` really leaves out finished requests, and that a
 waiting request has neither `assignTime` nor `finishTime`. If the last one is wrong the count is simply too high
 or zero; nothing else depends on it. "Waiting for runner" on the pipelines page (matching a queued run to a pool
-by label) is still left to the ESP panel step.
+by label) is not built.
 
 ## 5. GitLab runners (in this version)
 
@@ -241,8 +238,7 @@ workspace together, a runner would show twice.
 2. **Done:** GitHub runners, with their own token scope.
 3. **Done:** Azure DevOps pools and queued jobs per pool, against mock answers only; the shapes still need checking against a real organisation.
    **Done:** GitLab and Bitbucket runners, against mock answers only.
-4. **Open:** the ESP panel `runners` page, the offline count in the `warn` badge and "waiting for runner" on the
-   pipelines page, together with one amendment of the MQTT schema.
+4. **Open:** "waiting for runner" on the pipelines page.
 
 ## 8. Try it without any CI
 

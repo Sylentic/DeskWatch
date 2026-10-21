@@ -20,7 +20,6 @@ the GitHub release. A merge into `main` without a new version releases nothing.
 1. On a branch from `dev`, prepare the release and merge it into `dev` (a normal pull request). It changes these
    places:
    - `version` in the root `Cargo.toml`, and `Cargo.lock` with it (the pipeline builds with `--locked`);
-   - `version` in `firmware/Cargo.toml` and `firmware/Cargo.lock`;
    - `Unreleased` in `CHANGELOG.md`, turned into the new version section (the release notes are that section);
    - the image tag in `deploy/docker-compose.yml`;
    - the version examples in `docs/install.md` (two), `docs/raspberry-pi.md` and `docs/windows.md` (two), and the

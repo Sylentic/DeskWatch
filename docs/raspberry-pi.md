@@ -1,9 +1,7 @@
 # DeskWatch on a Raspberry Pi
 
 A Raspberry Pi is a good always-on home for the bridge: it idles at a few watts, and the bridge needs very little
-(a Pi 3 or newer is plenty; a Pi Zero 2 W works too). It is also a fine always-on machine for the demo:
-`deskwatch-bridge --demo` on the Pi plus the simulator on a PC gives you something to look at before the panel
-hardware exists.
+(a Pi 3 or newer is plenty; a Pi Zero 2 W works too). It is also a fine always-on machine for the demo.
 
 This page covers two ways to run the bridge on **Raspberry Pi OS 64-bit** (Debian 12 "Bookworm" or newer, the
 Lite image is enough). Everything else (config keys, sources, Mosquitto logins, Home Assistant) is the same as on any
@@ -16,7 +14,7 @@ the Pi's browser just opens its address (`DESKWATCH_KIOSK_URL`, see [kiosk.md](k
 
 Contents: [1. Before you start](#1-before-you-start) · [2. Route A: systemd](#2-route-a-systemd-release-binary) ·
 [3. Route B: Docker](#3-route-b-docker) · [4. Mosquitto on the Pi](#4-mosquitto-on-the-pi) ·
-[5. Run the demo or the simulator](#5-the-demo-and-the-simulator) · [6. Update and remove](#6-update-and-remove) ·
+[5. Run the demo](#5-the-demo) · [6. Update and remove](#6-update-and-remove) ·
 [7. What was and was not tested](#7-what-was-and-was-not-tested)
 
 ## 1. Before you start
@@ -26,10 +24,10 @@ Contents: [1. Before you start](#1-before-you-start) · [2. Route A: systemd](#2
   as "Raspberry Pi OS (64-bit)"). Pi 3, 4, 5, Zero 2 W and 400 all support it.
 - **A broker.** Mosquitto on the Pi itself, or another machine, see [section 4](#4-mosquitto-on-the-pi).
 - **Storage wear.** The bridge writes nothing to disk unless you turn on the [data folder](data-dir.md), so an SD card is fine. Journald logs are the main writes.
-- **A fixed address.** Give the Pi a DHCP reservation on your router (or a static address) so the panel and Gitea
+- **A fixed address.** Give the Pi a DHCP reservation on your router (or a static address) so the dashboard and Gitea
   webhooks keep finding it.
 
-The local stats page (CPU, memory, disk, temperature of the machine the bridge runs on) works on the Pi because
+The local host card (CPU, memory, disk, temperature of the machine the bridge runs on) works on the Pi because
 it reads `/proc` and `/sys`, like on any Linux server.
 
 ## 2. Route A: systemd, release binary
@@ -39,7 +37,7 @@ x86_64 one, named `deskwatch-bridge-<version>-aarch64-linux.tar.gz`, with a `.sh
 Ubuntu 22.04 (glibc 2.35), so it runs on Raspberry Pi OS Bookworm and newer and needs nothing installed.
 
 ```sh
-VERSION=v1.0.2       # the release you want; the aarch64 tarball ships since 0.9.3
+VERSION=v1.0.3       # the release you want; the aarch64 tarball ships since 0.9.3
 cd "$(mktemp -d)"
 curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-aarch64-linux.tar.gz"
 curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-aarch64-linux.tar.gz.sha256"
@@ -116,27 +114,20 @@ If the Pi is also the broker host:
 sudo apt install mosquitto mosquitto-clients
 ```
 
-Then follow [mosquitto.md](mosquitto.md) for logins and topic limits (do that before the panel arrives; an open
-broker on a home network lets anything draw on the panel). The Pi's package is the same Mosquitto 2.0 the guide
+Then follow [mosquitto.md](mosquitto.md) for logins and topic limits (do that before you put the broker on a shared network; an open
+broker on a home network lets anything raise alerts). The Pi's package is the same Mosquitto 2.0 the guide
 assumes. The bridge's `[mqtt] host` is then `localhost` for Route A, or see the broker table in
 [docker.md section 6](docker.md#6-reaching-the-broker) for Route B.
 
-## 5. The demo and the simulator
+## 5. The demo
 
-With a broker running on the Pi, try the bridge with no CI at all:
+Try the bridge with no CI at all:
 
 ```sh
-deskwatch-bridge --demo        # plays fake data to a broker on localhost
+deskwatch-bridge --demo --kiosk --no-mqtt   # plays fake data on the dashboard page, no broker needed
 ```
 
-and watch it from a PC with the desktop simulator (`cargo run -p deskwatch-sim -- --host raspberrypi.local`, or
-`deskwatch-sim.exe --host raspberrypi.local` from the Windows zip), see
-[install.md section 8](install.md#8-try-it-without-hardware). The simulator is a desktop program: it is not
-shipped for the Pi, and it needs a window system. A Pi is, however, a fine always-on machine to leave the demo
-running while you work on the layouts or the firmware.
-
-A Pi with a monitor or TV can show the bridge's own dashboard page in a full-screen browser, instead of (or next to)
-the ESP panel: `deskwatch-bridge --demo --kiosk` plays it with fake data, and [kiosk.md](kiosk.md) covers the config,
+A Pi with a monitor or TV can show the bridge's own dashboard page in a full-screen browser; the demo above plays it with fake data, and [kiosk.md](kiosk.md) covers the config,
 the Chromium autostart and the security notes. It needs no broker: set `[mqtt] enabled = false` (or pass `--no-mqtt`)
 so the bridge does not keep trying to reach one.
 

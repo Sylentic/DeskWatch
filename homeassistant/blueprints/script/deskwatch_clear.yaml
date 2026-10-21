@@ -1,4 +1,4 @@
-# DeskWatch clear: remove an alert from the DeskWatch desk panel by its id.
+# DeskWatch clear: remove an alert from the DeskWatch dashboard by its id.
 #
 # Import and create a script from it (name it "DeskWatch clear"), then call it
 # from an automation when the condition ends (door closed, leak dry), with the
@@ -6,7 +6,7 @@
 # Guide: docs/home-assistant.md
 blueprint:
   name: DeskWatch clear
-  description: Remove an alert from the DeskWatch desk panel by its id.
+  description: Remove an alert from the DeskWatch dashboard by its id.
   domain: script
   input:
     topic:

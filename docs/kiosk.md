@@ -1,13 +1,12 @@
 # The kiosk dashboard (big screens)
 
-The ESP panel shows one page at a time on a 4 inch screen. The **kiosk dashboard** is the other output: one web page
-that shows everything at once, with no rotation, for a monitor or TV (a Raspberry Pi with a browser in kiosk mode, a
+The **kiosk dashboard** is one web page that shows everything at once, for a monitor or TV (a Raspberry Pi with a browser in kiosk mode, a
 wall tablet, or any browser on your desk). It is built into the bridge, so there is nothing extra to install, and
 it works on a LAN with no internet access (no CDN or scripts are loaded from elsewhere; the typefaces, Geist, Geist Mono
-and Space Grotesk, are built into the bridge and served on `/fonts/`, see `bridge/fonts/`).
+and Space Grotesk, are built into the bridge and served on `/fonts/`, see `bridge/fonts/`; the tab icon is served on
+`/favicon.svg`, see `bridge/icons/`).
 
-It reads the same facts as the ESP panel, so the two always agree, but it is its own design: the MQTT schema (v2)
-and the panel do not change, and the page does not need a broker.
+The page does not need a broker.
 
 Contents: [1. What you get](#1-what-you-get) · [2. Turn it on](#2-turn-it-on) ·
 [3. Choose the widgets](#3-choose-the-widgets) · [4. Autostart on a Raspberry Pi](#4-autostart-on-a-raspberry-pi) ·
@@ -20,12 +19,12 @@ A grid of cards, 4 columns by 3 rows by default:
 
 | Widget | Shows |
 |---|---|
-| `stats` | One host in detail: CPU, RAM, disk bars with warning colours, temperature, load, network rates, uptime, a CPU graph of the last few minutes |
+| `stats` | One host in detail: CPU, RAM, disk bars with warning colours, GPU and VRAM bars and GPU temperature (only for a host that reports a GPU, see [GPU](#gpu-on-the-host-card)), temperature, load, network rates, uptime, a CPU graph of the last few minutes |
 | `hosts` | Every host (the bridge's own machine and every host a Prometheus source reports): a list, or with `view = "detailed"` the chosen host in detail on top of the list |
-| `jobs` | Jobs running now, with step, progress bar and a live elapsed time |
+| `jobs` | Running now: a heading per run, and under it a row per job (parallel jobs, GitLab jobs, Bitbucket steps, Azure DevOps jobs) with its status colour, step, progress bar and a live elapsed time |
 | `prs` | Open pull requests per repository, newest first, with the total |
-| `pipelines` | The latest run of every pipeline, newest first across all sources (a running run counts from its start, a finished one from its end), so the top rows are always the most recent activity; in the default layout it is one cell and scrolls |
-| `alerts` | Active alerts (Home Assistant, scripts), most urgent first |
+| `pipelines` | The latest run of every pipeline, one boxed row each, tinted by status (failed red, success green, running orange, waiting for approval amber), newest first across all sources (a running run counts from its start, a finished one from its end), so the top rows are always the most recent activity; in the default layout it is two cells wide and scrolls |
+| `alerts` | Active alerts (Home Assistant, scripts, new issues and PR comments from your Git hosts), most urgent first, each in a box coloured by severity |
 | `containers` | Containers and hosts that are down (needs the Prometheus source) |
 | `health` | Whether every source is working, or why not (token refused, not reachable) |
 | `runners` | Runners and agents: offline first, then busy, then idle. Not in the default layout; see [runners.md](runners.md) |
@@ -40,6 +39,8 @@ trust; otherwise it stays plain text.
 |---|---|---|---|
 | Gitea | the pull request | the run (Gitea's own address when its webhook sends one, else the run by its number, else the repository's Actions page); a job opens its job page or the Actions page | the runners page of the configured scope (`admin`, `user`, `org:<name>`, `repo:<owner>/<name>`) |
 | GitHub and GitHub Enterprise | the pull request | the workflow run; a job opens its job page | the runner settings of the repository or organisation (none for `admin` and `user`, GitHub has no such page) |
+| GitLab | the merge request | the pipeline; a job opens its job page | the instance, group or project runner settings |
+| Bitbucket Cloud | the pull request | the pipeline run | no link (Bitbucket has no stable runners page) |
 | Azure DevOps | the pull request in its repository | the build results page | the agent pool in the organisation settings (a link per pool, not per agent) |
 
 Addresses are built from the source's own configured address, never hard coded, and only `http` and `https` addresses
@@ -51,6 +52,14 @@ Open PRs and Running now show everything unless you set `rows`, so a long list s
 "+N more". While you scroll a card, its contents are not redrawn (a redraw would throw your place away); about 8 seconds
 after you let go it catches up, and a card you left scrolled goes back to the top after 30 seconds, so a wall display
 shows the newest items again.
+
+### GPU on the host card
+
+A host that reports a GPU gets **GPU** and **VRAM** bars and a **GPU temp** line on its card; hosts without a GPU show
+nothing extra. A GPU above 95 % puts the host in the "needs a look" group. Prometheus hosts read the figures from the
+NVIDIA DCGM exporter by default; `gpu_pct`, `gpu_mem_pct` and `gpu_temp_c` can be replaced per host under `queries`
+([install.md](install.md#prometheus-host-stats-and-containers)). The bridge machine itself reads AMD GPUs from sysfs;
+Intel and NVIDIA GPUs on the bridge machine need a Prometheus host. Not yet tried on a real GPU.
 
 ### Hosts: detailed or compact
 
@@ -73,7 +82,7 @@ shows that host, without one it has arrows (`‹ 1/3 ›`) to step through the h
 ### Failed runs: look and dismiss
 
 The red **failed** counter in the header counts pipelines whose latest finished run failed. It used to stay until the
-pipeline turned green (or until the button on the ESP panel was pressed, which the kiosk does not have), so an old
+pipeline turned green, so an old
 failure could sit there forever. Now the counter is a button: click or tap it for a list with, per failed run, the
 source, project and pipeline, branch, failing step and how long ago, each opening the run on its source in a new tab.
 **Dismiss** removes one run from the list and the counter, **Dismiss all** clears the list. Escape or a click outside
@@ -101,17 +110,41 @@ bar still shows the problem, and the next outage shows the pill again. API: `POS
 ### Alerts in the header
 
 The most urgent active alert is a coloured pill on the right of the header: the severity in colour (INFO blue,
-WARNING amber, CRITICAL red), what is wrong, the message and the source ("homeassistant"), with "+N more" when
+WARNING yellow, CRITICAL red), what is wrong, the message and the source ("homeassistant"), with "+N more" when
 there are more. With no alerts there is no pill. Click it, or the **Alerts** badge, to fold out the menu with all alerts.
 The header badges (one bar next to the DESKWATCH name) run Open PRs, Failed runs, Alerts; each is gone at 0. While a run
 result or notice is showing (see below), it takes the pill's place: the header shows one pill at a time.
 
-The **Alerts** badge counts every active alert, coloured by the worst one. In the menu every alert has a **Dismiss**
+The **Alerts** badge counts every active alert, coloured by the worst one. In the menu and in the Alerts card every alert
+sits in a box in its severity colour (info blue, warning yellow, critical red; yellow is its own colour, apart from
+running orange and waiting amber). Alerts that come from your Git hosts (a new issue, a new PR comment) are info alerts
+with the source's mark; they link to the issue or PR and stay until dismissed or for a week. In the menu every alert has a **Dismiss**
 button, plus **Dismiss all**. Dismissing clears the alert for every screen (the same as a `clear` message on MQTT,
 unlike Failed runs, which are hidden per browser) and works without MQTT. It can only clear, never raise or change an
 alert. Switch it off with `dismiss = false` in `[alerts]`.
 The header pill on or off and "via source" are `[alerts]` settings too (`ticker`, `show_source`), also
 changeable on the [setup page](setup-page.md#alerts).
+
+### Customize your own dashboard
+
+The grid icon in the header (next to the cogwheel for Setup) starts **edit mode**. Every panel gets a strip with a drag
+handle, arrows (move earlier or later, for touch screens), **W** and **H** (width and height in grid cells, up to the
+size of the grid) and an x to hide it. A hidden panel leaves the grid and waits under **Hidden panels** in the bar on top;
+click it there to bring it back. The bar counts the cells in use (`10 of 12`) and has **Reset to default**. **Done**
+leaves edit mode.
+
+The administrator's layout (the built-in one or your `[[kiosk.panel]]` blocks) stays the default. A user only stores the
+difference, so a panel the administrator adds later still shows up (at the end). Panels flow in order on the grid, so
+a smaller panel can leave a gap.
+
+Where the choice is kept:
+
+| Situation | Kept |
+|---|---|
+| Signed in (local user or GitHub/Microsoft), data folder writable | On the bridge, per user (`layouts.json`, mode 0600), so it follows the user to any browser. Every role may save its own layout, nobody can change another user's. |
+| No login, or a screen opened with a viewer key | In this browser (localStorage) |
+
+API: `GET /api/auth/layout`, `PUT /api/auth/layout`, `POST /api/auth/layout/reset` (409 when the sign-in is not a person).
 
 ### Where things run: source marks and the sources bar
 
@@ -124,12 +157,12 @@ At the end of the bar the connection state says whether the page gets live data 
 
 ### Run results in the header
 
-Interrupts do not take over the whole screen as they do on the ESP panel, because the other widgets are still
+Interrupts do not take over the whole screen, because the other widgets are still
 useful. The bridge's normal priority decides (critical alert, running job, failed, warning, success, notice), and
 the page shows the winner as a coloured **pill in the header**:
 
 - **FAILED** (red) and **CRITICAL**: stay until dismissed; a new one pulses once (not with reduced motion).
-- **WARNING** (amber).
+- **WARNING** (yellow).
 - **SUCCESS** (green), **FIXED** when the same pipeline failed before (the bridge has already replaced the red result),
   **DEPLOYED** for a pipeline with "deploy" in its name: these go away by themselves.
 - **NOTICE** (blue).
@@ -174,7 +207,7 @@ dashboard-only config and no broker. The Compose files, the token and the revers
 
 ## 3. Choose the widgets
 
-`[[kiosk.panel]]` blocks place widgets on the grid, left to right and top to bottom, like the `[[rotation]]` list.
+`[[kiosk.panel]]` blocks place widgets on the grid, left to right and top to bottom.
 Without any, the default layout is used: `jobs` (Running now, 2 wide, 2 tall) and one `hosts` panel (2 wide, 2 tall,
 see [Hosts](#hosts-detailed-or-compact)) on top, `pipelines` (2 wide), `prs` and `alerts` (1 cell each) below them.
 The Alerts panel shows every active alert as a coloured box with a Dismiss button (when `[alerts] dismiss` is on). There
@@ -209,8 +242,7 @@ title = "Reviews"    # replace the heading
 ```
 
 Each widget takes `span` cells (default `[1, 1]`) and the grid always fills the screen, so the cells are as big as
-the screen allows: a 3x2 grid on a 4K TV gives very large cards. List widgets cut off what does not fit and the
-last line says how many more there are. Configuration errors (a span larger than the grid, a `host` on a widget that
+the screen allows: a 3x2 grid on a 4K TV gives very large cards. List widgets scroll inside their card (see Click through, and scroll), and with `rows` set they stop at that many rows. Configuration errors (a span larger than the grid, a `host` on a widget that
 has none, an unknown widget) stop the bridge at startup with a message that names the block.
 
 ### Filter a widget by source or repository
@@ -234,7 +266,7 @@ trailing `*`. A widget whose filter matches nothing shows its normal empty text.
 the header counters and the banner still count everything, and `host` still belongs to `stats` only. Two copies of
 a widget with different filters is the way to split, for example, work and home pipelines over two cards.
 
-Drag and drop editing is not built.
+Users can also hide, move and resize panels for themselves, see [Customize your own dashboard](#customize-your-own-dashboard).
 
 ### Light mode, day and night theme
 
@@ -270,8 +302,8 @@ at 1080p, 8 px at 4K) from the centre. That keeps the edges of cards and text fr
 months. The step follows the wall clock, so a reload does not restart the walk. The page edge that moves out of
 view is cut off by a few pixels. Off by default. For an OLED you should still switch the screen off at night.
 
-With `[setup] enabled = true` the header also shows a small **Setup** link that opens the [setup page](setup-page.md);
-without it the link is not there.
+With `[setup] enabled = true` the header also shows a cogwheel that opens the [setup page](setup-page.md); without it
+the icon is not there.
 
 ## 4. Autostart on a Raspberry Pi
 
@@ -317,8 +349,9 @@ Things that make a kiosk last:
 
 ## 5. Security
 
-The page and its two data routes (`/api/kiosk` and `/api/kiosk/ws`) are read-only: the page cannot press buttons or
-change anything. They show PR titles, pipeline names, host stats and alert text, so treat them like a dashboard.
+The page and its two data routes (`/api/kiosk` and `/api/kiosk/ws`) only show data. The few things the page can change
+(dismissing alerts and failed runs, muting a source, saving your own layout) are separate calls that need the right role
+once a login is set ([auth.md](auth.md)). The page shows PR titles, pipeline names, host stats and alert text, so treat them like a dashboard.
 
 - **No login until you set a password.** The listener is `0.0.0.0:8787` (it has to be reachable for Gitea webhooks and
   for other machines on your network). With the kiosk on and no password set, anyone who can reach the port can read the
@@ -335,7 +368,7 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
   proxy that adds TLS and a login. Do not expose the port to the internet; use a VPN or an authenticating proxy.
   Details in [docker.md](docker.md#protecting-the-page).
 - Names shown come from your sources after their `alias` setting. If a work project name should not appear on a
-  visible screen, give it an alias, exactly as for the ESP panel. The page has no other redaction.
+  visible screen, give it an alias. The page has no other redaction.
 - The page sets a strict Content Security Policy: scripts, styles and fonts only from the bridge itself.
 
 ## 6. When something goes wrong
@@ -365,31 +398,30 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
   | box "Waiting for the first data" | The bridge is up but has not collected anything yet. | Wait a few seconds; the page fills in by itself. |
 
   If nothing helps, open `http://<host>:8787/api/kiosk` in a browser: JSON means the bridge is fine and the problem
-  is in the page or the browser; 401 means a token is needed; nothing means the bridge is not reachable (address,
+  is in the page or the browser; 401 means a sign-in is needed ([auth.md](auth.md)); nothing means the bridge is not reachable (address,
   firewall, `[http] listen`). The bridge log shows `serving http://...` at startup.
 
 ## 7. The data the page reads
 
 `GET /api/kiosk` returns the latest snapshot, and `/api/kiosk/ws` sends a snapshot over a WebSocket on every change
 and at least every 5 seconds (a heartbeat, so the page can tell quiet from gone). Snapshots are versioned with `"v"`
-(1), separately from the MQTT schema. Fields: `build` (bridge version; the page reloads when it changes), `now`
-(Unix seconds), `layout` (the grid, the widgets with their filters, `theme` and `pixel_shift_s` from the config), `screen` (the composer's pick as an MQTT v2
-screen payload, or `null` when idle), `badges`, `failed` (the failed runs behind the badge, minus the dismissed ones: `key`, `source`, `project`, `pipeline`, `ref`, `step`, `started`, `finished`, `url`), `hosts`, `down`, `jobs`, `runs`, `pulls`, `runners`, `queued_jobs`, `alerts` and `sources` (`id`, `health`, and `muted: true` when the pill was muted). `jobs`, `runs`, `pulls[].items[]` and `runners` each carry a `url` (an `http(s)` address, or `null`).
-Lists are not capped to the ESP panel's five rows. The structure is in `bridge/src/kiosk.rs` (`snapshot`) and
+(1), independent of the alert topic. Fields: `build` (bridge version; the page reloads when it changes), `now`
+(Unix seconds), `layout` (the grid, the widgets with their filters, `theme` and `pixel_shift_s` from the config), `screen` (the composer's pick: `level`, `template`, `page` and `data`, or `null` when idle), `badges`, `failed` (the failed runs behind the badge, minus the dismissed ones: `key`, `source`, `project`, `pipeline`, `ref`, `step`, `started`, `finished`, `url`), `hosts`, `down`, `jobs`, `run_jobs`, `runs`, `pulls`, `runners`, `queued_jobs`, `alerts` and `sources` (`id`, `health`, and `muted: true` when the pill was muted). `jobs`, `runs`, `pulls[].items[]` and `runners` each carry a `url` (an `http(s)` address, or `null`). A job's `group` names its run; `run_jobs` maps that group to every job of the run (`name`, `status`, `step`, `progress`, `started`, `finished`, `url`), so jobs that run side by side are listed together.
+The structure is in `bridge/src/kiosk.rs` (`snapshot`) and
 covered by the tests next to it. It is made for this page and may change between versions; scripts should use `POST /api/alert` instead.
 
-Status colours (the dots in Pipelines, the Running now bars and the header counters use the same ones): orange and
-pulsing for running, red for failed, green for success, amber and still for waiting for approval, grey for queued,
+Status colours (the dots and boxes in Pipelines, the Running now rows and the header counters use the same ones): orange
+and pulsing for running, red for failed, green for success, amber and still for waiting for approval, grey for queued,
 cancelled and anything unknown. Orange is deliberately darker than amber so a running build and one waiting for
-approval stay apart, and only the running dot pulses.
+approval stay apart, and only the running dot pulses. Alerts use their own severity colours: blue, yellow and red.
 
 `?static` on the page address stops all network use; the page then waits for `DeskWatchKiosk.render(snapshot)`
 to be called, which is how the screenshots and tests drive it.
 
 ## 8. What was and was not tested
 
-Tested: the endpoints, the WebSocket (a real handshake and pushed changes), the token check, the config parsing and
-the snapshot contents are covered by automated tests (`cargo test -p deskwatch-bridge`). The token and failure states were run in Chromium against the live `--demo --kiosk` bridge (token missing, wrong and right, WebSocket blocked, bridge unreachable). The page was run in
+Tested: the endpoints, the WebSocket (a real handshake and pushed changes), the sign-in checks, the config parsing and
+the snapshot contents are covered by automated tests (`cargo test -p deskwatch-bridge`). The failure states were run in Chromium against the live `--demo --kiosk` bridge (WebSocket blocked, bridge unreachable). The page was run in
 Chromium against the live `--demo --kiosk` bridge and rendered at 1280x720, 1920x1080, 3840x2160 and a 420 px wide
 phone, and was checked while the bridge was killed and started again: the page dimmed and said it was offline within 25 seconds, and recovered by itself within 14 seconds of the bridge returning. The reload on a new bridge version (`build` changing) is written but was not exercised.
 

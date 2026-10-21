@@ -1,7 +1,7 @@
 # Bitbucket Cloud source
 
 The `bitbucket` source shows open pull requests and Pipelines runs from Bitbucket Cloud (`bitbucket.org`) on the
-panel. It only reads, and only polls: nothing at home is exposed to the internet and no webhook is needed.
+dashboard. It only reads, and only polls: nothing at home is exposed to the internet and no webhook is needed.
 Bitbucket Data Center / Server is a different API and is not supported.
 
 What you get:
@@ -10,12 +10,12 @@ What you get:
   non-draft pull request flashes "New PR" (`notify_new_prs = false` turns that off).
 - The latest **pipeline** of each pipeline name on the `pipelines` page, next to the other sources.
 - A running pipeline shows on the kiosk dashboard as one "Running now" card with its current **step** and a bar
-  that is the share of finished steps. With `interrupt` on it also takes over the ESP screen. A pipeline whose name
+  that is the share of finished steps. With `interrupt` on it also shows as the banner on the dashboard. A pipeline whose name
   contains `deploy` shows as a deploy.
 - A failed pipeline raises the usual red alert naming the failed step; a good one flashes green. Both leave a count
-  in the header badge until you press the button. A stopped pipeline is neutral and raises nothing.
+  in the header badge until you dismiss it. A stopped pipeline is neutral and raises nothing.
 - A pipeline paused at a manual step shows as `review` on the pipelines page.
-- A refused or expired token, or an unreachable server, lights the `warn` badge.
+- A refused or expired token, or an unreachable server, shows the **Source down** pill.
 
 Self-hosted runners can be shown on the kiosk `runners` widget (optional, needs one more right, see
 [runners.md](runners.md#6-bitbucket-runners-in-this-version)).
@@ -38,7 +38,7 @@ Use an access token that can only read. Bitbucket is phasing out app passwords, 
 
 1. In Bitbucket open **Repository settings > Access tokens** (or the project or workspace settings, whichever your
    plan offers). A repository token is the tidiest: it can only see that repository.
-2. Give it a name and an expiry date you will remember. When the token lapses the panel shows the `warn` badge.
+2. Give it a name and an expiry date you will remember. When the token lapses the dashboard shows the **Source down** pill.
 3. Rights: **Pull requests: Read** and **Pipelines: Read**. Add **Runners: Read** only if you want the `runners`
    widget, and **Issues: Read** for new issues in the alerts list. Nothing with Write or Admin.
 4. Create the token and copy it once; Bitbucket does not show it again.
@@ -71,12 +71,12 @@ repos = ["your-workspace/repo-a", "your-workspace/repo-b"]
 | `base_url` | `https://api.bitbucket.org/2.0` | Only for tests and proxies. Links to pipelines point to `bitbucket.org` only when this is the default. |
 | `poll_s` | 120 | Seconds between polls of pull requests and recent pipelines (2 requests per repository). Bitbucket limits requests per hour, so this is slower than the other sources. |
 | `job_poll_s` | 10 | Seconds between step polls while a pipeline is in progress. |
-| `interrupt` | `true` | May a running pipeline and a finished run take over the ESP screen? `true`, `false` or a list of repositories. |
+| `interrupt` | `true` | May a running pipeline and a finished run show as the banner on the dashboard? `true`, `false` or a list of repositories. |
 | `notify_new_prs` | `true` | Flash "New PR" for a new non-draft pull request. |
 | `alert_new_issues` | `true` | Put a new issue in the alerts list until it is dismissed. Only for repositories with the issue tracker on, and the token needs **Issues: Read**. One extra request per repository per poll; issues that existed at startup do not alert. |
 | `runners` | none | Runner lists for the kiosk `runners` widget. |
 | `runner_poll_s` | 300 | Seconds between runner polls. |
-| `alias` | none | Short panel labels, such as `{ "your-workspace/repo-a" = "A" }`. |
+| `alias` | none | Short labels, such as `{ "your-workspace/repo-a" = "A" }`. |
 
 Press **Test connection** in Setup (or look at the bridge log after a restart): each repository is checked with the
 token and the answer says whether the token or the repository name is wrong.

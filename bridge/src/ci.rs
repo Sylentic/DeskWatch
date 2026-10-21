@@ -3,8 +3,8 @@
 //!
 //! Sources (Gitea, GitHub, Azure DevOps) send `Update`s; the
 //! main loop applies them here. Sources never decide what is on screen. The
-//! composer turns these facts into screen candidates, header badges and the
-//! `prs` and `pipelines` rotation pages.
+//! composer turns these facts into screen candidates and header badges; the
+//! kiosk reads the rest straight from here.
 //!
 //! Every key starts with the source id (`gitea:home:...`), so two instances of
 //! the same adapter never overwrite each other.
@@ -14,8 +14,8 @@ use std::cmp::Reverse;
 use std::collections::BTreeMap;
 
 use crate::model::{
-    AlertData, AlertStatus, Badge, BadgeIcon, Candidate, JobData, Level, ListData, ListRow,
-    MAX_TITLE_CHARS, NoticeData, RowStatus, ScreenData, truncate,
+    AlertData, AlertStatus, Badge, BadgeIcon, Candidate, JobData, Level, MAX_TITLE_CHARS,
+    NoticeData, RowStatus, ScreenData, truncate,
 };
 
 /// A running job with no update for this long is assumed lost (missed
@@ -40,6 +40,10 @@ pub enum Update {
     JobRunning { key: String, job: RunningJob },
     /// The job is no longer running (finished, cancelled or lost).
     JobDone { key: String },
+    /// Every job of one running run (its parallel jobs, stages or steps),
+    /// for the kiosk's "Running now" list. `key` is the `group` of the run's
+    /// running jobs. Replaces what was known; an empty list clears it.
+    RunJobs { key: String, jobs: Vec<RunJob> },
     /// The latest run of a pipeline changed. `key` names the pipeline, so a
     /// new run replaces the old one. A finished run also raises its alert.
     Run { key: String, run: Run },
@@ -140,6 +144,25 @@ pub struct RunningJob {
     pub updated: u64,
     /// Web page of the job or its run on the source, if known.
     pub url: Option<String>,
+    /// The run this job belongs to, the key of its `Update::RunJobs`. Jobs
+    /// of one run share it, so the kiosk lists them under one heading.
+    pub group: Option<String>,
+}
+
+/// One job of a running run: a parallel job (GitHub, Gitea, Azure DevOps), a
+/// job of a stage (GitLab) or a step (Bitbucket).
+#[derive(Debug, Clone, PartialEq)]
+pub struct RunJob {
+    pub name: String,
+    pub status: RunStatus,
+    /// Current step while it runs; failing step once it failed.
+    pub step: Option<String>,
+    /// 0.0 to 1.0 while it runs, if known.
+    pub progress: Option<f32>,
+    pub started: Option<u64>,
+    pub finished: Option<u64>,
+    /// Web page of the job on the source, if known.
+    pub url: Option<String>,
 }
 
 /// Status of a run, the same for every CI source (integrations plan 8.1).
@@ -170,6 +193,7 @@ impl RunStatus {
         }
     }
 
+    #[cfg(test)]
     fn row_status(self) -> RowStatus {
         match self {
             RunStatus::Running => RowStatus::Running,
@@ -234,7 +258,7 @@ pub struct OpenPull {
 /// Open pull requests of one repository.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct RepoPulls {
-    /// Short name shown on the panel, such as `deskwatch`.
+    /// Short name shown on the kiosk page, such as `deskwatch`.
     pub project: String,
     pub source: String,
     pub pulls: Vec<OpenPull>,
@@ -248,8 +272,6 @@ pub struct RepoPulls {
 pub struct CiFacts {
     /// Running jobs by a source-chosen key, such as `gitea:home:owner/repo:42`.
     jobs: BTreeMap<String, RunningJob>,
-    /// Job picked with a long press, shown instead of the newest one.
-    focus: Option<String>,
     /// Latest run per pipeline, with the Unix seconds it was last updated.
     runs: BTreeMap<String, (Run, u64)>,
     /// Latest outcome per pipeline, keyed like `runs`, so a new run of the
@@ -263,6 +285,8 @@ pub struct CiFacts {
     runners: BTreeMap<String, RunnerSet>,
     /// Jobs waiting for an agent by pool key, with the time they were refreshed.
     queued: BTreeMap<String, (QueuedJobs, u64)>,
+    /// Job lists of running runs by group key, with the time they were refreshed.
+    run_jobs: BTreeMap<String, (Vec<RunJob>, u64)>,
 }
 
 impl CiFacts {
@@ -272,18 +296,12 @@ impl CiFacts {
     /// the source that wrote them was removed or replaced.
     pub fn forget(&mut self, prefix: &str) {
         self.jobs.retain(|key, _| !key.starts_with(prefix));
-        if self
-            .focus
-            .as_deref()
-            .is_some_and(|key| key.starts_with(prefix))
-        {
-            self.focus = None;
-        }
         self.runs.retain(|key, _| !key.starts_with(prefix));
         self.alerts.retain(|key, _| !key.starts_with(prefix));
         self.pulls.retain(|key, _| !key.starts_with(prefix));
         self.runners.retain(|key, _| !key.starts_with(prefix));
         self.queued.retain(|key, _| !key.starts_with(prefix));
+        self.run_jobs.retain(|key, _| !key.starts_with(prefix));
     }
 
     /// Apply one update from a source. `now` is Unix seconds.
@@ -293,7 +311,17 @@ impl CiFacts {
                 self.jobs.insert(key, job);
             }
             Update::JobDone { key } => {
-                self.jobs.remove(&key);
+                if let Some(group) = self.jobs.remove(&key).and_then(|j| j.group)
+                    && !self.jobs.values().any(|j| j.group.as_ref() == Some(&group))
+                {
+                    self.run_jobs.remove(&group);
+                }
+            }
+            Update::RunJobs { key, jobs } if jobs.is_empty() => {
+                self.run_jobs.remove(&key);
+            }
+            Update::RunJobs { key, jobs } => {
+                self.run_jobs.insert(key, (jobs, now));
             }
             Update::Run { key, run } => self.run(key, run, now),
             Update::Pulls { key, mut repo } => {
@@ -435,35 +463,6 @@ impl CiFacts {
         self.jobs.contains_key(key)
     }
 
-    // --- Button actions --------------------------------------------------
-
-    /// Clear every alert with this status (button press on an alert). A
-    /// dismissed failure also leaves the header badge.
-    pub fn dismiss_alerts(&mut self, status: AlertStatus) {
-        self.alerts.retain(|_, a| a.data.status != status);
-    }
-
-    /// Clear pending notices (button press on a notice).
-    pub fn dismiss_notices(&mut self) {
-        self.notices.clear();
-    }
-
-    /// Long press on a job screen: show the next running job, newest first,
-    /// wrapping around. Does nothing with fewer than two jobs.
-    pub fn cycle_jobs(&mut self) {
-        let order = self.screen_jobs();
-        if order.len() < 2 {
-            return;
-        }
-        let current = self
-            .focus
-            .as_ref()
-            .and_then(|f| order.iter().position(|(key, _)| *key == f))
-            .unwrap_or(0);
-        let next = order[(current + 1) % order.len()].0.clone();
-        self.focus = Some(next);
-    }
-
     // --- Housekeeping ----------------------------------------------------
 
     /// Drop facts that can never be shown again: finished success flashes and
@@ -483,17 +482,17 @@ impl CiFacts {
             .retain(|(_, raised_at)| !timed_out(Level::Notice, *raised_at));
         self.jobs
             .retain(|_, j| now.saturating_sub(j.updated) < JOB_MAX_AGE_S);
-        if self
-            .focus
-            .as_ref()
-            .is_some_and(|f| !self.jobs.contains_key(f))
-        {
-            self.focus = None;
-        }
         self.runners
             .retain(|_, set| now.saturating_sub(set.updated) < RUNNER_MAX_AGE_S);
         self.queued
             .retain(|_, (_, updated)| now.saturating_sub(*updated) < RUNNER_MAX_AGE_S);
+        // A list whose run has no running job left, and that nobody refreshed
+        // for a while (all jobs queued, or a missed "done"), goes.
+        let jobs = &self.jobs;
+        self.run_jobs.retain(|key, (_, updated)| {
+            jobs.values().any(|j| j.group.as_ref() == Some(key))
+                || now.saturating_sub(*updated) < RUNNER_MAX_AGE_S
+        });
         for (run, updated) in self.runs.values_mut() {
             // A run waiting for approval can wait for days, and a polled
             // source resends it when anything changes, so it never expires.
@@ -513,24 +512,22 @@ impl CiFacts {
         jobs
     }
 
-    /// Everything that wants to pre-empt the idle rotation. `model::pick`
+    /// Everything that wants to pre-empt the idle page. `model::pick`
     /// chooses among them.
     pub fn candidates(&self) -> Vec<Candidate> {
         let mut out = Vec::new();
 
         // Running jobs: level 1. `others` counts the rest of the interrupting
-        // jobs. The newest wins, as the schema asks, unless one was picked
-        // with a long press.
+        // jobs. The newest wins.
         let running = self.screen_jobs();
         let others = running.len().saturating_sub(1) as u32;
-        for (key, job) in running {
+        for (_, job) in running {
             let mut data = job.data.clone();
             data.others = others;
-            let focused = self.focus.as_ref() == Some(key);
             out.push(Candidate {
                 level: Level::Job,
                 page: format!("{}-job", data.source),
-                raised_at: if focused { u64::MAX } else { data.started },
+                raised_at: data.started,
                 data: ScreenData::Job(data),
             });
         }
@@ -574,6 +571,11 @@ impl CiFacts {
         let mut jobs: Vec<_> = self.jobs.iter().collect();
         jobs.sort_by_key(|(_, job)| Reverse(job.data.started));
         jobs
+    }
+
+    /// The job list of a running run, by the `group` of its jobs.
+    pub fn run_jobs(&self, group: &str) -> Option<&[RunJob]> {
+        self.run_jobs.get(group).map(|(jobs, _)| jobs.as_slice())
     }
 
     /// Latest run of every pipeline with the time it was last updated,
@@ -666,47 +668,62 @@ impl CiFacts {
             },
         ]
     }
+}
 
-    /// The `prs` rotation page: newest PRs first over all repositories.
-    pub fn pulls_page(&self) -> ListData {
-        let mut rows: Vec<(u64, ListRow)> = self
-            .pulls
-            .values()
+/// What the tests of the sources check: one row per pipeline or open PR.
+#[cfg(test)]
+pub(crate) struct TestRow {
+    pub text: String,
+    pub sub: String,
+    pub status: RowStatus,
+}
+
+#[cfg(test)]
+pub(crate) struct TestRows {
+    /// Total, which can be more than the rows listed for PRs.
+    pub count: u32,
+    pub rows: Vec<TestRow>,
+}
+
+#[cfg(test)]
+impl CiFacts {
+    /// Pipelines as the kiosk lists them: `runs()` order, one row each.
+    pub(crate) fn pipeline_rows(&self) -> TestRows {
+        let rows = self
+            .runs()
+            .into_iter()
+            .map(|(_, run, _)| TestRow {
+                text: run.pipeline.clone(),
+                sub: format!("{} {}", run.project, run.git_ref),
+                status: run.status.row_status(),
+            })
+            .collect();
+        TestRows {
+            count: self.runs.len() as u32,
+            rows,
+        }
+    }
+
+    /// Open PRs, newest first.
+    pub(crate) fn pull_rows(&self) -> TestRows {
+        let mut rows: Vec<(u64, TestRow)> = self
+            .pulls()
             .flat_map(|repo| {
                 repo.pulls.iter().map(|pull| {
-                    let row = ListRow {
-                        text: truncate(&pull.title, MAX_TITLE_CHARS),
-                        sub: truncate(
-                            &format!("{} #{}", repo.project, pull.number),
-                            MAX_TITLE_CHARS,
-                        ),
+                    let row = TestRow {
+                        text: pull.title.clone(),
+                        sub: format!("{} #{}", repo.project, pull.number),
                         status: RowStatus::Open,
-                        source: repo.source.clone(),
                     };
                     (pull.created, row)
                 })
             })
             .collect();
         rows.sort_by_key(|row| Reverse(row.0));
-        let rows = rows.into_iter().map(|(_, row)| row).collect();
-        ListData::new("Open PRs", self.open_pull_count(), rows)
-    }
-
-    /// The `pipelines` rotation page: latest run of every pipeline, running
-    /// and failed ones first, then the most recently updated.
-    pub fn pipelines_page(&self) -> ListData {
-        let mut runs: Vec<&(Run, u64)> = self.runs.values().collect();
-        runs.sort_by_key(|(run, updated)| (run.status, Reverse(*updated)));
-        let rows = runs
-            .into_iter()
-            .map(|(run, _)| ListRow {
-                text: truncate(&run.pipeline, MAX_TITLE_CHARS),
-                sub: truncate(&format!("{} {}", run.project, run.git_ref), MAX_TITLE_CHARS),
-                status: run.status.row_status(),
-                source: run.source.clone(),
-            })
-            .collect();
-        ListData::new("Pipelines", self.runs.len() as u32, rows)
+        TestRows {
+            count: self.open_pull_count(),
+            rows: rows.into_iter().map(|(_, row)| row).collect(),
+        }
     }
 }
 
@@ -734,6 +751,7 @@ mod tests {
             interrupt: true,
             updated: started,
             url: None,
+            group: None,
         }
     }
 
@@ -808,27 +826,6 @@ mod tests {
     }
 
     #[test]
-    fn long_press_cycles_through_jobs_and_wraps() {
-        let mut facts = CiFacts::default();
-        running(&mut facts, "a", 100);
-        running(&mut facts, "b", 200);
-        running(&mut facts, "c", 300);
-        assert_eq!(shown_job(&facts).started, 300);
-        facts.cycle_jobs();
-        assert_eq!(shown_job(&facts).started, 200);
-        facts.cycle_jobs();
-        assert_eq!(shown_job(&facts).started, 100);
-        facts.cycle_jobs();
-        assert_eq!(shown_job(&facts).started, 300);
-
-        // The picked job ends: back to the newest.
-        facts.cycle_jobs();
-        facts.apply(Update::JobDone { key: "b".into() }, 400);
-        facts.expire(400);
-        assert_eq!(shown_job(&facts).started, 300);
-    }
-
-    #[test]
     fn non_interrupting_jobs_stay_off_screen() {
         let mut facts = CiFacts::default();
         let mut quiet = job(100);
@@ -872,11 +869,11 @@ mod tests {
         finished(&mut facts, "w", work, 100);
         assert!(facts.candidates().is_empty());
         assert_eq!(facts.failed_count(), 1);
-        assert_eq!(facts.pipelines_page().rows[0].status, RowStatus::Failed);
+        assert_eq!(facts.pipeline_rows().rows[0].status, RowStatus::Failed);
     }
 
     #[test]
-    fn expire_keeps_failures_until_dismissed() {
+    fn expire_keeps_failures() {
         let mut facts = CiFacts::default();
         finished(&mut facts, "red", run("a", RunStatus::Failed), 0);
         finished(&mut facts, "green", run("b", RunStatus::Success), 0);
@@ -886,18 +883,16 @@ mod tests {
         assert_eq!(facts.candidates().len(), 1);
         assert!(!facts.has_job("old"));
         assert_eq!(facts.failed_count(), 1);
-        facts.dismiss_alerts(AlertStatus::Failed);
-        assert_eq!(facts.failed_count(), 0);
     }
 
     #[test]
-    fn pipelines_page_orders_by_attention_then_recency() {
+    fn pipeline_rows_orders_by_attention_then_recency() {
         let mut facts = CiFacts::default();
         finished(&mut facts, "a", run("old-green", RunStatus::Success), 10);
         finished(&mut facts, "b", run("new-green", RunStatus::Success), 20);
         finished(&mut facts, "c", run("red", RunStatus::Failed), 5);
         finished(&mut facts, "d", run("busy", RunStatus::Running), 1);
-        let page = facts.pipelines_page();
+        let page = facts.pipeline_rows();
         let names: Vec<&str> = page.rows.iter().map(|r| r.text.as_str()).collect();
         assert_eq!(names, ["busy", "red", "new-green", "old-green"]);
         assert_eq!(page.rows[0].status, RowStatus::Running);
@@ -911,11 +906,11 @@ mod tests {
         for i in 0..(MAX_PIPELINES as u64 + 3) {
             finished(&mut facts, &format!("p{i}"), run("x", RunStatus::Queued), i);
         }
-        assert_eq!(facts.pipelines_page().count, MAX_PIPELINES as u32);
+        assert_eq!(facts.pipeline_rows().count, MAX_PIPELINES as u32);
         facts.expire(JOB_MAX_AGE_S + 100);
         assert!(
             facts
-                .pipelines_page()
+                .pipeline_rows()
                 .rows
                 .iter()
                 .all(|r| r.status == RowStatus::Neutral)
@@ -958,7 +953,7 @@ mod tests {
         );
         assert_eq!(facts.open_pull_count(), 3);
 
-        let page = facts.pulls_page();
+        let page = facts.pull_rows();
         assert_eq!(page.count, 3);
         assert_eq!(page.rows[0].text, "pr 5");
         assert_eq!(page.rows[0].sub, "demo #5");

@@ -61,7 +61,7 @@ fn pulls_count_and_new_pr_flash() {
     apply(&mut facts, source.on_pulls(REPO, fixture_pulls(), NOW), NOW);
     assert_eq!(facts.open_pull_count(), 2);
     assert!(facts.candidates().is_empty());
-    assert_eq!(facts.pulls_page().rows[0].sub, "demo #42");
+    assert_eq!(facts.pull_rows().rows[0].sub, "demo #42");
 
     // A new PR appears: one flash. A new draft does not flash but counts.
     let mut pulls = fixture_pulls();
@@ -114,7 +114,7 @@ fn runs_fill_pipelines_page_with_latest_per_workflow() {
     let mut facts = CiFacts::default();
     apply(&mut facts, source.on_runs(REPO, fixture_runs(), NOW), NOW);
 
-    let page = facts.pipelines_page();
+    let page = facts.pipeline_rows();
     let rows: Vec<(&str, RowStatus)> = page
         .rows
         .iter()
@@ -246,18 +246,18 @@ fn run_finishing_between_polls_clears_its_jobs() {
 }
 
 #[test]
-fn quiet_repos_are_job_polled_but_stay_off_the_esp_screen() {
+fn quiet_repos_are_job_polled_but_stay_off_the_banner() {
     let mut source = state(false, 0);
     let mut facts = CiFacts::default();
     apply(&mut facts, source.on_runs(REPO, fixture_runs(), NOW), NOW);
-    assert_eq!(facts.pipelines_page().count, 3);
+    assert_eq!(facts.pipeline_rows().count, 3);
     assert_eq!(source.watched_runs(), [(REPO.to_string(), 1003)]);
 
     let (updates, _) = source.on_jobs(REPO, 1003, fixture_jobs(), NOW + 5);
     apply(&mut facts, updates, NOW + 5);
     assert!(facts.has_job("github:personal:your-user/demo:job:2001"));
     assert_eq!(facts.jobs().len(), 1, "the kiosk list sees it");
-    assert!(facts.candidates().is_empty(), "the ESP screen does not");
+    assert!(facts.candidates().is_empty(), "the banner does not");
 }
 
 #[test]
@@ -600,4 +600,45 @@ fn new_issues_raise_alerts_after_the_first_poll() {
             .on_issues("me/app", vec![issue(5, "crash on start", false)])
             .is_empty()
     );
+}
+
+#[test]
+fn parallel_jobs_are_listed_under_their_run() {
+    let mut source = state(false, 0);
+    let mut facts = CiFacts::default();
+    apply(&mut facts, source.on_runs(REPO, fixture_runs(), NOW), NOW);
+    let mut jobs = fixture_jobs();
+    let mut done = jobs[0].clone();
+    done.id = 2002;
+    done.name = "msrv".into();
+    done.status = "completed".into();
+    done.conclusion = Some("failure".into());
+    done.completed_at = Some("2026-10-08T18:01:10Z".into());
+    done.steps[2].status = "completed".into();
+    done.steps[2].conclusion = Some("failure".into());
+    jobs.push(done);
+    let (updates, _) = source.on_jobs(REPO, 1003, jobs, NOW + 5);
+    apply(&mut facts, updates, NOW + 5);
+
+    let group = facts.jobs()[0].1.group.clone();
+    let group = group.as_deref().expect("a running job names its run");
+    let list = facts.run_jobs(group).expect("the run's jobs");
+    let names: Vec<_> = list.iter().map(|j| (j.name.as_str(), j.status)).collect();
+    assert_eq!(
+        names,
+        [("test", RunStatus::Running), ("msrv", RunStatus::Failed)]
+    );
+    assert_eq!(list[0].step.as_deref(), Some("cargo test"));
+    assert_eq!(list[1].step.as_deref(), Some("cargo test"));
+    assert_eq!(
+        list[1].finished.zip(list[1].started).map(|(f, s)| f - s),
+        Some(60)
+    );
+
+    // The run ends: the list goes with its jobs.
+    let mut runs = fixture_runs();
+    runs[0].status = Some("completed".into());
+    runs[0].conclusion = Some("failure".into());
+    apply(&mut facts, source.on_runs(REPO, runs, NOW + 60), NOW + 60);
+    assert!(facts.run_jobs(group).is_none());
 }

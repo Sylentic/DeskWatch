@@ -9,8 +9,8 @@
 //! main loop, so a removed source disappears from the pages and the `warn`
 //! badge.
 //!
-//! What cannot be changed here: the MQTT connection, the HTTP listener and
-//! the rotation. Those still need a restart.
+//! What cannot be changed here: the MQTT connection and the HTTP listener.
+//! Those still need a restart.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;

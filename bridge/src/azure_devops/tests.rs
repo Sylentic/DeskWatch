@@ -50,7 +50,7 @@ fn apply(facts: &mut CiFacts, updates: Vec<Update>, now: u64) {
 
 /// Status of a pipeline's row on the pipelines page.
 fn row_status(facts: &CiFacts, pipeline: &str) -> RowStatus {
-    let page = facts.pipelines_page();
+    let page = facts.pipeline_rows();
     page.rows
         .iter()
         .find(|r| r.text == pipeline)
@@ -73,7 +73,7 @@ fn builds_fill_pipelines_page_with_latest_per_pipeline() {
         NOW,
     );
 
-    let page = facts.pipelines_page();
+    let page = facts.pipeline_rows();
     let rows: Vec<(&str, RowStatus)> = page
         .rows
         .iter()
@@ -309,7 +309,7 @@ fn deploy_waiting_for_approval_is_a_notice_and_a_review_row() {
     assert_eq!(row_status(&facts, "deploy-infra"), RowStatus::Review);
 
     // Polling again while it still waits does not flash again.
-    facts.dismiss_notices();
+    facts.expire(NOW + 15);
     let (updates, _) = source.on_timeline(PROJECT, 3004, &approval, NOW + 15);
     apply(&mut facts, updates, NOW + 15);
     assert!(facts.candidates().is_empty());
@@ -464,7 +464,7 @@ fn pulls_count_per_repository_and_new_pr_flash() {
     );
     assert_eq!(facts.open_pull_count(), 3);
     assert!(facts.candidates().is_empty());
-    let page = facts.pulls_page();
+    let page = facts.pull_rows();
     assert_eq!(page.rows[0].sub, "repo-a #43", "newest first");
 
     // A new PR appears: one flash. A new draft does not flash but counts.
@@ -538,7 +538,7 @@ fn notify_new_prs_off_and_aliases() {
         source.on_builds(PROJECT, fixture_builds(), NOW),
         NOW,
     );
-    assert_eq!(facts.pipelines_page().rows[0].sub, "Infra main");
+    assert_eq!(facts.pipeline_rows().rows[0].sub, "Infra main");
 }
 
 #[test]

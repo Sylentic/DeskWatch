@@ -12,6 +12,7 @@ variable. The bridge creates the folder and stops at startup, with the reason, i
   sources.toml          [[source.*]] blocks, same format as in bridge.toml
   credentials/<name>    one secret per file, mode 0600, folder mode 0700
   auth.toml             login: password hashes and API key hashes, mode 0600 (auth.md)
+  layouts.json          each signed-in user's own dashboard layout, mode 0600 (kiosk.md)
   oauth.toml            GitHub/Microsoft sign-in rules, no secrets (auth.md)
 ```
 
@@ -94,4 +95,4 @@ same name is never deleted by the page.
 ## Not covered yet
 
 `sources.toml` is read at startup and whenever the setup page saves a change; a hand edit of the file is picked up at the
-next save or restart. The listen address, the rotation and the kiosk settings stay in `bridge.toml`.
+next save or restart. The listen address and the kiosk settings stay in `bridge.toml`.

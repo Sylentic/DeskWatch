@@ -1,31 +1,26 @@
 //! MQTT side of the bridge: connection, Last Will, and retained publishing.
 //!
 //! The bridge announces itself on `<prefix>/bridge/status` with a retained
-//! `online`, and registers a retained `offline` Last Will so the panel learns
-//! when the bridge dies. Screens and badges are published retained, so a panel
-//! that (re)connects immediately gets the current page.
+//! `online`, and registers a retained `offline` Last Will so Home Assistant and
+//! other listeners learn when the bridge dies.
 //!
-//! Incoming: button presses from the panel on `<prefix>/panel/event`, and
-//! alerts from Home Assistant or scripts on `<prefix>/alert`.
+//! Incoming: alerts from Home Assistant or scripts on `<prefix>/alert`.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use rumqttc::{
     AsyncClient, Event, EventLoop, LastWill, MqttOptions, Packet, QoS, TlsConfiguration, Transport,
 };
-use serde::Serialize;
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
 use crate::alerts::AlertMessage;
 use crate::config::MqttConfig;
 use crate::health::MqttLink;
-use crate::model::{Badges, PanelEvent, Screen};
 use crate::source::{Secret, load_secret};
 
-/// Payloads for the two status topics.
+/// Payloads for the status topic.
 const ONLINE: &str = "online";
 const OFFLINE: &str = "offline";
 
@@ -45,24 +40,8 @@ impl Topics {
         }
     }
 
-    pub fn screen(&self) -> String {
-        format!("{}/screen", self.prefix)
-    }
-
-    pub fn badges(&self) -> String {
-        format!("{}/badges", self.prefix)
-    }
-
     pub fn bridge_status(&self) -> String {
         format!("{}/bridge/status", self.prefix)
-    }
-
-    pub fn panel_status(&self) -> String {
-        format!("{}/panel/status", self.prefix)
-    }
-
-    pub fn panel_event(&self) -> String {
-        format!("{}/panel/event", self.prefix)
     }
 
     pub fn alert(&self) -> String {
@@ -70,19 +49,17 @@ impl Topics {
     }
 }
 
-/// A message for the main loop, from the panel or from an alert publisher.
+/// A message for the main loop, from an alert publisher.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Inbound {
-    Button(PanelEvent),
     Alert(AlertMessage),
 }
 
-/// Publishes bridge payloads. Cheap to clone; all clones share `seq`.
+/// Publishes the bridge status. Cheap to clone.
 #[derive(Clone)]
 pub struct Publisher {
     client: AsyncClient,
     topics: Topics,
-    seq: std::sync::Arc<AtomicU64>,
 }
 
 /// Build the client and its event loop. Nothing connects until the event loop
@@ -113,11 +90,7 @@ pub fn connect(config: &MqttConfig, password: Option<Secret>) -> Result<(Publish
 
     // Capacity 16 is plenty: the bridge sends a few messages every few seconds.
     let (client, eventloop) = AsyncClient::new(options, 16);
-    let publisher = Publisher {
-        client,
-        topics,
-        seq: Default::default(),
-    };
+    let publisher = Publisher { client, topics };
     Ok((publisher, eventloop))
 }
 
@@ -194,17 +167,6 @@ pub async fn probe(config: &MqttConfig, password: Option<Secret>) -> Result<()> 
 }
 
 impl Publisher {
-    /// Publish a screen on `<prefix>/screen`, retained, with the next `seq`.
-    pub async fn publish_screen(&self, mut screen: Screen) -> Result<()> {
-        screen.seq = self.seq.fetch_add(1, Ordering::Relaxed) + 1;
-        self.publish_json(&self.topics.screen(), &screen).await
-    }
-
-    /// Publish the header badges on `<prefix>/badges`, retained.
-    pub async fn publish_badges(&self, badges: &Badges) -> Result<()> {
-        self.publish_json(&self.topics.badges(), badges).await
-    }
-
     /// Mark the bridge offline and disconnect cleanly (used on shutdown; a
     /// crash is covered by the Last Will instead).
     pub async fn shutdown(&self) -> Result<()> {
@@ -214,30 +176,11 @@ impl Publisher {
         self.client.disconnect().await?;
         Ok(())
     }
-
-    async fn publish_json(&self, topic: &str, payload: &impl Serialize) -> Result<()> {
-        let bytes = serde_json::to_vec(payload).context("cannot encode payload")?;
-        // The schema keeps payloads under 1 KB so the panel's buffers stay small.
-        if bytes.len() > 1024 {
-            warn!(
-                topic,
-                size = bytes.len(),
-                "payload is over the 1 KB schema limit"
-            );
-        }
-        // Never wait for room in the queue: with the broker down it fills up,
-        // and the main loop also feeds the kiosk page, which must keep working.
-        // A dropped screen is retried on the next turn (the message is retained,
-        // so only the newest state matters).
-        self.client
-            .try_publish(topic, QoS::AtLeastOnce, true, bytes)
-            .with_context(|| format!("cannot queue publish to {topic} (broker down?)"))
-    }
 }
 
 /// Drive the MQTT connection forever: reconnects on errors, announces
-/// `online` after every (re)connect, logs panel status, and forwards button
-/// events (and alerts, when `alerts` is true) to `inbound` for the composer.
+/// `online` after every (re)connect, and forwards alerts (when `alerts` is
+/// true) to `inbound` for the composer.
 /// `link` tells `/healthz` whether the broker connection is up.
 pub async fn run_event_loop(
     mut eventloop: EventLoop,
@@ -247,7 +190,7 @@ pub async fn run_event_loop(
     link: MqttLink,
 ) {
     let topics = publisher.topics.clone();
-    let mut subscriptions = vec![topics.panel_status(), topics.panel_event()];
+    let mut subscriptions = Vec::new();
     if alerts {
         subscriptions.push(topics.alert());
     }
@@ -288,23 +231,9 @@ pub async fn run_event_loop(
     }
 }
 
-/// Handle an incoming message: log panel status changes and return button
-/// events and alerts, which the composer acts on.
+/// Handle an incoming message: return the alert on the alert topic.
 fn handle_incoming(topics: &Topics, topic: &str, payload: &[u8]) -> Option<Inbound> {
-    if topic == topics.panel_status() {
-        info!(
-            "panel is {}",
-            String::from_utf8_lossy(payload).trim().to_lowercase()
-        );
-    } else if topic == topics.panel_event() {
-        match serde_json::from_slice::<PanelEvent>(payload) {
-            Ok(event) => {
-                info!(?event, "panel event");
-                return Some(Inbound::Button(event));
-            }
-            Err(err) => warn!("ignoring malformed panel event: {err}"),
-        }
-    } else if topic == topics.alert() {
+    if topic == topics.alert() {
         match AlertMessage::parse(payload) {
             Ok(alert) => return Some(Inbound::Alert(alert)),
             Err(err) => warn!("ignoring alert: {err:#}"),
@@ -320,11 +249,7 @@ mod tests {
     #[test]
     fn topics_follow_schema() {
         let topics = Topics::new("deskpanel/");
-        assert_eq!(topics.screen(), "deskpanel/screen");
-        assert_eq!(topics.badges(), "deskpanel/badges");
         assert_eq!(topics.bridge_status(), "deskpanel/bridge/status");
-        assert_eq!(topics.panel_status(), "deskpanel/panel/status");
-        assert_eq!(topics.panel_event(), "deskpanel/panel/event");
         assert_eq!(topics.alert(), "deskpanel/alert");
     }
 
@@ -346,11 +271,6 @@ mod tests {
     #[test]
     fn incoming_messages_are_routed_by_topic() {
         let topics = Topics::new("deskpanel");
-        let button = br#"{"v":2,"event":"button","action":"short"}"#;
-        assert!(matches!(
-            handle_incoming(&topics, "deskpanel/panel/event", button),
-            Some(Inbound::Button(_))
-        ));
         let alert = br#"{"v":2,"id":"washer","severity":"info","title":"Washer"}"#;
         assert!(matches!(
             handle_incoming(&topics, "deskpanel/alert", alert),
@@ -361,7 +281,7 @@ mod tests {
             None
         );
         assert_eq!(
-            handle_incoming(&topics, "deskpanel/panel/status", b"online"),
+            handle_incoming(&topics, "deskpanel/bridge/status", b"online"),
             None
         );
     }

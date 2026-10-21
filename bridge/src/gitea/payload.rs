@@ -17,7 +17,7 @@ use time::format_description::well_known::Rfc3339;
 pub struct Repository {
     /// `owner/name`.
     pub full_name: String,
-    /// Just `name`, shown on the panel.
+    /// Just `name`, shown on the dashboard.
     pub name: String,
 }
 
@@ -76,6 +76,7 @@ pub struct Job {
     /// `success`, `failure`, `cancelled`, `skipped` once completed.
     pub conclusion: Option<String>,
     pub started_at: Option<String>,
+    pub completed_at: Option<String>,
     /// Web page of the job, when Gitea sends it.
     pub html_url: Option<String>,
     /// Gitea sends `null` instead of `[]` for a job that has not started.

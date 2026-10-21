@@ -15,10 +15,25 @@ take.
 | Bitbucket Data Center / Server | none | Not built, see below. |
 | Gogs, Gitee, SourceHut, others | none | Not planned. |
 
+## What each host adds to the alerts list
+
+Besides runs and pull requests, a source can put activity in the Alerts list as info alerts (blue, with the source's mark,
+linking to the item, kept until dismissed or for a week). Items that existed at startup do not alert.
+
+| Source | New issues (`alert_new_issues`) | New PR comments (`alert_pr_comments`) |
+|---|---|---|
+| Gitea | Yes, from the **Issues** webhook event | No |
+| GitHub, GitHub Enterprise | Yes, polled (token needs **Issues: Read**) | No |
+| GitLab | Yes, polled | No |
+| Bitbucket Cloud | Yes, polled (issue tracker on, token needs **Issues: Read**) | No |
+| Azure DevOps | No | Yes, polled (your own comments are skipped) |
+
+Both are on by default and can be turned off per source. All of this has been tried against mock answers only.
+
 ## Using only one host (Azure DevOps or GitHub Enterprise)
 
 An organisation that only uses Azure DevOps, or only GitHub Enterprise, needs none of the others: no Gitea, no
-Prometheus, no ESP panel. Each source is its own block, so unused ones are simply not configured. A bridge with one
+Prometheus. Each source is its own block, so unused ones are simply not configured. A bridge with one
 source and the dashboard looks like this (see [docker.md](docker.md) for the container side, [setup-page.md](setup-page.md)
 to fill it in from the browser instead):
 
@@ -44,12 +59,9 @@ token_file = "azdo-work"     # or a service principal, see azure-devops-auth.md
 # repos = ["org/repo-a"]
 ```
 
-Several at once also works: add one block per host, and every page, the kiosk and the badges merge them (the `source`
+Several at once also works: add one block per host, and the dashboard and the badges merge them (the `source`
 filter of a `[[kiosk.panel]]` shows one host only). The Hosts panel stays; it shows this machine and any Prometheus
 hosts, and the `runners` widget shows self-hosted runners and agents of every source that has them listed.
-
-Without `[[rotation]]` blocks the ESP rotation is the stats page, plus the `prs` and `pipelines` pages (skipped while
-empty) as soon as any Git host is configured.
 
 ## Signing in without a person's token
 
@@ -108,8 +120,8 @@ statuses from Bamboo, Jenkins or others). It would be a separate source and is n
 
 ## Adding a host in general
 
-Every source ends in the same facts (open PRs, the latest run per pipeline, running jobs, runners), so the page,
-the kiosk and the ESP screen do not change. A new host is one module under `bridge/src/<host>/` (API client,
+Every source ends in the same facts (open PRs, the latest run per pipeline, running jobs, runners), so the dashboard
+does not change. A new host is one module under `bridge/src/<host>/` (API client,
 payload types, a state machine, tests with fixtures), one config struct in `config.rs`, a line each in the
 supervisor, the Setup page and the connection test, and a docs page. `bridge/src/bitbucket/` is the most recent
 example to copy.

@@ -1,6 +1,6 @@
 # DeskWatch dashboard-only config, for the Docker setup in docs/docker.md
-# (section 3): the full-size status page in a browser, with no MQTT broker and
-# no ESP panel. Copy it next to docker-compose.dashboard.yml as bridge.toml.
+# (section 3): the full-size status page in a browser, with no MQTT broker.
+# Copy it next to docker-compose.dashboard.yml as bridge.toml.
 # Every host name and repository below is a placeholder.
 
 # No broker: the bridge makes no MQTT connection and logs no broker warnings.

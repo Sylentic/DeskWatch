@@ -138,6 +138,7 @@ pub struct Step {
     pub name: Option<String>,
     pub state: State,
     pub started_on: Option<String>,
+    pub completed_on: Option<String>,
 }
 
 /// State of a runner.
