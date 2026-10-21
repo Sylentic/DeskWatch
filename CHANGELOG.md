@@ -74,6 +74,9 @@ every job of a run, and each user can arrange their own dashboard.
   refused". The check now uses the request's authority too. Behind Caddy or another proxy nothing changes.
 - **Setup, Access on a phone** no longer scrolls sideways: the user rows wrap and the forms keep to the card width. The
   "My account" link follows the theme colour.
+- **Viewers and operators no longer see buttons that do nothing.** The dashboard hid nothing by role, so Dismiss and Mute
+  (Viewer) and the Setup link (Viewer and Operator) were shown although the bridge answers those requests with 403. They
+  are now left out for the roles that cannot use them.
 
 ## [1.0.2]
 
