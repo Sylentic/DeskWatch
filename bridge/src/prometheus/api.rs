@@ -76,7 +76,7 @@ impl HttpApi {
     }
 
     /// Run an instant query. Series whose value is `NaN` or infinite are
-    /// dropped, since the panel has no use for them.
+    /// dropped, since the kiosk has no use for them.
     ///
     /// A 401 or 403 comes back as a `reqwest::Error`, so
     /// `Health::from_error` can tell a refused token from an unreachable server.

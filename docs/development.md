@@ -10,7 +10,7 @@ Needs a stable Rust toolchain (1.88 or newer) and a Mosquitto broker (not for th
 
 ```sh
 cargo run -p deskwatch-bridge -- bridge/config.example.toml
-mosquitto_sub -t 'deskpanel/#' -v   # in another terminal
+mosquitto_sub -t 'deskpanel/#' -v   # in another terminal: alerts and the bridge status
 ```
 
 The config path can also come from `DESKWATCH_CONFIG`; the default is `/etc/deskwatch/bridge.toml`
@@ -26,12 +26,12 @@ password can also come from `DESKWATCH_MQTT_PASSWORD`.
 ## Demo mode
 
 `--demo` plays a loop of fake data of a little over two minutes, so you can watch every page without Gitea or Home
-Assistant: stats, open PRs, pipelines and alerts pages, notices, a running deploy with a second job, a failure cleared by
-the button, a green success flash, and an amber and a red home alert. No sources run and the `[[rotation]]` blocks are
-ignored; the rest of the config (`[mqtt]`, `[alerts]`, `[kiosk]`, ...) applies, and the config file is optional.
+Assistant: stats, open PRs, pipelines and alerts, notices, a running deploy with a second job, a failure, a green
+success flash, and an amber and a red home alert. No sources run; the rest of the config (`[mqtt]`, `[alerts]`, `[kiosk]`, ...) applies, and the config file is optional.
 
 ```sh
 cargo run -p deskwatch-bridge -- --demo --kiosk --no-mqtt   # the dashboard on http://localhost:8787/
+cargo run -p deskwatch-bridge -- --demo --kiosk             # the same, with MQTT alerts on a broker on localhost
 ```
 
 `--demo`, `--kiosk` and `--no-mqtt` can

@@ -1,17 +1,17 @@
 # Azure DevOps source
 
 The `azure_devops` source shows pipeline runs and open pull requests from Azure DevOps Services
-(`dev.azure.com`) on the panel. It only reads, and only polls: Azure DevOps cannot reach a server at home, so
+(`dev.azure.com`) on the dashboard. It only reads, and only polls: Azure DevOps cannot reach a server at home, so
 nothing at home is exposed to the internet.
 
 What you get:
 
 - The latest run of every YAML pipeline on the `pipelines` page, next to Gitea and GitHub.
 - A running pipeline shows on the kiosk dashboard with its current stage and task, such as
-  `apply: terraform apply`, and a bar that moves with the stages. With `interrupt` on it also takes over the ESP screen. Pipelines whose name contains `deploy` or
+  `apply: terraform apply`, and a bar that moves with the stages. With `interrupt` on it also shows as the banner on the dashboard. Pipelines whose name contains `deploy` or
   `terraform` show as deploys.
 - A failed run raises the usual red alert naming the failed task; a good run flashes green. Both leave a count in
-  the header badge until you press the button.
+  the header badge until you dismiss it.
 - A stage that waits for an approval raises one "Approval needed" notice (another check, such as business hours, "Check pending") and a `review` row on the pipelines page.
   It does not hold the screen, because an approval can take hours.
 - Open pull requests count in the PR badge and appear on the `prs` page.
@@ -42,7 +42,7 @@ is never written to the config, the logs or MQTT.
 1. In Azure DevOps, open **User settings** (top right) > **Personal access tokens** > **New Token**.
 2. **Organization**: pick the one organisation to watch. A token for "All accessible organizations" is more than
    DeskWatch needs.
-3. **Expiration**: choose a date you will remember. When the token lapses the panel shows the `warn` badge.
+3. **Expiration**: choose a date you will remember. When the token lapses the dashboard shows the `warn` badge.
 4. **Scopes**: choose **Custom defined**, then **Show all scopes**, and tick only:
 
    | Scope | Access | Used for |
@@ -103,18 +103,16 @@ Optional keys:
 |---|---|---|
 | `poll_s` | `60` | Seconds between polls of builds, approvals and open PRs |
 | `job_poll_s` | `5` | Seconds between step progress polls, only for builds in progress |
-| `interrupt` | `false` | `true`, or a list of projects that may take over the screen. Off means work pipelines never take over the ESP screen: they show on the pipelines page, in the badges and on the kiosk dashboard |
+| `interrupt` | `false` | `true`, or a list of projects that may take over the screen. Off means work pipelines never show as the banner on the dashboard: they show on the pipelines page, in the badges and on the kiosk dashboard |
 | `pull_requests` | `true` | Count open PRs (needs **Code: Read**) |
 | `notify_new_prs` | `true` | Flash "New PR" for a new non-draft PR |
 | `alert_pr_comments` | `true` | Put a new comment on an open PR in the alerts list until it is dismissed. Your own comments and system messages (votes, pushes) are skipped. One extra request per open PR (at most 30) per poll |
 | `deploy_words` | `["deploy", "terraform"]` | Pipelines whose name contains one of these words (any case) are deploys |
 | `agent_pools` | none | Names of self-hosted agent pools to show as runners (needs **Agent Pools: Read**) |
 | `agent_poll_s` | `60` | Seconds between agent pool polls |
-| `alias` | none | Short panel labels: `"project-a" = "infra"` for pipelines, `"project-a/repo-a" = "A"` for a repository's PRs |
+| `alias` | none | Short labels: `"project-a" = "infra"` for pipelines, `"project-a/repo-a" = "A"` for a repository's PRs |
 
 Use `alias` for anything you would rather not show on a screen at the office.
-
-Add the `pipelines` and `prs` pages to `[[rotation]]` if they are not there yet (see `config.example.toml`).
 
 ## What the bridge asks for
 
@@ -128,7 +126,7 @@ All requests are `GET` with API version 7.1, authenticated as the token's user. 
 
 With `agent_pools` set it adds one request for the pool list and two per pool (agents and job requests) every `agent_poll_s`. That is two requests per project when nothing runs. While a build runs it adds one timeline request per poll, or
 one every `job_poll_s` for every build in progress (the kiosk's Running now widget lists them, whether or not the
-project may take over the ESP screen).
+project may show as the banner on the dashboard).
 
 ## Limits
 

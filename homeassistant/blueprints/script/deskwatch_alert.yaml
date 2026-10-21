@@ -1,4 +1,4 @@
-# DeskWatch alert: show a message on the DeskWatch desk panel.
+# DeskWatch alert: show a message on the DeskWatch dashboard.
 #
 # Import this blueprint once (Settings, Automations & scenes, Blueprints,
 # Import blueprint), then create a script from it (name it "DeskWatch alert",
@@ -8,7 +8,7 @@
 blueprint:
   name: DeskWatch alert
   description: >-
-    Raise an alert on the DeskWatch desk panel. Give it a title, an optional
+    Raise an alert on the DeskWatch dashboard. Give it a title, an optional
     message and a severity. Use the same id again to replace the alert, and
     the "DeskWatch clear" script with that id to remove it.
   domain: script
@@ -25,14 +25,14 @@ blueprint:
 fields:
   title:
     name: Title
-    description: Short heading, cut to 40 characters on the panel.
+    description: Short heading, cut to 40 characters on the dashboard.
     required: true
     example: Washing machine
     selector:
       text:
   message:
     name: Message
-    description: One line of detail, cut to 40 characters on the panel.
+    description: One line of detail, cut to 40 characters on the dashboard.
     required: false
     example: Done, 58 min
     selector:

@@ -10,18 +10,13 @@ use crate::ci::{
     OpenPull, RepoPulls, Run, RunJob, RunStatus, Runner, RunnerStatus, RunningJob, Update,
 };
 use crate::fleet::{Down, HostFacts, StatsReport};
-use crate::model::{JobData, JobKind, RotationEntry, StatsData};
+use crate::model::{JobData, JobKind, StatsData};
 use crate::source::{Health, SourceId};
 
 const NOW: u64 = 1_000_000;
 
 fn composer() -> Composer {
-    let rotation = vec![RotationEntry {
-        page: "stats".into(),
-        dwell_s: 10,
-        skip_when_empty: false,
-    }];
-    Composer::new(rotation, NOW)
+    Composer::default()
 }
 
 fn job(project: &str, started: u64, interrupt: bool) -> RunningJob {

@@ -14,8 +14,8 @@
 //!   a client that does not take a frame within `WRITE_TIMEOUT_S` is dropped;
 //! - `GET /`, `/kiosk.css`, `/kiosk.js`: the page.
 //!
-//! The snapshot is built from the same facts the composer uses for the ESP
-//! panel, so both screens always agree. Nothing here changes any state.
+//! The snapshot is built from the facts the composer holds. Nothing here
+//! changes any state.
 //! There is no login: the page and its data are for a trusted network (see
 //! docs/kiosk.md). The WebSocket still refuses an `Origin` that is not this
 //! host, so a page on another site cannot read it through the browser.
@@ -37,7 +37,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
 use crate::alerts::AlertMessage;
 use crate::composer::Composer;
 use crate::config::{AlertsConfig, KioskConfig, PanelConfig};
-use crate::model::{Badges, Level, Screen};
+use crate::model::{Badges, Screen};
 use crate::mqtt::Inbound;
 
 pub mod origin;
@@ -196,7 +196,7 @@ impl Kiosk {
     pub fn update(&mut self, composer: &mut Composer, now: u64) {
         let screen = composer.screen(now);
         let badges = composer.badges();
-        let mut value = snapshot(composer, &screen, &badges, &self.layout);
+        let mut value = snapshot(composer, screen.as_ref(), &badges, &self.layout);
         self.apply_clicks(&mut value);
         if let Some(update) = self.update.as_ref().and_then(|u| u.get()) {
             value["update"] = json!(update);
@@ -275,7 +275,12 @@ fn layout_json(config: &KioskConfig) -> Value {
 
 /// Everything the page draws, from the composer's facts. `now` is added by
 /// the caller, so equal facts compare equal.
-pub fn snapshot(composer: &Composer, screen: &Screen, badges: &Badges, layout: &Value) -> Value {
+pub fn snapshot(
+    composer: &Composer,
+    screen: Option<&Screen>,
+    badges: &Badges,
+    layout: &Value,
+) -> Value {
     // Hosts: the machine the bridge runs on first, then what sources report.
     let mut hosts = Vec::new();
     if let Some(stats) = composer.stats() {
@@ -416,12 +421,10 @@ pub fn snapshot(composer: &Composer, screen: &Screen, badges: &Badges, layout: &
         .map(|(id, health)| json!({ "id": id.to_string(), "health": health.name() }))
         .collect();
 
-    // The composer's pick is only interesting while it is an interrupt; the
-    // rotation page would just repeat a widget.
-    let screen = if screen.level == Level::Rotation {
-        Value::Null
-    } else {
-        serde_json::to_value(screen).unwrap_or_default()
+    // The composer's pick, while something interrupts the idle page.
+    let screen = match screen {
+        Some(screen) => serde_json::to_value(screen).unwrap_or_default(),
+        None => Value::Null,
     };
 
     let mut out = Map::new();

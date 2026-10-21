@@ -2,8 +2,7 @@
 #
 # Copy to /etc/deskwatch/bridge.toml (Linux) or
 # C:\ProgramData\DeskWatch\bridge.toml (Windows) and adjust. Every key is
-# optional; the values below are the defaults unless noted (the [[rotation]]
-# blocks at the end are an example: without any, the stats page rotates, plus the PR and pipeline pages when a Git host is set up). Never put
+# optional; the values below are the defaults unless noted. Never put
 # passwords or tokens in this file. Keys ending in `_file` name a credential:
 # a plain name is read from systemd's credentials folder (LoadCredential= in
 # deploy/deskwatch-bridge.service) or, on Windows, from
@@ -110,7 +109,7 @@ repos = ["owner/repo"]          # repos whose open PRs are polled for the header
 poll_s = 60                     # open PR poll, a safety net behind PR webhooks
 job_poll_s = 5                  # step progress poll while a job runs
 interrupt = true                # true, false, or a list such as ["owner/repo"]
-# alias = { "owner/repo" = "shop" }  # short labels on the panel
+# alias = { "owner/repo" = "shop" }  # short labels on the kiosk page
 # alert_new_issues = true       # new issues in the alerts list (tick "Issues" in the webhook)
 # Runners for the kiosk `runners` widget (docs/runners.md). Off unless listed.
 # Needs a token: "user" = runners of the token's user, "org:<name>", "repo:<owner>/<name>",
@@ -125,8 +124,8 @@ check = true
 
 # Alerts that Home Assistant or any script publishes on <topic_prefix>/alert.
 # Severity info flashes a notice, warning shows an amber screen, critical a
-# red screen above running jobs. The button takes an alert off the screen; it
-# stays in the header badge and on the alerts page until cleared.
+# red screen above running jobs. Dismiss takes an alert off the screen; it
+# stays in the header and the alerts list until cleared.
 [alerts]
 enabled = true
 max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped first
@@ -138,9 +137,8 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 # critical_ids = ["leak", "smoke"]  # only these ids may be critical, others become warnings
 
 # Host stats and container health from a Prometheus server that scrapes
-# node_exporter (and cAdvisor). Each host gets its own page: add
-# `stats:<name>` to the rotation below. The built-in `stats` page (the
-# bridge's own machine, read from /proc) keeps working without Prometheus.
+# node_exporter (and cAdvisor). Each host gets its own card on the kiosk page.
+# The bridge's own machine (read from /proc) keeps working without Prometheus.
 # [[source.prometheus]]
 # name = "home"                 # required: used in logs
 # url = "http://prometheus.example.lan:9090"  # required
@@ -149,11 +147,11 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 # disk_mountpoint = "/"         # filesystem shown as disk usage
 # # net_device = "eth0"         # default: the busiest real network device
 # hosts = [
-#   # The node_exporter `instance` label alone, or a table. `name` is the page
-#   # name and shown host name (defaults to the instance without its port).
+#   # The node_exporter `instance` label alone, or a table. `name` is the shown
+#   # host name (defaults to the instance without its port).
 #   # With `cadvisor` (that machine's cAdvisor instance) and
-#   # `expect_containers`, a container that stopped shows on the `containers`
-#   # page and in the `server` badge.
+#   # `expect_containers`, a container that stopped shows on the kiosk
+#   # "down" list and in the `server` badge.
 #   { instance = "node-exporter:9100", name = "home", cadvisor = "cadvisor:8080", expect_containers = ["gitea", "mosquitto"] },
 #   "nas.example.lan:9100",
 # ]
@@ -179,14 +177,14 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 # # Needs more token rights: repo runners "Administration: read", org runners "Self-hosted runners: read".
 # # runners = ["repo:your-user/repo-a", "org:your-org"]   # do not list overlapping scopes
 # # runner_poll_s = 300         # seconds between runner polls
-# alias = { "your-user/repo-a" = "A" }  # short labels on the panel
+# alias = { "your-user/repo-a" = "A" }  # short labels on the kiosk page
 #
 # [[source.github]]
 # name = "work"
 # base_url = "https://ghe.example.com/api/v3"
 # token_file = "github-work"
 # repos = ["team/service-a"]
-# interrupt = false             # work runs only in the badge and pipelines page
+# interrupt = false             # work shows only in the pipelines list, not as a banner
 # alias = { "team/service-a" = "service A" }
 
 # GitLab (gitlab.com or self-managed): open merge requests (counted as the open
@@ -206,7 +204,7 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 # # Needs the Maintainer role (project), Owner (group) or an admin token (instance).
 # # runners = ["project:your-group/project-a", "group:your-group"]  # do not list overlapping scopes
 # # runner_poll_s = 300         # seconds between runner polls
-# alias = { "your-group/project-a" = "A" }  # short labels on the panel
+# alias = { "your-group/project-a" = "A" }  # short labels on the kiosk page
 
 # Bitbucket Cloud (bitbucket.org): open pull requests and Pipelines runs, by
 # polling with a read-only access token. Setup and the rights to grant are in
@@ -223,7 +221,7 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 # # Self-hosted runners for the kiosk `runners` widget (docs/runners.md). Off unless listed.
 # # runners = ["repo:your-workspace/repo-a", "workspace:your-workspace"]  # do not list overlapping scopes
 # # runner_poll_s = 300         # seconds between runner polls
-# alias = { "your-workspace/repo-a" = "A" }  # short labels on the panel
+# alias = { "your-workspace/repo-a" = "A" }  # short labels on the kiosk page
 
 # Azure DevOps Services: pipeline runs and open PRs, by polling with a read-only
 # personal access token. Terraform pipelines show their stage and task
@@ -254,36 +252,3 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 # # agent_poll_s = 60
 # alias = { "project-a" = "infra", "project-a/repo-a" = "A" }  # short labels
 
-# Idle pages, in order. Pages with nothing to show are skipped when
-# skip_when_empty is set. "stats" is the bridge's own machine, "prs" lists open PRs and "pipelines" the latest run
-# of each pipeline, from every CI source. "alerts" lists active alerts. With a
-# Prometheus source, add "stats:<host>" for each host and "containers" for what
-# is down.
-[[rotation]]
-page = "stats"
-dwell_s = 20
-
-[[rotation]]
-page = "prs"
-dwell_s = 8
-skip_when_empty = true
-
-[[rotation]]
-page = "pipelines"
-dwell_s = 10
-skip_when_empty = true
-
-[[rotation]]
-page = "alerts"
-dwell_s = 8
-skip_when_empty = true
-
-# [[rotation]]
-# page = "stats:home"
-# dwell_s = 15
-# skip_when_empty = true
-
-# [[rotation]]
-# page = "containers"
-# dwell_s = 10
-# skip_when_empty = true

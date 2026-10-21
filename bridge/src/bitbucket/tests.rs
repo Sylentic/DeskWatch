@@ -71,7 +71,7 @@ fn pull_requests_count_with_a_new_pr_flash() {
     );
     assert_eq!(facts.open_pull_count(), 2);
     assert!(facts.candidates().is_empty());
-    assert_eq!(facts.pulls_page().rows[0].sub, "demo #43");
+    assert_eq!(facts.pull_rows().rows[0].sub, "demo #43");
 
     // A new PR appears: one flash. A new draft does not flash but counts.
     let mut prs = fixture_prs();
@@ -144,7 +144,7 @@ fn pipelines_fill_the_pipelines_page_with_the_latest_per_name() {
         NOW,
     );
 
-    let page = facts.pipelines_page();
+    let page = facts.pipeline_rows();
     let rows: Vec<(&str, RowStatus)> = page
         .rows
         .iter()
@@ -327,7 +327,7 @@ fn quiet_repos_are_step_polled_but_stay_off_the_esp_screen() {
     apply(&mut facts, updates, NOW + 5);
     assert!(facts.has_job(JOB_KEY));
     assert_eq!(facts.jobs().len(), 1, "the kiosk list sees it");
-    assert!(facts.candidates().is_empty(), "the ESP screen does not");
+    assert!(facts.candidates().is_empty(), "the banner does not");
 }
 
 #[test]

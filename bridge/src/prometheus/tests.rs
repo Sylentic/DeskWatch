@@ -14,7 +14,6 @@ use tokio::sync::mpsc;
 use super::*;
 use crate::composer::Composer;
 use crate::config::Config;
-use crate::model::{Level, RotationEntry, RowStatus, ScreenData};
 use crate::source::{SourceBody, SourceMsg};
 
 const CONFIG: &str = r#"
@@ -375,23 +374,8 @@ async fn failing_server_reports_health_without_stats() {
 }
 
 // ---------------------------------------------------------------------------
-// On the panel
+// What the composer makes of it
 // ---------------------------------------------------------------------------
-
-fn rotation() -> Vec<RotationEntry> {
-    let entry = |page: &str, skip_when_empty| RotationEntry {
-        page: page.into(),
-        dwell_s: 10,
-        skip_when_empty,
-    };
-    vec![
-        entry("stats", false),
-        entry("stats:home", true),
-        entry("stats:node-b", true),
-        entry("stats:missing", true),
-        entry("containers", true),
-    ]
-}
 
 fn send(composer: &mut Composer, body: SourceBody, now: u64) {
     composer.apply(
@@ -404,40 +388,27 @@ fn send(composer: &mut Composer, body: SourceBody, now: u64) {
 }
 
 #[tokio::test]
-async fn host_pages_container_list_and_badge() {
+async fn hosts_down_list_and_badge() {
     let (report, _) = collect_from_mock().await;
-    let mut composer = Composer::new(rotation(), 0);
+    let mut composer = Composer::default();
 
-    // Nothing reported yet: only the local stats page, no server badge.
-    assert_eq!(composer.screen(0).position, Some([1, 1]));
+    // Nothing reported yet: no hosts, no server badge.
+    assert!(composer.fleet.hosts().is_empty());
     assert!(composer.badges().items.is_empty());
 
     send(&mut composer, SourceBody::Stats(report), 1);
-    // stats, stats:home, stats:node-b and containers show; stats:missing does not.
-    assert_eq!(composer.screen(1).position, Some([1, 4]));
-
-    let screen = composer.screen(10);
-    assert_eq!(screen.page, "stats:home");
-    assert!(!screen.stale);
-    let ScreenData::Stats(stats) = &screen.data else {
-        panic!("expected stats");
-    };
+    let (stats, stale) = composer.fleet.host("home").unwrap();
+    assert!(!stale);
     assert_eq!((stats.host.as_str(), stats.cpu_pct), ("home", Some(37.5)));
 
-    // The dead host's page is shown, greyed out.
-    let screen = composer.screen(20);
-    assert_eq!(screen.page, "stats:node-b");
-    assert!(screen.stale);
+    // The dead host is listed, greyed out.
+    assert!(composer.fleet.host("node-b").unwrap().1);
+    assert!(composer.fleet.host("missing").is_none());
 
-    // Then the list of what is down (the unknown host page is skipped).
-    let screen = composer.screen(30);
-    assert_eq!(screen.page, "containers");
-    let ScreenData::List(list) = &screen.data else {
-        panic!("expected a list");
-    };
-    assert_eq!(list.count, 3);
-    assert_eq!(list.rows[0].text, "web");
-    assert_eq!(list.rows[0].status, RowStatus::Failed);
+    // What is down, for the kiosk list.
+    let down = composer.fleet.down();
+    assert_eq!(down.len(), 3);
+    assert_eq!(down[0].text, "web");
 
     let badges = composer.badges();
     assert_eq!(badges.items.len(), 1);
@@ -446,29 +417,27 @@ async fn host_pages_container_list_and_badge() {
 }
 
 #[tokio::test]
-async fn source_problem_greys_host_pages_and_shows_warn_badge() {
+async fn source_problem_greys_hosts_and_shows_warn_badge() {
     let (report, _) = collect_from_mock().await;
-    let mut composer = Composer::new(rotation(), 0);
+    let mut composer = Composer::default();
     send(&mut composer, SourceBody::Stats(report), 1);
 
     send(&mut composer, SourceBody::Health(Health::Unreachable), 2);
-    let screen = composer.screen(10);
-    assert_eq!(screen.page, "stats:home");
     assert!(
-        screen.stale,
+        composer.fleet.host("home").unwrap().1,
         "numbers are out of date while Prometheus is down"
     );
     let ids: Vec<String> = composer.badges().items.into_iter().map(|b| b.id).collect();
     assert_eq!(ids, ["server", "warn"]);
 
     send(&mut composer, SourceBody::Health(Health::Ok), 3);
-    assert!(!composer.screen(10).stale);
+    assert!(!composer.fleet.host("home").unwrap().1);
     assert_eq!(composer.badges().items.len(), 1);
 }
 
 #[tokio::test]
-async fn all_clear_means_no_containers_page() {
-    let mut composer = Composer::new(rotation(), 0);
+async fn all_clear_means_nothing_is_down() {
+    let mut composer = Composer::default();
     let report = StatsReport {
         hosts: vec![HostFacts {
             name: "home".into(),
@@ -478,8 +447,7 @@ async fn all_clear_means_no_containers_page() {
         down: vec![],
     };
     send(&mut composer, SourceBody::Stats(report), 1);
-    // stats and stats:home only; a quiet day never shows "containers".
-    assert_eq!(composer.screen(1).position, Some([1, 2]));
+    assert!(composer.fleet.down().is_empty());
     assert!(composer.badges().items.is_empty());
-    assert_ne!(composer.screen(10).level, Level::Notice);
+    assert!(composer.screen(10).is_none());
 }

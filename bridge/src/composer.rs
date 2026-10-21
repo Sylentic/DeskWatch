@@ -1,25 +1,18 @@
-//! The composer: decides which page is on the panel right now.
+//! The composer: decides what pre-empts the idle kiosk page right now.
 //!
-//! It owns the idle rotation, the latest server stats, the CI facts, the
-//! active alerts and the health of every source. Every tick the main loop asks it for the current
-//! screen and badges and publishes them when they change. Messages from
-//! sources and button presses from the panel come in here too.
+//! It owns the latest server stats, the CI facts, the active alerts and the
+//! health of every source. Every tick the kiosk asks it for the current
+//! interrupt screen (a running job, a failed or successful run, an alert, a
+//! notice) and the badges. Messages from sources and alerts come in here too.
 
 use crate::alerts::{AlertMessage, Alerts};
 use crate::ci::{CiFacts, Update};
 use crate::fleet::Fleet;
-use crate::model::{
-    AlertStatus, Badge, BadgeIcon, Badges, ButtonAction, Level, ListData, Rotation, RotationEntry,
-    RowStatus, Screen, ScreenData, StatsData, pick,
-};
+use crate::model::{Badge, BadgeIcon, Badges, RowStatus, Screen, StatsData, pick};
 use crate::source::{Health, HealthBoard, SourceBody, SourceMsg};
 
+#[derive(Default)]
 pub struct Composer {
-    rotation: Rotation,
-    /// Unix seconds when the current rotation page came up.
-    rotated_at: u64,
-    /// Level of the screen returned by the last `screen` call.
-    shown: Level,
     stats: Option<StatsData>,
     pub ci: CiFacts,
     pub fleet: Fleet,
@@ -28,19 +21,6 @@ pub struct Composer {
 }
 
 impl Composer {
-    pub fn new(rotation: Vec<RotationEntry>, now: u64) -> Self {
-        Self {
-            rotation: Rotation::new(rotation),
-            rotated_at: now,
-            shown: Level::Rotation,
-            stats: None,
-            ci: CiFacts::default(),
-            fleet: Fleet::default(),
-            alerts: Alerts::default(),
-            health: HealthBoard::default(),
-        }
-    }
-
     /// Apply a message from a source.
     pub fn apply(&mut self, msg: SourceMsg, now: u64) {
         match msg.body {
@@ -65,7 +45,7 @@ impl Composer {
         }
     }
 
-    /// Apply an alert from `deskpanel/alert`.
+    /// Apply an alert from `deskpanel/alert` or `POST /api/alert`.
     pub fn alert(&mut self, msg: AlertMessage, now: u64) {
         self.alerts.apply(msg, now);
     }
@@ -79,37 +59,15 @@ impl Composer {
         self.stats = Some(stats);
     }
 
-    /// The screen to show at `now`. Also moves the rotation along when the
-    /// current page has had its dwell time.
-    pub fn screen(&mut self, now: u64) -> Screen {
+    /// The interrupt to show at `now`: critical alert, running job, then
+    /// failed run or warning, success, notice. `None` means the idle page.
+    pub fn screen(&mut self, now: u64) -> Option<Screen> {
         self.ci.expire(now);
         self.alerts.expire(now);
 
-        // Interrupts first: critical alert, running job, then alerts, then notices.
         let mut candidates = self.ci.candidates();
         candidates.extend(self.alerts.candidates(now));
-        if let Some(top) = pick(&candidates, now) {
-            self.shown = top.level;
-            return Screen::new(top.level, top.page.clone(), top.data.clone());
-        }
-
-        // Back from an interrupt: rotation resumes at the stats page.
-        if self.shown != Level::Rotation {
-            self.shown = Level::Rotation;
-            self.rotation.reset();
-            self.rotated_at = now;
-        }
-        if now.saturating_sub(self.rotated_at) >= self.rotation.current().dwell_s {
-            self.next_page(now);
-        }
-
-        let page = self.rotation.current().page.clone();
-        let (data, stale) = self.page_data(&page);
-        let mut screen = Screen::new(Level::Rotation, page, data);
-        screen.stale = stale;
-        screen.pinned = self.rotation.is_pinned();
-        screen.position = self.rotation.position(|p| self.page_empty(p));
-        screen
+        pick(&candidates, now).map(|top| Screen::new(top.level, top.page.clone(), top.data.clone()))
     }
 
     /// Header badges for the current facts, in the plan's order: active
@@ -135,107 +93,14 @@ impl Composer {
                 .chain([server, warn]),
         )
     }
-
-    /// React to a button press on whatever was shown last.
-    ///
-    /// - Short press on an alert or notice dismisses it (all failed alerts at
-    ///   once, so one press acknowledges a bad afternoon). Alerts from
-    ///   `deskpanel/alert` leave the screen but keep their badge until cleared.
-    /// - Short press in rotation shows the next page now.
-    /// - Long press in rotation pins or unpins the current page.
-    /// - Long press on a running job shows the next running job.
-    pub fn on_button(&mut self, action: ButtonAction, now: u64) {
-        match (self.shown, action) {
-            (Level::Critical, ButtonAction::Short) => self.alerts.acknowledge(Level::Critical),
-            (Level::AlertFailed, ButtonAction::Short) => {
-                self.ci.dismiss_alerts(AlertStatus::Failed);
-                self.alerts.acknowledge(Level::AlertFailed);
-            }
-            (Level::AlertSuccess, ButtonAction::Short) => {
-                self.ci.dismiss_alerts(AlertStatus::Success)
-            }
-            (Level::Notice, ButtonAction::Short) => {
-                self.ci.dismiss_notices();
-                self.alerts.acknowledge(Level::Notice);
-            }
-            (Level::Rotation, ButtonAction::Short) => self.next_page(now),
-            (Level::Rotation, ButtonAction::Long) => self.rotation.toggle_pin(),
-            (Level::Job, ButtonAction::Long) => self.ci.cycle_jobs(),
-            _ => {}
-        }
-    }
-
-    fn next_page(&mut self, now: u64) {
-        // Collect emptiness first: `advance` borrows the rotation mutably.
-        let empty: Vec<String> = self
-            .rotation
-            .pages()
-            .filter(|p| self.page_empty(p))
-            .map(String::from)
-            .collect();
-        self.rotation
-            .advance(|page| empty.iter().any(|e| e == page) || !known_page(page));
-        self.rotated_at = now;
-    }
-
-    /// Does a rotation page have nothing to show? Host pages are empty until
-    /// their source has reported that host.
-    fn page_empty(&self, page: &str) -> bool {
-        match page.strip_prefix("stats:") {
-            Some(host) => self.fleet.host(host).is_none(),
-            None => self.page_data(page).0.is_empty(),
-        }
-    }
-
-    /// Data for a rotation page, and whether it is stale. CI pages are stale
-    /// while any source has a problem, since their data may be out of date.
-    fn page_data(&self, page: &str) -> (ScreenData, bool) {
-        let ci_stale = !self.health.all_ok();
-        match page {
-            "stats" => match &self.stats {
-                Some(stats) => (ScreenData::Stats(stats.clone()), false),
-                None => (ScreenData::Stats(StatsData::default()), true),
-            },
-            "prs" => (ScreenData::List(self.ci.pulls_page()), ci_stale),
-            "pipelines" => (ScreenData::List(self.ci.pipelines_page()), ci_stale),
-            "alerts" => (ScreenData::List(self.alerts.page()), false),
-            "containers" => (ScreenData::List(self.fleet.down_page()), false),
-            host if host.starts_with("stats:") => match self.fleet.host(&host["stats:".len()..]) {
-                Some((stats, stale)) => (ScreenData::Stats(stats.clone()), stale),
-                None => (ScreenData::Stats(StatsData::default()), true),
-            },
-            other => (ScreenData::List(ListData::new(other, 0, vec![])), false),
-        }
-    }
-}
-
-/// Pages the composer can fill. Unknown names in the config show as empty lists.
-fn known_page(page: &str) -> bool {
-    matches!(
-        page,
-        "stats" | "prs" | "pipelines" | "alerts" | "containers"
-    ) || page.starts_with("stats:")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ci::{OpenPull, Run, RunStatus, RunningJob, Update};
-    use crate::model::{JobData, JobKind, Template};
+    use crate::model::{AlertStatus, JobData, JobKind, Level, ScreenData, Template};
     use crate::source::{Health, SourceId};
-
-    fn rotation() -> Vec<RotationEntry> {
-        let entry = |page: &str, dwell_s, skip_when_empty| RotationEntry {
-            page: page.into(),
-            dwell_s,
-            skip_when_empty,
-        };
-        vec![
-            entry("stats", 20, false),
-            entry("prs", 8, true),
-            entry("pipelines", 10, true),
-        ]
-    }
 
     fn send(composer: &mut Composer, update: Update, now: u64) {
         let msg = SourceMsg {
@@ -309,95 +174,50 @@ mod tests {
     }
 
     #[test]
-    fn quiet_day_shows_stats_only() {
-        let mut composer = Composer::new(rotation(), 0);
-        let screen = composer.screen(0);
-        assert_eq!(screen.template, Template::Stats);
-        assert!(screen.stale, "no stats sampled yet");
-        assert_eq!(screen.position, Some([1, 1]));
-        // Past the dwell time, every other page is empty, so stats stays.
-        assert_eq!(composer.screen(25).page, "stats");
-    }
-
-    #[test]
-    fn prs_page_joins_rotation_when_there_are_prs() {
-        let mut composer = Composer::new(rotation(), 0);
+    fn quiet_day_has_no_interrupt() {
+        let mut composer = Composer::default();
+        assert!(composer.screen(0).is_none());
         send(&mut composer, pr_opened(), 0);
-        assert_eq!(composer.screen(0).position, Some([1, 2]));
-        let screen = composer.screen(20);
-        assert_eq!(screen.page, "prs");
-        assert_eq!(screen.position, Some([2, 2]));
+        assert!(composer.screen(20).is_none(), "an open PR is a badge only");
         assert_eq!(composer.badges().items[0].id, "prs");
     }
 
     #[test]
-    fn pipelines_page_joins_rotation_after_a_run() {
-        let mut composer = Composer::new(rotation(), 0);
-        send(&mut composer, run(RunStatus::Running), 0);
-        assert_eq!(composer.screen(0).position, Some([1, 2]));
-        let screen = composer.screen(20);
-        assert_eq!(screen.page, "pipelines");
-        let ScreenData::List(list) = &screen.data else {
-            panic!("expected a list");
-        };
-        assert_eq!(list.rows[0].text, "ci.yml");
-    }
-
-    #[test]
-    fn job_interrupts_then_rotation_restarts_at_stats() {
-        let mut composer = Composer::new(rotation(), 0);
-        send(&mut composer, pr_opened(), 0);
-        assert_eq!(composer.screen(20).page, "prs");
-
+    fn job_interrupts_until_it_is_done() {
+        let mut composer = Composer::default();
         send(&mut composer, running_job("j", 21), 21);
-        let screen = composer.screen(21);
+        let screen = composer.screen(21).unwrap();
         assert_eq!(screen.template, Template::Job);
-        assert_eq!(screen.position, None);
 
         send(&mut composer, Update::JobDone { key: "j".into() }, 22);
-        assert_eq!(composer.screen(22).page, "stats");
+        assert!(composer.screen(22).is_none());
     }
 
     #[test]
-    fn long_press_on_a_job_shows_the_next_one() {
-        let mut composer = Composer::new(rotation(), 0);
+    fn the_newest_job_is_shown_and_counts_the_others() {
+        let mut composer = Composer::default();
         send(&mut composer, running_job("old", 10), 10);
         send(&mut composer, running_job("new", 20), 20);
-        let pipeline = |screen: Screen| match screen.data {
-            ScreenData::Job(job) => job.pipeline,
-            other => panic!("expected a job, got {other:?}"),
+        let ScreenData::Job(job) = composer.screen(21).unwrap().data else {
+            panic!("expected a job");
         };
-        assert_eq!(pipeline(composer.screen(21)), "new.yml");
-        composer.on_button(ButtonAction::Long, 22);
-        assert_eq!(pipeline(composer.screen(22)), "old.yml");
-        composer.on_button(ButtonAction::Long, 23);
-        assert_eq!(pipeline(composer.screen(23)), "new.yml");
-    }
-
-    #[test]
-    fn button_dismisses_failed_alert_and_clears_badge() {
-        let mut composer = Composer::new(rotation(), 0);
-        send(&mut composer, run(RunStatus::Failed), 0);
-        assert_eq!(composer.screen(1).template, Template::Alert);
-        assert_eq!(composer.badges().items[0].id, "failed");
-
-        composer.on_button(ButtonAction::Short, 2);
-        assert_eq!(composer.screen(2).template, Template::Stats);
-        assert!(composer.badges().items.is_empty());
+        assert_eq!(job.pipeline, "new.yml");
+        assert_eq!(job.others, 1);
     }
 
     #[test]
     fn failed_alert_drops_to_badge_after_ten_minutes() {
-        let mut composer = Composer::new(rotation(), 0);
+        let mut composer = Composer::default();
         send(&mut composer, run(RunStatus::Failed), 0);
-        assert_eq!(composer.screen(599).template, Template::Alert);
-        assert_eq!(composer.screen(600).template, Template::Stats);
+        assert_eq!(composer.screen(599).unwrap().template, Template::Alert);
+        assert!(composer.screen(600).is_none());
         assert_eq!(composer.badges().items.len(), 1);
+        assert_eq!(composer.badges().items[0].id, "failed");
     }
 
     #[test]
-    fn source_problem_shows_warn_badge_and_greys_ci_pages() {
-        let mut composer = Composer::new(rotation(), 0);
+    fn source_problem_shows_warn_badge() {
+        let mut composer = Composer::default();
         send(&mut composer, pr_opened(), 0);
         let health = |health| SourceMsg {
             source: SourceId::new("gitea", "home"),
@@ -406,17 +226,14 @@ mod tests {
         composer.apply(health(Health::AuthFailed), 0);
         let ids: Vec<String> = composer.badges().items.into_iter().map(|b| b.id).collect();
         assert_eq!(ids, ["prs", "warn"]);
-        let screen = composer.screen(20);
-        assert_eq!(screen.page, "prs");
-        assert!(screen.stale);
 
         composer.apply(health(Health::Ok), 21);
         assert_eq!(composer.badges().items.len(), 1);
     }
 
     #[test]
-    fn a_forgotten_source_leaves_the_pages_and_the_badges() {
-        let mut composer = Composer::new(rotation(), 0);
+    fn a_forgotten_source_leaves_the_facts_and_the_badges() {
+        let mut composer = Composer::default();
         send(&mut composer, pr_opened_in("gitea:home:o/r"), 0);
         send(&mut composer, running_job("gitea:home:o/r:1", 0), 0);
         let home = |body| SourceMsg {
@@ -445,14 +262,14 @@ mod tests {
     }
 
     #[test]
-    fn critical_alert_beats_a_running_job_and_button_clears_it() {
-        let mut composer = Composer::new(rotation(), 0);
+    fn critical_alert_beats_a_running_job_until_it_is_cleared() {
+        let mut composer = Composer::default();
         send(&mut composer, running_job("j", 0), 0);
         composer.alert(
             alert(r#"{"v":2,"id":"leak","severity":"critical","title":"Water leak"}"#),
             1,
         );
-        let screen = composer.screen(1);
+        let screen = composer.screen(1).unwrap();
         assert_eq!(screen.level, Level::Critical);
         let value = serde_json::to_value(&screen).unwrap();
         assert_eq!(value["level"], 0);
@@ -461,71 +278,35 @@ mod tests {
         assert_eq!(value["data"]["project"], serde_json::Value::Null);
         assert_eq!(composer.badges().items[0].id, "alerts");
 
-        composer.on_button(ButtonAction::Short, 2);
-        assert_eq!(composer.screen(2).template, Template::Job);
-        assert_eq!(composer.badges().items[0].id, "alerts", "badge stays");
-
-        composer.alert(alert(r#"{"v":2,"id":"leak","clear":true}"#), 3);
+        composer.alert(alert(r#"{"v":2,"id":"leak","clear":true}"#), 2);
+        assert_eq!(composer.screen(2).unwrap().template, Template::Job);
         assert!(composer.badges().items.is_empty());
     }
 
     #[test]
-    fn warning_alert_is_amber_and_one_press_clears_red_and_amber() {
-        let mut composer = Composer::new(rotation(), 0);
+    fn warning_alert_is_amber_next_to_a_failed_run() {
+        let mut composer = Composer::default();
         send(&mut composer, run(RunStatus::Failed), 0);
         composer.alert(
             alert(r#"{"v":2,"id":"door","severity":"warning","title":"Freezer door"}"#),
             1,
         );
-        let screen = composer.screen(1);
+        let screen = composer.screen(1).unwrap();
         assert_eq!(screen.level, Level::AlertFailed);
         let ScreenData::Alert(data) = &screen.data else {
             panic!("expected an alert");
         };
         assert_eq!(data.status, AlertStatus::Warn);
-
-        composer.on_button(ButtonAction::Short, 2);
-        assert_eq!(composer.screen(2).template, Template::Stats);
         let ids: Vec<String> = composer.badges().items.into_iter().map(|b| b.id).collect();
-        assert_eq!(
-            ids,
-            ["alerts"],
-            "failed run dismissed, warning kept as badge"
-        );
+        assert_eq!(ids, ["alerts", "failed"]);
     }
 
     #[test]
-    fn alerts_page_joins_rotation() {
-        let mut composer = Composer::new(
-            vec![
-                RotationEntry {
-                    page: "stats".into(),
-                    dwell_s: 20,
-                    skip_when_empty: false,
-                },
-                RotationEntry {
-                    page: "alerts".into(),
-                    dwell_s: 8,
-                    skip_when_empty: true,
-                },
-            ],
-            0,
-        );
-        assert_eq!(composer.screen(0).position, Some([1, 1]));
+    fn info_alert_flashes_for_five_seconds() {
+        let mut composer = Composer::default();
         composer.alert(alert(r#"{"v":2,"id":"washer","title":"Washer done"}"#), 1);
-        assert_eq!(composer.screen(1).template, Template::Notice);
-        // After the 5 s flash rotation restarts at stats, then shows the alert list.
-        assert_eq!(composer.screen(6).page, "stats");
-        let screen = composer.screen(26);
-        assert_eq!(screen.page, "alerts");
-        assert_eq!(screen.position, Some([2, 2]));
-    }
-
-    #[test]
-    fn long_press_pins_rotation() {
-        let mut composer = Composer::new(rotation(), 0);
-        composer.screen(0);
-        composer.on_button(ButtonAction::Long, 1);
-        assert!(composer.screen(1).pinned);
+        assert_eq!(composer.screen(1).unwrap().template, Template::Notice);
+        assert!(composer.screen(6).is_none());
+        assert_eq!(composer.alerts.views().len(), 1, "stays in the list");
     }
 }

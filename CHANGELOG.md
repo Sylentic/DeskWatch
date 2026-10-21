@@ -13,6 +13,21 @@ All notable changes to DeskWatch are listed here. The format follows
   panel drawing crate `ui/` and the desktop simulator `sim/` (`deskwatch-sim`, also gone from the Windows zip) are
   removed, together with the firmware CI job and the SDL2 builds. The last commit that still has them is the one
   before this change in the history. MQTT stays for alerts (`deskpanel/alert`, Home Assistant).
+- **The bridge no longer talks to an ESP desk panel.** It stops publishing `deskpanel/screen` and `deskpanel/badges`,
+  no longer reads `deskpanel/panel/status` and `deskpanel/panel/event`, and the idle page rotation, the button
+  handling and the page data types behind them are gone. The dashboard is unchanged: the bridge now only decides
+  whether something interrupts the idle page (a running job, a failed or successful run, an alert, a notice).
+  MQTT stays for alerts: `deskpanel/alert`, the Home Assistant blueprints, broker logins and TLS, and
+  `deskpanel/bridge/status` (online and the Last Will) all work as before. If a script of your own listened to
+  `deskpanel/screen` or `deskpanel/badges`, it will stop receiving them; clear the leftover retained messages with
+  `mosquitto_pub -r -n -t deskpanel/screen` (and `deskpanel/badges`).
+- **`[[rotation]]` is ignored.** A config that still has `[[rotation]]` blocks keeps starting; the bridge logs one
+  warning and ignores them. Delete them from `bridge.toml`: the key will be refused in a later version.
+  `bridge/config.example.toml` no longer contains them.
+- **The `deskwatch-panel` broker login is no longer needed.** `deploy/mosquitto/acl.example` now gives the bridge
+  `read deskpanel/alert` and `write deskpanel/bridge/status` only. An existing ACL that gives the bridge
+  `readwrite deskpanel/#` keeps working. `docs/mqtt-schema.md` now describes only the alert topic.
+- The sample payloads for screens, badges and panel events in `docs/schema/` are removed; the alert samples stay.
 
 ### Added
 

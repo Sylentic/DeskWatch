@@ -5,7 +5,7 @@
 //! rest stays unknown and the server page shows dashes (for Windows machine
 //! stats use a Prometheus source with windows_exporter). CPU
 //! usage and network rates are deltas between two samples, which means the
-//! very first sample reports them as unknown (`null` on the panel).
+//! very first sample reports them as unknown (`null` on the kiosk page).
 //!
 //! The parsing functions take plain text so they can be unit tested without a
 //! real `/proc`.

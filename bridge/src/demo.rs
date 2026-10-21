@@ -1,23 +1,19 @@
-//! `--demo`: a scripted two-minute loop of fake data, so the whole panel can be
-//! watched in the desktop simulator without Gitea, Home Assistant or a real
-//! server behind it.
+//! `--demo`: a scripted two-minute loop of fake data, so the whole kiosk page
+//! can be watched without Gitea, Home Assistant or a real server behind it.
 //!
-//! The script feeds the real composer, exactly as sources and the panel
-//! would, so what the simulator shows is what the bridge really publishes.
+//! The script feeds the real composer, exactly as sources and alert
+//! publishers would, so what the kiosk shows is what the bridge really has.
 //! One loop shows:
 //!
-//! - the stats page (fake, gently moving numbers), open PRs and pipelines;
-//! - an info alert (notice flash) that then joins the alerts page;
+//! - fake, gently moving stats, open PRs and pipelines;
+//! - an info alert (notice flash) that then stays in the alerts list;
 //! - a "New PR" notice;
 //! - a running deploy job with step progress, a second job (`others`) whose
-//!   run has three parallel jobs, long presses cycling between them, and a
-//!   step with unknown progress (spinner);
-//! - the deploy failing (red alert), then a short press clearing it;
+//!   run has three parallel jobs, and a step with unknown progress (spinner);
+//! - the deploy failing (red alert);
 //! - a retry that succeeds (green flash);
-//! - an amber warning alert and a red critical alert, each cleared with the
-//!   button, after which they stay as a `home` badge until cleared over MQTT.
-//!
-//! Pressing the real (simulated) button during the demo works as usual.
+//! - an amber warning alert and a red critical alert, cleared one after the
+//!   other as Dismiss would.
 
 use crate::alerts::{AlertMessage, Severity};
 use crate::ci::{
@@ -25,9 +21,7 @@ use crate::ci::{
 };
 use crate::composer::Composer;
 use crate::fleet::{HostFacts, StatsReport};
-use crate::model::{
-    ButtonAction, JobData, JobKind, NetData, RotationEntry, SCHEMA_VERSION, StatsData,
-};
+use crate::model::{JobData, JobKind, NetData, SCHEMA_VERSION, StatsData};
 use crate::source::{Health, SourceId};
 
 /// Length of one loop in seconds. The script starts over after this.
@@ -48,7 +42,6 @@ enum Step {
     Reset,
     Facts(Vec<Update>),
     Alert(AlertMessage),
-    Button(ButtonAction),
 }
 
 /// Plays the script against a composer.
@@ -58,21 +51,6 @@ pub struct Demo {
     started: u64,
     /// Index of the next step to play.
     next: usize,
-}
-
-/// Short dwell times, so every page comes up within the loop.
-pub fn rotation() -> Vec<RotationEntry> {
-    let entry = |page: &str, dwell_s, skip_when_empty| RotationEntry {
-        page: page.into(),
-        dwell_s,
-        skip_when_empty,
-    };
-    vec![
-        entry("stats", 8, false),
-        entry("prs", 5, true),
-        entry("pipelines", 5, true),
-        entry("alerts", 5, true),
-    ]
 }
 
 impl Demo {
@@ -101,7 +79,7 @@ impl Demo {
             self.next += 1;
             match step {
                 Step::Reset => {
-                    *composer = Composer::new(rotation(), now);
+                    *composer = Composer::default();
                 }
                 Step::Facts(updates) => {
                     for update in updates {
@@ -109,11 +87,6 @@ impl Demo {
                     }
                 }
                 Step::Alert(alert) => composer.alert(alert, now),
-                Step::Button(action) => {
-                    // The button acts on what is shown, so bring that up to date.
-                    composer.screen(now);
-                    composer.on_button(action, now);
-                }
             }
         }
         composer.set_stats(stats(now));
@@ -122,8 +95,8 @@ impl Demo {
 }
 
 /// Two more hosts and healthy sources, so the kiosk page has something to
-/// show in its hosts and sources widgets. Nothing is down, so the ESP panel's
-/// badges stay as the script left them.
+/// show in its hosts and sources widgets. Nothing is down, so the badges
+/// stay as the script left them.
 fn fake_fleet(composer: &mut Composer, now: u64) {
     let wave = |period: f32, phase: f32| ((now as f32 / period + phase).sin() + 1.0) / 2.0;
     let host = |name: &str, cpu: f32, ram: f32, disk: f32| HostFacts {
@@ -215,7 +188,7 @@ pub fn stats(now: u64) -> StatsData {
 }
 
 /// Script timestamps (`started`, `finished`, `created`) are seconds into the
-/// loop; turn them into Unix seconds so the panel shows sensible times.
+/// loop; turn them into Unix seconds so the kiosk shows sensible times.
 fn shift(update: Update, base: u64) -> Update {
     match update {
         Update::JobRunning { key, mut job } => {
@@ -391,13 +364,10 @@ fn pull(number: u64, title: &str) -> OpenPull {
 fn script() -> Vec<(u64, Step)> {
     use JobKind::{Build, Deploy};
     use RunStatus::{Failed, Queued, Running, Success};
-    use Step::{Button, Facts};
-    let short = ButtonAction::Short;
-    let long = ButtonAction::Long;
+    use Step::Facts;
 
     vec![
-        // Idle: stats, an info alert flash, then PRs, pipelines and the
-        // alerts page rotate in.
+        // Idle: PRs, pipelines and an info alert flash.
         (0, Step::Reset),
         (
             0,
@@ -415,7 +385,7 @@ fn script() -> Vec<(u64, Step)> {
                         total: 3,
                     },
                 },
-                // Older runs: rows on the pipelines page and a failed badge,
+                // Older runs: rows in the pipelines list and a failed badge,
                 // no flash.
                 run("ci.yml", Success, None, 0, false),
                 run("nightly.yml", Failed, Some("e2e tests"), 0, false),
@@ -492,8 +462,6 @@ fn script() -> Vec<(u64, Step)> {
                 job("ci.yml", Build, ("cargo test", 2, 3), Some(0.5), 43),
             ]),
         ),
-        (45, Button(long)),
-        (48, Button(long)),
         (
             49,
             Facts(vec![job(
@@ -532,7 +500,7 @@ fn script() -> Vec<(u64, Step)> {
                 38,
             )]),
         ),
-        // The deploy fails: red alert until the button is pressed.
+        // The deploy fails: red alert until the retry takes over.
         (
             59,
             Facts(vec![
@@ -540,7 +508,6 @@ fn script() -> Vec<(u64, Step)> {
                 run("deploy.yml", Failed, Some("Smoke test"), 38, true),
             ]),
         ),
-        (67, Button(short)),
         // A retry succeeds: green flash.
         (
             71,
@@ -569,8 +536,8 @@ fn script() -> Vec<(u64, Step)> {
                 run("deploy.yml", Success, None, 71, true),
             ]),
         ),
-        // Home alerts: amber warning, then red critical, each acknowledged
-        // with the button and later cleared over MQTT.
+        // Home alerts: amber warning, then red critical, cleared one after
+        // the other.
         (
             93,
             alert(
@@ -580,7 +547,6 @@ fn script() -> Vec<(u64, Step)> {
                 "Open for 5 min",
             ),
         ),
-        (100, Button(short)),
         (
             103,
             alert(
@@ -590,29 +556,32 @@ fn script() -> Vec<(u64, Step)> {
                 "Utility room sensor",
             ),
         ),
-        (111, Button(short)),
-        (118, clear("leak")),
-        (121, clear("freezer")),
+        (111, clear("leak")),
+        (118, clear("freezer")),
     ]
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{AlertStatus, Level, ScreenData, Template};
+    use crate::model::{AlertStatus, Level, ScreenData};
 
-    /// Run one loop second by second and describe every screen shown.
+    /// Run one loop second by second and describe every interrupt shown.
     fn play(start: u64) -> Vec<String> {
-        let mut composer = Composer::new(rotation(), start);
+        let mut composer = Composer::default();
         let mut demo = Demo::new(start);
         let mut seen = Vec::new();
         for now in start..start + LOOP_S {
             demo.tick(&mut composer, now);
-            let screen = composer.screen(now);
-            let label = match &screen.data {
-                ScreenData::Alert(a) => format!("alert:{:?}:{}", a.status, screen.level.number()),
-                ScreenData::Job(j) => format!("job:{}:{}", j.pipeline, j.others),
-                _ => format!("{:?}:{}", screen.template, screen.page),
+            let label = match composer.screen(now) {
+                None => "idle".to_string(),
+                Some(screen) => match &screen.data {
+                    ScreenData::Alert(a) => {
+                        format!("alert:{:?}:{}", a.status, screen.level.number())
+                    }
+                    ScreenData::Job(j) => format!("job:{}:{}", j.pipeline, j.others),
+                    _ => format!("{:?}:{}", screen.template, screen.page),
+                },
             };
             if seen.last() != Some(&label) {
                 seen.push(label);
@@ -630,7 +599,7 @@ mod tests {
 
     /// A composer after the demo has run from `start` up to `start + t`.
     fn run_until(start: u64, t: u64) -> Composer {
-        let mut composer = Composer::new(rotation(), start);
+        let mut composer = Composer::default();
         let mut demo = Demo::new(start);
         for now in start..=start + t {
             demo.tick(&mut composer, now);
@@ -644,16 +613,12 @@ mod tests {
     }
 
     #[test]
-    fn one_loop_shows_every_page_and_interrupt() {
+    fn one_loop_shows_every_interrupt() {
         let seen = play(1_791_410_000);
         for expected in [
-            "Stats:stats",
-            "List:prs",
-            "List:pipelines",
-            "List:alerts",
+            "idle",
             "Notice:homeassistant-notice",
             "Notice:gitea-notice",
-            "job:deploy.yml:1",
             "job:ci.yml:1",
             "job:deploy.yml:0",
             "alert:Failed:2",
@@ -669,28 +634,31 @@ mod tests {
     }
 
     #[test]
-    fn button_clears_the_failure_and_badges_settle() {
+    fn the_failure_shows_until_the_retry_and_the_home_alerts_clear() {
         let start = 1_000;
         let mut composer = run_until(start, 66);
-        let screen = composer.screen(start + 66);
+        let screen = composer.screen(start + 66).unwrap();
         assert!(matches!(&screen.data, ScreenData::Alert(a) if a.status == AlertStatus::Failed));
         assert!(has_badge(&composer, "failed"));
 
-        let mut composer = run_until(start, 67);
-        assert_ne!(composer.screen(start + 67).level, Level::AlertFailed);
-        assert!(!has_badge(&composer, "failed"));
+        // The retry succeeded: only the older nightly failure is left in the badge.
+        let composer = run_until(start, 80);
+        let failed = composer
+            .badges()
+            .items
+            .into_iter()
+            .find(|b| b.id == "failed");
+        assert_eq!(failed.map(|b| b.count), Some(1));
 
-        // Both home alerts acknowledged: off screen, still in the badge.
-        let mut composer = run_until(start, 112);
-        assert_eq!(composer.screen(start + 112).level, Level::Rotation);
+        // Both home alerts on screen and in the badge, then cleared.
+        let mut composer = run_until(start, 105);
+        assert_eq!(composer.screen(start + 105).unwrap().level, Level::Critical);
         let home = composer
             .badges()
             .items
             .into_iter()
             .find(|b| b.id == "alerts");
         assert_eq!(home.map(|b| b.count), Some(2));
-
-        // Cleared over MQTT at the end of the loop.
         assert!(!has_badge(&run_until(start, 125), "alerts"));
     }
 
@@ -698,11 +666,8 @@ mod tests {
     fn loop_starts_over() {
         let start = 5_000;
         let mut composer = run_until(start, LOOP_S + 1);
-        // One second into the second loop: a fresh start on the stats page.
-        assert_eq!(
-            composer.screen(start + LOOP_S + 1).template,
-            Template::Stats
-        );
+        // One second into the second loop: a fresh start with the same PRs.
         assert_eq!(composer.ci.open_pull_count(), 3);
+        assert!(composer.screen(start + LOOP_S + 1).is_none());
     }
 }

@@ -61,7 +61,7 @@ fn pulls_count_and_new_pr_flash() {
     apply(&mut facts, source.on_pulls(REPO, fixture_pulls(), NOW), NOW);
     assert_eq!(facts.open_pull_count(), 2);
     assert!(facts.candidates().is_empty());
-    assert_eq!(facts.pulls_page().rows[0].sub, "demo #42");
+    assert_eq!(facts.pull_rows().rows[0].sub, "demo #42");
 
     // A new PR appears: one flash. A new draft does not flash but counts.
     let mut pulls = fixture_pulls();
@@ -114,7 +114,7 @@ fn runs_fill_pipelines_page_with_latest_per_workflow() {
     let mut facts = CiFacts::default();
     apply(&mut facts, source.on_runs(REPO, fixture_runs(), NOW), NOW);
 
-    let page = facts.pipelines_page();
+    let page = facts.pipeline_rows();
     let rows: Vec<(&str, RowStatus)> = page
         .rows
         .iter()
@@ -246,18 +246,18 @@ fn run_finishing_between_polls_clears_its_jobs() {
 }
 
 #[test]
-fn quiet_repos_are_job_polled_but_stay_off_the_esp_screen() {
+fn quiet_repos_are_job_polled_but_stay_off_the_banner() {
     let mut source = state(false, 0);
     let mut facts = CiFacts::default();
     apply(&mut facts, source.on_runs(REPO, fixture_runs(), NOW), NOW);
-    assert_eq!(facts.pipelines_page().count, 3);
+    assert_eq!(facts.pipeline_rows().count, 3);
     assert_eq!(source.watched_runs(), [(REPO.to_string(), 1003)]);
 
     let (updates, _) = source.on_jobs(REPO, 1003, fixture_jobs(), NOW + 5);
     apply(&mut facts, updates, NOW + 5);
     assert!(facts.has_job("github:personal:your-user/demo:job:2001"));
     assert_eq!(facts.jobs().len(), 1, "the kiosk list sees it");
-    assert!(facts.candidates().is_empty(), "the ESP screen does not");
+    assert!(facts.candidates().is_empty(), "the banner does not");
 }
 
 #[test]
