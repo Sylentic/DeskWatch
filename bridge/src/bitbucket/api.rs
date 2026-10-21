@@ -15,7 +15,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use serde::de::DeserializeOwned;
 
-use super::payload::{ApiRunner, Page, Pipeline, PullRequest, Step};
+use super::payload::{ApiRunner, Issue, Page, Pipeline, PullRequest, Step};
 use super::runners::RunnerScope;
 use crate::source::Secret;
 
@@ -32,6 +32,9 @@ const MAX_PAGES: u32 = 5;
 
 /// Recent pipelines fetched per repository.
 const PIPELINES_PAGE_SIZE: u32 = 20;
+
+/// Issues fetched per poll for "new issue" alerts. Only the newest matter.
+const ISSUES_PAGE_SIZE: u32 = 20;
 
 /// Give up on a request after this long, so a hung server cannot stall polling.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
@@ -82,6 +85,18 @@ impl HttpApi {
         );
         let (list, size) = self.all_pages(first).await.context("open pull requests")?;
         Ok((list, size))
+    }
+
+    /// The newest issues of a repository, for "new issue" alerts. Closed ones
+    /// are included: only numbers above the last one seen count. A repository
+    /// without the issue tracker answers 404.
+    pub async fn recent_issues(&self, repo: &str) -> Result<Vec<Issue>> {
+        let url = format!(
+            "{}/repositories/{repo}/issues?sort=-created_on&pagelen={ISSUES_PAGE_SIZE}",
+            self.root
+        );
+        let page: Page<Issue> = self.get_json(&url).await.context("open issues")?;
+        Ok(page.values)
     }
 
     /// The newest pipelines of a repository, newest first.

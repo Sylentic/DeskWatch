@@ -201,6 +201,7 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 # job_poll_s = 5                # stage progress while a pipeline is running
 # interrupt = true              # true, false, or a list such as ["your-group/project-a"]
 # notify_new_prs = true         # flash "New PR" for new non-draft merge requests
+# alert_new_issues = true       # new issues in the alerts list until dismissed
 # # Runners for the kiosk `runners` widget (docs/runners.md). Off unless listed.
 # # Needs the Maintainer role (project), Owner (group) or an admin token (instance).
 # # runners = ["project:your-group/project-a", "group:your-group"]  # do not list overlapping scopes
@@ -218,6 +219,7 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 # job_poll_s = 10               # step progress while a pipeline is in progress
 # interrupt = true              # true, false, or a list such as ["your-workspace/repo-a"]
 # notify_new_prs = true         # flash "New PR" for new non-draft PRs
+# alert_new_issues = true       # new issues in the alerts list (token needs Issues: Read)
 # # Self-hosted runners for the kiosk `runners` widget (docs/runners.md). Off unless listed.
 # # runners = ["repo:your-workspace/repo-a", "workspace:your-workspace"]  # do not list overlapping scopes
 # # runner_poll_s = 300         # seconds between runner polls
