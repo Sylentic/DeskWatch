@@ -8,6 +8,8 @@ hardware yet, and its MQTT schema (v2) may still change or the display may be dr
 
 ## [Unreleased]
 
+## [1.0.2]
+
 ### Added
 
 - **GPU usage, VRAM and GPU temperature on the host card** (#115). Prometheus hosts read them from the NVIDIA DCGM

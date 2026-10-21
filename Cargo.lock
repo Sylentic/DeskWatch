@@ -471,7 +471,7 @@ dependencies = [
 
 [[package]]
 name = "deskwatch-bridge"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "anyhow",
  "argon2",
@@ -498,7 +498,7 @@ dependencies = [
 
 [[package]]
 name = "deskwatch-sim"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "anyhow",
  "deskwatch-ui",
@@ -510,7 +510,7 @@ dependencies = [
 
 [[package]]
 name = "deskwatch-ui"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "embedded-graphics",
  "embedded-graphics-simulator",
