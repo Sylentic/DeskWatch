@@ -3,7 +3,7 @@
 DeskWatch runs in one small container. There are two ways to use it, and they differ only in the config file:
 
 - **The dashboard** (this page's quick start): the full-size status page in a browser, served by the bridge. Put the
-  container on your homelab, open `http://<docker host>:8787/` from any screen. It needs **no MQTT broker and no ESP**.
+  container on your homelab, open `http://<docker host>:8787/` from any screen. It needs **no MQTT broker**.
 - **The bridge for the ESP panel**: the same container publishing screens to your Mosquitto broker for the desk
   panel (sections 4 to 9). It can serve the dashboard page at the same time.
 
@@ -68,20 +68,6 @@ emulating the other CPU, so a multi-arch build is not much slower than a single 
 # The dashboard page only (no broker): open http://localhost:8787/
 docker run --rm -p 8787:8787 deskwatch-bridge --demo --kiosk --no-mqtt
 ```
-
-For the ESP panel or the desktop simulator the demo needs a broker. With one reachable as `broker.example.lan`:
-
-```sh
-cat > demo.toml <<'TOML'
-[mqtt]
-host = "broker.example.lan"
-TOML
-docker run --rm -v "$PWD/demo.toml:/etc/deskwatch/bridge.toml:ro" deskwatch-bridge --demo /etc/deskwatch/bridge.toml
-```
-
-You should see `connected to MQTT broker` and `demo mode: playing fake data`. Look at it with the simulator, see
-[install.md](install.md#8-try-it-without-hardware). If your broker needs a login, use the config and secrets from
-section 4.
 
 ## 3. The dashboard on your homelab
 

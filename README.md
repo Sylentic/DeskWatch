@@ -74,20 +74,13 @@ homelab. Not done yet:
   servers.
 - Release binaries for macOS and 32-bit ARM (build from source).
 
-## The desk display (experimental)
-
-DeskWatch was first planned around a small **4" touch screen on an ESP32-S3**. The bridge publishes what it needs over
-MQTT ([docs/mqtt-schema.md](docs/mqtt-schema.md)) and its drawing code runs in a desktop simulator, but the firmware
-**has not run on a board yet**. It is not part of 1.0, and since the dashboard now does more, it may be dropped. See
-[firmware/](firmware/README.md) and [docs/development.md](docs/development.md#panel-ui-and-simulator).
-
 What changed in each version is in the [changelog](CHANGELOG.md).
 
 ## Documentation
 
 Everything is in [docs/](docs/README.md): installing, the dashboard and its widgets, the setup page, the login and
-HTTPS, each source, alerts and MQTT. Working on DeskWatch itself (running from source, the demo, the simulator, the
-firmware, the checks before a pull request) is in [docs/development.md](docs/development.md).
+HTTPS, each source, alerts and MQTT. Working on DeskWatch itself (running from source, the demo, the checks
+before a pull request) is in [docs/development.md](docs/development.md).
 
 ## License
 

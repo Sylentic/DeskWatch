@@ -14,11 +14,11 @@
 # The checks: formatting, clippy (warnings are errors) and the tests on current
 # stable and on the minimum supported Rust version (Linux), clippy and the tests
 # on Windows, the Docker image (amd64 smoke test, and amd64 + arm64 for PRs into
-# main and for releases), and the panel firmware with the Xtensa toolchain.
+# main and for releases).
 #
 # A release: the tag must match the crate version, the binaries are built for
 # Linux x86_64 and aarch64 (Ubuntu 22.04, glibc 2.35, so Debian 12 and newer)
-# and Windows x86_64 (the bridge and the simulator, SDL2 linked in), each with
+# and Windows x86_64, each with
 # a .sha256 next to it, the image goes to ghcr.io/sylentic/deskwatch-bridge,
 # and the release notes are the matching section of CHANGELOG.md.
 name: Pipeline
@@ -82,11 +82,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # The desktop simulator (embedded-graphics-simulator) links SDL2.
-      # Installing it up front lets that crate build headless on the runner.
-      - name: Install SDL2
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libsdl2-dev
-
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
@@ -107,20 +102,13 @@ jobs:
       - name: cargo test
         run: cargo test --workspace --locked
 
-  # The bridge and the simulator must build and pass their tests on Windows too.
-  # This job is also the only proof that the bundled SDL2 build works there.
+  # The bridge must build and pass its tests on Windows too.
   windows:
     name: windows (stable)
     runs-on: windows-latest
-    env:
-      # The runner's CMake 4 refuses the old minimum-version line in SDL2's
-      # CMakeLists.txt; this tells it to accept it.
-      CMAKE_POLICY_VERSION_MINIMUM: "3.5"
     steps:
       - uses: actions/checkout@v5
 
-      # SDL2 is built from source by the sdl2 crate (see sim/Cargo.toml), which
-      # needs CMake. It is preinstalled on the runner image.
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -204,67 +192,6 @@ jobs:
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-  # The panel firmware targets the ESP32-S3 and needs the Xtensa fork of Rust,
-  # so it is outside the workspace and gets its own job. It only checks that the
-  # code compiles and lints clean; nothing here runs on a board. Not needed for
-  # a release (the firmware is not released).
-  firmware:
-    name: firmware (esp32s3)
-    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: firmware
-    steps:
-      - uses: actions/checkout@v5
-
-      # Installs the "esp" toolchain (rust-toolchain.toml in firmware/ selects
-      # it) and the Xtensa GCC the linker needs.
-      - uses: esp-rs/xtensa-toolchain@v1.6
-        # espup asks the GitHub API for the latest Xtensa Rust release.
-        # Without a token that call is rate limited and fails with a 403.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          buildtargets: esp32s3
-          ldproxy: false
-
-      # The mbedtls build (CMake) caches the full path of the Xtensa GCC in the
-      # target directory. espup moves to a new GCC folder whenever Espressif
-      # releases one, and a restored cache then points at a compiler that no
-      # longer exists. rust-cache only keys on the Rust version, so put the GCC
-      # folder name in the cache key.
-      - name: Find the Xtensa GCC version
-        id: gcc
-        run: echo "version=$(ls "$HOME/.rustup/toolchains/esp/xtensa-esp-elf" | sort | tail -n1)" >> "$GITHUB_OUTPUT"
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: firmware
-          key: firmware-${{ steps.gcc.outputs.version }}
-
-      # Formatting does not need the Xtensa compiler, stable rustfmt is enough.
-      - name: cargo fmt
-        run: cargo +stable fmt --check
-
-      - name: cargo clippy
-        run: cargo clippy --release --locked -- -D warnings
-
-      # The TLS spike is a second binary behind a cargo feature (see
-      # firmware/README.md). Linting it needs the TLS stack, which is only
-      # compiled with the feature on.
-      - name: cargo clippy (tls-spike)
-        run: cargo clippy --release --locked --features tls-spike -- -D warnings
-
-      # Falls back to config.example.toml, since config.toml is gitignored.
-      - name: cargo build
-        run: cargo build --release --locked
-
-      # MbedTLS is compiled from source here, with the Xtensa GCC from the
-      # toolchain step. The runner already has cmake and ninja.
-      - name: cargo build (tls-spike)
-        run: cargo build --release --locked --features tls-spike --bin tls-spike
 
   # ---- release (a merge into main with a new version, or a version tag) --------
 
@@ -371,8 +298,6 @@ jobs:
     runs-on: windows-latest
     env:
       TAG: ${{ needs.version.outputs.tag }}
-      # CMake 4 refuses the old minimum-version line in SDL2's CMakeLists.txt.
-      CMAKE_POLICY_VERSION_MINIMUM: "3.5"
     steps:
       - uses: actions/checkout@v5
 
@@ -384,9 +309,8 @@ jobs:
         with:
           key: release-windows
 
-      # The bridge and the simulator (SDL2 is built from source and linked in).
       - name: Build
-        run: cargo build -p deskwatch-bridge -p deskwatch-sim --release --locked --target x86_64-pc-windows-msvc
+        run: cargo build -p deskwatch-bridge --release --locked --target x86_64-pc-windows-msvc
 
       - name: Package
         shell: pwsh
@@ -396,7 +320,7 @@ jobs:
           $dir = "dist/$name"
           New-Item -ItemType Directory -Force $dir | Out-Null
           $bin = "target/x86_64-pc-windows-msvc/release"
-          Copy-Item "$bin/deskwatch-bridge.exe", "$bin/deskwatch-sim.exe" $dir
+          Copy-Item "$bin/deskwatch-bridge.exe" $dir
           Copy-Item -Recurse bridge/config.example.toml, deploy, homeassistant, docs, README.md, CHANGELOG.md, LICENSE-MIT, LICENSE-APACHE $dir
           Compress-Archive -Path $dir -DestinationPath "dist/$name.zip"
           # Same "<hash>  <file>" layout that sha256sum -c reads.

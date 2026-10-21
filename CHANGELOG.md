@@ -3,10 +3,16 @@
 All notable changes to DeskWatch are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/). From 1.0.0 on, a change that breaks an existing bridge config file or the
-`POST /api/alert` format needs a new major version. The ESP desk display is not part of 1.0: its firmware has not run on
-hardware yet, and its MQTT schema (v2) may still change or the display may be dropped.
+`POST /api/alert` format needs a new major version.
 
 ## [Unreleased]
+
+### Removed
+
+- **The ESP32 desk display is dropped.** Its firmware never ran on a board, so `firmware/` (with the TLS spike), the
+  panel drawing crate `ui/` and the desktop simulator `sim/` (`deskwatch-sim`, also gone from the Windows zip) are
+  removed, together with the firmware CI job and the SDL2 builds. The last commit that still has them is the one
+  before this change in the history. MQTT stays for alerts (`deskpanel/alert`, Home Assistant).
 
 ### Added
 

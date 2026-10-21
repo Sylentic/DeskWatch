@@ -8,7 +8,7 @@ server stats (see below), so it may well work, but nobody has written or tested 
 Mac, a pull request with a `docs/macos.md` is very welcome.
 
 > **How much of this is verified?** The bridge was compiled and linted for a Windows target on Linux, and the
-> `windows` job in CI builds the whole workspace (including the simulator with a bundled SDL2) and runs the tests
+> `windows` job in CI builds the bridge and runs the tests
 > on a real Windows runner. Everything else here, the Mosquitto steps, the service and scheduled task setup, the
 > firewall rule and the shutdown behavior, was written from documentation and **has not been run on Windows by
 > the author**. If a step does not work for you, please open an issue with the error message.
@@ -17,11 +17,10 @@ What you need:
 
 - Windows with PowerShell (the built-in Windows PowerShell 5.1 is fine; commands below also work in PowerShell 7).
 - A Mosquitto broker the bridge can reach. For a first test, install it on the same PC.
-- For the simulator: nothing extra when you use the release zip (SDL2 is built into `deskwatch-sim.exe`).
 
 Contents: [1. Get the programs](#1-get-the-programs) · [2. Mosquitto](#2-mosquitto) ·
-[3. Quick test with the demo](#3-quick-test-the-demo-and-the-simulator) · [4. A real config](#4-a-real-config) ·
-[5. Run it as a service](#5-run-the-bridge-as-a-service) · [6. Panel mock flow](#6-the-panel-mock-flow) ·
+[3. Quick test with the demo](#3-quick-test-the-demo) · [4. A real config](#4-a-real-config) ·
+[5. Run it as a service](#5-run-the-bridge-as-a-service) · [6. Try an MQTT alert](#6-try-an-mqtt-alert) ·
 [7. What differs from Linux](#7-what-differs-from-linux) · [8. Troubleshooting](#8-troubleshooting)
 
 ## 1. Get the programs
@@ -29,7 +28,7 @@ Contents: [1. Get the programs](#1-get-the-programs) · [2. Mosquitto](#2-mosqui
 ### Option A: download a release
 
 Each release at <https://github.com/Sylentic/DeskWatch/releases> has `deskwatch-<version>-x86_64-windows.zip` and
-a `.sha256` file next to it. The zip holds `deskwatch-bridge.exe`, `deskwatch-sim.exe`, the example config,
+a `.sha256` file next to it. The zip holds `deskwatch-bridge.exe`, the example config,
 `deploy/`, `homeassistant/`, `docs/` and the licenses.
 
 ```powershell
@@ -54,20 +53,16 @@ downloaded the zip in a browser, right click it, choose Properties, and tick "Un
 ### Option B: build from source
 
 You need [Rust](https://rustup.rs) 1.88 or newer with the MSVC toolchain, which rustup sets up with the Visual
-Studio Build Tools ("Desktop development with C++"), plus [Git](https://git-scm.com) and
-[CMake](https://cmake.org/download/) (the simulator builds SDL2 from source and needs it).
+Studio Build Tools ("Desktop development with C++"),, plus [Git](https://git-scm.com).
 
 ```powershell
 git clone https://github.com/Sylentic/DeskWatch.git
 cd DeskWatch
 git checkout v1.0.2             # or dev for the newest code that is not released yet
-$env:CMAKE_POLICY_VERSION_MINIMUM = "3.5"    # needed with CMake 4 or newer, harmless otherwise
-cargo build --release --locked -p deskwatch-bridge -p deskwatch-sim
+cargo build --release --locked -p deskwatch-bridge
 ```
 
-The programs are `target\release\deskwatch-bridge.exe` and `target\release\deskwatch-sim.exe`. The first
-simulator build takes a few minutes because of SDL2. If you only want the bridge, leave out `-p deskwatch-sim`;
-then neither CMake nor SDL2 is needed.
+The program is `target\release\deskwatch-bridge.exe`.
 
 ## 2. Mosquitto
 
@@ -90,49 +85,23 @@ To see what is on the broker, in another window:
 & "C:\Program Files\mosquitto\mosquitto_sub.exe" -h localhost -t "deskpanel/#" -v
 ```
 
-For a broker other machines reach (your panel, Home Assistant), add logins and an ACL as described in
+For a broker other machines reach (Home Assistant), add logins and an ACL as described in
 [mosquitto.md](mosquitto.md) and use the examples in [deploy/mosquitto](../deploy/mosquitto). On Windows the
 config lives in `C:\Program Files\mosquitto\mosquitto.conf` and the password file is made with
 `mosquitto_passwd.exe -c <file> <user>`. Windows Defender Firewall asks to allow Mosquitto on first start; allow
 it only on the network type you trust, and never expose port 1883 to the internet.
 
-## 3. Quick test: the demo and the simulator
+## 3. Quick test: the demo
 
-This needs no Gitea, GitHub or Home Assistant. The demo plays a loop of fake data (see the README, "Demo mode")
-and the simulator draws the panel in a window. Use two PowerShell windows, in the folder with the exes.
-
-Window 1, the bridge in demo mode (a broker on localhost, as above):
+This needs no Gitea, GitHub or Home Assistant. The demo plays a loop of fake data (see [development.md](development.md#demo-mode))
+on the dashboard page. In a PowerShell window, in the folder with the exe:
 
 ```powershell
-.\deskwatch-bridge.exe --demo
+.\deskwatch-bridge.exe --demo --kiosk --no-mqtt
 ```
 
-You should see `demo mode: playing fake data` and `connected to MQTT broker`. Leave it running.
-
-Window 2, the simulator:
-
-```powershell
-.\deskwatch-sim.exe --host localhost
-```
-
-A 960x640 window opens (480x320 at scale 2; `--scale 1` makes it smaller) and walks through the pages: stats,
-pull requests, pipelines, a running deploy, a failure, a green flash, alerts. Left click is the panel's button
-(hold for 600 ms for a long press); space or enter is a short press, `L` a long press. Stop the bridge with
-Ctrl+C; it tells the broker it is going offline, and the panel shows the red "bridge offline" bar.
-
-The simulator also works without a broker or the bridge:
-
-```powershell
-# flip through the example payloads (click or space for the next one); needs the repository checkout
-.\deskwatch-sim.exe preview ui\testdata\screens --badges ui\testdata\badges\default.json
-# draw one payload to a PNG, no window
-.\deskwatch-sim.exe render ui\testdata\screens\job_deploy.json -o job.png
-```
-
-(The example payloads are in the repository, not in the release zip.)
-
-If the broker needs a login, run the simulator with `--user deskwatch-panel` and put the password in the
-environment first: `$env:DESKWATCH_MQTT_PASSWORD = '...'` (this lasts for that PowerShell window only).
+You should see `demo mode: playing fake data`. Open <http://localhost:8787/> in a browser. Stop the bridge with
+Ctrl+C. Leave out `--no-mqtt` to also connect to a broker on localhost (section 2).
 
 ## 4. A real config
 
@@ -148,7 +117,7 @@ From an **administrator** PowerShell in the extracted folder:
 
 ```powershell
 New-Item -ItemType Directory -Force "C:\Program Files\DeskWatch", "C:\ProgramData\DeskWatch\credentials" | Out-Null
-Copy-Item deskwatch-bridge.exe, deskwatch-sim.exe "C:\Program Files\DeskWatch\"
+Copy-Item deskwatch-bridge.exe "C:\Program Files\DeskWatch\"
 Copy-Item config.example.toml "C:\ProgramData\DeskWatch\bridge.toml"      # Option B: bridge\config.example.toml
 ```
 
@@ -258,7 +227,7 @@ Start-ScheduledTask -TaskName DeskWatchBridge
 ```
 
 Stopping a task ends the process without a Ctrl+C, so the broker only learns the bridge is gone from its Last
-Will (the panel still shows "bridge offline", just a moment later):
+Will (just a moment later):
 
 ```powershell
 Stop-ScheduledTask -TaskName DeskWatchBridge
@@ -277,30 +246,18 @@ New-NetFirewallRule -DisplayName "DeskWatch webhooks" -Direction Inbound -Protoc
 Adjust the port to `http.listen`, and the remote address to where Gitea runs. Webhooks are plain HTTP, so keep
 this to a trusted network (see the README).
 
-## 6. The panel mock flow
+## 6. Try an MQTT alert
 
-The real panel firmware has never run on a board, so on Windows the simulator stands in for it. To rehearse
-the whole chain with your real bridge, not the demo:
+To rehearse alerts from Home Assistant or a script with your real bridge:
 
 1. Run the bridge with your config (as in section 4, or as the service) against your broker.
-2. Start the simulator against the same broker: `deskwatch-sim.exe --host broker.example.lan --user deskwatch-panel`
-   (password in `$env:DESKWATCH_MQTT_PASSWORD`). The first screen appears as soon as the retained
-   `deskpanel/screen` message arrives; the stats page then updates every few seconds.
-3. Trigger something: run a Gitea Actions workflow for a job page, or raise an alert from Home Assistant or by
-   hand:
+2. Raise an alert by hand:
 
    ```powershell
    & "C:\Program Files\mosquitto\mosquitto_pub.exe" -h localhost -t deskpanel/alert -f docs\schema\alert-raise.json
    ```
 
-   Press the simulator's button (click) to dismiss a failed alert or step through pages, as on the real panel.
-4. Draw a payload yourself, before the bridge makes one, to see how the panel handles it:
-
-   ```powershell
-   & "C:\Program Files\mosquitto\mosquitto_pub.exe" -h localhost -r -t deskpanel/screen -f ui\testdata\screens\alert_failed.json
-   ```
-
-   (Retained, so it stays until the bridge publishes the next screen.)
+   It shows up in the dashboard's Alerts card and the header. Clear it with `docs\schema\alert-clear.json` the same way.
 
 ## 7. What differs from Linux
 
@@ -321,7 +278,7 @@ the whole chain with your real bridge, not the demo:
 - **Config path.** `C:\ProgramData\DeskWatch\bridge.toml` is the default, or pass a path, or set
   `DESKWATCH_CONFIG`.
 
-Everything else (sources, rotation, alerts, MQTT schema, the panel pages) is the same on both systems.
+Everything else (sources, alerts, MQTT) is the same on both systems.
 
 ## 8. Troubleshooting
 
@@ -335,8 +292,4 @@ Everything else (sources, rotation, alerts, MQTT schema, the panel pages) is the
 - **`connection refused` to the broker.** Mosquitto is not running (`Get-Service mosquitto`), or listens on
   another port. By default it only accepts connections from this PC.
 - **Windows Defender Firewall blocks the broker or the webhook port.** See sections 2 and 5.
-- **The simulator window shows nothing.** No `deskpanel/screen` message has
-  arrived: check the bridge is running and both use the same broker, host, port and `--prefix`. Use
-  `mosquitto_sub.exe -t "deskpanel/#" -v` to see what is on the broker.
-- **The simulator window is too large or small.** `--scale 1` or `--scale 3`.
 - **SmartScreen blocks the exes.** See the note in section 1.

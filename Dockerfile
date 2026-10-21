@@ -41,17 +41,14 @@ RUN case "$TARGETARCH" in \
 # Build in two steps so a source change does not recompile the dependencies.
 #
 # Step 1 copies only the manifests and the lock file, adds empty stand-in
-# sources (the workspace also lists the simulator and the UI crate, so their
-# manifests must exist) and builds. That layer holds every dependency compiled
+# sources and builds. That layer holds every dependency compiled
 # and only changes when a Cargo.toml or Cargo.lock does. Step 2 copies the real
 # sources over it. Only the bridge (and what it depends on) is compiled.
 COPY Cargo.toml Cargo.lock ./
 COPY bridge/Cargo.toml ./bridge/
-COPY sim/Cargo.toml ./sim/
-COPY ui/Cargo.toml ./ui/
-RUN mkdir -p bridge/src sim/src ui/src \
+RUN mkdir -p bridge/src \
     && echo 'fn main() {}' > bridge/src/main.rs \
-    && touch bridge/src/lib.rs sim/src/lib.rs ui/src/lib.rs
+    && touch bridge/src/lib.rs
 # The compile step is shared by both builds, so it lives in one script that
 # reads the two files written above (the Rust target and the linker).
 RUN printf '%s\n' \
@@ -62,14 +59,12 @@ RUN printf '%s\n' \
       > /build.sh \
     && chmod +x /build.sh \
     && /build.sh \
-    && rm -rf bridge/src sim/src ui/src
+    && rm -rf bridge/src
 
 COPY bridge ./bridge
-COPY sim ./sim
-COPY ui ./ui
 # Copied files can be older than the stand-in build, and cargo decides what to
 # rebuild by modification time, so touch them to make the real code recompile.
-RUN find bridge/src sim/src ui/src -name '*.rs' -exec touch {} + \
+RUN find bridge/src -name '*.rs' -exec touch {} + \
     && /build.sh \
     && cp "target/$(cat /rust-target)/release/deskwatch-bridge" /deskwatch-bridge
 
