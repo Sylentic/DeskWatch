@@ -42,6 +42,12 @@ hardware yet, and its MQTT schema (v2) may still change or the display may be dr
   (the viewer keeps the user name `viewer`). Without a password nothing changes.
 - The single "viewer password" box is gone from Setup; add a viewer user instead.
 
+### Fixed
+
+- **Drop-downs on the setup page no longer jump back** to their first or saved value when the page refreshes itself
+  every few seconds (#120), for example the source type under "Add a source". A refresh also waits while a drop-down
+  is open.
+
 ## [1.0.1]
 
 ### Fixed
