@@ -14,6 +14,15 @@ hardware yet, and its MQTT schema (v2) may still change or the display may be dr
   exporter by default, and `gpu_pct`, `gpu_mem_pct` and `gpu_temp_c` can be replaced under `queries`. The bridge machine
   reads AMD GPUs from sysfs. The rows only show for hosts that report a GPU. Intel and NVIDIA on the bridge machine
   itself need a Prometheus host.
+- **New issues and new PR comments in the alerts list** (#118). GitHub (polled) and Gitea (the **Issues** webhook event)
+  add a new issue; Azure DevOps adds a new comment on an open PR, skipping your own. They show as info alerts with the
+  source's mark, link to the issue or PR, and stay until dismissed (or a week). Existing issues and comments do not
+  alert at startup. `alert_new_issues = false` or `alert_pr_comments = false` turns them off per source.
+
+### Changed
+
+- **Info alerts are plain rows in the dashboard's Alerts card**, without the blue box. Warnings and critical alerts
+  keep their amber and red boxes.
 
 ## [1.0.1]
 

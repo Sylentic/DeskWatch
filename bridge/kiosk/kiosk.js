@@ -101,8 +101,10 @@
     var k = String(id || '').split(':')[0].replace(/[-_]?enterprise$/, '');
     return k === 'stats' || k === 'proc' ? 'local' : k;
   }
-  // Where an alert comes from, for its mark: Home Assistant or anything else.
+  // Where an alert comes from, for its mark: a git source (new issue or PR
+  // comment), Home Assistant, or anything else.
   function alertKind(a) {
+    if (MARKS[a.source] && a.source !== 'local') return a.source;
     return /home.?assistant|^ha\b/i.test(a.source || '') ? 'home_assistant' : 'local';
   }
   // A row or card that opens its page on the source. The bridge only sends
@@ -412,8 +414,13 @@
       var alerts = snap.alerts || [];
       var rows = alerts.map(function (a) {
         var sub = [a.message ? esc(a.message) : '', ago(nowS() - a.since)].filter(Boolean).join(' &middot; ');
+        // An alert from a git source links to its issue or comment.
+        var txt = '<span class="main">' + esc(a.title) + '</span><span class="sub">' + sub + '</span>';
+        var h = href(a.url);
+        // Info alerts (new issues, PR comments, a washer that is done) are news,
+        // not trouble: a plain row. Warnings and criticals keep their tint.
         return '<div class="abox ' + esc(a.severity) + '">' + src(alertKind(a)) +
-          '<span class="txt"><span class="main">' + esc(a.title) + '</span><span class="sub">' + sub + '</span></span>' +
+          (h ? '<a class="txt link" href="' + esc(h) + '" target="_blank" rel="noopener noreferrer">' + txt + '</a>' : '<span class="txt">' + txt + '</span>') +
           (canDismiss() ? '<button type="button" class="ax" data-dismiss-alert="' + esc(a.id) + '" aria-label="Dismiss ' + esc(a.title) + '">&times;</button>' : '') +
           '</div>';
       });
@@ -643,7 +650,7 @@
   }
   function alertRow(a) {
     var cfg = (snap.layout && snap.layout.alerts) || {};
-    var sub = [a.message ? esc(a.message) : '', a.source && cfg.show_source !== false ? 'via ' + esc(a.source) : '', a.since ? ago(nowS() - a.since) : '']
+    var sub = [a.message ? esc(a.message) : '', a.source && cfg.show_source !== false ? 'via ' + esc(SOURCES[a.source] || a.source) : '', a.since ? ago(nowS() - a.since) : '']
       .filter(Boolean).join(' &middot; ');
     return '<li><span class="what"><span class="dot ' + esc(a.severity) + '"></span><b>' + esc(a.title) + '</b>' +
       '<span class="sev ' + esc(a.severity) + '">' + esc(SEV_NAME[a.severity] || a.severity) + '</span><span class="sub">' + sub + '</span></span>' +

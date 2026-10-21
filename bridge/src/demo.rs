@@ -323,6 +323,7 @@ fn alert(id: &str, severity: Severity, title: &str, message: &str) -> Step {
         ttl_s: None,
         source: Some("homeassistant".into()),
         clear: false,
+        url: None,
     })
 }
 
@@ -336,6 +337,7 @@ fn clear(id: &str) -> Step {
         ttl_s: None,
         source: None,
         clear: true,
+        url: None,
     })
 }
 
@@ -386,6 +388,27 @@ fn script() -> Vec<(u64, Step)> {
         (
             2,
             alert("washer", Severity::Info, "Washing machine", "Done, 58 min"),
+        ),
+        // A new issue and a PR comment, as the git sources raise them.
+        (
+            3,
+            Step::Alert(AlertMessage::activity(
+                "demo:issue:46".into(),
+                "Checkout button hidden on phones".into(),
+                format!("New issue #46 in {PROJECT} by dana"),
+                SOURCE,
+                Some(format!("{WEB}/issues/46")),
+            )),
+        ),
+        (
+            4,
+            Step::Alert(AlertMessage::activity(
+                "demo:comment:44".into(),
+                "Sam on !44 dark mode for the checkout".into(),
+                "Looks good, can you add a screenshot?".into(),
+                "azure_devops",
+                None,
+            )),
         ),
         (
             31,

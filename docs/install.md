@@ -185,7 +185,8 @@ Gitea tells the bridge about runs the moment they start and end, by webhook. Git
    - Target URL: `http://<bridge-host>:8787/webhook/gitea/home` (the last part is the source's `name`), method POST,
      content type `application/json`
    - Secret: the same value as the webhook secret credential
-   - Trigger on custom events: **Workflow Run**, **Workflow Job** and **Pull Request**
+   - Trigger on custom events: **Workflow Run**, **Workflow Job** and **Pull Request**, plus **Issues** to get a new
+     issue in the alerts list (`alert_new_issues = false` turns that off)
 6. Gitea refuses webhooks to private addresses by default. Allow the bridge host in Gitea's `app.ini`, then
    restart Gitea:
 
@@ -231,7 +232,8 @@ A refused token or an unreachable server shows as the `warn` badge; polling back
 down when less than 10 % of the rate limit is left. Runs that finished before the bridge started show on the
 pipelines page and count in the red badge but do not take over the screen. `interrupt` and `alias` work as for
 Gitea; a new non-draft PR flashes "New PR" unless `notify_new_prs = false`. Only the first 100 open PRs per
-repository are counted.
+repository are counted. A new issue goes to the alerts list until dismissed, unless `alert_new_issues = false` (one
+extra request per repository per poll; the token needs **Issues: Read**).
 
 ### GitLab
 

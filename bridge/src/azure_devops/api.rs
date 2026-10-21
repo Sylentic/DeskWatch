@@ -16,7 +16,9 @@ use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use reqwest::{StatusCode, Url};
 use serde::de::DeserializeOwned;
 
-use super::payload::{Agent, Build, JobRequest, List, Pool, PullRequest, Record, Timeline};
+use super::payload::{
+    Agent, Build, ConnectionData, JobRequest, List, Pool, PullRequest, Record, Thread, Timeline,
+};
 use crate::source::{AuthRefused, Secret};
 
 /// Azure DevOps Services.
@@ -139,6 +141,38 @@ impl HttpApi {
         )?;
         let pulls: List<PullRequest> = self.get_json(url).await.context("open pulls")?;
         Ok(pulls.value)
+    }
+
+    /// The comment threads of one pull request.
+    pub async fn threads(&self, project: &str, repo: &str, pull_id: u64) -> Result<Vec<Thread>> {
+        let project = plain_name(project);
+        let id = pull_id.to_string();
+        let url = self.url(
+            &[
+                &project,
+                "_apis",
+                "git",
+                "repositories",
+                repo,
+                "pullRequests",
+                &id,
+                "threads",
+            ],
+            &[],
+        )?;
+        let threads: List<Thread> = self.get_json(url).await.context("PR threads")?;
+        Ok(threads.value)
+    }
+
+    /// Id of the user the token belongs to, so their own comments can be
+    /// skipped.
+    pub async fn me(&self) -> Result<String> {
+        // A preview API that refuses `api-version=7.1`; without a version it
+        // answers on every Azure DevOps release.
+        let mut url = self.url(&["_apis", "connectionData"], &[])?;
+        url.set_query(None);
+        let data: ConnectionData = self.get_json(url).await.context("connection data")?;
+        Ok(data.authenticated_user.id)
     }
 
     /// Names of the projects the token can see, for explaining a 404.

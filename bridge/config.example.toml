@@ -111,6 +111,7 @@ poll_s = 60                     # open PR poll, a safety net behind PR webhooks
 job_poll_s = 5                  # step progress poll while a job runs
 interrupt = true                # true, false, or a list such as ["owner/repo"]
 # alias = { "owner/repo" = "shop" }  # short labels on the panel
+# alert_new_issues = true       # new issues in the alerts list (tick "Issues" in the webhook)
 # Runners for the kiosk `runners` widget (docs/runners.md). Off unless listed.
 # Needs a token: "user" = runners of the token's user, "org:<name>", "repo:<owner>/<name>",
 # "admin" = all runners (administrator token). Do not list overlapping scopes.
@@ -173,6 +174,7 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 # job_poll_s = 5                # step progress while a run is in progress
 # interrupt = true              # true, false, or a list such as ["your-user/repo-a"]
 # notify_new_prs = true         # flash "New PR" for new non-draft PRs
+# alert_new_issues = true       # new issues in the alerts list until dismissed
 # # Self-hosted runners for the kiosk `runners` widget (docs/runners.md). Off unless listed.
 # # Needs more token rights: repo runners "Administration: read", org runners "Self-hosted runners: read".
 # # runners = ["repo:your-user/repo-a", "org:your-org"]   # do not list overlapping scopes
@@ -236,6 +238,7 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 # interrupt = false             # default; true, or a list such as ["project-a"]
 # pull_requests = true          # count open PRs (needs Code: Read)
 # notify_new_prs = true         # flash "New PR" for new non-draft PRs
+# alert_pr_comments = true      # new PR comments (not your own) in the alerts list
 # deploy_words = ["deploy", "terraform"]  # pipeline names with these are deploys
 # # Self-hosted agent pools for the kiosk `runners` widget (docs/runners.md). Off unless named.
 # # Needs the extra token scope Agent Pools (Read).
