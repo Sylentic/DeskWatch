@@ -28,7 +28,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 
-use crate::alerts::{self, AlertMessage};
+use crate::alerts::{IssueWatch, NewIssue};
 use tokio::time::{Instant, MissedTickBehavior};
 use tracing::{debug, info, warn};
 
@@ -302,9 +302,8 @@ pub struct GithubState {
     notify_new_prs: bool,
     /// Raise an alert for each new issue.
     alert_new_issues: bool,
-    /// Highest issue number seen per repository. Missing before the first
-    /// poll, so existing issues do not all raise an alert at startup.
-    last_issue: HashMap<String, u64>,
+    /// Issue numbers seen, for "new issue" alerts.
+    issues: IssueWatch,
     /// Unix seconds when the source started. Runs that finished before then
     /// show on the pipelines page and in the badge, but do not take over
     /// the screen: they are old news after a bridge restart.
@@ -342,7 +341,7 @@ impl GithubState {
             alias,
             notify_new_prs,
             alert_new_issues: false,
-            last_issue: HashMap::new(),
+            issues: IssueWatch::default(),
             since,
             known_pulls: HashMap::new(),
             runs: HashMap::new(),
@@ -363,39 +362,22 @@ impl GithubState {
     /// The newest open issues of one repository from a poll: an alert for
     /// each issue above the highest number seen before.
     pub fn on_issues(&mut self, repo: &str, issues: Vec<Issue>) -> Vec<Update> {
-        let issues: Vec<Issue> = issues
+        let issues = issues
             .into_iter()
             .filter(|i| i.pull_request.is_none())
-            .collect();
-        let newest = issues.iter().map(|i| i.number).max().unwrap_or(0);
-        let Some(last) = self.last_issue.get(repo).copied() else {
-            self.last_issue.insert(repo.to_string(), newest);
-            return Vec::new();
-        };
-        self.last_issue.insert(repo.to_string(), last.max(newest));
-        let project = source::label(&self.alias, repo);
-        let mut out: Vec<Update> = issues
-            .into_iter()
-            .filter(|i| i.number > last)
-            .map(|i| {
-                let by = i
-                    .user
-                    .map(|u| format!(" by {}", u.login))
-                    .unwrap_or_default();
-                Update::Alert {
-                    alert: AlertMessage::activity(
-                        alerts::activity_id(&format!("{}:issue:{repo}#{}", self.id, i.number)),
-                        i.title,
-                        format!("New issue #{} in {project}{by}", i.number),
-                        KIND,
-                        i.html_url,
-                    ),
-                }
+            .map(|i| NewIssue {
+                number: i.number,
+                title: i.title,
+                url: i.html_url,
+                by: i.user.map(|u| u.login),
             })
             .collect();
-        // Oldest first, so the newest ends up on top of the list.
-        out.reverse();
-        out
+        let label = source::label(&self.alias, repo);
+        self.issues
+            .check(&self.id.to_string(), KIND, repo, &label, issues)
+            .into_iter()
+            .map(|alert| Update::Alert { alert })
+            .collect()
     }
 
     /// Give the kiosk links to runner settings, from the API address.

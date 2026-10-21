@@ -215,7 +215,7 @@ The bridge has a built-in login that is off until you set an administrator passw
 request whose `Origin` is another site. If other people can reach your network, or you open the page beyond it, choose
 one or more of these:
 
-1. **The built-in login.** Set an administrator password (and optionally a viewer password) under Setup, Access, or
+1. **The built-in login.** Set an administrator password (and, if you like, more users with a role each) under Setup, Access, or
    with `deskwatch-bridge auth set-password`. Screens and scripts use API keys. Needed anyway before `[http]
    allow_public = true`. Use it together with HTTPS.
 2. **HTTPS.** Both a reverse proxy and the bridge itself can serve HTTPS, see [https.md](https.md).

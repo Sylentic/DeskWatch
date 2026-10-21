@@ -906,6 +906,9 @@ pub struct GitlabConfig {
     /// Flash "New PR" when a poll finds a new, non-draft merge request.
     #[serde(default = "yes")]
     pub notify_new_prs: bool,
+    /// Put a new issue in the alerts list until it is dismissed.
+    #[serde(default = "yes")]
+    pub alert_new_issues: bool,
     /// Runner lists for the kiosk `runners` widget: `"project:<group>/<name>"`,
     /// `"group:<path>"` or `"instance"` (all runners, needs an administrator
     /// token). Needs extra rights (docs/runners.md). Empty means runners are
@@ -962,6 +965,9 @@ pub struct BitbucketConfig {
     /// Flash "New PR" when a poll finds a new, non-draft pull request.
     #[serde(default = "yes")]
     pub notify_new_prs: bool,
+    /// Put a new issue in the alerts list until it is dismissed.
+    #[serde(default = "yes")]
+    pub alert_new_issues: bool,
     /// Self-hosted runner lists for the kiosk `runners` widget:
     /// `"repo:<workspace>/<repo>"` or `"workspace:<slug>"`. Needs the Runners:
     /// Read right (docs/runners.md). Empty means runners are not polled. Do not

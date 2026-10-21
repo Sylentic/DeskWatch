@@ -42,6 +42,23 @@ pub struct Links {
     pub html: Href,
 }
 
+/// One item of `GET /repositories/{workspace}/{repo_slug}/issues`. Only
+/// repositories with the issue tracker switched on have these.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct Issue {
+    pub id: u64,
+    pub title: String,
+    pub links: Links,
+    pub reporter: Option<Account>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct Account {
+    pub display_name: String,
+}
+
 /// One item of `GET /repositories/{workspace}/{repo_slug}/pullrequests`.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]

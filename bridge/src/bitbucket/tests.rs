@@ -604,3 +604,35 @@ async fn refused_runner_list_does_not_hurt_source_health() {
     }
     assert_eq!(healths, [Health::Ok]);
 }
+
+#[test]
+fn new_issues_raise_alerts_after_the_first_poll() {
+    let issue = |id: u64, title: &str| -> Issue {
+        serde_json::from_value(json!({
+            "id": id,
+            "title": title,
+            "links": { "html": { "href": format!("https://bitbucket.org/team/app/issues/{id}") } },
+            "reporter": { "display_name": "Dana" },
+        }))
+        .unwrap()
+    };
+    let mut state = state(true, 0).with_issue_alerts(true);
+    assert!(
+        state
+            .on_issues("team/app", vec![issue(3, "old")])
+            .is_empty()
+    );
+    let updates = state.on_issues("team/app", vec![issue(4, "broken build"), issue(3, "old")]);
+    let [Update::Alert { alert }] = updates.as_slice() else {
+        panic!("one alert expected, got {updates:?}");
+    };
+    assert_eq!(
+        alert.message.as_deref(),
+        Some("New issue #4 in app by Dana")
+    );
+    assert_eq!(alert.source.as_deref(), Some("bitbucket"));
+    assert_eq!(
+        alert.url.as_deref(),
+        Some("https://bitbucket.org/team/app/issues/4")
+    );
+}

@@ -147,6 +147,7 @@ fn gh_config() -> Github {
         teams: vec!["acme/platform".into()],
         admin_users: vec![],
         admin_teams: vec!["acme/admins".into()],
+        ..Default::default()
     }
 }
 
@@ -156,6 +157,7 @@ fn ms_config() -> Microsoft {
         client_id: APP.into(),
         groups: vec![G_USERS.into()],
         admin_groups: vec![G_ADMINS.into()],
+        ..Default::default()
     }
 }
 
@@ -580,4 +582,33 @@ async fn the_routes_run_a_whole_sign_in() {
     // A provider that is not set up does not start.
     let r = get_path(&app, "/auth/login/microsoft", None).await;
     assert_eq!(r.headers()[header::LOCATION], "/login?error=failed");
+}
+
+#[test]
+fn operator_rules_sit_between_viewer_and_administrator() {
+    let mut cfg = gh_config();
+    cfg.operator_teams = vec!["acme/ops".into()];
+    let who = |teams: &[&str]| GithubIdentity {
+        id: 7,
+        orgs: vec![],
+        teams: teams.iter().map(|t| t.to_string()).collect(),
+    };
+    assert_eq!(
+        decide_github(&cfg, &who(&["acme/platform"])),
+        Some(Role::Viewer)
+    );
+    assert_eq!(
+        decide_github(&cfg, &who(&["acme/platform", "acme/ops"])),
+        Some(Role::Operator)
+    );
+    assert_eq!(
+        decide_github(&cfg, &who(&["acme/ops", "acme/admins"])),
+        Some(Role::Admin)
+    );
+    assert_eq!(decide_github(&cfg, &who(&[])), None);
+
+    let mut ms = ms_config();
+    ms.operator_groups = vec!["33333333-3333-3333-3333-333333333333".into()];
+    let ops = vec!["33333333-3333-3333-3333-333333333333".to_string()];
+    assert_eq!(decide_microsoft(&ms, &ops), Some(Role::Operator));
 }

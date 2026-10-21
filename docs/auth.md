@@ -19,11 +19,23 @@ printf '%s\n' 'a long password' | deskwatch-bridge auth set-password --user admi
 
 In Docker: `docker compose exec deskwatch deskwatch-bridge auth set-password ...` (restart the container afterwards).
 
-## Roles
+## Users and roles
 
-- **admin**: everything.
-- **viewer** (optional): the dashboard only, no Setup, no dismiss or mute. Set its password under Setup, Access; the
-  user name is always `viewer`.
+Each local user has a name, a password and one role:
+
+| | viewer | operator | administrator |
+|---|---|---|---|
+| Look at the dashboard | yes | yes | yes |
+| Dismiss alerts and failed runs, mute | no | yes | yes |
+| Setup, users and API keys | no | no | yes |
+
+Add users under Setup, **Access**. You choose a first password (at least 12 characters); the person must replace it at
+the first sign-in, which they do on their **My account** page (`/account`, also reachable for every role). Changing a
+role or password signs that user out at once. You cannot remove or lower the last administrator, or yourself.
+
+The user name `viewer` is kept for an install that already had a viewer password: it was turned into a viewer user
+when the file was first read. The file `auth.toml` is rewritten in the new format at the next change; nothing else has to
+be done.
 
 ## Scripts and screens use keys, not passwords
 
@@ -57,7 +69,8 @@ on, and a public address that starts with `https://`; plain `http://` only works
 `oauth.toml` in the data folder (no secrets), the client secrets in `credentials/oauth-github` and
 `credentials/oauth-microsoft`. The local admin account always keeps working, so a wrong rule never locks you out.
 
-Nobody gets in by default: a person must match an allow rule. Roles are decided again at every sign-in, so removing
+Nobody gets in by default: a person must match an allow rule. Plain rules give the **viewer** role, operator rules the
+**operator** role, administrator rules the **administrator** role; with several matches the highest wins. Roles are decided again at every sign-in, so removing
 someone from a team takes effect at their next sign-in.
 
 **GitHub.** Create an OAuth App (GitHub settings, Developer settings) with callback URL
@@ -75,9 +88,9 @@ of 100; a user in more than 20 matching Microsoft groups is checked in batches.
 
 ## Forgot the password
 
-No email. On the host: `deskwatch-bridge auth reset /etc/deskwatch/bridge.toml`, restart the bridge, and the first-run form
+No email. On the host: `deskwatch-bridge auth reset /etc/deskwatch/bridge.toml` (removes all local users), restart the bridge, and the first-run form
 returns. Whoever can run that or reach the data volume owns the install, which is the right boundary. Keys stay.
 
 ## Not built yet
 
-Several named accounts, and an audit page. See the design notes in the project files.
+An audit page, and rights per source. See the design notes in the project files.

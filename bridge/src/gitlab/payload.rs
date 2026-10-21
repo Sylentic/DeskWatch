@@ -20,6 +20,23 @@ pub struct MergeRequest {
     pub web_url: Option<String>,
 }
 
+/// One item of `GET /projects/:id/issues`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct Issue {
+    /// Number inside the project (`#12`), not the global `id`.
+    pub iid: u64,
+    pub title: String,
+    pub web_url: Option<String>,
+    pub author: Option<Author>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct Author {
+    pub username: String,
+}
+
 /// One item of `GET /projects/:id/pipelines`, newest first.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
