@@ -1,3 +1,5 @@
+<img src="docs/logo/deskwatch-logo.svg" alt="" width="72" align="right">
+
 # DeskWatch
 
 **A dashboard for your homelab and your pipelines.** DeskWatch shows what your servers and CI are doing, on one screen:
