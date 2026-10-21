@@ -97,7 +97,7 @@
       button.disabled = true;
       post(first ? 'api/auth/setup' : 'api/auth/login',
         { username: data.get('username'), password: data.get('password') })
-        .then(function () { location.href = nextUrl(); })
+        .then(function (r) { location.href = r && r.must_change ? '/account' : nextUrl(); })
         .catch(function (err) {
           message.textContent = err.message;
           message.hidden = false;

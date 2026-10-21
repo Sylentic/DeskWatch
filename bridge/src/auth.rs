@@ -51,10 +51,16 @@ const MAX_TRIES: u32 = 5;
 const LOCK_BASE: Duration = Duration::from_secs(300);
 const LOCK_MAX: Duration = Duration::from_secs(3600);
 const MAX_KEYS: usize = 32;
+const MAX_USERS: usize = 100;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Role {
+    /// The dashboard, read only.
     Viewer,
+    /// The dashboard, and dismissing or muting what it shows.
+    Operator,
+    /// Everything: setup, users and keys.
     Admin,
 }
 
@@ -62,7 +68,17 @@ impl Role {
     fn name(self) -> &'static str {
         match self {
             Role::Viewer => "viewer",
+            Role::Operator => "operator",
             Role::Admin => "admin",
+        }
+    }
+
+    fn parse(name: &str) -> Option<Self> {
+        match name {
+            "viewer" => Some(Role::Viewer),
+            "operator" => Some(Role::Operator),
+            "admin" => Some(Role::Admin),
+            _ => None,
         }
     }
 }
@@ -77,10 +93,64 @@ pub enum Scope {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct Persist {
-    admin: Option<Admin>,
-    viewer: Option<Viewer>,
+    /// The accounts with a password. Older files have `[admin]` and `[viewer]`
+    /// instead; `open` turns those into entries here.
+    #[serde(default)]
+    user: Vec<User>,
     #[serde(default)]
     key: Vec<Key>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    admin: Option<Admin>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    viewer: Option<Viewer>,
+}
+
+impl Persist {
+    /// Turn the single administrator and viewer password of earlier versions
+    /// into users. Nothing changes for the people who sign in.
+    fn migrate(&mut self) {
+        let now = now_secs();
+        if let Some(a) = self.admin.take() {
+            self.user.push(User {
+                name: a.username,
+                role: Role::Admin,
+                hash: a.hash,
+                created: now,
+                must_change: false,
+            });
+        }
+        if let Some(v) = self.viewer.take() {
+            self.user.push(User {
+                name: "viewer".to_string(),
+                role: Role::Viewer,
+                hash: v.hash,
+                created: now,
+                must_change: false,
+            });
+        }
+    }
+
+    fn has_admin(&self) -> bool {
+        self.user.iter().any(|u| u.role == Role::Admin)
+    }
+
+    fn find(&self, name: &str) -> Option<&User> {
+        self.user.iter().find(|u| u.name == name)
+    }
+}
+
+/// A local account.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct User {
+    name: String,
+    role: Role,
+    hash: String,
+    #[serde(default)]
+    created: u64,
+    /// Set when an administrator chose the password: the person replaces it
+    /// at the first sign-in.
+    #[serde(default)]
+    must_change: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,6 +175,8 @@ struct Key {
 
 struct Session {
     role: Role,
+    /// The local account, if this is not a provider sign-in.
+    user: Option<String>,
     seen: Instant,
     /// Shown in the page header (the name at the provider), if not a local account.
     label: Option<String>,
@@ -220,7 +292,9 @@ impl Auth {
             },
             None => Persist::default(),
         };
-        let enabled = Arc::new(AtomicBool::new(state.admin.is_some()));
+        let mut state = state;
+        state.migrate();
+        let enabled = Arc::new(AtomicBool::new(state.has_admin()));
         Ok(Self(Arc::new(Inner {
             path,
             state: RwLock::new(state),
@@ -263,9 +337,7 @@ impl Auth {
             .context("there is no data folder to save to")?;
         let text = toml::to_string_pretty(&next)?;
         crate::store::write_atomic(path, text.as_bytes(), 0o600)?;
-        self.0
-            .enabled
-            .store(next.admin.is_some(), Ordering::Relaxed);
+        self.0.enabled.store(next.has_admin(), Ordering::Relaxed);
         *self.0.state.write().unwrap_or_else(|e| e.into_inner()) = next;
         Ok(())
     }
@@ -273,46 +345,143 @@ impl Auth {
     /// First run: create the administrator. Only while there is none.
     pub fn setup_admin(&self, username: &str, password: &str) -> Result<()> {
         let mut state = self.read();
-        if state.admin.is_some() {
+        if state.has_admin() {
             bail!("an administrator password is already set");
         }
         check_username(username)?;
         check_password(password)?;
-        state.admin = Some(Admin {
-            username: username.to_string(),
+        state.user.retain(|u| u.name != username);
+        state.user.push(User {
+            name: username.to_string(),
+            role: Role::Admin,
             hash: hash_password(password)?,
+            created: now_secs(),
+            must_change: false,
         });
         self.save(state)
     }
 
-    /// Remove both passwords (the "forgot my password" path, on the host).
-    /// API keys stay.
+    /// Remove every local account (the "forgot my password" path, on the
+    /// host). API keys stay.
     pub fn reset(&self) -> Result<()> {
         let mut state = self.read();
-        state.admin = None;
-        state.viewer = None;
-        self.0
-            .sessions
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clear();
+        state.user.clear();
+        self.end_all_sessions();
         self.save(state)
     }
 
-    /// Set the administrator password from the command line.
+    /// Set a password from the command line: the account becomes (or stays)
+    /// an administrator.
     pub fn set_admin_password(&self, username: &str, password: &str) -> Result<()> {
         let mut state = self.read();
         check_username(username)?;
         check_password(password)?;
-        state.admin = Some(Admin {
-            username: username.to_string(),
+        let hash = hash_password(password)?;
+        match state.user.iter_mut().find(|u| u.name == username) {
+            Some(u) => {
+                u.hash = hash;
+                u.role = Role::Admin;
+                u.must_change = false;
+            }
+            None => state.user.push(User {
+                name: username.to_string(),
+                role: Role::Admin,
+                hash,
+                created: now_secs(),
+                must_change: false,
+            }),
+        }
+        self.end_all_sessions();
+        self.save(state)
+    }
+
+    /// Add a local account with a password chosen by the administrator,
+    /// which the person must replace at the first sign-in. Blocking (Argon2).
+    pub fn add_user(&self, name: &str, role: Role, password: &str) -> Result<()> {
+        let mut state = self.read();
+        check_username(name)?;
+        check_password(password)?;
+        if state.user.len() >= MAX_USERS {
+            bail!("at most {MAX_USERS} users");
+        }
+        if state.user.iter().any(|u| u.name.eq_ignore_ascii_case(name)) {
+            bail!("a user with that name exists");
+        }
+        state.user.push(User {
+            name: name.to_string(),
+            role,
             hash: hash_password(password)?,
+            created: now_secs(),
+            must_change: true,
         });
-        self.0
-            .sessions
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clear();
+        self.save(state)
+    }
+
+    /// Give a user another role. The last administrator cannot be lowered.
+    pub fn set_user_role(&self, name: &str, role: Role) -> Result<()> {
+        let mut state = self.read();
+        let user = state
+            .user
+            .iter_mut()
+            .find(|u| u.name == name)
+            .context("no user with that name")?;
+        user.role = role;
+        if !state.has_admin() {
+            bail!("there must be at least one administrator");
+        }
+        self.end_sessions_of(name);
+        self.save(state)
+    }
+
+    /// Replace a password as an administrator; the person changes it again at
+    /// the next sign-in. Blocking (Argon2).
+    pub fn reset_user_password(&self, name: &str, password: &str) -> Result<()> {
+        let mut state = self.read();
+        check_password(password)?;
+        let hash = hash_password(password)?;
+        let user = state
+            .user
+            .iter_mut()
+            .find(|u| u.name == name)
+            .context("no user with that name")?;
+        user.hash = hash;
+        user.must_change = true;
+        self.end_sessions_of(name);
+        self.save(state)
+    }
+
+    /// Remove a user. The last administrator cannot be removed.
+    pub fn delete_user(&self, name: &str) -> Result<()> {
+        let mut state = self.read();
+        let before = state.user.len();
+        state.user.retain(|u| u.name != name);
+        if state.user.len() == before {
+            bail!("no user with that name");
+        }
+        if !state.has_admin() {
+            bail!("there must be at least one administrator");
+        }
+        self.end_sessions_of(name);
+        self.save(state)
+    }
+
+    /// A person changes their own password. Blocking (Argon2).
+    pub fn change_own_password(&self, name: &str, current: &str, new: &str) -> Result<()> {
+        let mut state = self.read();
+        let user = state
+            .user
+            .iter_mut()
+            .find(|u| u.name == name)
+            .context("this sign-in has no local password")?;
+        if !verify_password(&user.hash, current) {
+            bail!("the current password is wrong");
+        }
+        check_password(new)?;
+        if new == current {
+            bail!("choose a different password");
+        }
+        user.hash = hash_password(new)?;
+        user.must_change = false;
         self.save(state)
     }
 
@@ -361,18 +530,15 @@ impl Auth {
         let state = self.read();
         // Always do one hash check, so a wrong username takes as long as a wrong password.
         let dummy = "$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHRzb21lc2FsdA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-        let role = match (&state.admin, &state.viewer) {
-            (Some(a), _) if a.username == username => {
-                verify_password(&a.hash, password).then_some(Role::Admin)
-            }
-            (_, Some(v)) if username == "viewer" => {
-                verify_password(&v.hash, password).then_some(Role::Viewer)
-            }
-            _ => {
+        let found = match state.find(username) {
+            Some(u) => verify_password(&u.hash, password).then_some(u),
+            None => {
                 let _ = verify_password(dummy, password);
                 None
             }
         };
+        let role = found.map(|u| u.role);
+        let name = found.map(|u| u.name.clone());
         match role {
             Some(role) => {
                 self.0
@@ -381,7 +547,10 @@ impl Auth {
                     .unwrap_or_else(|e| e.into_inner())
                     .remove(&ip);
                 info!(client = %ip, role = role.name(), "signed in");
-                Ok((role, self.new_session(role)))
+                Ok((
+                    role,
+                    self.new_local_session(role, name.expect("found with the role")),
+                ))
             }
             None => {
                 warn!(client = %ip, "failed sign-in");
@@ -391,10 +560,20 @@ impl Auth {
     }
 
     fn new_session(&self, role: Role) -> String {
-        self.new_session_with(role, None, SESSION_IDLE)
+        self.new_session_with(role, None, None, SESSION_IDLE)
     }
 
-    fn new_session_with(&self, role: Role, label: Option<String>, idle: Duration) -> String {
+    fn new_local_session(&self, role: Role, user: String) -> String {
+        self.new_session_with(role, Some(user), None, SESSION_IDLE)
+    }
+
+    fn new_session_with(
+        &self,
+        role: Role,
+        user: Option<String>,
+        label: Option<String>,
+        idle: Duration,
+    ) -> String {
         let token = random_hex(32);
         let mut sessions = self.0.sessions.lock().unwrap_or_else(|e| e.into_inner());
         let now = Instant::now();
@@ -403,6 +582,7 @@ impl Auth {
             token.clone(),
             Session {
                 role,
+                user,
                 seen: now,
                 label,
                 idle,
@@ -442,6 +622,29 @@ impl Auth {
             .remove(token);
     }
 
+    fn end_sessions_of(&self, user: &str) {
+        self.0
+            .sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|_, s| s.user.as_deref() != Some(user));
+    }
+
+    /// The local account behind a session and whether it must change its
+    /// password first. `None` for a provider sign-in or a screen key.
+    fn session_user(&self, token: &str) -> Option<(String, bool)> {
+        let name = self
+            .0
+            .sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(token)?
+            .user
+            .clone()?;
+        let must = self.read().find(&name).is_some_and(|u| u.must_change);
+        Some((name, must))
+    }
+
     fn end_all_sessions(&self) -> usize {
         let mut sessions = self.0.sessions.lock().unwrap_or_else(|e| e.into_inner());
         let n = sessions.len();
@@ -470,36 +673,6 @@ impl Auth {
     fn session_for_key(&self, key: &str) -> Option<String> {
         self.key_allows(key, Scope::Viewer)
             .then(|| self.new_session(Role::Viewer))
-    }
-
-    /// Blocking (Argon2).
-    pub fn set_viewer_password(&self, password: Option<&str>) -> Result<()> {
-        let mut state = self.read();
-        state.viewer = match password {
-            Some(p) => {
-                check_password(p)?;
-                Some(Viewer {
-                    hash: hash_password(p)?,
-                })
-            }
-            None => None,
-        };
-        self.save(state)
-    }
-
-    /// Blocking (Argon2).
-    pub fn change_admin_password(&self, current: &str, new: &str) -> Result<()> {
-        let mut state = self.read();
-        let admin = state
-            .admin
-            .as_mut()
-            .context("no administrator password is set")?;
-        if !verify_password(&admin.hash, current) {
-            bail!("the current password is wrong");
-        }
-        check_password(new)?;
-        admin.hash = hash_password(new)?;
-        self.save(state)
     }
 
     /// Create a key and return it. This is the only time it can be read.
@@ -539,8 +712,12 @@ impl Auth {
     fn describe(&self) -> Value {
         let state = self.read();
         json!({
-            "admin": state.admin.as_ref().map(|a| a.username.clone()),
-            "viewer_password": state.viewer.is_some(),
+            "users": state.user.iter().map(|u| json!({
+                "name": u.name,
+                "role": u.role.name(),
+                "created": u.created,
+                "must_change": u.must_change,
+            })).collect::<Vec<_>>(),
             "sessions": self.session_count(),
             "keys": state.key.iter().map(|k| json!({
                 "name": k.name,
@@ -595,12 +772,15 @@ fn bearer_key(headers: &HeaderMap) -> Option<String> {
 /// What a guarded route needs.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Need {
-    /// The dashboard: any session reads, only the administrator writes.
+    /// The dashboard: any session reads, an operator or administrator writes.
     Viewer,
     /// The setup page and the account settings.
     Admin,
     /// `POST /api/alert`: an alert key, or the administrator.
     AlertKey,
+    /// The person's own account page: any signed-in user, reading or
+    /// writing, even before a first password change.
+    Account,
 }
 
 #[derive(Clone)]
@@ -713,10 +893,31 @@ pub async fn enforce(State(guard): State<Guard>, request: Request, next: Next) -
     let needed = match guard.need {
         Need::Admin | Need::AlertKey => Role::Admin,
         Need::Viewer if reading => Role::Viewer,
-        Need::Viewer => Role::Admin,
+        Need::Viewer => Role::Operator,
+        Need::Account => Role::Viewer,
     };
     if role < needed {
-        return (StatusCode::FORBIDDEN, "this needs the administrator").into_response();
+        let who = if needed == Role::Admin {
+            "this needs the administrator"
+        } else {
+            "this needs an operator or administrator"
+        };
+        return (StatusCode::FORBIDDEN, who).into_response();
+    }
+    // A password an administrator chose must be replaced before anything else.
+    if guard.need != Need::Account
+        && cookie_token(headers)
+            .and_then(|t| auth.session_user(&t))
+            .is_some_and(|(_, must)| must)
+    {
+        if reading && wants_html(headers, &path) {
+            return Redirect::to("/account").into_response();
+        }
+        return (
+            StatusCode::FORBIDDEN,
+            "choose a new password first (open /account)",
+        )
+            .into_response();
     }
     next.run(request).await
 }
@@ -734,6 +935,8 @@ async fn require_enabled(State(auth): State<Auth>, request: Request, next: Next)
 const LOGIN_HTML: &str = include_str!("../auth/login.html");
 const LOGIN_JS: &str = include_str!("../auth/login.js");
 const LOGIN_CSS: &str = include_str!("../auth/login.css");
+const ACCOUNT_HTML: &str = include_str!("../auth/account.html");
+const ACCOUNT_JS: &str = include_str!("../auth/account.js");
 
 #[derive(Deserialize)]
 struct Credentials {
@@ -762,6 +965,10 @@ async fn status(State(auth): State<Auth>, headers: HeaderMap) -> Response {
     } else {
         "login"
     };
+    let (local, must_change) = match cookie_token(&headers).and_then(|t| auth.session_user(&t)) {
+        Some((n, m)) => (Some(n), m),
+        None => (None, false),
+    };
     let mut body = json!({
         "state": state,
         "role": role.map(Role::name),
@@ -772,6 +979,8 @@ async fn status(State(auth): State<Auth>, headers: HeaderMap) -> Response {
             Vec::new()
         },
         "user": cookie_token(&headers).and_then(|t| auth.session_label(&t)),
+        "name": local,
+        "must_change": must_change,
     });
     if role == Some(Role::Admin) {
         body["account"] = auth.describe();
@@ -783,8 +992,15 @@ async fn status(State(auth): State<Auth>, headers: HeaderMap) -> Response {
     response
 }
 
-fn started(auth: &Auth, role: Role, token: &str, headers: &HeaderMap) -> Response {
-    let mut response = Json(json!({ "ok": true, "role": role.name() })).into_response();
+fn started(
+    auth: &Auth,
+    role: Role,
+    token: &str,
+    headers: &HeaderMap,
+    must_change: bool,
+) -> Response {
+    let mut response = Json(json!({ "ok": true, "role": role.name(), "must_change": must_change }))
+        .into_response();
     response.headers_mut().append(
         header::SET_COOKIE,
         session_cookie(token, auth.secure_cookie(headers), 7 * 24 * 3600),
@@ -820,7 +1036,7 @@ async fn setup_admin(
         Ok(()) => {
             info!("administrator password set from the browser");
             let token = auth.new_session(Role::Admin);
-            started(&auth, Role::Admin, &token, &headers)
+            started(&auth, Role::Admin, &token, &headers, false)
         }
         Err(e) => text(StatusCode::BAD_REQUEST, format!("{e:#}")),
     }
@@ -847,7 +1063,10 @@ async fn login(
     let a = auth.clone();
     let result = blocking(move || a.login(ip, &body.username, &body.password)).await;
     match result {
-        Ok((role, token)) => started(&auth, role, &token, &headers),
+        Ok((role, token)) => {
+            let must = auth.session_user(&token).is_some_and(|(_, m)| m);
+            started(&auth, role, &token, &headers, must)
+        }
         Err(LoginError::Locked(wait)) => {
             let mins = wait.as_secs().div_ceil(60).max(1);
             let mut r = text(
@@ -884,17 +1103,91 @@ async fn logout_all(State(auth): State<Auth>) -> Response {
 }
 
 #[derive(Deserialize)]
-struct ViewerBody {
-    password: Option<String>,
+struct NewUser {
+    name: String,
+    role: String,
+    password: String,
 }
 
-async fn set_viewer(State(auth): State<Auth>, Json(body): Json<ViewerBody>) -> Response {
-    let password = body.password.filter(|p| !p.is_empty());
+const BAD_ROLE: &str = "the role is viewer, operator or admin";
+
+async fn add_user(State(auth): State<Auth>, Json(body): Json<NewUser>) -> Response {
+    let Some(role) = Role::parse(&body.role) else {
+        return text(StatusCode::BAD_REQUEST, BAD_ROLE);
+    };
     let a = auth.clone();
-    match blocking(move || a.set_viewer_password(password.as_deref())).await {
+    let name = body.name.trim().to_string();
+    let logged = name.clone();
+    match blocking(move || a.add_user(&name, role, &body.password)).await {
+        Ok(()) => {
+            info!(user = %logged, role = role.name(), "user added");
+            Json(json!({ "ok": true })).into_response()
+        }
+        Err(e) => text(StatusCode::BAD_REQUEST, format!("{e:#}")),
+    }
+}
+
+#[derive(Deserialize)]
+struct UserRole {
+    name: String,
+    role: String,
+}
+
+async fn set_user_role(
+    State(auth): State<Auth>,
+    headers: HeaderMap,
+    Json(body): Json<UserRole>,
+) -> Response {
+    let Some(role) = Role::parse(&body.role) else {
+        return text(StatusCode::BAD_REQUEST, BAD_ROLE);
+    };
+    if is_self(&auth, &headers, &body.name) && role != Role::Admin {
+        return text(StatusCode::BAD_REQUEST, "you cannot lower your own role");
+    }
+    match auth.set_user_role(&body.name, role) {
+        Ok(()) => {
+            info!(user = %body.name, role = role.name(), "user role changed");
+            Json(json!({ "ok": true })).into_response()
+        }
+        Err(e) => text(StatusCode::BAD_REQUEST, format!("{e:#}")),
+    }
+}
+
+#[derive(Deserialize)]
+struct UserPassword {
+    name: String,
+    password: String,
+}
+
+async fn reset_user_password(State(auth): State<Auth>, Json(body): Json<UserPassword>) -> Response {
+    let a = auth.clone();
+    match blocking(move || a.reset_user_password(&body.name, &body.password)).await {
         Ok(()) => Json(json!({ "ok": true })).into_response(),
         Err(e) => text(StatusCode::BAD_REQUEST, format!("{e:#}")),
     }
+}
+
+async fn delete_user(
+    State(auth): State<Auth>,
+    headers: HeaderMap,
+    Json(body): Json<NameBody>,
+) -> Response {
+    if is_self(&auth, &headers, &body.name) {
+        return text(StatusCode::BAD_REQUEST, "you cannot remove yourself");
+    }
+    match auth.delete_user(&body.name) {
+        Ok(()) => {
+            info!(user = %body.name, "user removed");
+            Json(json!({ "ok": true })).into_response()
+        }
+        Err(e) => text(StatusCode::BAD_REQUEST, format!("{e:#}")),
+    }
+}
+
+fn is_self(auth: &Auth, headers: &HeaderMap, name: &str) -> bool {
+    cookie_token(headers)
+        .and_then(|t| auth.session_user(&t))
+        .is_some_and(|(n, _)| n == name)
 }
 
 #[derive(Deserialize)]
@@ -903,11 +1196,23 @@ struct PasswordBody {
     new: String,
 }
 
-async fn change_password(State(auth): State<Auth>, Json(body): Json<PasswordBody>) -> Response {
+/// Any signed-in local user changes their own password.
+async fn change_password(
+    State(auth): State<Auth>,
+    headers: HeaderMap,
+    Json(body): Json<PasswordBody>,
+) -> Response {
+    let Some((name, _)) = cookie_token(&headers).and_then(|t| auth.session_user(&t)) else {
+        return text(
+            StatusCode::BAD_REQUEST,
+            "this sign-in has no local password to change",
+        );
+    };
     let a = auth.clone();
-    match blocking(move || a.change_admin_password(&body.current, &body.new)).await {
+    let who = name.clone();
+    match blocking(move || a.change_own_password(&who, &body.current, &body.new)).await {
         Ok(()) => {
-            info!("administrator password changed");
+            info!(user = %name, "password changed");
             Json(json!({ "ok": true })).into_response()
         }
         Err(e) => text(StatusCode::BAD_REQUEST, format!("{e:#}")),
@@ -1034,7 +1339,7 @@ async fn oauth_callback(
                 {
                     Ok((role, label, next)) => {
                         info!(provider = provider.id(), %label, role = role.name(), "signed in with a provider");
-                        let token = auth.new_session_with(role, Some(label), OAUTH_IDLE);
+                        let token = auth.new_session_with(role, None, Some(label), OAUTH_IDLE);
                         let mut r = Redirect::to(&next).into_response();
                         r.headers_mut().append(
                             header::SET_COOKIE,
@@ -1078,6 +1383,8 @@ async fn oauth_get(State(auth): State<Auth>) -> Response {
             "users": logins(&g.users),
             "orgs": g.orgs,
             "teams": g.teams,
+            "operator_users": logins(&g.operator_users),
+            "operator_teams": g.operator_teams,
             "admin_users": logins(&g.admin_users),
             "admin_teams": g.admin_teams,
         })),
@@ -1086,6 +1393,7 @@ async fn oauth_get(State(auth): State<Auth>) -> Response {
             "client_id": m.client_id,
             "secret_set": o.secret_set(oauth::Provider::Microsoft),
             "groups": m.groups,
+            "operator_groups": m.operator_groups,
             "admin_groups": m.admin_groups,
         })),
         "redirect": {
@@ -1107,6 +1415,10 @@ struct GithubBody {
     #[serde(default)]
     teams: Vec<String>,
     #[serde(default)]
+    operator_users: Vec<String>,
+    #[serde(default)]
+    operator_teams: Vec<String>,
+    #[serde(default)]
     admin_users: Vec<String>,
     #[serde(default)]
     admin_teams: Vec<String>,
@@ -1119,6 +1431,8 @@ struct MicrosoftBody {
     secret: Option<String>,
     #[serde(default)]
     groups: Vec<String>,
+    #[serde(default)]
+    operator_groups: Vec<String>,
     #[serde(default)]
     admin_groups: Vec<String>,
 }
@@ -1163,6 +1477,10 @@ async fn oauth_save(State(auth): State<Auth>, Json(body): Json<OauthBody>) -> Re
             Ok(u) => u,
             Err(e) => return text(StatusCode::BAD_REQUEST, format!("{e:#}")),
         };
+        let operator_users = match resolve(g.operator_users, &known.operator_users).await {
+            Ok(u) => u,
+            Err(e) => return text(StatusCode::BAD_REQUEST, format!("{e:#}")),
+        };
         let admin_users = match resolve(g.admin_users, &known.admin_users).await {
             Ok(u) => u,
             Err(e) => return text(StatusCode::BAD_REQUEST, format!("{e:#}")),
@@ -1173,6 +1491,8 @@ async fn oauth_save(State(auth): State<Auth>, Json(body): Json<OauthBody>) -> Re
             users,
             orgs: clean(g.orgs),
             teams: clean(g.teams),
+            operator_users,
+            operator_teams: clean(g.operator_teams),
             admin_users,
             admin_teams: clean(g.admin_teams),
         });
@@ -1183,6 +1503,7 @@ async fn oauth_save(State(auth): State<Auth>, Json(body): Json<OauthBody>) -> Re
             tenant: m.tenant.trim().to_string(),
             client_id: m.client_id.trim().to_string(),
             groups: clean(m.groups),
+            operator_groups: clean(m.operator_groups),
             admin_groups: clean(m.admin_groups),
         });
     }
@@ -1224,8 +1545,10 @@ impl Auth {
             .route("/auth/callback/{provider}", get(oauth_callback));
         let admin = Router::new()
             .route("/api/auth/logout-all", post(logout_all))
-            .route("/api/auth/viewer", post(set_viewer))
-            .route("/api/auth/password", post(change_password))
+            .route("/api/auth/user", post(add_user))
+            .route("/api/auth/user/role", post(set_user_role))
+            .route("/api/auth/user/password", post(reset_user_password))
+            .route("/api/auth/user/delete", post(delete_user))
             .route("/api/auth/key", post(create_key))
             .route("/api/auth/key/delete", post(delete_key))
             .route("/api/auth/oauth", get(oauth_get).post(oauth_save))
@@ -1237,7 +1560,25 @@ impl Auth {
                 self.clone(),
                 require_enabled,
             ));
-        open.merge(admin).with_state(self.clone())
+        let account = Router::new()
+            .route(
+                "/account",
+                get(|| asset("text/html; charset=utf-8", ACCOUNT_HTML)),
+            )
+            .route(
+                "/account.js",
+                get(|| asset("text/javascript; charset=utf-8", ACCOUNT_JS)),
+            )
+            .route("/api/auth/password", post(change_password))
+            .route_layer(middleware::from_fn_with_state(
+                self.guard(Need::Account),
+                enforce,
+            ))
+            .route_layer(middleware::from_fn_with_state(
+                self.clone(),
+                require_enabled,
+            ));
+        open.merge(admin).merge(account).with_state(self.clone())
     }
 }
 
@@ -1247,7 +1588,7 @@ impl Auth {
 pub fn run_cli(args: Vec<String>) -> Result<()> {
     const HELP: &str = "usage: deskwatch-bridge auth reset [CONFIG]\n       \
         printf '%s\\n' 'a long password' | deskwatch-bridge auth set-password [--user NAME] [CONFIG]\n\n\
-        reset forgets the administrator and viewer passwords (API keys stay); the next visit\n\
+        reset forgets all local users and their passwords (API keys stay); the next visit\n\
         to the page shows the first-run screen. Restart the bridge afterwards.";
     let mut args = args.into_iter();
     let Some(command) = args.next() else {

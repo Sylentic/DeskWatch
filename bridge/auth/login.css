@@ -41,3 +41,6 @@ button:disabled { opacity: .55; cursor: default; }
 .obtn:hover { background: var(--hover); }
 .sep { display: flex; align-items: center; gap: .75rem; color: var(--muted); font-size: .85rem; margin-top: 1rem; }
 .sep::before, .sep::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+/* "My account": a quiet button for signing out. */
+button.link { margin-top: 1rem; background: transparent; color: var(--fg); border: 1px solid var(--field-line); }

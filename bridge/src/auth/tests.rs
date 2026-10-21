@@ -25,6 +25,14 @@ fn ip(s: &str) -> IpAddr {
     s.parse().unwrap()
 }
 
+/// A user whose first-sign-in password change is already done.
+fn add(auth: &Auth, name: &str, role: Role, password: &str) {
+    auth.add_user(name, role, password).unwrap();
+    let mut state = auth.read();
+    state.user.iter_mut().for_each(|u| u.must_change = false);
+    auth.save(state).unwrap();
+}
+
 fn fresh() -> (TempDir, Auth) {
     let d = TempDir::new();
     let auth = Auth::open(Some(&d.0), false).unwrap();
@@ -77,13 +85,12 @@ fn password_and_username_rules() {
 fn login_roles_and_lockout() {
     let (_d, auth) = fresh();
     auth.setup_admin("admin", PW).unwrap();
-    auth.set_viewer_password(Some("a different phrase"))
-        .unwrap();
+    add(&auth, "guest", Role::Viewer, "a different phrase");
     let c = ip("192.168.1.9");
     let (role, token) = auth.login(c, "admin", PW).ok().unwrap();
     assert_eq!(role, Role::Admin);
     assert_eq!(auth.session_role(&token), Some(Role::Admin));
-    let (role, _) = auth.login(c, "viewer", "a different phrase").ok().unwrap();
+    let (role, _) = auth.login(c, "guest", "a different phrase").ok().unwrap();
     assert_eq!(role, Role::Viewer);
     // Wrong tries count down, then the address is locked, even for the right password.
     for left in (1..MAX_TRIES).rev() {
@@ -146,14 +153,14 @@ fn keys_are_hashed_scoped_and_listed_without_the_secret() {
 }
 
 #[test]
-fn admin_can_change_the_password() {
+fn a_person_can_change_their_own_password() {
     let (_d, auth) = fresh();
     auth.setup_admin("admin", PW).unwrap();
     assert!(
-        auth.change_admin_password("wrong password!!", "another long phrase")
+        auth.change_own_password("admin", "wrong password!!", "another long phrase")
             .is_err()
     );
-    auth.change_admin_password(PW, "another long phrase")
+    auth.change_own_password("admin", PW, "another long phrase")
         .unwrap();
     assert!(auth.login(ip("10.0.0.3"), "admin", PW).is_err());
     assert!(
@@ -224,16 +231,33 @@ async fn guarded_routes_redirect_browsers_and_refuse_scripts() {
 async fn viewer_reads_but_cannot_write_and_writes_need_the_header() {
     let (_d, auth) = fresh();
     auth.setup_admin("admin", PW).unwrap();
-    auth.set_viewer_password(Some("a different phrase"))
-        .unwrap();
+    add(&auth, "guest", Role::Viewer, "a different phrase");
+    add(&auth, "anna", Role::Operator, "an operator phrase");
     let (_, viewer) = auth
-        .login(ip("10.0.0.4"), "viewer", "a different phrase")
+        .login(ip("10.0.0.4"), "guest", "a different phrase")
+        .ok()
+        .unwrap();
+    let (_, operator) = auth
+        .login(ip("10.0.0.4"), "anna", "an operator phrase")
         .ok()
         .unwrap();
     let (_, admin) = auth.login(ip("10.0.0.4"), "admin", PW).ok().unwrap();
     let dash = app(&auth, Need::Viewer);
     let v = format!("dw_session={viewer}");
     let a = format!("dw_session={admin}");
+    let o = format!("dw_session={operator}");
+    // An operator dismisses (writes to the dashboard) but never opens setup.
+    let write = [("cookie", o.as_str()), ("x-deskwatch", "1")];
+    assert_eq!(
+        send(&dash, "POST", "/", &write).await.status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        send(&app(&auth, Need::Admin), "GET", "/", &[("cookie", &o)])
+            .await
+            .status(),
+        StatusCode::FORBIDDEN
+    );
     assert_eq!(
         send(&dash, "GET", "/", &[("cookie", &v)]).await.status(),
         StatusCode::OK
@@ -328,5 +352,129 @@ async fn a_screen_opens_the_page_once_with_its_viewer_key() {
             .to_str()
             .unwrap()
             .starts_with("/login")
+    );
+}
+
+#[test]
+fn an_older_file_with_one_admin_and_a_viewer_becomes_users() {
+    let d = TempDir::new();
+    let admin = hash_password(PW).unwrap();
+    let viewer = hash_password("a different phrase").unwrap();
+    std::fs::write(
+        d.0.join("auth.toml"),
+        format!(
+            "[admin]\nusername = \"boss\"\nhash = \"{admin}\"\n\n[viewer]\nhash = \"{viewer}\"\n"
+        ),
+    )
+    .unwrap();
+    let auth = Auth::open(Some(&d.0), false).unwrap();
+    assert!(auth.enabled());
+    assert_eq!(
+        auth.login(ip("10.0.0.5"), "boss", PW).ok().unwrap().0,
+        Role::Admin
+    );
+    assert_eq!(
+        auth.login(ip("10.0.0.5"), "viewer", "a different phrase")
+            .ok()
+            .unwrap()
+            .0,
+        Role::Viewer
+    );
+    // The next write stores the new format only.
+    auth.create_key("ha", Scope::Alert).unwrap();
+    let text = std::fs::read_to_string(d.0.join("auth.toml")).unwrap();
+    assert!(text.contains("[[user]]") && !text.contains("[admin]") && !text.contains("[viewer]"));
+}
+
+#[test]
+fn users_are_managed_and_the_last_administrator_stays() {
+    let (_d, auth) = fresh();
+    auth.setup_admin("admin", PW).unwrap();
+    auth.add_user("anna", Role::Operator, "an operator phrase")
+        .unwrap();
+    assert!(
+        auth.add_user("Anna", Role::Viewer, "another phrase here")
+            .is_err()
+    );
+    assert!(
+        auth.add_user("viewer", Role::Viewer, "another phrase here")
+            .is_err()
+    );
+    assert!(auth.add_user("bob", Role::Viewer, "short").is_err());
+    assert!(
+        auth.delete_user("admin").is_err(),
+        "the last administrator stays"
+    );
+    assert!(auth.set_user_role("admin", Role::Viewer).is_err());
+    auth.set_user_role("anna", Role::Admin).unwrap();
+    auth.set_user_role("admin", Role::Viewer).unwrap();
+    auth.delete_user("admin").unwrap();
+    assert!(auth.login(ip("10.0.0.6"), "admin", PW).is_err());
+    // A deleted or changed user is signed out at once.
+    let (_, token) = auth
+        .login(ip("10.0.0.6"), "anna", "an operator phrase")
+        .ok()
+        .unwrap();
+    auth.set_user_role("anna", Role::Admin).unwrap();
+    assert_eq!(
+        auth.session_role(&token),
+        None,
+        "a new role means signing in again"
+    );
+    auth.reset_user_password("anna", "a brand new phrase")
+        .unwrap();
+    assert_eq!(auth.session_role(&token), None);
+}
+
+#[tokio::test]
+async fn a_chosen_password_must_be_replaced_before_anything_else() {
+    let (_d, auth) = fresh();
+    auth.setup_admin("admin", PW).unwrap();
+    auth.add_user("anna", Role::Operator, "an operator phrase")
+        .unwrap();
+    let (_, token) = auth
+        .login(ip("10.0.0.7"), "anna", "an operator phrase")
+        .ok()
+        .unwrap();
+    let cookie = format!("dw_session={token}");
+    let dash = app(&auth, Need::Viewer);
+    let r = send(
+        &dash,
+        "GET",
+        "/",
+        &[("cookie", &cookie), ("accept", "text/html")],
+    )
+    .await;
+    assert_eq!(r.status(), StatusCode::SEE_OTHER);
+    assert_eq!(r.headers()[header::LOCATION], "/account");
+    assert_eq!(
+        send(&dash, "GET", "/", &[("cookie", &cookie)])
+            .await
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    // The account page itself stays open to her, for every role.
+    let account = app(&auth, Need::Account);
+    assert_eq!(
+        send(&account, "GET", "/", &[("cookie", &cookie)])
+            .await
+            .status(),
+        StatusCode::OK
+    );
+    assert!(
+        auth.change_own_password("anna", "wrong one here!", "my own new phrase")
+            .is_err()
+    );
+    assert!(
+        auth.change_own_password("anna", "an operator phrase", "an operator phrase")
+            .is_err()
+    );
+    auth.change_own_password("anna", "an operator phrase", "my own new phrase")
+        .unwrap();
+    assert_eq!(
+        send(&dash, "GET", "/", &[("cookie", &cookie)])
+            .await
+            .status(),
+        StatusCode::OK
     );
 }
