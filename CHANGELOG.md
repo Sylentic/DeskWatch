@@ -8,8 +8,18 @@ hardware yet, and its MQTT schema (v2) may still change or the display may be dr
 
 ## [Unreleased]
 
+### Added
+
+- **Everyone can customize the dashboard.** The grid icon in the header opens edit mode: hide a panel, drag it (or use
+  the arrows) to move it, and make it wider, narrower, taller or shorter. Hidden panels wait under "Hidden panels" in the
+  edit bar, one click brings them back, and "Reset to default" restores the administrator's layout. The choice is kept per
+  user on the bridge (`layouts.json` in the data folder), so it follows a signed-in user to any browser, and in the
+  browser without a login. Every role, Viewer included, changes only their own layout.
+
 ### Changed
 
+- **Setup in the header is a cogwheel icon**, and every item in the header bar (badges, pills, icons, update notice) is
+  now the same height and centred on one line.
 - **Alerts are coloured by severity** in the dashboard's Alerts card and the header Alerts menu: info alerts are blue
   (their box is back, as before 1.0.2), warnings are yellow and critical alerts red. Warning yellow is its own colour,
   apart from orange (running) and amber (waiting for approval).

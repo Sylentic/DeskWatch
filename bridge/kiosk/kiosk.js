@@ -526,17 +526,19 @@
 
   // ---- drawing ------------------------------------------------------------
 
-  function renderCard(key, panel, grid) {
+  function renderCard(key, panel, grid, pos) {
     var make = widgets[panel.widget];
     var out = make ? make(panel) : { title: panel.widget, body: '<div class="empty">Unknown widget</div>' };
     var html = '<header><h2>' + esc(panel.title || out.title) + '</h2>' + (out.nav || '') +
       (out.tag ? '<span class="tag">' + esc(out.tag) + '</span>' : '') +
       (out.count !== undefined && out.count !== '' ? '<span class="count">' + esc(out.count) + '</span>' : '') +
-      '</header><div class="body">' + out.body + '</div>';
+      '</header><div class="body">' + out.body + '</div>' + (editing ? editControls(panel, pos) : '');
     var entry = cards[key];
     if (!entry) {
       var el = document.createElement('section');
       el.setAttribute('data-key', key);
+      el.setAttribute('data-id', panel.id);
+      if (editing) el.setAttribute('draggable', 'true');
       var span = panel.span || [1, 1];
       el.style.gridColumn = 'span ' + span[0];
       el.style.gridRow = 'span ' + span[1];
@@ -947,6 +949,150 @@
     tick();
   }
 
+  // ---- customizing: hide, move and resize panels ---------------------------
+
+  // The administrator's layout (the bridge's panels) is the default. A person
+  // can hide panels, move them and change their size; only that difference is
+  // kept (docs/kiosk.md), so new panels in the default still show up. A signed-in
+  // user's choice is kept by the bridge, per user; without a login it stays in
+  // this browser.
+  var TITLES = { jobs: 'Running now', hosts: 'Hosts', stats: 'Host', pipelines: 'Pipelines', prs: 'Open PRs', alerts: 'Alerts', containers: 'Containers', health: 'Health', runners: 'Runners' };
+  var editing = false;
+  var custom = null;           // { order: [id], hidden: [id], span: { id: [c, r] } } or null
+  var CUSTOM_KEY = 'deskwatch.layout';
+  var onServer = false;        // a signed-in person: the bridge keeps the layout, per user
+  try { custom = JSON.parse(localStorage.getItem(CUSTOM_KEY) || 'null'); } catch (e) { custom = null; }
+  // A signed-in person's layout lives on the bridge. Without a login, or with a
+  // screen key, the answer is an error and the layout stays in this browser.
+  fetch('/api/auth/layout').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+    if (!j) return;
+    onServer = true;
+    custom = j.layout || null;
+    if (snap) drawGrid();
+  }).catch(function () {});
+
+  function withIds(panels) {
+    var seen = {};
+    return (panels || []).map(function (p) {
+      var base = p.widget + (p.host ? ':' + p.host : '');
+      seen[base] = (seen[base] || 0) + 1;
+      return Object.assign({}, p, { id: base + '#' + seen[base] });
+    });
+  }
+  function customPanels(layout) {
+    var all = withIds(layout.panels);
+    if (!custom) return all;
+    var hidden = custom.hidden || [], order = custom.order || [];
+    var out = all.filter(function (p) { return hidden.indexOf(p.id) < 0; });
+    out.sort(function (a, b) {
+      var x = order.indexOf(a.id), y = order.indexOf(b.id);
+      return (x < 0 ? 999 : x) - (y < 0 ? 999 : y);
+    });
+    return out.map(function (p) {
+      var sp = custom.span && custom.span[p.id];
+      if (sp) p.span = [Math.min(sp[0], layout.columns), Math.min(sp[1], layout.rows)];
+      p.hidden = hidden.indexOf(p.id) >= 0;
+      return p;
+    });
+  }
+  function saveCustom() {
+    if (onServer) {
+      fetch('/api/auth/layout', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(custom) }).catch(function () {});
+      return;
+    }
+    try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); } catch (e) {}
+  }
+  function resetCustom() {
+    custom = null;
+    if (onServer) fetch('/api/auth/layout/reset', { method: 'POST' }).catch(function () {});
+    else try { localStorage.removeItem(CUSTOM_KEY); } catch (x) {}
+  }
+  function ensureCustom() {
+    if (!custom) custom = { order: customPanels(snap.layout).map(function (p) { return p.id; }), hidden: [], span: {} };
+    custom.hidden = custom.hidden || []; custom.span = custom.span || {};
+    return custom;
+  }
+  function usedCells(layout) {
+    return customPanels(layout).filter(function (p) { return !p.hidden; })
+      .reduce(function (n, p) { var s = p.span || [1, 1]; return n + s[0] * s[1]; }, 0);
+  }
+  function editControls(panel, pos) {
+    var s = panel.span || [1, 1];
+    var b = function (act, label, title) { return '<button type="button" data-edit="' + act + '" data-id="' + esc(panel.id) + '" title="' + title + '" aria-label="' + title + '">' + label + '</button>'; };
+    return '<div class="edit-tools"><span class="grip" title="Drag to move">&#10303;</span>' +
+      b('earlier', '&lsaquo;', 'Move earlier') + b('later', '&rsaquo;', 'Move later') +
+      '<span class="gap"></span>' +
+      '<span class="sz">W</span>' + b('w-', '&minus;', 'Narrower') + '<span class="n">' + s[0] + '</span>' + b('w+', '+', 'Wider') +
+      '<span class="sz">H</span>' + b('h-', '&minus;', 'Shorter') + '<span class="n">' + s[1] + '</span>' + b('h+', '+', 'Taller') +
+      '<span class="gap"></span>' + b('hide', '&times;', 'Hide this panel') + '</div>';
+  }
+  function renderEditBar(layout) {
+    var bar = $('edit-bar');
+    bar.hidden = !editing;
+    $('edit-btn').classList.toggle('on', editing);
+    if (!editing) return;
+    var cap = layout.columns * layout.rows, used = usedCells(layout);
+    var gone = withIds(layout.panels).filter(function (p) { return custom && (custom.hidden || []).indexOf(p.id) >= 0; });
+    var tray = gone.length ? gone.map(function (p) {
+      return '<button type="button" class="add" data-edit="show" data-id="' + esc(p.id) + '" title="Show this panel again">+ ' + esc(p.title || TITLES[p.widget] || p.widget) + '</button>';
+    }).join('') : '<span class="none">none</span>';
+    bar.innerHTML = '<span class="t">Customize</span>' +
+      '<span class="hint">Drag a panel or use the arrows to move it. W and H set its size. Saved ' + (onServer ? 'for your account.' : 'in this browser.') + '</span>' +
+      '<span class="tray"><span class="lbl">Hidden panels</span>' + tray + '</span>' +
+      '<span class="cells' + (used > cap ? ' over' : '') + '">' + used + ' of ' + cap + ' cells' + (used > cap ? ' &middot; too big, the grid will scroll' : '') + '</span>' +
+      '<button type="button" data-edit="reset"' + (custom ? '' : ' disabled') + '>Reset to default</button>' +
+      '<button type="button" data-edit="done" class="primary">Done</button>';
+  }
+  function editAct(act, id) {
+    var c = ensureCustom(), layout = snap.layout, order = c.order.slice();
+    customPanels(layout).forEach(function (p) { if (order.indexOf(p.id) < 0) order.push(p.id); });
+    c.order = order;
+    var i = order.indexOf(id), sp = (c.span[id] || ((customPanels(layout).filter(function (p) { return p.id === id; })[0] || {}).span) || [1, 1]).slice();
+    if (act === 'hide' && c.hidden.indexOf(id) < 0) c.hidden.push(id);
+    if (act === 'show') c.hidden = c.hidden.filter(function (x) { return x !== id; });
+    if (act === 'earlier' && i > 0) { order.splice(i, 1); order.splice(i - 1, 0, id); }
+    if (act === 'later' && i < order.length - 1) { order.splice(i, 1); order.splice(i + 1, 0, id); }
+    if (act === 'w+') sp[0] = Math.min(layout.columns, sp[0] + 1);
+    if (act === 'w-') sp[0] = Math.max(1, sp[0] - 1);
+    if (act === 'h+') sp[1] = Math.min(layout.rows, sp[1] + 1);
+    if (act === 'h-') sp[1] = Math.max(1, sp[1] - 1);
+    if (/^[wh][+-]$/.test(act)) c.span[id] = sp;
+    saveCustom(); drawGrid();
+  }
+  $('edit-btn').addEventListener('click', function () { editing = !editing; drawGrid(); });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('[data-edit]') : null;
+    if (!b) return;
+    var act = b.getAttribute('data-edit');
+    if (act === 'done') { editing = false; drawGrid(); }
+    else if (act === 'reset') { resetCustom(); drawGrid(); }
+    else editAct(act, b.getAttribute('data-id'));
+  });
+  var dragId = null;
+  document.addEventListener('dragstart', function (e) {
+    var el = e.target.closest ? e.target.closest('.card[data-id]') : null;
+    if (!editing || !el) return;
+    dragId = el.getAttribute('data-id');
+    el.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', dragId); } catch (x) {}
+  });
+  document.addEventListener('dragover', function (e) {
+    var el = e.target.closest ? e.target.closest('.card[data-id]') : null;
+    if (editing && dragId && el) { e.preventDefault(); }
+  });
+  document.addEventListener('dragend', function () { dragId = null; var d = document.querySelector('.dragging'); if (d) d.classList.remove('dragging'); });
+  document.addEventListener('drop', function (e) {
+    var el = e.target.closest ? e.target.closest('.card[data-id]') : null;
+    if (!editing || !dragId || !el) return;
+    e.preventDefault();
+    var c = ensureCustom(), target = el.getAttribute('data-id');
+    var order = customPanels(snap.layout).map(function (p) { return p.id; });
+    order.splice(order.indexOf(dragId), 1);
+    order.splice(order.indexOf(target) + (order.indexOf(target) < 0 ? 0 : 0), 0, dragId);
+    c.order = order; dragId = null; saveCustom(); drawGrid();
+  });
+
   // The cards. Also redrawn every few seconds without a new snapshot, so a
   // "Done" job and a tinted row go away on time.
   function drawGrid() {
@@ -955,12 +1101,20 @@
     grid.style.setProperty('--cols', layout.columns);
     grid.style.setProperty('--rows', layout.rows);
     var keep = {};
-    (layout.panels || []).forEach(function (panel, i) {
+    var shown = customPanels(layout);
+    grid.classList.toggle('editing', editing);
+    shown.forEach(function (panel, i) {
       // The span is in the key: a card is placed once, so a new size needs a new card.
-      var key = i + ':' + panel.widget + ':' + (panel.host || '') + ':' + (panel.span || [1, 1]).join('x');
+      var key = panel.id + ':' + (panel.span || [1, 1]).join('x') + (editing ? ':e' : '');
       keep[key] = true;
-      renderCard(key, panel, grid);
+      renderCard(key, panel, grid, i);
     });
+    // Cards are placed in order, so the DOM order follows the layout.
+    shown.forEach(function (panel) {
+      var entry = cards[panel.id + ':' + (panel.span || [1, 1]).join('x') + (editing ? ':e' : '')];
+      if (entry) grid.appendChild(entry.el);
+    });
+    renderEditBar(layout);
     Object.keys(cards).forEach(function (key) {
       if (!keep[key]) { grid.removeChild(cards[key].el); delete cards[key]; }
     });

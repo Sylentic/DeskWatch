@@ -202,7 +202,7 @@ a.chip[href]:hover, a.chip[href]:focus-visible { color: var(--text); }
 .chip.open { --c: var(--purple); color: var(--text); }
 .chip.bad { --c: var(--red); color: var(--text); }
 .badges .chip { color: var(--text); }
-.chip.update { --c: var(--blue); font-size: 0.78rem; border: 1px solid var(--card-edge); }
+.chip.update { --c: var(--blue); font-size: 0.78rem; height: 2.4rem; box-sizing: border-box; border: 1px solid var(--card-edge); border-radius: 0.65rem; }
 .chip.update[hidden] { display: none; }
 .chip.update a { color: var(--text); text-decoration: none; }
 .chip.update a:hover { text-decoration: underline; }
@@ -265,9 +265,12 @@ button.pill { font: inherit; font-size: 0.88rem; font-weight: 600; color: var(--
 #src-pill .mute { font: inherit; font-size: 0.78rem; font-weight: 600; color: var(--text); background: rgba(255, 255, 255, .06); border: 0; border-radius: 0.4rem; padding: 0.2rem 0.6rem; cursor: pointer; }
 #src-pill .mute:hover { background: rgba(255, 255, 255, .12); }
 
-.setup-link { color: var(--dim); font-size: 0.82rem; text-decoration: none; padding: 0.35rem 0.65rem; border: 1px solid var(--card-edge); border-radius: 0.5rem; }
-.setup-link:hover, .setup-link:focus-visible { color: var(--text); background: var(--card); }
-.clock { display: flex; align-items: baseline; gap: 0.6rem; white-space: nowrap; }
+/* Every item in the header is 2.4rem tall (badges, pills, buttons), centred on one line. */
+.icon-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 2.4rem; height: 2.4rem; padding: 0; box-sizing: border-box;
+  color: var(--dim); background: transparent; border: 1px solid var(--card-edge); border-radius: 0.65rem; cursor: pointer; text-decoration: none; }
+.icon-btn:hover, .icon-btn:focus-visible, .icon-btn.on { color: var(--text); background: var(--card); }
+.icon-btn svg { width: 1.15rem; height: 1.15rem; flex: none; }
+.clock { display: flex; align-items: center; gap: 0.6rem; white-space: nowrap; }
 #time { order: 2; font-size: 1.65rem; font-weight: 600; letter-spacing: -0.02em; }
 #date { order: 1; font-size: 0.82rem; color: var(--dim); }
 .topbar { position: absolute; left: 0; right: 0; bottom: -1px; height: 0.2rem; background: var(--track); }
@@ -548,3 +551,36 @@ a.link:active { background: rgba(255, 255, 255, .08); }
 @media (prefers-reduced-motion: reduce) {
   .dot.running, .pbar i, .topbar.spin i, .banner.fresh { animation: none; }
 }
+
+/* ---- customizing -------------------------------------------------------- */
+
+.edit-bar { flex: none; display: flex; align-items: center; gap: 0.9rem; padding: 0.55rem 1.25rem; margin: 0.6rem 1.25rem 0;
+  border: 1px dashed var(--track); border-radius: 0.7rem; background: var(--card); }
+.edit-bar[hidden] { display: none; }
+.edit-bar .t { font-weight: 600; }
+.edit-bar .hint { color: var(--dim); font-size: 0.85rem; }
+.edit-bar .cells { margin-left: auto; font-family: var(--mono); font-size: 0.8rem; color: var(--dim); }
+.edit-bar .cells.over { color: var(--amber); }
+.edit-bar button { font: inherit; font-size: 0.85rem; color: var(--text); background: transparent; border: 1px solid var(--track); border-radius: 0.5rem; padding: 0.35rem 0.8rem; cursor: pointer; }
+.edit-bar button:disabled { opacity: .4; cursor: default; }
+.edit-bar button.primary { background: var(--text); color: var(--card); border-color: var(--text); }
+.grid.editing .card { position: relative; outline: 1px dashed var(--track); outline-offset: -1px; cursor: grab; }
+.grid.editing .card.dragging { opacity: .4; }
+.grid.editing .card .body { pointer-events: none; opacity: .55; }
+.edit-tools { position: absolute; left: 0.6rem; right: 0.6rem; bottom: 0.6rem; display: flex; align-items: center; gap: 0.3rem; padding: 0.35rem 0.5rem;
+  background: var(--card-hi); border: 1px solid var(--track); border-radius: 0.6rem; font-family: var(--mono); font-size: 0.75rem; flex-wrap: wrap; }
+.edit-tools .grip { color: var(--dim); font-size: 1rem; margin-right: 0.2rem; }
+.edit-tools .gap { flex: 1; }
+.edit-tools .sz { color: var(--dim); margin-left: 0.3rem; }
+.edit-tools .n { min-width: 0.9rem; text-align: center; }
+.edit-tools button { min-width: 1.7rem; height: 1.7rem; font: inherit; color: var(--text); background: transparent; border: 1px solid var(--track); border-radius: 0.4rem; cursor: pointer; }
+.edit-tools button:hover { background: var(--card); }
+.edit-veil { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.6rem;
+  background: color-mix(in srgb, var(--card) 80%, transparent); color: var(--dim); font-family: var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
+.edit-veil button { font: inherit; color: var(--text); background: transparent; border: 1px solid var(--track); border-radius: 0.5rem; padding: 0.35rem 0.9rem; cursor: pointer; }
+
+.edit-bar .tray { margin-left: auto; display: flex; align-items: center; gap: 0.4rem; }
+.edit-bar .tray .lbl { color: var(--dim); font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.edit-bar .tray .none { color: var(--dim); font-size: 0.85rem; }
+.edit-bar button.add { border-style: dashed; }
+.edit-bar .cells { margin-left: 0; }

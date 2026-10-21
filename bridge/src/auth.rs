@@ -40,6 +40,7 @@ use tracing::{info, warn};
 use crate::kiosk::asset;
 use crate::kiosk::origin;
 
+mod layouts;
 pub mod oauth;
 
 const AUTH_FILE: &str = "auth.toml";
@@ -196,6 +197,7 @@ struct Inner {
     sessions: Mutex<HashMap<String, Session>>,
     locks: Mutex<HashMap<IpAddr, Lock>>,
     oauth: oauth::OAuth,
+    layouts: layouts::Layouts,
     tls: bool,
 }
 
@@ -302,6 +304,7 @@ impl Auth {
             sessions: Mutex::default(),
             locks: Mutex::default(),
             oauth: oauth::OAuth::open(dir)?,
+            layouts: layouts::Layouts::open(dir),
             tls,
         })))
     }
@@ -1570,6 +1573,11 @@ impl Auth {
                 get(|| asset("text/javascript; charset=utf-8", ACCOUNT_JS)),
             )
             .route("/api/auth/password", post(change_password))
+            .route(
+                "/api/auth/layout",
+                get(layouts::get_layout).put(layouts::put_layout),
+            )
+            .route("/api/auth/layout/reset", post(layouts::reset_layout))
             .route_layer(middleware::from_fn_with_state(
                 self.guard(Need::Account),
                 enforce,
