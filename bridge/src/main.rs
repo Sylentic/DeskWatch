@@ -224,6 +224,8 @@ async fn main() -> Result<()> {
     hooks.add("/login", auth.router());
     // The pages' typefaces: no login, the login page needs them too.
     hooks.add("/fonts", deskwatch_bridge::fonts::router());
+    // The tab icon: no login either, the login page shows it.
+    hooks.add("/favicon.svg", deskwatch_bridge::icons::router());
     let mut kiosk = None;
     if config.kiosk.enabled {
         if warn_no_login(auth.enabled(), config.http.listen.ip().is_loopback()) {

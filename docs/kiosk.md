@@ -3,7 +3,8 @@
 The **kiosk dashboard** is one web page that shows everything at once, for a monitor or TV (a Raspberry Pi with a browser in kiosk mode, a
 wall tablet, or any browser on your desk). It is built into the bridge, so there is nothing extra to install, and
 it works on a LAN with no internet access (no CDN or scripts are loaded from elsewhere; the typefaces, Geist, Geist Mono
-and Space Grotesk, are built into the bridge and served on `/fonts/`, see `bridge/fonts/`).
+and Space Grotesk, are built into the bridge and served on `/fonts/`, see `bridge/fonts/`; the tab icon is served on
+`/favicon.svg`, see `bridge/icons/`).
 
 The page does not need a broker.
 

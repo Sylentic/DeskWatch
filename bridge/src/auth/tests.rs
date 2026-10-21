@@ -228,6 +228,23 @@ async fn guarded_routes_redirect_browsers_and_refuse_scripts() {
 }
 
 #[tokio::test]
+async fn the_tab_icon_needs_no_login() {
+    // Mounted as in main.rs: the icons next to a guarded page, so the login
+    // page and a signed-out tab still show the icon.
+    let (_d, auth) = fresh();
+    auth.setup_admin("admin", PW).unwrap();
+    let app = crate::icons::router().merge(app(&auth, Need::Viewer));
+    for path in ["/favicon.svg", "/favicon-32.png", "/apple-touch-icon.png"] {
+        let r = send(&app, "GET", path, &[("accept", "image/*")]).await;
+        assert_eq!(r.status(), StatusCode::OK, "{path}");
+    }
+    assert_eq!(
+        send(&app, "GET", "/", &[]).await.status(),
+        StatusCode::UNAUTHORIZED
+    );
+}
+
+#[tokio::test]
 async fn viewer_reads_but_cannot_write_and_writes_need_the_header() {
     let (_d, auth) = fresh();
     auth.setup_admin("admin", PW).unwrap();
