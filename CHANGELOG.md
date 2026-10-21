@@ -52,6 +52,15 @@ All notable changes to DeskWatch are listed here. The format follows
   time. Works for GitHub and Gitea jobs, GitLab jobs (with their stage), Bitbucket steps and Azure DevOps jobs; a
   source that only knows the run as a whole shows one row. The Pipelines card stays one row per pipeline.
 
+### Documentation
+
+- The guides, the README and `config.example.toml` were swept for the removed ESP panel (pages, the `warn` badge, the
+  `deskwatch-panel` login, the simulator), the new alert colours and the cogwheel and grid icons in the header. New:
+  the GPU rows (`docs/kiosk.md`, `docs/install.md`), a table of what each Git host adds to the alerts list
+  (`docs/git-hosts.md`), the Access and Sign-in sections of Setup, roles and My account (`docs/setup-page.md`,
+  `docs/auth.md`), and links for GitLab merge requests and pipelines. The dashboard screenshot in `docs/` is new and
+  the unused panel picture is gone.
+
 ### Fixed
 
 - **Signing in over the bridge's own HTTPS (`[http.tls]`) works in a browser.** Browsers talk HTTP/2 there and send no

@@ -35,7 +35,7 @@ Contents: [1. Build the image](#1-build-the-image) · [2. Try the demo](#2-try-t
 [3. The dashboard on your homelab](#3-the-dashboard-on-your-homelab) (also [Komodo and Portainer](#komodo-portainer-and-inline-configs)) ·
 [4. Config and secrets](#4-config-and-secrets) · [5. Compose with a broker](#5-compose-with-a-broker) ·
 [6. Reaching the broker](#6-reaching-the-broker) · [7. Webhooks](#7-webhooks-gitea) ·
-[8. The stats page](#8-the-stats-page-in-a-container) · [9. Health and restarts](#9-health-and-restarts) ·
+[8. Host stats](#8-host-stats-in-a-container) · [9. Health and restarts](#9-health-and-restarts) ·
 [10. The published image](#10-the-published-image) · [11. Update and remove](#11-update-and-remove)
 
 ## 1. Build the image
@@ -52,8 +52,8 @@ docker build -t deskwatch-bridge .
 ```
 
 The first build takes a few minutes (it compiles all dependencies). The Dockerfile builds in two steps: first the
-dependencies, from the manifests and `Cargo.lock` only, then your sources. A rebuild after a change in the bridge,
-`sim` or `ui` code therefore reuses the cached dependency layer and only compiles the bridge itself; the dependencies
+dependencies, from the manifests and `Cargo.lock` only, then your sources. A rebuild after a change in the bridge
+code therefore reuses the cached dependency layer and only compiles the bridge itself; the dependencies
 are rebuilt only when a `Cargo.toml` or `Cargo.lock` changes. The image is for the CPU you build it on, so
 building on a Raspberry Pi gives an arm64 image with no extra steps; `docker buildx` can build for another CPU. CI
 builds the image for amd64 and arm64 on every change (nothing pushed). The build stage cross-compiles instead of
@@ -398,9 +398,9 @@ Only a Gitea source needs an incoming connection from outside. The listener it u
 rest, including `ALLOWED_HOST_LIST`, is in [install.md](install.md#gitea-actions-and-pull-requests)). Allow that port in the firewall from the Gitea host only. GitHub, Azure DevOps and
 Prometheus sources only make outgoing requests and need no published port.
 
-## 8. The stats page in a container
+## 8. Host stats in a container
 
-The built-in `stats` page reads `/proc` and `/sys`, and a container sees only part of the real machine:
+The bridge machine's own host card reads `/proc` and `/sys`, and a container sees only part of the real machine:
 
 - **Host name:** the container id by default. Set `display_name = "homeserver"` under `[server]`.
 - **RAM and uptime:** the host's numbers (Docker does not virtualize `/proc/meminfo` and `/proc/uptime`).
@@ -412,7 +412,7 @@ The built-in `stats` page reads `/proc` and `/sys`, and a container sees only pa
 - **CPU temperature:** often empty, because the thermal sensors are not always visible inside a container.
 
 If you want exact numbers for several machines, use a Prometheus source with node_exporter instead
-([install.md](install.md#prometheus-host-stats-and-containers)) and leave the local page as is.
+([install.md](install.md#prometheus-host-stats-and-containers)) and leave the local card as is.
 
 ## 9. Health and restarts
 

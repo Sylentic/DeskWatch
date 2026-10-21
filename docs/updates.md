@@ -1,7 +1,7 @@
 # The "newer version" notice
 
 When a newer DeskWatch release is out, the dashboard shows a small chip, "update available: v0.9.20", next to the Setup
-link. It links to the release notes and has a × that hides that version in the browser you click it in (the next release
+cogwheel. It links to the release notes and has a × that hides that version in the browser you click it in (the next release
 shows the chip again). The Setup page shows the same note behind the version under **Bridge and restart**.
 
 - **What is sent:** once a day (the first look is 30 seconds after the bridge starts) the bridge asks

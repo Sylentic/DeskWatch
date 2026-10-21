@@ -45,7 +45,7 @@ How each severity shows on the kiosk page:
 | Severity | Banner | After it leaves the banner |
 |---|---|---|
 | `critical` | Red, above running jobs, until it is dismissed or cleared | Alerts pill and list until cleared or `ttl_s` |
-| `warning` | Amber, until it is dismissed or 10 min | Alerts pill and list until cleared or `ttl_s` |
+| `warning` | Yellow, until it is dismissed or 10 min | Alerts pill and list until cleared or `ttl_s` |
 | `info` | Short notice for 5 s | Alerts list until cleared or `ttl_s` (no pill) |
 
 Limits on the bridge side (`[alerts]` in the config): at most `max_active` alerts (default 10, the least urgent,

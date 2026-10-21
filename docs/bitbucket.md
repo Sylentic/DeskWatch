@@ -15,7 +15,7 @@ What you get:
 - A failed pipeline raises the usual red alert naming the failed step; a good one flashes green. Both leave a count
   in the header badge until you dismiss it. A stopped pipeline is neutral and raises nothing.
 - A pipeline paused at a manual step shows as `review` on the pipelines page.
-- A refused or expired token, or an unreachable server, lights the `warn` badge.
+- A refused or expired token, or an unreachable server, shows the **Source down** pill.
 
 Self-hosted runners can be shown on the kiosk `runners` widget (optional, needs one more right, see
 [runners.md](runners.md#6-bitbucket-runners-in-this-version)).
@@ -38,7 +38,7 @@ Use an access token that can only read. Bitbucket is phasing out app passwords, 
 
 1. In Bitbucket open **Repository settings > Access tokens** (or the project or workspace settings, whichever your
    plan offers). A repository token is the tidiest: it can only see that repository.
-2. Give it a name and an expiry date you will remember. When the token lapses the dashboard shows the `warn` badge.
+2. Give it a name and an expiry date you will remember. When the token lapses the dashboard shows the **Source down** pill.
 3. Rights: **Pull requests: Read** and **Pipelines: Read**. Add **Runners: Read** only if you want the `runners`
    widget, and **Issues: Read** for new issues in the alerts list. Nothing with Write or Admin.
 4. Create the token and copy it once; Bitbucket does not show it again.
