@@ -49,7 +49,7 @@ pub struct EntraApp {
 enum Auth {
     Pat(Secret),
     Entra {
-        app: EntraApp,
+        app: Box<EntraApp>,
         /// The token in use and when to stop using it.
         cached: Mutex<Option<(Secret, Instant)>>,
     },
@@ -144,6 +144,7 @@ impl HttpApi {
             "login_url is not a valid URL"
         );
         let cached = Mutex::new(None);
+        let app = Box::new(app);
         Self::build(base_url, organization, Auth::Entra { app, cached })
     }
 
