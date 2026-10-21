@@ -286,10 +286,6 @@ impl Default for MqttConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ServerConfig {
-    /// Sample the machine the bridge runs on. Turn off for a bridge that only
-    /// shows Git hosts (Azure DevOps, GitHub Enterprise): there is then no
-    /// "this machine" in the Hosts panel, on the stats page or in the ESP rotation.
-    pub enabled: bool,
     /// Name shown on the stats page. Defaults to the system hostname.
     pub display_name: Option<String>,
     /// Seconds between stats samples and publishes (5 s in the schema).
@@ -303,7 +299,6 @@ pub struct ServerConfig {
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
             display_name: None,
             interval_s: 5,
             net_iface: None,
@@ -616,17 +611,6 @@ pub fn default_panels(view: HostView) -> Vec<PanelConfig> {
         panel(Widget::Pipelines, [2, 1]),
         panel(Widget::Prs, [1, 1]),
         panel(Widget::Alerts, [1, 1]),
-    ]
-}
-
-/// The built-in layout for a bridge with no host to show: Running now and
-/// Pipelines (2 wide, 2 tall each) on top, Open PRs and Alerts (2 wide) below.
-pub fn default_panels_without_hosts() -> Vec<PanelConfig> {
-    vec![
-        panel(Widget::Jobs, [2, 2]),
-        panel(Widget::Pipelines, [2, 2]),
-        panel(Widget::Prs, [2, 1]),
-        panel(Widget::Alerts, [2, 1]),
     ]
 }
 
@@ -998,6 +982,18 @@ impl BitbucketConfig {
     }
 }
 
+/// How an Azure DevOps source proves who it is.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AzureDevopsAuth {
+    /// A personal access token (`token_file`): acts as one person.
+    #[default]
+    Pat,
+    /// A Microsoft Entra service principal (`tenant_id`, `client_id`,
+    /// `client_secret_file`): acts as an app, not as a person.
+    Entra,
+}
+
 /// One `[[source.azure_devops]]` block: pipeline runs and open PRs from Azure
 /// DevOps Services, by polling.
 #[derive(Debug, Clone, Deserialize)]
@@ -1012,9 +1008,25 @@ pub struct AzureDevopsConfig {
     pub base_url: String,
     /// Projects of the organisation to watch.
     pub projects: Vec<String>,
+    /// How the bridge signs in: `pat` (default) or `entra`.
+    #[serde(default)]
+    pub auth: AzureDevopsAuth,
     /// Credential with a read-only personal access token (Build: Read,
-    /// Code: Read).
+    /// Code: Read). For `auth = "pat"`.
+    #[serde(default)]
     pub token_file: String,
+    /// Microsoft Entra tenant (directory) id or domain. For `auth = "entra"`.
+    #[serde(default)]
+    pub tenant_id: String,
+    /// Application (client) id of the service principal. For `auth = "entra"`.
+    #[serde(default)]
+    pub client_id: String,
+    /// Credential holding the service principal's client secret. For `auth = "entra"`.
+    #[serde(default)]
+    pub client_secret_file: String,
+    /// Entra sign-in address. Only changes for tests or a national cloud.
+    #[serde(default = "default_entra_login_url")]
+    pub login_url: String,
     /// Seconds between polls of builds and open PRs.
     #[serde(default = "default_github_poll_s")]
     pub poll_s: u64,
@@ -1177,6 +1189,10 @@ fn default_gitlab_base_url() -> String {
 
 fn default_azure_devops_agent_poll_s() -> u64 {
     60
+}
+
+fn default_entra_login_url() -> String {
+    crate::azure_devops::api::ENTRA_LOGIN.into()
 }
 
 fn default_azure_devops_base_url() -> String {
@@ -1541,6 +1557,25 @@ impl Config {
                 azure.base_url.starts_with("https://") || azure.base_url.starts_with("http://"),
                 "source.azure_devops {name}: base_url must start with https://"
             );
+            match azure.auth {
+                AzureDevopsAuth::Pat => anyhow::ensure!(
+                    !azure.token_file.trim().is_empty(),
+                    "source.azure_devops {name}: token_file is needed (or set auth = \"entra\")"
+                ),
+                AzureDevopsAuth::Entra => {
+                    anyhow::ensure!(
+                        !azure.tenant_id.trim().is_empty()
+                            && !azure.client_id.trim().is_empty()
+                            && !azure.client_secret_file.trim().is_empty(),
+                        "source.azure_devops {name}: auth = \"entra\" needs tenant_id, client_id and client_secret_file"
+                    );
+                    anyhow::ensure!(
+                        azure.login_url.starts_with("https://")
+                            || azure.login_url.starts_with("http://"),
+                        "source.azure_devops {name}: login_url must start with https://"
+                    );
+                }
+            }
             anyhow::ensure!(
                 valid_azure_name(&azure.organization),
                 "source.azure_devops {name}: organization must be the name from dev.azure.com/<organization>"
@@ -1629,42 +1664,21 @@ impl Config {
 
     /// Read and parse a config file.
     /// The idle rotation: the `[[rotation]]` blocks, or when there are none a
-    /// default that fits what is configured. The stats page comes first while
-    /// the bridge samples its own machine (`[server] enabled`); the open PRs and
-    /// pipelines pages follow when a CI source exists (they skip themselves
-    /// while empty). A bridge that is only Azure DevOps or only GitHub
-    /// Enterprise therefore rotates the pages it can fill, with no config.
+    /// default that fits what is configured: the stats page, and the open PRs and
+    /// pipelines pages when a CI source exists (they skip themselves while
+    /// empty). A bridge that is only Azure DevOps or only GitHub Enterprise
+    /// therefore rotates the pages it can fill, with no config.
     pub fn rotation(&self) -> Vec<RotationEntry> {
         if !self.rotation.is_empty() {
             return self.rotation.clone();
         }
         let mut pages = Vec::new();
-        if self.server.enabled {
-            pages.push(rotation_page("stats", 20, false));
-        }
+        pages.push(rotation_page("stats", 20, false));
         if self.source.has_ci() {
             pages.push(rotation_page("prs", 8, true));
             pages.push(rotation_page("pipelines", 10, true));
         }
-        if pages.is_empty() {
-            // The rotation may not be empty; the stats page shows "no data".
-            pages.push(rotation_page("stats", 20, false));
-        }
         pages
-    }
-
-    /// The kiosk settings to run with. The built-in layout has a Hosts panel;
-    /// with no host to show (`[server] enabled = false` and no Prometheus
-    /// source, such as a bridge that only reads Azure DevOps) that panel would
-    /// stay empty, so the layout without it is used instead. Panels set with
-    /// `[[kiosk.panel]]` are never touched.
-    pub fn kiosk_config(&self) -> KioskConfig {
-        let mut kiosk = self.kiosk.clone();
-        let hosts = self.server.enabled || !self.source.prometheus.is_empty();
-        if kiosk.panel.is_empty() && !hosts {
-            kiosk.panel = default_panels_without_hosts();
-        }
-        kiosk
     }
 
     pub fn load(path: &Path) -> Result<Self> {
@@ -1774,11 +1788,8 @@ mod tests {
         assert!(!config.alerts.allows_critical("door"));
     }
 
-    const AZURE_ONLY: &str = "[server]\nenabled = false\n\n[[source.azure_devops]]\nname = \"work\"\n\
-organization = \"o\"\nprojects = [\"p\"]\ntoken_file = \"azdo\"\n";
-
     #[test]
-    fn default_rotation_follows_what_is_configured() {
+    fn default_rotation_adds_ci_pages_when_a_git_host_is_configured() {
         let pages = |text: &str| -> Vec<String> {
             Config::from_toml(text)
                 .unwrap()
@@ -1787,53 +1798,12 @@ organization = \"o\"\nprojects = [\"p\"]\ntoken_file = \"azdo\"\n";
                 .map(|r| r.page)
                 .collect()
         };
-        // Nothing configured: the stats page alone, as before.
         assert_eq!(pages(""), ["stats"]);
-        // A Git host adds the PR and pipeline pages, which skip themselves while empty.
-        let with_ci = AZURE_ONLY.replace("enabled = false", "enabled = true");
-        assert_eq!(pages(&with_ci), ["stats", "prs", "pipelines"]);
-        // Only a Git host: no stats page of this machine.
-        assert_eq!(pages(AZURE_ONLY), ["prs", "pipelines"]);
-        let config = Config::from_toml(AZURE_ONLY).unwrap();
-        assert!(config.rotation().iter().all(|r| r.skip_when_empty));
-        // Explicit [[rotation]] blocks win.
-        let explicit = format!("{AZURE_ONLY}\n[[rotation]]\npage = \"alerts\"\ndwell_s = 5\n");
+        let azure = "[[source.azure_devops]]\nname = \"work\"\norganization = \"o\"\n\
+projects = [\"p\"]\ntoken_file = \"azdo\"\n";
+        assert_eq!(pages(azure), ["stats", "prs", "pipelines"]);
+        let explicit = format!("{azure}\n[[rotation]]\npage = \"alerts\"\ndwell_s = 5\n");
         assert_eq!(pages(&explicit), ["alerts"]);
-        // Nothing to rotate at all still leaves one page.
-        assert_eq!(pages("[server]\nenabled = false\n"), ["stats"]);
-    }
-
-    #[test]
-    fn layout_drops_the_hosts_panel_when_there_is_no_host() {
-        let widgets = |config: &Config| -> Vec<Widget> {
-            config
-                .kiosk_config()
-                .panels()
-                .iter()
-                .map(|p| p.widget)
-                .collect()
-        };
-        let plain = Config::from_toml("").unwrap();
-        assert!(widgets(&plain).contains(&Widget::Hosts));
-        let ci_only = Config::from_toml(AZURE_ONLY).unwrap();
-        assert!(!widgets(&ci_only).contains(&Widget::Hosts));
-        // A Prometheus source brings hosts back.
-        let with_prom = format!(
-            "{AZURE_ONLY}\n[[source.prometheus]]\nname = \"home\"\nurl = \"http://p.example:9090\"\n\
-hosts = [{{ instance = \"n:9100\" }}]\n"
-        );
-        let with_prom = Config::from_toml(&with_prom).unwrap();
-        assert!(widgets(&with_prom).contains(&Widget::Hosts));
-        // Panels the user placed are never changed.
-        let own = format!("{AZURE_ONLY}\n[[kiosk.panel]]\nwidget = \"hosts\"\n");
-        let own = Config::from_toml(&own).unwrap();
-        assert_eq!(widgets(&own), [Widget::Hosts]);
-        // The layout without Hosts fills the default 4x3 grid exactly.
-        let cells: u32 = default_panels_without_hosts()
-            .iter()
-            .map(|p| u32::from(p.span[0]) * u32::from(p.span[1]))
-            .sum();
-        assert_eq!(cells, 12);
     }
 
     #[test]
@@ -2155,6 +2125,26 @@ hosts = [{{ instance = \"n:9100\" }}]\n"
         assert_eq!(pools.source.azure_devops[0].agent_pools.len(), 2);
         assert!(Config::from_toml(&block("agent_pools = [\" \"]")).is_err());
         assert!(Config::from_toml(&block("agent_poll_s = 0")).is_err());
+
+        // Sign in as a service principal instead of with a token.
+        let entra = |extra: &str| {
+            format!(
+                "[[source.azure_devops]]\nname = \"work\"\norganization = \"your-org\"\n\
+                 projects = [\"project-a\"]\nauth = \"entra\"\n{extra}"
+            )
+        };
+        let full = "tenant_id = \"t\"\nclient_id = \"c\"\nclient_secret_file = \"azdo-secret\"\n";
+        let sp = Config::from_toml(&entra(full)).unwrap();
+        let sp = &sp.source.azure_devops[0];
+        assert_eq!(sp.auth, AzureDevopsAuth::Entra);
+        assert_eq!(sp.login_url, "https://login.microsoftonline.com");
+        assert_eq!(config.source.azure_devops[0].auth, AzureDevopsAuth::Pat);
+        // Each way needs its own credentials, and says so.
+        let err = Config::from_toml(&entra("tenant_id = \"t\"\n")).unwrap_err();
+        assert!(format!("{err:#}").contains("client_secret_file"), "{err:#}");
+        let no_token = block("").replace("token_file = \"azdo-token\"\n", "");
+        let err = Config::from_toml(&no_token).unwrap_err();
+        assert!(format!("{err:#}").contains("token_file"), "{err:#}");
 
         let some = Config::from_toml(&block("interrupt = [\"project-a\"]")).unwrap();
         assert!(some.source.azure_devops[0].interrupt.allows("project-a"));

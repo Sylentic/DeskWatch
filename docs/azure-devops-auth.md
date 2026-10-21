@@ -1,8 +1,9 @@
-# Azure DevOps without a personal access token: research and recommendation
+# Azure DevOps without a personal access token
 
 The `azure_devops` source signs in with a personal access token (PAT), see [azure-devops.md](azure-devops.md).
 A PAT acts as one person, expires, and some organisations forbid it. This page looks at the alternatives and says
-which one DeskWatch should build. Nothing here is built yet; it is the basis for a follow-up change.
+which one DeskWatch builds. The service principal mode (`auth = "entra"`) is built; it has only been tested against mock
+answers, not a real tenant.
 
 Checked on 2026-10-21 against Microsoft's documentation (links at the end).
 
@@ -67,9 +68,16 @@ Managed identity is the same flow without any secret, but Microsoft only offers 
 (there the token comes from the local metadata endpoint, `169.254.169.254`). It is cheap to add as a third `auth` mode
 for people who run the bridge on an Azure VM, and useless at home.
 
-## How it would fit in DeskWatch
+## Setting it up
 
-Config (the PAT stays the default, nothing changes for existing installs):
+1. Entra admin: register an app (App registrations > New registration, single tenant) and create a client secret
+   under Certificates & secrets. Note the Directory (tenant) ID and the Application (client) ID. No API permissions
+   are needed.
+2. Azure DevOps organisation admin: Organization settings > Users > Add users, enter the app's name, access level
+   **Basic**, and the projects to watch. Give it only read access (Reader on the project is enough for builds and pull
+   requests; agent pools need Reader on the pool).
+3. On the bridge, store the client secret like a token (`/etc/deskwatch/credentials/azdo-work-secret`, or as the
+   `client_secret_file` credential) and change the block:
 
 ```toml
 [[source.azure_devops]]
@@ -79,22 +87,15 @@ projects = ["project-a"]
 auth = "entra"                       # default "pat"
 tenant_id = "00000000-0000-0000-0000-000000000000"
 client_id = "00000000-0000-0000-0000-000000000000"
-client_secret_file = "azdo-work"     # a credential, like token_file today; no secret in the config
+client_secret_file = "azdo-work-secret"
 ```
 
-Work in `bridge/src/azure_devops/`:
+`token_file` is not used with `auth = "entra"`. `login_url` only changes for a national cloud or tests. A secret
+Entra refuses, or an app Azure DevOps does not know, lights the `warn` badge and the log says which. Real tenant,
+client and organisation names stay out of the repository.
 
-- A small token provider next to `api.rs`: PAT is a fixed header, Entra fetches and caches a bearer token and renews
-  it early. The rest of the client asks the provider for the header on each request.
-- `auth_failed` handling reused: a 401 or the sign-in redirect first forces one token renewal, then reports
-  "token refused" (health badge) as now.
-- Setup page: an "Authentication" choice in the Azure DevOps form (Token or Entra app) and a **Test connection** that
-  says which step failed (Entra refused the secret, or Azure DevOps does not know the identity).
-- Docs: a section in azure-devops.md with the admin steps, an "ask your admin" paragraph, and a note that real
-  tenant, client and organisation names never go in the repo.
-- Tests against a mock Entra endpoint and the existing mock Azure DevOps; no real tenant is needed to build it, but a
-  real run by someone with an organisation (checklist in [azure-devops-verify.md](azure-devops-verify.md)) is what
-  proves it.
+Not built yet: choosing the sign-in method on the Setup page (edit `sources.toml` or `bridge.toml` by hand for now),
+a certificate instead of a secret, and managed identity.
 
 ## Overlap with the multi-user login
 
@@ -102,11 +103,6 @@ Signing people in to DeskWatch with Microsoft Entra (OAuth login, see [auth.md](
 bridge reading Azure DevOps. They can use the same Entra tenant but different app registrations: one for people
 signing in to the dashboard, one for the service principal that reads Azure DevOps. Keep them apart, so a leaked
 dashboard secret cannot read pipelines and the reverse.
-
-## Decision for the owner
-
-Build the optional `auth = "entra"` mode (service principal with client secret, certificate later)? If yes, the
-change is small and isolated to the Azure DevOps source and its Setup form, and the PAT stays the default.
 
 ## Sources
 

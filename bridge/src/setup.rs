@@ -1122,7 +1122,12 @@ pub fn describe(config: &Config) -> Value {
                 s.organization
             ),
             "repos": s.projects,
-            "credentials": [cred("token", &s.token_file, true)],
+            "credentials": [match s.auth {
+                crate::config::AzureDevopsAuth::Pat => cred("token", &s.token_file, true),
+                crate::config::AzureDevopsAuth::Entra => {
+                    cred("client secret", &s.client_secret_file, true)
+                }
+            }],
             "fields": {
                 "organization": s.organization, "base_url": s.base_url,
                 "projects": s.projects, "pull_requests": s.pull_requests,

@@ -1,26 +1,68 @@
-//! Azure DevOps REST API client with a read-only personal access token.
+//! Azure DevOps REST API client, read-only.
 //!
-//! Every request is `GET`, authenticated with HTTP Basic: an empty user name
-//! and the PAT as the password. The scopes needed are in
-//! docs/azure-devops.md. `base_url` is `https://dev.azure.com` for Azure
+//! Every request is `GET`. Two ways to sign in (docs/azure-devops-auth.md):
+//! a personal access token as HTTP Basic (an empty user name and the PAT as
+//! the password), or a Microsoft Entra service principal whose short-lived
+//! access token is fetched with the client-credentials flow and sent as a
+//! bearer token. The PAT scopes needed are in docs/azure-devops.md. `base_url` is `https://dev.azure.com` for Azure
 //! DevOps Services; tests point it at a mock server.
 //!
 //! A missing or expired token does not always give a 401: Azure DevOps can
 //! answer `203` or a 200 with its HTML sign-in page. Both count as a refused
 //! token (`AuthRefused`).
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use reqwest::header::{ACCEPT, CONTENT_TYPE};
+use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
 use reqwest::{StatusCode, Url};
+use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use tokio::sync::Mutex;
 
 use super::payload::{Agent, Build, JobRequest, List, Pool, PullRequest, Record, Timeline};
 use crate::source::{AuthRefused, Secret};
 
 /// Azure DevOps Services.
 pub const AZURE_DEVOPS_COM: &str = "https://dev.azure.com";
+
+/// Microsoft Entra, the public cloud sign-in address.
+pub const ENTRA_LOGIN: &str = "https://login.microsoftonline.com";
+
+/// The Azure DevOps resource in Entra; `/.default` asks for what the app was
+/// given there.
+const ENTRA_SCOPE: &str = "499b84ac-1321-427f-aa17-267ca6975798/.default";
+
+/// A cached Entra token is renewed this long before it expires.
+const TOKEN_MARGIN: Duration = Duration::from_secs(300);
+
+/// A service principal: the app registered in Entra and added to the
+/// Azure DevOps organisation as a user.
+pub struct EntraApp {
+    pub login_url: String,
+    pub tenant_id: String,
+    pub client_id: String,
+    pub client_secret: Secret,
+}
+
+/// How requests are signed.
+enum Auth {
+    Pat(Secret),
+    Entra {
+        app: EntraApp,
+        /// The token in use and when to stop using it.
+        cached: Mutex<Option<(Secret, Instant)>>,
+    },
+}
+
+/// The success and error answers of Entra's token endpoint.
+#[derive(Deserialize)]
+struct TokenAnswer {
+    access_token: Option<String>,
+    expires_in: Option<u64>,
+    error: Option<String>,
+    error_description: Option<String>,
+}
 
 /// The service address without the organisation. Pasting
 /// `https://dev.azure.com/<organization>/` into the address field would make
@@ -86,11 +128,26 @@ pub struct HttpApi {
     client: reqwest::Client,
     base_url: Url,
     organization: String,
-    token: Secret,
+    auth: Auth,
 }
 
 impl HttpApi {
+    /// Sign in with a personal access token.
     pub fn new(base_url: &str, organization: &str, token: Secret) -> Result<Self> {
+        Self::build(base_url, organization, Auth::Pat(token))
+    }
+
+    /// Sign in as a Microsoft Entra service principal.
+    pub fn with_entra(base_url: &str, organization: &str, app: EntraApp) -> Result<Self> {
+        anyhow::ensure!(
+            Url::parse(&app.login_url).is_ok(),
+            "login_url is not a valid URL"
+        );
+        let cached = Mutex::new(None);
+        Self::build(base_url, organization, Auth::Entra { app, cached })
+    }
+
+    fn build(base_url: &str, organization: &str, auth: Auth) -> Result<Self> {
         let client = reqwest::Client::builder()
             .timeout(REQUEST_TIMEOUT)
             .user_agent(concat!("deskwatch-bridge/", env!("CARGO_PKG_VERSION")))
@@ -101,8 +158,82 @@ impl HttpApi {
             base_url: Url::parse(&clean_base_url(base_url, organization))
                 .context("base_url is not a valid URL")?,
             organization: organization.to_string(),
-            token,
+            auth,
         })
+    }
+
+    /// The `Authorization` header value. With Entra, a cached token is reused
+    /// until shortly before it expires (or `renew` asks for a new one).
+    async fn authorization(&self, renew: bool) -> Result<String> {
+        let (app, cached) = match &self.auth {
+            Auth::Pat(token) => {
+                use base64::Engine as _;
+                let pair = format!(":{}", token.expose());
+                let encoded = base64::engine::general_purpose::STANDARD.encode(pair);
+                return Ok(format!("Basic {encoded}"));
+            }
+            Auth::Entra { app, cached } => (app, cached),
+        };
+        let mut cached = cached.lock().await;
+        if !renew
+            && let Some((token, until)) = cached.as_ref()
+            && Instant::now() < *until
+        {
+            return Ok(format!("Bearer {}", token.expose()));
+        }
+        let (token, lifetime) = self.fetch_token(app).await?;
+        let until = Instant::now() + lifetime.saturating_sub(TOKEN_MARGIN);
+        let header = format!("Bearer {}", token.expose());
+        *cached = Some((token, until));
+        Ok(header)
+    }
+
+    /// Ask Entra for an access token (client-credentials flow). A refusal
+    /// (wrong secret, unknown app) is `AuthRefused`; Entra being unreachable is
+    /// an ordinary request error.
+    async fn fetch_token(&self, app: &EntraApp) -> Result<(Secret, Duration)> {
+        let url = format!(
+            "{}/{}/oauth2/v2.0/token",
+            app.login_url.trim_end_matches('/'),
+            app.tenant_id.trim()
+        );
+        let response = self
+            .client
+            .post(url)
+            .header(ACCEPT, "application/json")
+            .form(&[
+                ("grant_type", "client_credentials"),
+                ("client_id", app.client_id.trim()),
+                ("client_secret", app.client_secret.expose()),
+                ("scope", ENTRA_SCOPE),
+            ])
+            .send()
+            .await
+            .context("Microsoft Entra token request")?;
+        let status = response.status();
+        let body = response.bytes().await?;
+        let answer: TokenAnswer = serde_json::from_slice(&body).unwrap_or(TokenAnswer {
+            access_token: None,
+            expires_in: None,
+            error: None,
+            error_description: None,
+        });
+        if let (true, Some(token)) = (status.is_success(), answer.access_token) {
+            let lifetime = Duration::from_secs(answer.expires_in.unwrap_or(3600));
+            return Ok((Secret::new(token), lifetime));
+        }
+        if status.is_client_error() {
+            // Only the first line of Entra's text: the rest is trace ids.
+            let why = answer
+                .error_description
+                .as_deref()
+                .and_then(|d| d.lines().next())
+                .or(answer.error.as_deref())
+                .unwrap_or("no reason given");
+            return Err(anyhow::Error::new(AuthRefused)
+                .context(format!("Microsoft Entra refused the app ({status}): {why}")));
+        }
+        anyhow::bail!("Microsoft Entra answered HTTP {status}")
     }
 
     /// Recent builds of a project, newest first.
@@ -220,26 +351,36 @@ impl HttpApi {
     }
 
     async fn get_json<T: DeserializeOwned>(&self, url: Url) -> Result<T> {
-        let response = self
-            .client
-            .get(url)
-            .basic_auth("", Some(self.token.expose()))
-            .header(ACCEPT, "application/json")
-            // Ask for a plain 401 instead of a redirect to the sign-in page.
-            .header("X-TFS-FedAuthRedirect", "Suppress")
-            .send()
-            .await?;
+        // An Entra token that Azure DevOps refuses (revoked, or the identity
+        // was just added) is renewed once before the call counts as refused.
+        let mut renew = false;
+        loop {
+            let response = self
+                .client
+                .get(url.clone())
+                .header(AUTHORIZATION, self.authorization(renew).await?)
+                .header(ACCEPT, "application/json")
+                // Ask for a plain 401 instead of a redirect to the sign-in page.
+                .header("X-TFS-FedAuthRedirect", "Suppress")
+                .send()
+                .await?;
 
-        let html = response
-            .headers()
-            .get(CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .is_some_and(|v| v.starts_with("text/html"));
-        if response.status() == StatusCode::NON_AUTHORITATIVE_INFORMATION || html {
-            return Err(AuthRefused.into());
+            let html = response
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|v| v.starts_with("text/html"));
+            let unauthorised = response.status() == StatusCode::UNAUTHORIZED;
+            if matches!(self.auth, Auth::Entra { .. }) && !renew && (unauthorised || html) {
+                renew = true;
+                continue;
+            }
+            if response.status() == StatusCode::NON_AUTHORITATIVE_INFORMATION || html {
+                return Err(AuthRefused.into());
+            }
+            let body = response.error_for_status()?.bytes().await?;
+            return serde_json::from_slice(&body).context("invalid JSON");
         }
-        let body = response.error_for_status()?.bytes().await?;
-        serde_json::from_slice(&body).context("invalid JSON")
     }
 }
 
@@ -562,6 +703,137 @@ pub(crate) mod tests {
             .builds("project-a")
             .await
             .unwrap_err();
+        assert_eq!(Health::from_error(&err), Health::Unreachable);
+    }
+
+    // -- Microsoft Entra service principal ------------------------------
+
+    /// A mock Entra token endpoint plus an Azure DevOps that accepts only
+    /// `good_token`. `tokens` counts token requests and keeps their bodies.
+    struct EntraMock {
+        base: String,
+        tokens: Arc<Mutex<Vec<String>>>,
+    }
+
+    /// The nth token handed out is `token-<n>`; `accept` names the one
+    /// Azure DevOps lets in. `entra_status` is what the token endpoint answers.
+    async fn entra_mock(accept: &'static str, entra_status: StatusCode) -> EntraMock {
+        let tokens: Arc<Mutex<Vec<String>>> = Arc::default();
+        let app = Router::new()
+            .route(
+                "/tenant-1/oauth2/v2.0/token",
+                axum::routing::post(
+                    move |State(tokens): State<Arc<Mutex<Vec<String>>>>, body: String| async move {
+                        let n = {
+                            let mut seen = tokens.lock().unwrap();
+                            seen.push(body);
+                            seen.len()
+                        };
+                        let json = if entra_status.is_success() {
+                            format!(r#"{{"access_token":"token-{n}","expires_in":3599}}"#)
+                        } else {
+                            r#"{"error":"invalid_client","error_description":"AADSTS7000215: Invalid client secret.\r\nTrace ID: x"}"#.into()
+                        };
+                        (entra_status, [("content-type", "application/json")], json)
+                    },
+                ),
+            )
+            .route(
+                "/your-org/{project}/_apis/build/builds",
+                get(move |h: HeaderMap| async move {
+                    if h["authorization"] == format!("Bearer {accept}").as_str() {
+                        (
+                            StatusCode::OK,
+                            [("content-type", "application/json")],
+                            include_str!("testdata/builds.json"),
+                        )
+                    } else {
+                        (StatusCode::UNAUTHORIZED, [("content-type", "text/plain")], "")
+                    }
+                }),
+            )
+            .with_state(tokens.clone());
+        EntraMock {
+            base: serve(app).await,
+            tokens,
+        }
+    }
+
+    fn entra_api(mock: &EntraMock) -> HttpApi {
+        HttpApi::with_entra(
+            &mock.base,
+            "your-org",
+            EntraApp {
+                login_url: mock.base.clone(),
+                tenant_id: "tenant-1".into(),
+                client_id: "client-1".into(),
+                client_secret: Secret::new("s3cret&=x"),
+            },
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn entra_token_is_fetched_once_and_sent_as_bearer() {
+        let mock = entra_mock("token-1", StatusCode::OK).await;
+        let api = entra_api(&mock);
+        assert_eq!(api.builds("project-a").await.unwrap().len(), 5);
+        assert_eq!(api.builds("project-a").await.unwrap().len(), 5);
+        let tokens = mock.tokens.lock().unwrap();
+        assert_eq!(tokens.len(), 1, "the token is cached between polls");
+        let body = &tokens[0];
+        assert!(body.contains("grant_type=client_credentials"), "{body}");
+        assert!(body.contains("client_id=client-1"), "{body}");
+        assert!(
+            body.contains("scope=499b84ac-1321-427f-aa17-267ca6975798%2F.default"),
+            "{body}"
+        );
+        // The secret is form-encoded, not pasted in raw.
+        assert!(body.contains("client_secret=s3cret%26%3Dx"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn entra_token_is_renewed_once_when_azure_devops_refuses_it() {
+        // The first token is refused, the second one is let in.
+        let mock = entra_mock("token-2", StatusCode::OK).await;
+        let api = entra_api(&mock);
+        assert_eq!(api.builds("project-a").await.unwrap().len(), 5);
+        assert_eq!(mock.tokens.lock().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn entra_token_refused_for_good_is_auth_failed() {
+        let mock = entra_mock("never", StatusCode::OK).await;
+        let err = entra_api(&mock).builds("project-a").await.unwrap_err();
+        assert_eq!(Health::from_error(&err), Health::AuthFailed);
+        assert_eq!(mock.tokens.lock().unwrap().len(), 2, "one renewal, no loop");
+    }
+
+    #[tokio::test]
+    async fn entra_refusing_the_app_is_auth_failed_and_names_the_reason_only() {
+        let mock = entra_mock("token-1", StatusCode::BAD_REQUEST).await;
+        let err = entra_api(&mock).builds("project-a").await.unwrap_err();
+        assert_eq!(Health::from_error(&err), Health::AuthFailed);
+        let text = format!("{err:#}");
+        assert!(text.contains("Invalid client secret"), "{text}");
+        assert!(!text.contains("Trace ID"), "{text}");
+        assert!(!text.contains("s3cret"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn entra_unreachable_is_unreachable() {
+        let api = HttpApi::with_entra(
+            "http://127.0.0.1:9",
+            "your-org",
+            EntraApp {
+                login_url: "http://127.0.0.1:9".into(),
+                tenant_id: "t".into(),
+                client_id: "c".into(),
+                client_secret: Secret::new("s"),
+            },
+        )
+        .unwrap();
+        let err = api.builds("p").await.unwrap_err();
         assert_eq!(Health::from_error(&err), Health::Unreachable);
     }
 }

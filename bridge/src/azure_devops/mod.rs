@@ -42,11 +42,11 @@ use tokio::time::{Instant, MissedTickBehavior};
 use tracing::{debug, info, warn};
 
 use crate::ci::{OpenPull, RepoPulls, Run, RunStatus, Runner, RunnerStatus, RunningJob, Update};
-use crate::config::AzureDevopsConfig;
+use crate::config::{AzureDevopsAuth, AzureDevopsConfig};
 use crate::gitea::payload::unix_seconds;
 use crate::model::{JobData, JobKind, MAX_TITLE_CHARS, NoticeData, truncate};
 use crate::source::{self, FactSink, Health, Interrupt, Source, SourceId, unix_now};
-use api::HttpApi;
+use api::{EntraApp, HttpApi};
 use payload::{Agent, Build, PullRequest, Record};
 use timeline::View;
 
@@ -81,10 +81,25 @@ impl AzureDevops {
     /// Load the token. Fails when the credential file is missing.
     pub fn new(config: &AzureDevopsConfig) -> Result<Self> {
         let id = SourceId::new(KIND, &config.name);
-        let token =
-            source::load_secret(&config.token_file).with_context(|| format!("{id}: token_file"))?;
-        let api = HttpApi::new(&config.base_url, &config.organization, token)
-            .context("Azure DevOps API")?;
+        let api = match config.auth {
+            AzureDevopsAuth::Pat => {
+                let token = source::load_secret(&config.token_file)
+                    .with_context(|| format!("{id}: token_file"))?;
+                HttpApi::new(&config.base_url, &config.organization, token)
+            }
+            AzureDevopsAuth::Entra => {
+                let client_secret = source::load_secret(&config.client_secret_file)
+                    .with_context(|| format!("{id}: client_secret_file"))?;
+                let app = EntraApp {
+                    login_url: config.login_url.clone(),
+                    tenant_id: config.tenant_id.clone(),
+                    client_id: config.client_id.clone(),
+                    client_secret,
+                };
+                HttpApi::with_entra(&config.base_url, &config.organization, app)
+            }
+        }
+        .context("Azure DevOps API")?;
         Ok(Self {
             id,
             config: config.clone(),

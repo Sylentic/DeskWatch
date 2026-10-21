@@ -28,7 +28,6 @@ topic_prefix = "deskpanel"      # matches the schema, change only for testing
 keep_alive_s = 30
 
 [server]
-# enabled = false               # do not sample this machine: for a bridge that only shows Git hosts (Azure DevOps, GitHub Enterprise)
 # display_name = "homeserver"   # name on the stats page, defaults to the hostname
 interval_s = 5                  # stats sample and publish interval
 # net_iface = "eth0"            # defaults to the busiest non-loopback interface
@@ -230,7 +229,13 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 # name = "work"                 # required: used in logs
 # organization = "your-org"     # required: dev.azure.com/<organization>
 # projects = ["project-a"]      # required: projects to watch
-# token_file = "azdo-work"      # required: read-only PAT (Build: Read, Code: Read)
+# token_file = "azdo-work"      # read-only PAT (Build: Read, Code: Read), the default way to sign in
+# # Or sign in as a Microsoft Entra service principal instead of with a person's PAT
+# # (docs/azure-devops-auth.md): leave out token_file and set
+# # auth = "entra"
+# # tenant_id = "00000000-0000-0000-0000-000000000000"
+# # client_id = "00000000-0000-0000-0000-000000000000"
+# # client_secret_file = "azdo-work-secret"
 # poll_s = 60                   # builds, approvals and open PRs
 # job_poll_s = 5                # step progress while a build may take over the screen
 # interrupt = false             # default; true, or a list such as ["project-a"]

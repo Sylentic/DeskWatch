@@ -19,7 +19,7 @@ What you get:
 
 Self-hosted agent pools can be shown on the kiosk `runners` widget (optional, needs one more token scope, see
 [runners.md](runners.md#4-azure-devops-agent-pools-in-this-version)). Not in this version: classic release pipelines, Azure DevOps Server
-(on premises), and sign-in with Microsoft Entra instead of a token.
+(on premises). Sign-in as a Microsoft Entra service principal is possible, see [azure-devops-auth.md](azure-devops-auth.md).
 
 The data shapes were written from the documentation and tested against mock answers. A first connection to a real
 organisation has been made (it exposed the address problem fixed in 0.9.13), but nobody has yet confirmed that builds,
@@ -27,7 +27,8 @@ pull requests, approvals, checks and agent pools show correct data there.
 [azure-devops-verify.md](azure-devops-verify.md) is the checklist for that.
 
 Only using Azure DevOps? See [Using only one host](git-hosts.md#using-only-one-host-azure-devops-or-github-enterprise).
-To avoid a personal access token, read [azure-devops-auth.md](azure-devops-auth.md).
+To sign in as a service principal instead of with a personal access token (not tied to one person), see
+[azure-devops-auth.md](azure-devops-auth.md).
 
 ## Before you start
 

@@ -17,16 +17,14 @@ take.
 
 ## Using only one host (Azure DevOps or GitHub Enterprise)
 
-You do not need Gitea, MQTT, Prometheus or an ESP panel. A bridge that only reads one Git host needs these blocks and
-nothing else (see [docker.md](docker.md) for the container side, [setup-page.md](setup-page.md) to fill it in from the
-browser instead):
+An organisation that only uses Azure DevOps, or only GitHub Enterprise, needs none of the others: no Gitea, no
+Prometheus, no ESP panel. Each source is its own block, so unused ones are simply not configured. A bridge with one
+source and the dashboard looks like this (see [docker.md](docker.md) for the container side, [setup-page.md](setup-page.md)
+to fill it in from the browser instead):
 
 ```toml
 [mqtt]
 enabled = false          # no broker, no warnings about one
-
-[server]
-enabled = false          # do not show the machine the bridge runs on (a container id, a work PC)
 
 [kiosk]
 enabled = true
@@ -36,7 +34,7 @@ enabled = true
 name = "work"
 organization = "your-org"
 projects = ["project-a"]
-token_file = "azdo-work"
+token_file = "azdo-work"     # or a service principal, see azure-devops-auth.md
 
 # ... or GitHub Enterprise Server (use `https://api.<subdomain>.ghe.com` for GHE.com)
 # [[source.github]]
@@ -46,18 +44,28 @@ token_file = "azdo-work"
 # repos = ["org/repo-a"]
 ```
 
-What changes when no host can be shown (`[server] enabled = false` and no Prometheus source):
+Several at once also works: add one block per host, and every page, the kiosk and the badges merge them (the `source`
+filter of a `[[kiosk.panel]]` shows one host only). The Hosts panel stays; it shows this machine and any Prometheus
+hosts, and the `runners` widget shows self-hosted runners and agents of every source that has them listed.
 
-- The built-in dashboard layout leaves out the empty Hosts panel: Running now and Pipelines on top, Open PRs and
-  Alerts below. Panels you place with `[[kiosk.panel]]` are never changed. The layout is read at start, so restart
-  the bridge after adding a Prometheus source from Setup to get the Hosts panel back.
-- Without `[[rotation]]` blocks the ESP rotation is the pages that exist: `stats` while the server source is on, plus
-  `prs` and `pipelines` (skipped while empty) as soon as any Git host is configured. A bridge without a Git host and
-  without `[server] enabled = false` rotates the stats page only, as before.
-- The Gitea webhook route is only opened for Gitea sources; nothing else listens.
+Without `[[rotation]]` blocks the ESP rotation is the stats page, plus the `prs` and `pipelines` pages (skipped while
+empty) as soon as any Git host is configured.
 
-Azure DevOps today needs a personal access token. [azure-devops-auth.md](azure-devops-auth.md) compares the
-alternatives (service principal, managed identity, Entra OAuth) and recommends one.
+## Signing in without a person's token
+
+A personal token acts as one person and stops when they leave or lose access. What each source offers instead:
+
+| Source | Not tied to a person | In DeskWatch |
+|---|---|---|
+| Azure DevOps | Entra service principal (Basic licence per identity, two admins). [azure-devops-auth.md](azure-devops-auth.md) | **Built**: `auth = "entra"` |
+| GitLab | Project or group access token: a bot user with its own role (Reporter is enough), no licence on most plans | Works today, it is a token like any other. [gitlab.md](gitlab.md) |
+| Bitbucket Cloud | Repository, project or workspace access token (bearer). App passwords stopped working on 9 June 2026; API tokens are tied to a user | Works today, same token field. [bitbucket.md](bitbucket.md) |
+| GitHub, GitHub Enterprise | A GitHub App installed on the organisation (an hour-long installation token made from the app's private key), or a fine-grained token on a dedicated machine user | **Not built.** A GitHub App mode would be the next one; say if you want it |
+| Gitea | A token of a dedicated bot user | Works today |
+
+GitLab, Bitbucket and Gitea already have the "service account" option, as a token you create on the bot or on the
+project, so they need no code. GitHub and Azure DevOps are the two where the token is easily a person's, which is why
+Azure DevOps got a real alternative.
 
 ## Forgejo and Codeberg
 

@@ -10,12 +10,14 @@ hardware yet, and its MQTT schema (v2) may still change or the display may be dr
 
 ### Added
 
-- **A bridge that only reads Azure DevOps (or only GitHub Enterprise) works cleanly.** `[server] enabled = false`
-  switches off the stats of the machine the bridge runs on. Without any host to show, the built-in dashboard layout
-  drops the empty Hosts panel. Without `[[rotation]]` blocks the ESP rotation now adds the PR and pipeline pages when a
-  Git host is configured. See `docs/git-hosts.md`.
-- **Research: Azure DevOps without a personal access token** (`docs/azure-devops-auth.md`): service principal,
-  managed identity and Entra OAuth compared, with a recommendation. Nothing is built from it yet.
+- **Azure DevOps can sign in as a Microsoft Entra service principal** instead of a personal access token:
+  `auth = "entra"` with `tenant_id`, `client_id` and `client_secret_file`. The bridge fetches a short-lived token with
+  the client-credentials flow, keeps it in memory, renews it before it expires and once when Azure DevOps refuses it.
+  Nothing changes for existing `token_file` setups. Tested against mock Entra and Azure DevOps answers only. Research
+  and the other options (managed identity, Entra OAuth, GitLab, Bitbucket, GitHub) in `docs/azure-devops-auth.md` and
+  `docs/git-hosts.md`.
+- **A bridge that only reads Azure DevOps (or only GitHub Enterprise) is documented**, and without `[[rotation]]` blocks
+  the ESP rotation now adds the PR and pipeline pages when a Git host is configured.
 
 ## [1.0.1]
 
