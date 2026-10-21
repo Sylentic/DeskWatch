@@ -13,7 +13,7 @@
 //! Those still need a restart.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
 use tokio::sync::{Mutex, mpsc};
@@ -132,10 +132,15 @@ pub struct Outcome {
     pub failed: Vec<(String, String)>,
 }
 
+/// The Firefox container per source type, kept current by `reconcile` and
+/// read by the kiosk page (docs/firefox-containers.md).
+pub type Containers = Arc<RwLock<BTreeMap<String, String>>>;
+
 /// Cheap to clone; all clones manage the same set of sources.
 #[derive(Clone)]
 pub struct Supervisor {
     running: Arc<Mutex<BTreeMap<String, Running>>>,
+    containers: Containers,
     tx: mpsc::Sender<SourceMsg>,
     webhooks: Webhooks,
 }
@@ -144,6 +149,7 @@ impl Supervisor {
     pub fn new(tx: mpsc::Sender<SourceMsg>, webhooks: Webhooks) -> Self {
         Self {
             running: Arc::default(),
+            containers: Containers::default(),
             tx,
             webhooks,
         }
@@ -160,11 +166,17 @@ impl Supervisor {
             .collect()
     }
 
+    /// The containers of the sources as configured now.
+    pub fn containers(&self) -> Containers {
+        self.containers.clone()
+    }
+
     /// Make the running sources match `config`. `touched` names sources to
     /// restart even though their settings are the same, because a credential
     /// they read was replaced.
     pub async fn reconcile(&self, config: &Config, touched: &[String]) -> Outcome {
         let mut running = self.running.lock().await;
+        *self.containers.write().unwrap_or_else(|e| e.into_inner()) = config.containers();
         let wanted = wanted(config);
         let wanted_ids: BTreeSet<String> = wanted.iter().map(|w| w.id.to_string()).collect();
         let mut outcome = Outcome::default();

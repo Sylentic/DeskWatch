@@ -111,9 +111,20 @@
   // http(s) addresses, and this checks again, so nothing else can become a
   // link. It opens in a new tab: the dashboard itself stays where it is.
   function href(url) { return typeof url === 'string' && /^https?:\/\//i.test(url) ? url : null; }
-  function linkOpen(url, cls) {
+  // A source can name a Firefox container (Setup > Sources). Then, in Firefox,
+  // its links go through the "Open external links in a container" add-on:
+  // ext+container:name=<container>&url=<address>. The add-on does the opening,
+  // so there is no new tab. Any other browser, or a source without a
+  // container, keeps the plain link.
+  var FIREFOX = /\bFirefox\/\d/.test(navigator.userAgent || '');
+  function linkAttrs(h, source) {
+    var name = FIREFOX && snap && snap.containers && source && snap.containers[source];
+    if (!name) return 'href="' + esc(h) + '" target="_blank" rel="noopener noreferrer"';
+    return 'href="' + esc('ext+container:name=' + encodeURIComponent(name) + '&url=' + encodeURIComponent(h)) + '" rel="noopener noreferrer"';
+  }
+  function linkOpen(url, cls, source) {
     var h = href(url);
-    return h ? '<a class="' + cls + ' link" href="' + esc(h) + '" target="_blank" rel="noopener noreferrer">' : '<div class="' + cls + '">';
+    return h ? '<a class="' + cls + ' link" ' + linkAttrs(h, source) + '>' : '<div class="' + cls + '">';
   }
   function linkClose(url) { return href(url) ? '</a>' : '</div>'; }
   function dot(status) { return '<span class="dot ' + esc(status) + '"></span>'; }
@@ -363,7 +374,7 @@
         var when = r.status === 'running' ? 'running' : ago(nowS() - (r.finished || r.started));
         var status = runStatus(r.status);
         // Every run sits in a box tinted by its status, like the alert boxes.
-        return linkOpen(r.url, 'row rbox ' + status) + dot(status) + src(r.source) +
+        return linkOpen(r.url, 'row rbox ' + status, r.source) + dot(status) + src(r.source) +
           '<span class="main">' + esc(r.project) + ' <span class="wf">&middot; ' + esc(r.pipeline) + '</span></span>' +
           '<span class="when">' + when + '</span>' +
           (r.ref || r.step ? '<span class="sub">' + esc(r.ref) + (r.step ? ' &middot; failed at ' + esc(r.step) : '') + '</span>' : '') + linkClose(r.url);
@@ -380,7 +391,7 @@
       items.sort(function (a, b) { return (b.pr.created || 0) - (a.pr.created || 0); });
       var rows = items.map(function (it) {
         var pr = it.pr, isNew = pr.created && nowS() - pr.created < NEW_PR_S;
-        return linkOpen(pr.url, 'row pr') + dot('open') + src(it.repo.source) +
+        return linkOpen(pr.url, 'row pr', it.repo.source) + dot('open') + src(it.repo.source) +
           '<span class="main"><span class="num">#' + pr.number + '</span>' + esc(pr.title) + (isNew ? '<span class="tagnew">NEW</span>' : '') + '</span>' +
           '<span class="when">' + ago(nowS() - pr.created) + '</span><span class="sub">' + esc(it.repo.project) + '</span>' + linkClose(pr.url);
       });
@@ -403,7 +414,7 @@
         var txt = '<span class="main">' + esc(a.title) + '</span><span class="sub">' + sub + '</span>';
         var h = href(a.url);
         return '<div class="abox ' + esc(a.severity) + '">' + src(alertKind(a)) +
-          (h ? '<a class="txt link" href="' + esc(h) + '" target="_blank" rel="noopener noreferrer">' + txt + '</a>' : '<span class="txt">' + txt + '</span>') +
+          (h ? '<a class="txt link" ' + linkAttrs(h, a.source) + '>' + txt + '</a>' : '<span class="txt">' + txt + '</span>') +
           (canDismiss() ? '<button type="button" class="ax" data-dismiss-alert="' + esc(a.id) + '" aria-label="Dismiss ' + esc(a.title) + '">&times;</button>' : '') +
           '</div>';
       });
@@ -419,7 +430,7 @@
         var state = r.disabled ? 'disabled' : r.status;
         var dotState = r.disabled ? 'neutral' : r.status === 'busy' ? 'running' : r.status === 'idle' ? 'ok' : 'failed';
         var labels = (r.labels || []).join(', ');
-        return linkOpen(r.url, 'row' + (r.disabled ? ' off' : '')) + dot(dotState) + src(r.source) + '<span class="main">' + esc(r.name) + '</span>' +
+        return linkOpen(r.url, 'row' + (r.disabled ? ' off' : ''), r.source) + dot(dotState) + src(r.source) + '<span class="main">' + esc(r.name) + '</span>' +
           '<span class="when ' + (r.status === 'offline' && !r.disabled ? 'crit-text' : '') + '">' + esc(state) + '</span>' +
           '<span class="sub">' + (labels ? esc(labels) : 'no labels') + '</span>' + linkClose(r.url);
       });
@@ -454,13 +465,13 @@
   // ---- Running now: a heading per run, a row per job under it ----------
 
   function groupHead(source, project, kind, ref, sum, url) {
-    return linkOpen(url, 'gh') + src(source) + '<span class="name">' + esc(project) + '</span>' +
+    return linkOpen(url, 'gh', source) + src(source) + '<span class="name">' + esc(project) + '</span>' +
       (kind ? '<span class="kind ' + esc(kind) + '">' + esc(kind) + '</span>' : '') +
       '<span class="ref">' + ref + '</span><span class="sum">' + sum + '</span>' + linkClose(url);
   }
 
-  function jobRow(url, status, name, text, bar, time) {
-    return linkOpen(url, 'jrow ' + status) + dot(status) + '<span class="n">' + esc(name) + '</span>' +
+  function jobRow(url, status, name, text, bar, time, source) {
+    return linkOpen(url, 'jrow ' + status, source) + dot(status) + '<span class="n">' + esc(name) + '</span>' +
       '<span class="mid"><span class="s">' + text + '</span>' + bar + '</span><span class="t">' + time + '</span>' + linkClose(url);
   }
 
@@ -494,7 +505,7 @@
         var st = runStatus(l.status);
         var bar = st !== 'running' ? '' : l.progress == null ? '<span class="pbar spin"><i></i></span>' :
           '<span class="pbar"><i style="--p:' + Math.round(l.progress * 100) + '%"></i></span>';
-        return jobRow(l.url || j.url, st, l.name, laneText(l), bar, laneTime(l));
+        return jobRow(l.url || j.url, st, l.name, laneText(l), bar, laneTime(l), j.source);
       });
     } else {
       // A source that only knows the run as one job: one row with its steps.
@@ -503,7 +514,7 @@
         var text = esc(x.step || 'Starting') + (x.step_no && x.step_count ? ' &middot; step ' + x.step_no + ' of ' + x.step_count : '');
         var bar = x.progress == null ? '<span class="pbar spin"><i></i></span>' :
           '<span class="pbar"><i style="--p:' + Math.round(x.progress * 100) + '%"></i></span>';
-        return jobRow(x.url, 'running', x.kind, text, bar, '<span data-since="' + x.started + '">' + clock(nowS() - x.started) + '</span>');
+        return jobRow(x.url, 'running', x.kind, text, bar, '<span data-since="' + x.started + '">' + clock(nowS() - x.started) + '</span>', x.source);
       });
     }
     return '<div class="jgroup">' + groupHead(j.source, j.project, j.kind, ref, sum, j.url) + '<div class="jrows">' + rows.join('') + '</div></div>';
@@ -513,7 +524,7 @@
     var ref = esc(r.pipeline) + (r.ref ? ' &middot; ' + esc(r.ref) : '');
     var took = clock((r.finished || r.started) - r.started);
     return '<div class="jgroup">' + groupHead(r.source, r.project, '', ref, 'Done', r.url) +
-      '<div class="jrows">' + jobRow(r.url, 'ok', 'Done', 'Passed', '', took) + '</div></div>';
+      '<div class="jrows">' + jobRow(r.url, 'ok', 'Done', 'Passed', '', took, r.source) + '</div></div>';
   }
 
   // Rows that do not fit are cut off; `rows` caps the list from the config.
@@ -655,7 +666,7 @@
     var what = esc(f.project || '') + (f.pipeline ? ' / ' + esc(f.pipeline) : '');
     var sub = [f.ref ? esc(f.ref) : '', f.step ? 'step ' + esc(f.step) : '', f.finished ? ago(nowS() - f.finished) : '']
       .filter(Boolean).join(' · ');
-    var open = linkOpen(f.url, 'what') ;
+    var open = linkOpen(f.url, 'what', f.source);
     return '<li>' + open + src(f.source) + ' <b>' + what + '</b><span class="sub">' + sub + '</span>' + linkClose(f.url) +
       '<button type="button" class="x" data-dismiss="' + esc(failId(f)) + '" aria-label="Dismiss">Dismiss</button></li>';
   }
@@ -847,7 +858,7 @@
         '<span>' + esc((f.project || '') + (f.pipeline ? ' · ' + f.pipeline : '')) + '</span>' +
         (fmsg ? '<span class="msg">' + esc(fmsg) + '</span>' : '') +
         (failed.length > 1 ? '<span class="meta">+' + (failed.length - 1) + '</span>' : '') +
-        (fh ? '<a class="act" href="' + esc(fh) + '" target="_blank" rel="noopener noreferrer">Open</a>' : '') +
+        (fh ? '<a class="act" ' + linkAttrs(fh, f.source) + '>Open</a>' : '') +
         '<button type="button" class="act x" data-dismiss="' + esc(failId(f)) + '" aria-label="Dismiss this failed run">&times;</button>';
     }
     el.hidden = !html;

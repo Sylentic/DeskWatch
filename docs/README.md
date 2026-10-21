@@ -27,6 +27,7 @@ Start with the [project README](../README.md) for what DeskWatch is, a quick dem
 - [git-hosts.md](git-hosts.md): which Git hosts work, and which are tested
 - [gitlab.md](gitlab.md), [bitbucket.md](bitbucket.md), [azure-devops.md](azure-devops.md): setup per source
 - [azure-devops-verify.md](azure-devops-verify.md): checklist for trying Azure DevOps on a real organisation
+- [firefox-containers.md](firefox-containers.md): open the links of a source in a Firefox container
 
 ## Alerts and MQTT
 

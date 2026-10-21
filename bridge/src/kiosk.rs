@@ -100,6 +100,8 @@ pub struct Kiosk {
     update: Option<crate::update::UpdateNotice>,
     /// Dismissed failed runs and muted sources, shared with the routes.
     clicked: SharedClicked,
+    /// Firefox container per source type, for the page's links.
+    containers: Option<crate::supervisor::Containers>,
 }
 
 impl Kiosk {
@@ -117,7 +119,16 @@ impl Kiosk {
             alert_tx: None,
             update: None,
             clicked: SharedClicked::default(),
+            containers: None,
         }
+    }
+
+    /// Tell the page which Firefox container each source type opens its
+    /// links in. Sent as `"containers": {"azure_devops": "Work"}`, and only
+    /// when a source names one.
+    pub fn with_containers(mut self, containers: crate::supervisor::Containers) -> Self {
+        self.containers = Some(containers);
+        self
     }
 
     /// Show a chip when the daily check finds a newer release.
@@ -198,6 +209,12 @@ impl Kiosk {
         let badges = composer.badges();
         let mut value = snapshot(composer, screen.as_ref(), &badges, &self.layout);
         self.apply_clicks(&mut value);
+        if let Some(containers) = &self.containers {
+            let containers = containers.read().unwrap_or_else(|e| e.into_inner());
+            if !containers.is_empty() {
+                value["containers"] = json!(*containers);
+            }
+        }
         if let Some(update) = self.update.as_ref().and_then(|u| u.get()) {
             value["update"] = json!(update);
         }

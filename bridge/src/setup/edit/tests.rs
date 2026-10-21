@@ -436,3 +436,47 @@ fn alert_settings_are_written_checked_and_merged() {
         assert!(set_alerts("", &fields(bad.clone())).is_err(), "{bad}");
     }
 }
+
+#[test]
+fn a_container_is_stored_and_an_empty_one_removes_it() {
+    let plan = github(
+        "",
+        true,
+        json!({ "base_url": "https://api.github.com", "repos": ["o/a"], "container": " Work " }),
+        &[("token", "t")],
+    )
+    .unwrap();
+    let config = Config::from_toml("")
+        .unwrap()
+        .with_overlay(&plan.text)
+        .unwrap();
+    assert_eq!(config.source.github[0].container, "Work");
+    assert_eq!(config.containers()["github"], "Work");
+
+    let plan = github(&plan.text, false, json!({ "container": "" }), &[]).unwrap();
+    assert!(!plan.text.contains("container"), "{}", plan.text);
+    let config = Config::from_toml("")
+        .unwrap()
+        .with_overlay(&plan.text)
+        .unwrap();
+    assert!(config.containers().is_empty());
+}
+
+#[test]
+fn prometheus_has_no_container() {
+    let err = upsert(
+        "",
+        "prometheus",
+        "p",
+        true,
+        &fields(json!({ "url": "http://p:9090", "hosts": ["h:9100"], "container": "Work" })),
+        &secrets(&[]),
+    );
+    assert!(err.is_err() || !err.unwrap().text.contains("container"));
+}
+
+#[test]
+fn a_container_name_with_a_control_character_is_refused() {
+    let toml = "[[source.github]]\nname = \"m\"\ntoken_file = \"t\"\nrepos = [\"o/a\"]\ncontainer = \"a\\nb\"\n";
+    assert!(Config::from_toml(toml).is_err());
+}

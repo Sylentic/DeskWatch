@@ -160,6 +160,49 @@ pub struct DataConfig {
 }
 
 impl Config {
+    /// The Firefox container each source type opens its links in, by type
+    /// (`azure_devops`). Only sources that name one are listed. The links on
+    /// the page only know the type, so the first source of a type that names
+    /// a container decides for the whole type.
+    pub fn containers(&self) -> std::collections::BTreeMap<String, String> {
+        let s = &self.source;
+        let named = [
+            (
+                "gitea",
+                s.gitea
+                    .iter()
+                    .map(|c| c.container.as_str())
+                    .collect::<Vec<_>>(),
+            ),
+            (
+                "github",
+                s.github.iter().map(|c| c.container.as_str()).collect(),
+            ),
+            (
+                "gitlab",
+                s.gitlab.iter().map(|c| c.container.as_str()).collect(),
+            ),
+            (
+                "bitbucket",
+                s.bitbucket.iter().map(|c| c.container.as_str()).collect(),
+            ),
+            (
+                "azure_devops",
+                s.azure_devops
+                    .iter()
+                    .map(|c| c.container.as_str())
+                    .collect(),
+            ),
+        ];
+        let mut out = std::collections::BTreeMap::new();
+        for (kind, list) in named {
+            if let Some(name) = list.into_iter().find(|n| !n.is_empty()) {
+                out.insert(kind.to_string(), name.to_string());
+            }
+        }
+        out
+    }
+
     /// The data folder: `[data] dir`, else the `DESKWATCH_DATA_DIR` environment variable.
     pub fn data_dir(&self) -> Option<PathBuf> {
         self.data.dir.clone().or_else(|| {
@@ -747,6 +790,10 @@ pub struct GiteaConfig {
     /// Instance name, unique among Gitea sources. Used in the webhook URL
     /// (`/webhook/gitea/<name>`) and in logs.
     pub name: String,
+    /// Firefox container the links of this source open in (docs/firefox-containers.md).
+    /// Empty: links open as usual.
+    #[serde(default)]
+    pub container: String,
     /// Gitea web address, used for API polling, such as `https://gitea.example.com`.
     pub base_url: String,
     /// Credential with the webhook secret, the same value as in Gitea's
@@ -807,6 +854,10 @@ impl GiteaConfig {
 pub struct GithubConfig {
     /// Instance name, unique among GitHub sources. Used in logs and fact keys.
     pub name: String,
+    /// Firefox container the links of this source open in (docs/firefox-containers.md).
+    /// Empty: links open as usual.
+    #[serde(default)]
+    pub container: String,
     /// API root: `https://api.github.com` (default), `https://<host>/api/v3`
     /// for Enterprise Server, or `https://api.<subdomain>.ghe.com`.
     #[serde(default = "default_github_base_url")]
@@ -873,6 +924,10 @@ impl GithubConfig {
 pub struct GitlabConfig {
     /// Instance name, unique among GitLab sources. Used in logs and fact keys.
     pub name: String,
+    /// Firefox container the links of this source open in (docs/firefox-containers.md).
+    /// Empty: links open as usual.
+    #[serde(default)]
+    pub container: String,
     /// The GitLab site: `https://gitlab.com` (default) or
     /// `https://gitlab.example.com`. `/api/v4` is added by the bridge.
     #[serde(default = "default_gitlab_base_url")]
@@ -931,6 +986,10 @@ impl GitlabConfig {
 pub struct BitbucketConfig {
     /// Instance name, unique among Bitbucket sources. Used in logs and fact keys.
     pub name: String,
+    /// Firefox container the links of this source open in (docs/firefox-containers.md).
+    /// Empty: links open as usual.
+    #[serde(default)]
+    pub container: String,
     /// API root. Only changes for tests.
     #[serde(default = "default_bitbucket_base_url")]
     pub base_url: String,
@@ -1002,6 +1061,10 @@ pub enum AzureDevopsAuth {
 pub struct AzureDevopsConfig {
     /// Instance name, unique among Azure DevOps sources. Used in logs and fact keys.
     pub name: String,
+    /// Firefox container the links of this source open in (docs/firefox-containers.md).
+    /// Empty: links open as usual.
+    #[serde(default)]
+    pub container: String,
     /// The organisation: the first part of `https://dev.azure.com/<organization>`.
     pub organization: String,
     /// Service address. Only changes for tests.
@@ -1455,6 +1518,12 @@ impl Config {
             anyhow::ensure!(
                 gitea.repos.iter().all(|r| r.split('/').count() == 2),
                 "source.gitea {name}: repos entries must look like owner/name"
+            );
+        }
+        for (kind, container) in &self.containers() {
+            anyhow::ensure!(
+                container.chars().count() <= 64 && !container.chars().any(char::is_control),
+                "source.{kind}: container must be a short name without control characters"
             );
         }
         let mut names = HashSet::new();

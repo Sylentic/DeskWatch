@@ -33,28 +33,28 @@ pub struct Spec {
 const SPECS: &[Spec] = &[
     Spec {
         kind: "github",
-        strings: &["base_url"],
+        strings: &["base_url", "container"],
         lists: &["repos"],
         bools: &[],
         secrets: &[("token", "token_file", true)],
     },
     Spec {
         kind: "gitlab",
-        strings: &["base_url"],
+        strings: &["base_url", "container"],
         lists: &["projects"],
         bools: &[],
         secrets: &[("token", "token_file", true)],
     },
     Spec {
         kind: "bitbucket",
-        strings: &[],
+        strings: &["container"],
         lists: &["repos"],
         bools: &[],
         secrets: &[("token", "token_file", true)],
     },
     Spec {
         kind: "gitea",
-        strings: &["base_url"],
+        strings: &["base_url", "container"],
         lists: &["repos"],
         bools: &[],
         secrets: &[
@@ -64,7 +64,7 @@ const SPECS: &[Spec] = &[
     },
     Spec {
         kind: "azure_devops",
-        strings: &["organization", "base_url"],
+        strings: &["organization", "base_url", "container"],
         lists: &["projects"],
         bools: &["pull_requests"],
         secrets: &[("token", "token_file", true)],
@@ -169,6 +169,11 @@ pub fn upsert(
                 .as_str()
                 .with_context(|| format!("{key} must be text"))?
                 .trim();
+            // An empty container switches the feature off for this source.
+            if key == "container" && text.is_empty() {
+                entry.remove("container");
+                continue;
+            }
             anyhow::ensure!(!text.is_empty(), "{key} must not be empty");
             entry.insert(key.clone(), toml::Value::String(text.into()));
         } else if spec.lists.contains(&key.as_str()) {

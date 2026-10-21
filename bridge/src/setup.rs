@@ -1082,7 +1082,7 @@ pub fn describe(config: &Config) -> Value {
             "id": format!("gitea:{}", s.name), "kind": "gitea", "name": s.name,
             "origin": origin("gitea", &s.name),
             "address": s.base_url, "repos": s.repos, "credentials": creds,
-            "fields": { "base_url": s.base_url, "repos": s.repos },
+            "fields": { "base_url": s.base_url, "repos": s.repos, "container": s.container },
         }));
     }
     for s in &config.source.github {
@@ -1091,7 +1091,7 @@ pub fn describe(config: &Config) -> Value {
             "origin": origin("github", &s.name),
             "address": s.base_url, "repos": s.repos,
             "credentials": [cred("token", &s.token_file, true)],
-            "fields": { "base_url": s.base_url, "repos": s.repos },
+            "fields": { "base_url": s.base_url, "repos": s.repos, "container": s.container },
         }));
     }
     for s in &config.source.gitlab {
@@ -1100,7 +1100,7 @@ pub fn describe(config: &Config) -> Value {
             "origin": origin("gitlab", &s.name),
             "address": s.base_url, "repos": s.projects,
             "credentials": [cred("token", &s.token_file, true)],
-            "fields": { "base_url": s.base_url, "projects": s.projects },
+            "fields": { "base_url": s.base_url, "projects": s.projects, "container": s.container },
         }));
     }
     for s in &config.source.bitbucket {
@@ -1109,7 +1109,7 @@ pub fn describe(config: &Config) -> Value {
             "origin": origin("bitbucket", &s.name),
             "address": s.base_url, "repos": s.repos,
             "credentials": [cred("token", &s.token_file, true)],
-            "fields": { "repos": s.repos },
+            "fields": { "repos": s.repos, "container": s.container },
         }));
     }
     for s in &config.source.azure_devops {
@@ -1131,6 +1131,7 @@ pub fn describe(config: &Config) -> Value {
             "fields": {
                 "organization": s.organization, "base_url": s.base_url,
                 "projects": s.projects, "pull_requests": s.pull_requests,
+                "container": s.container,
             },
         }));
     }
