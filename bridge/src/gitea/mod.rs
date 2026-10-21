@@ -37,7 +37,7 @@ use payload::{
     workflow_file,
 };
 
-/// Adapter type: `[[source.gitea]]` in the config and `source` on panel pages.
+/// Adapter type: `[[source.gitea]]` in the config and `source` on the `[[kiosk.panel]]` blocks.
 pub const KIND: &str = "gitea";
 
 /// Something the Gitea source learned, from a webhook or a poll.

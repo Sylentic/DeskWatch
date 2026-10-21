@@ -685,7 +685,7 @@
   }
   function canDismiss() {
     var cfg = (snap.layout && snap.layout.alerts) || {};
-    return !!cfg.dismiss;
+    return !!cfg.dismiss && myRole !== 'viewer';
   }
   function dismissAlerts(ids) {
     // One after the other, so the bridge never has more than one clear in flight.
@@ -933,13 +933,14 @@
     });
 
     var layout = snap.layout || { columns: 4, rows: 3, panels: [] };
-    $('setup-link').hidden = !layout.setup;
+    var setupOk = layout.setup && (myRole == null || myRole === 'admin');
+    $('setup-link').hidden = !setupOk;
     renderUpdate(snap.update);
     renderSourcePill();
     renderSources();
     // With the setup page on, the sources chip opens it: that is where every
     // source and its status are listed.
-    if (layout.setup) { $('conn').setAttribute('href', 'setup'); $('conn').setAttribute('title', 'Sources and their status: Setup'); }
+    if (setupOk) { $('conn').setAttribute('href', 'setup'); $('conn').setAttribute('title', 'Sources and their status: Setup'); }
     else { $('conn').removeAttribute('href'); $('conn').removeAttribute('title'); }
     drawGrid();
     renderBadges();
@@ -960,6 +961,16 @@
   var editing = false;
   var custom = null;           // { order: [id], hidden: [id], span: { id: [c, r] } } or null
   var CUSTOM_KEY = 'deskwatch.layout';
+  // The signed-in role (viewer, operator, admin), or null without a login. A
+  // viewer gets no Dismiss or Mute buttons and Setup is for administrators:
+  // the bridge refuses them anyway, this only keeps buttons that do nothing
+  // off the page.
+  var myRole = null;
+  fetch('/api/auth/status').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+    myRole = (j && j.state === 'signed_in' && j.role) || null;
+    document.documentElement.classList.toggle('ro', myRole === 'viewer');
+    if (snap) render(snap);
+  }).catch(function () {});
   var onServer = false;        // a signed-in person: the bridge keeps the layout, per user
   try { custom = JSON.parse(localStorage.getItem(CUSTOM_KEY) || 'null'); } catch (e) { custom = null; }
   // A signed-in person's layout lives on the bridge. Without a login, or with a
