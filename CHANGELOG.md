@@ -16,6 +16,10 @@ hardware yet, and its MQTT schema (v2) may still change or the display may be dr
 - **Pipelines get the same boxes**: every run in the Pipelines card sits in a box tinted by its status (failed red,
   success green, running orange, waiting for approval amber), and a build that just finished in Running now gets a
   green box.
+- **Running now lists the jobs of each run**: one heading per run (project, pipeline, branch, commit, how many jobs
+  are done) with a coloured row per job under it, so parallel jobs show side by side with their own status, step and
+  time. Works for GitHub and Gitea jobs, GitLab jobs (with their stage), Bitbucket steps and Azure DevOps jobs; a
+  source that only knows the run as a whole shows one row. The Pipelines card stays one row per pipeline.
 
 ## [1.0.2]
 

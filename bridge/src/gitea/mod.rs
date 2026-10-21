@@ -27,7 +27,7 @@ use tokio::sync::{mpsc, watch};
 use tracing::{debug, info};
 
 use crate::alerts::{self, AlertMessage};
-use crate::ci::{OpenPull, RepoPulls, Run, RunStatus, RunningJob, Update};
+use crate::ci::{OpenPull, RepoPulls, Run, RunJob, RunStatus, RunningJob, Update};
 use crate::config::GiteaConfig;
 use crate::hooks::Hooks;
 use crate::model::{JobData, JobKind, MAX_TITLE_CHARS, truncate};
@@ -185,6 +185,8 @@ pub struct GiteaState {
     run_files: HashMap<u64, String>,
     /// Running jobs and the run they belong to.
     running: HashMap<JobRef, u64>,
+    /// Every job seen per unfinished run, by job id, for the kiosk's list.
+    run_jobs: HashMap<u64, BTreeMap<u64, RunJob>>,
     /// First failing step per run, from `workflow_job` events, for the red alert.
     failed_steps: HashMap<u64, String>,
     /// Web address of the instance, for links on the kiosk. Empty: no links.
@@ -203,6 +205,7 @@ impl GiteaState {
             alias,
             run_files: HashMap::new(),
             running: HashMap::new(),
+            run_jobs: HashMap::new(),
             failed_steps: HashMap::new(),
             web: String::new(),
             polls: BTreeMap::new(),
@@ -319,6 +322,12 @@ impl GiteaState {
         if finished {
             self.run_files.remove(&run.id);
             step = self.failed_steps.remove(&run.id);
+            if self.run_jobs.remove(&run.id).is_some() {
+                out.push(Update::RunJobs {
+                    key: self.run_key(&repo.full_name, run.id),
+                    jobs: Vec::new(),
+                });
+            }
             // Any job of this run still on screen has finished too.
             let done: Vec<JobRef> = self
                 .running
@@ -371,6 +380,21 @@ impl GiteaState {
             id: job.id,
         };
         let key = self.job_key(&job_ref);
+        let group = self.run_key(repo, job.run_id);
+        let jobs = self.run_jobs.entry(job.run_id).or_default();
+        jobs.insert(job.id, run_job(&job));
+        let jobs: Vec<RunJob> = jobs.values().cloned().collect();
+        // A run whose `completed` webhook got lost must not stay forever.
+        while self.run_jobs.len() > 64 {
+            let Some(&oldest) = self.run_jobs.keys().min() else {
+                break;
+            };
+            self.run_jobs.remove(&oldest);
+        }
+        out.push(Update::RunJobs {
+            key: group.clone(),
+            jobs,
+        });
 
         match job.status.as_str() {
             "in_progress" | "running" => {
@@ -387,6 +411,7 @@ impl GiteaState {
                     interrupt: self.interrupt.allows(repo),
                     updated: now,
                     url,
+                    group: Some(group),
                 };
                 out.push(Update::JobRunning { key, job });
             }
@@ -489,6 +514,11 @@ impl GiteaState {
         format!("{}:{}:{}", self.id, job.repo, job.id)
     }
 
+    /// Key for the job list of a run, shared by its jobs.
+    fn run_key(&self, repo: &str, run_id: u64) -> String {
+        format!("{}:{repo}:run:{run_id}", self.id)
+    }
+
     /// Key for a repository's PRs in the fact store.
     fn repo_key(&self, full_name: &str) -> String {
         format!("{}:{full_name}", self.id)
@@ -526,6 +556,27 @@ fn run_status(status: &str, conclusion: Option<&str>) -> RunStatus {
         "in_progress" | "running" => RunStatus::Running,
         // requested, queued, waiting, pending (28+)
         _ => RunStatus::Queued,
+    }
+}
+
+/// One job of a run for the kiosk's list.
+fn run_job(job: &Job) -> RunJob {
+    let status = run_status(&job.status, job.conclusion.as_deref());
+    let steps = job.steps.as_deref().unwrap_or_default();
+    let progress = step_progress(steps);
+    let step = match status {
+        RunStatus::Running => progress.step,
+        RunStatus::Failed => failing_step(job),
+        _ => None,
+    };
+    RunJob {
+        name: truncate(&job.name, MAX_TITLE_CHARS),
+        status,
+        step: step.map(|s| truncate(&s, MAX_TITLE_CHARS)),
+        progress: progress.fraction.filter(|_| status == RunStatus::Running),
+        started: unix_seconds(job.started_at.as_deref()),
+        finished: unix_seconds(job.completed_at.as_deref()),
+        url: job.html_url.as_deref().and_then(source::safe_url),
     }
 }
 
@@ -625,6 +676,69 @@ mod tests {
             "repository": repo()
         });
         GiteaEvent::WorkflowJob(serde_json::from_value(value).unwrap())
+    }
+
+    #[test]
+    fn jobs_of_one_run_are_listed_together() {
+        let mut state = state(true);
+        let mut facts = CiFacts::default();
+        feed(&mut state, &mut facts, run_event("requested", None), 10);
+        let job = |id: u64, name: &str, status: &str, conclusion: Option<&str>| {
+            let mut job = job_json(status, conclusion, json!([]));
+            job["id"] = json!(id);
+            job["name"] = json!(name);
+            GiteaEvent::WorkflowJob(
+                serde_json::from_value(
+                    json!({ "action": status, "workflow_job": job, "repository": repo() }),
+                )
+                .unwrap(),
+            )
+        };
+        feed(
+            &mut state,
+            &mut facts,
+            job(7, "stable", "in_progress", None),
+            11,
+        );
+        feed(
+            &mut state,
+            &mut facts,
+            job(8, "msrv", "in_progress", None),
+            12,
+        );
+        feed(&mut state, &mut facts, job(9, "docker", "queued", None), 13);
+        feed(
+            &mut state,
+            &mut facts,
+            job(8, "msrv", "completed", Some("success")),
+            20,
+        );
+
+        let group = facts.jobs()[0].1.group.clone().unwrap();
+        let rows: Vec<_> = facts
+            .run_jobs(&group)
+            .unwrap()
+            .iter()
+            .map(|j| (j.name.clone(), j.status))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                ("stable".to_string(), RunStatus::Running),
+                ("msrv".to_string(), RunStatus::Success),
+                ("docker".to_string(), RunStatus::Queued),
+            ]
+        );
+
+        // The run completes: jobs and list are gone.
+        feed(
+            &mut state,
+            &mut facts,
+            run_event("completed", Some("success")),
+            30,
+        );
+        assert!(facts.jobs().is_empty());
+        assert!(facts.run_jobs(&group).is_none());
     }
 
     #[test]
@@ -985,7 +1099,10 @@ mod tests {
 
         // A running job links to its job page, else the Actions page.
         let updates = source.apply(job_event("in_progress", None, json!([])), 100);
-        let Some(Update::JobRunning { job, .. }) = updates.first() else {
+        let Some(Update::JobRunning { job, .. }) = updates
+            .iter()
+            .find(|u| matches!(u, Update::JobRunning { .. }))
+        else {
             panic!("expected a running job");
         };
         assert_eq!(

@@ -40,6 +40,10 @@ pub enum Update {
     JobRunning { key: String, job: RunningJob },
     /// The job is no longer running (finished, cancelled or lost).
     JobDone { key: String },
+    /// Every job of one running run (its parallel jobs, stages or steps),
+    /// for the kiosk's "Running now" list. `key` is the `group` of the run's
+    /// running jobs. Replaces what was known; an empty list clears it.
+    RunJobs { key: String, jobs: Vec<RunJob> },
     /// The latest run of a pipeline changed. `key` names the pipeline, so a
     /// new run replaces the old one. A finished run also raises its alert.
     Run { key: String, run: Run },
@@ -139,6 +143,25 @@ pub struct RunningJob {
     /// Unix seconds of the last webhook or poll that mentioned this job.
     pub updated: u64,
     /// Web page of the job or its run on the source, if known.
+    pub url: Option<String>,
+    /// The run this job belongs to, the key of its `Update::RunJobs`. Jobs
+    /// of one run share it, so the kiosk lists them under one heading.
+    pub group: Option<String>,
+}
+
+/// One job of a running run: a parallel job (GitHub, Gitea, Azure DevOps), a
+/// job of a stage (GitLab) or a step (Bitbucket).
+#[derive(Debug, Clone, PartialEq)]
+pub struct RunJob {
+    pub name: String,
+    pub status: RunStatus,
+    /// Current step while it runs; failing step once it failed.
+    pub step: Option<String>,
+    /// 0.0 to 1.0 while it runs, if known.
+    pub progress: Option<f32>,
+    pub started: Option<u64>,
+    pub finished: Option<u64>,
+    /// Web page of the job on the source, if known.
     pub url: Option<String>,
 }
 
@@ -263,6 +286,8 @@ pub struct CiFacts {
     runners: BTreeMap<String, RunnerSet>,
     /// Jobs waiting for an agent by pool key, with the time they were refreshed.
     queued: BTreeMap<String, (QueuedJobs, u64)>,
+    /// Job lists of running runs by group key, with the time they were refreshed.
+    run_jobs: BTreeMap<String, (Vec<RunJob>, u64)>,
 }
 
 impl CiFacts {
@@ -284,6 +309,7 @@ impl CiFacts {
         self.pulls.retain(|key, _| !key.starts_with(prefix));
         self.runners.retain(|key, _| !key.starts_with(prefix));
         self.queued.retain(|key, _| !key.starts_with(prefix));
+        self.run_jobs.retain(|key, _| !key.starts_with(prefix));
     }
 
     /// Apply one update from a source. `now` is Unix seconds.
@@ -293,7 +319,17 @@ impl CiFacts {
                 self.jobs.insert(key, job);
             }
             Update::JobDone { key } => {
-                self.jobs.remove(&key);
+                if let Some(group) = self.jobs.remove(&key).and_then(|j| j.group)
+                    && !self.jobs.values().any(|j| j.group.as_ref() == Some(&group))
+                {
+                    self.run_jobs.remove(&group);
+                }
+            }
+            Update::RunJobs { key, jobs } if jobs.is_empty() => {
+                self.run_jobs.remove(&key);
+            }
+            Update::RunJobs { key, jobs } => {
+                self.run_jobs.insert(key, (jobs, now));
             }
             Update::Run { key, run } => self.run(key, run, now),
             Update::Pulls { key, mut repo } => {
@@ -494,6 +530,13 @@ impl CiFacts {
             .retain(|_, set| now.saturating_sub(set.updated) < RUNNER_MAX_AGE_S);
         self.queued
             .retain(|_, (_, updated)| now.saturating_sub(*updated) < RUNNER_MAX_AGE_S);
+        // A list whose run has no running job left, and that nobody refreshed
+        // for a while (all jobs queued, or a missed "done"), goes.
+        let jobs = &self.jobs;
+        self.run_jobs.retain(|key, (_, updated)| {
+            jobs.values().any(|j| j.group.as_ref() == Some(key))
+                || now.saturating_sub(*updated) < RUNNER_MAX_AGE_S
+        });
         for (run, updated) in self.runs.values_mut() {
             // A run waiting for approval can wait for days, and a polled
             // source resends it when anything changes, so it never expires.
@@ -574,6 +617,11 @@ impl CiFacts {
         let mut jobs: Vec<_> = self.jobs.iter().collect();
         jobs.sort_by_key(|(_, job)| Reverse(job.data.started));
         jobs
+    }
+
+    /// The job list of a running run, by the `group` of its jobs.
+    pub fn run_jobs(&self, group: &str) -> Option<&[RunJob]> {
+        self.run_jobs.get(group).map(|(jobs, _)| jobs.as_slice())
     }
 
     /// Latest run of every pipeline with the time it was last updated,
@@ -734,6 +782,7 @@ mod tests {
             interrupt: true,
             updated: started,
             url: None,
+            group: None,
         }
     }
 

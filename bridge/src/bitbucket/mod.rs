@@ -30,7 +30,7 @@ use tokio::time::{Instant, MissedTickBehavior};
 use tracing::{debug, info, warn};
 
 use crate::alerts::{IssueWatch, NewIssue};
-use crate::ci::{OpenPull, RepoPulls, Run, RunStatus, RunningJob, Update};
+use crate::ci::{OpenPull, RepoPulls, Run, RunJob, RunStatus, RunningJob, Update};
 use crate::config::BitbucketConfig;
 use crate::gitea::job_kind;
 use crate::gitea::payload::unix_seconds;
@@ -552,13 +552,18 @@ impl BitbucketState {
             let data = self.job_data(repo, &watched, &steps, now);
             debug!(%key, step = ?data.step, progress = ?data.progress, "pipeline running");
             watched.shown = true;
+            out.push(Update::RunJobs {
+                key: key.clone(),
+                jobs: run_jobs(&steps),
+            });
             out.push(Update::JobRunning {
-                key,
+                key: key.clone(),
                 job: RunningJob {
                     data,
                     interrupt: self.interrupt.allows(repo),
                     updated: now,
                     url: watched.url.clone(),
+                    group: Some(key),
                 },
             });
         }
@@ -693,6 +698,31 @@ fn pipeline_status(state: &str, stage: Option<&str>, result: Option<&str>) -> Ru
         },
         _ => RunStatus::Neutral,
     }
+}
+
+/// Every step of a running pipeline, for the kiosk. Parallel steps run at
+/// the same time and show up as several running ones.
+fn run_jobs(steps: &[Step]) -> Vec<RunJob> {
+    steps
+        .iter()
+        .enumerate()
+        .map(|(i, step)| {
+            let state = &step.state;
+            RunJob {
+                name: truncate(&step_label(step, i), MAX_TITLE_CHARS),
+                status: pipeline_status(
+                    &state.name,
+                    state.stage.as_ref().map(|s| s.name.as_str()),
+                    state.result.as_ref().map(|r| r.name.as_str()),
+                ),
+                step: None,
+                progress: None,
+                started: unix_seconds(step.started_on.as_deref()),
+                finished: unix_seconds(step.completed_on.as_deref()),
+                url: None,
+            }
+        })
+        .collect()
 }
 
 /// Has this step stopped for good?

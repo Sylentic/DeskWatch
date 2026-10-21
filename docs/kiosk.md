@@ -22,7 +22,7 @@ A grid of cards, 4 columns by 3 rows by default:
 |---|---|
 | `stats` | One host in detail: CPU, RAM, disk bars with warning colours, temperature, load, network rates, uptime, a CPU graph of the last few minutes |
 | `hosts` | Every host (the bridge's own machine and every host a Prometheus source reports): a list, or with `view = "detailed"` the chosen host in detail on top of the list |
-| `jobs` | Jobs running now, with step, progress bar and a live elapsed time |
+| `jobs` | Running now: a heading per run, and under it a row per job (parallel jobs, GitLab jobs, Bitbucket steps, Azure DevOps jobs) with its status colour, step, progress bar and a live elapsed time |
 | `prs` | Open pull requests per repository, newest first, with the total |
 | `pipelines` | The latest run of every pipeline, newest first across all sources (a running run counts from its start, a finished one from its end), so the top rows are always the most recent activity; in the default layout it is one cell and scrolls |
 | `alerts` | Active alerts (Home Assistant, scripts), most urgent first |
@@ -374,7 +374,7 @@ change anything. They show PR titles, pipeline names, host stats and alert text,
 and at least every 5 seconds (a heartbeat, so the page can tell quiet from gone). Snapshots are versioned with `"v"`
 (1), separately from the MQTT schema. Fields: `build` (bridge version; the page reloads when it changes), `now`
 (Unix seconds), `layout` (the grid, the widgets with their filters, `theme` and `pixel_shift_s` from the config), `screen` (the composer's pick as an MQTT v2
-screen payload, or `null` when idle), `badges`, `failed` (the failed runs behind the badge, minus the dismissed ones: `key`, `source`, `project`, `pipeline`, `ref`, `step`, `started`, `finished`, `url`), `hosts`, `down`, `jobs`, `runs`, `pulls`, `runners`, `queued_jobs`, `alerts` and `sources` (`id`, `health`, and `muted: true` when the pill was muted). `jobs`, `runs`, `pulls[].items[]` and `runners` each carry a `url` (an `http(s)` address, or `null`).
+screen payload, or `null` when idle), `badges`, `failed` (the failed runs behind the badge, minus the dismissed ones: `key`, `source`, `project`, `pipeline`, `ref`, `step`, `started`, `finished`, `url`), `hosts`, `down`, `jobs`, `run_jobs`, `runs`, `pulls`, `runners`, `queued_jobs`, `alerts` and `sources` (`id`, `health`, and `muted: true` when the pill was muted). `jobs`, `runs`, `pulls[].items[]` and `runners` each carry a `url` (an `http(s)` address, or `null`). A job's `group` names its run; `run_jobs` maps that group to every job of the run (`name`, `status`, `step`, `progress`, `started`, `finished`, `url`), so jobs that run side by side are listed together.
 Lists are not capped to the ESP panel's five rows. The structure is in `bridge/src/kiosk.rs` (`snapshot`) and
 covered by the tests next to it. It is made for this page and may change between versions; scripts should use `POST /api/alert` instead.
 

@@ -300,10 +300,33 @@ pub fn snapshot(composer: &Composer, screen: &Screen, badges: &Badges, layout: &
                 map.insert("key".into(), json!(key));
                 map.insert("updated".into(), json!(job.updated));
                 map.insert("url".into(), json!(job.url));
+                map.insert("group".into(), json!(job.group));
             }
             data
         })
         .collect();
+
+    // The parallel jobs of each running run, by the `group` its jobs carry.
+    let mut run_jobs = serde_json::Map::new();
+    for (_, job) in composer.ci.jobs() {
+        let Some(group) = job.group.as_deref() else {
+            continue;
+        };
+        let Some(list) = composer.ci.run_jobs(group) else {
+            continue;
+        };
+        let list: Vec<Value> = list
+            .iter()
+            .map(|j| {
+                json!({
+                    "name": j.name, "status": j.status.name(), "step": j.step,
+                    "progress": j.progress, "started": j.started,
+                    "finished": j.finished, "url": j.url,
+                })
+            })
+            .collect();
+        run_jobs.insert(group.to_string(), Value::Array(list));
+    }
 
     // Newest run first, whatever the source or status, so the top of the
     // Pipelines panel is the latest activity. The sort is stable: runs from
@@ -410,6 +433,7 @@ pub fn snapshot(composer: &Composer, screen: &Screen, badges: &Badges, layout: &
     out.insert("hosts".into(), Value::Array(hosts));
     out.insert("down".into(), Value::Array(down));
     out.insert("jobs".into(), Value::Array(jobs));
+    out.insert("run_jobs".into(), Value::Object(run_jobs));
     out.insert("runs".into(), Value::Array(runs));
     out.insert("pulls".into(), Value::Array(pulls));
     out.insert("failed".into(), Value::Array(failed));

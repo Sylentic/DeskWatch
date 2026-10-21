@@ -665,3 +665,36 @@ fn new_issues_raise_alerts_after_the_first_poll() {
         Some("https://gitlab.example/group/app/-/issues/5")
     );
 }
+
+#[test]
+fn every_job_of_the_pipeline_is_listed_with_its_stage() {
+    let mut source = state(false, 0);
+    let mut facts = CiFacts::default();
+    apply(
+        &mut facts,
+        source.on_runs(PROJECT, fixture_pipelines(), NOW),
+        NOW,
+    );
+    let mut jobs = fixture_jobs();
+    // A failure that is allowed does not count as a failure.
+    jobs[2].status = "failed".into();
+    jobs[2].allow_failure = true;
+    let (updates, _) = source.on_jobs(PROJECT, 1004, jobs, NOW + 5);
+    apply(&mut facts, updates, NOW + 5);
+    let list = facts.run_jobs(JOB_KEY).expect("the pipeline's jobs");
+    let rows: Vec<_> = list
+        .iter()
+        .map(|j| (j.name.as_str(), j.step.as_deref(), j.status))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("lint", Some("build"), RunStatus::Success),
+            ("compile", Some("build"), RunStatus::Success),
+            ("unit", Some("test"), RunStatus::Neutral),
+            ("integration", Some("test"), RunStatus::Running),
+            ("deploy-prod", Some("deploy"), RunStatus::Queued),
+        ]
+    );
+    assert_eq!(facts.jobs()[0].1.group.as_deref(), Some(JOB_KEY));
+}

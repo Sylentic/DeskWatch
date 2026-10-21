@@ -266,6 +266,7 @@ mod tests {
                 interrupt: true,
                 updated: started,
                 url: None,
+                group: None,
             },
         }
     }

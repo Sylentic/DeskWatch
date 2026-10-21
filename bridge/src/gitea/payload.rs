@@ -76,6 +76,7 @@ pub struct Job {
     /// `success`, `failure`, `cancelled`, `skipped` once completed.
     pub conclusion: Option<String>,
     pub started_at: Option<String>,
+    pub completed_at: Option<String>,
     /// Web page of the job, when Gitea sends it.
     pub html_url: Option<String>,
     /// Gitea sends `null` instead of `[]` for a job that has not started.
