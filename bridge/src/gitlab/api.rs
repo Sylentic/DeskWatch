@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 use reqwest::header::HeaderMap;
 use serde::de::DeserializeOwned;
 
-use super::payload::{Job, MergeRequest, Pipeline};
+use super::payload::{Issue, Job, MergeRequest, Pipeline};
 use super::runners::{ApiRunner, RunnerScope};
 use crate::source::Secret;
 
@@ -27,6 +27,9 @@ pub const MRS_PAGE_SIZE: u32 = 100;
 
 /// Recent pipelines fetched per project.
 const PIPELINES_PAGE_SIZE: u32 = 20;
+
+/// Issues fetched per poll for "new issue" alerts. Only the newest matter.
+const ISSUES_PAGE_SIZE: u32 = 20;
 
 /// Runners per page (GitLab's maximum) and the most pages read per scope, so
 /// a broken answer cannot loop for ever.
@@ -107,6 +110,16 @@ impl HttpApi {
             self.get_json(&path).await.context("open merge requests")?;
         let total = header_number(&headers, "x-total");
         Ok((list, total))
+    }
+
+    /// The newest open issues of a project, for "new issue" alerts.
+    pub async fn recent_issues(&self, project: &str) -> Result<Vec<Issue>> {
+        let path = format!(
+            "/projects/{}/issues?state=opened&order_by=created_at&sort=desc&per_page={ISSUES_PAGE_SIZE}",
+            encode(project)
+        );
+        let (list, _): (Vec<Issue>, _) = self.get_json(&path).await.context("open issues")?;
+        Ok(list)
     }
 
     /// Recent pipelines of a project, newest first.

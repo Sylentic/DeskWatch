@@ -68,6 +68,7 @@ projects = ["your-group/project-a", "your-group/subgroup/project-b"]
 | `job_poll_s` | 5 | Seconds between job polls while a pipeline is running. |
 | `interrupt` | `true` | May a running pipeline and a finished run take over the ESP screen? `true`, `false` or a list of projects. |
 | `notify_new_prs` | `true` | Flash "New PR" for a new non-draft merge request. |
+| `alert_new_issues` | `true` | Put a new issue in the alerts list until it is dismissed. One extra request per project per poll; issues that were open at startup do not alert. |
 | `runners` | none | Runner lists for the kiosk `runners` widget. |
 | `runner_poll_s` | 300 | Seconds between runner polls. |
 | `alias` | none | Short panel labels, such as `{ "your-group/project-a" = "A" }`. |

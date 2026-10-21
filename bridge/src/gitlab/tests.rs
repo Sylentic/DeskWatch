@@ -622,3 +622,46 @@ async fn refused_runner_list_does_not_hurt_source_health() {
     }
     assert_eq!(healths, [Health::Ok]);
 }
+
+#[test]
+fn new_issues_raise_alerts_after_the_first_poll() {
+    let issue = |iid: u64, title: &str| -> Issue {
+        serde_json::from_value(json!({
+            "iid": iid,
+            "title": title,
+            "web_url": format!("https://gitlab.example/group/app/-/issues/{iid}"),
+            "author": { "username": "dana" },
+        }))
+        .unwrap()
+    };
+    let mut state = state(true, 0).with_issue_alerts(true);
+    assert!(
+        state
+            .on_issues("group/app", vec![issue(3, "old")])
+            .is_empty()
+    );
+    let updates = state.on_issues(
+        "group/app",
+        vec![issue(5, "five"), issue(4, "four"), issue(3, "old")],
+    );
+    let titles: Vec<_> = updates
+        .iter()
+        .map(|u| match u {
+            Update::Alert { alert } => alert.title.clone().unwrap(),
+            other => panic!("unexpected {other:?}"),
+        })
+        .collect();
+    assert_eq!(titles, ["four", "five"], "oldest first, newest on top");
+    let Update::Alert { alert } = &updates[1] else {
+        unreachable!()
+    };
+    assert_eq!(
+        alert.message.as_deref(),
+        Some("New issue #5 in app by dana")
+    );
+    assert_eq!(alert.source.as_deref(), Some("gitlab"));
+    assert_eq!(
+        alert.url.as_deref(),
+        Some("https://gitlab.example/group/app/-/issues/5")
+    );
+}

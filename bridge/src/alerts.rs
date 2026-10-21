@@ -13,7 +13,7 @@
 //! page, and warnings and criticals stay in the `home` header badge, until it
 //! is cleared with `{"id": ..., "clear": true}` or its `ttl_s` runs out.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use anyhow::{Context, Result, bail};
 use axum::Router;
@@ -489,6 +489,61 @@ fn candidate(a: &Active) -> Candidate {
 /// Ids are trimmed and cut to `MAX_ID_CHARS`.
 fn alert_id(id: &str) -> String {
     truncate(id.trim(), MAX_ID_CHARS)
+}
+
+/// An open issue as a polling git source sees it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NewIssue {
+    pub number: u64,
+    pub title: String,
+    pub url: Option<String>,
+    /// Who opened it, if known.
+    pub by: Option<String>,
+}
+
+/// "New issue" alerts for sources that poll (GitHub, GitLab, Bitbucket):
+/// remembers the highest issue number per repository and raises an alert for
+/// each higher one. The first poll of a repository only remembers, so
+/// existing issues do not all alert at startup.
+#[derive(Debug, Default)]
+pub struct IssueWatch {
+    last: HashMap<String, u64>,
+}
+
+impl IssueWatch {
+    /// `source` is the source id (`github:home`), `kind` its adapter type for
+    /// the mark, `label` the repository's short name on the dashboard.
+    pub fn check(
+        &mut self,
+        source: &str,
+        kind: &str,
+        repo: &str,
+        label: &str,
+        issues: Vec<NewIssue>,
+    ) -> Vec<AlertMessage> {
+        let newest = issues.iter().map(|i| i.number).max().unwrap_or(0);
+        let Some(last) = self.last.get(repo).copied() else {
+            self.last.insert(repo.to_string(), newest);
+            return Vec::new();
+        };
+        self.last.insert(repo.to_string(), last.max(newest));
+        let mut issues: Vec<NewIssue> = issues.into_iter().filter(|i| i.number > last).collect();
+        // Oldest first, so the newest ends up on top of the list.
+        issues.sort_by_key(|i| i.number);
+        issues
+            .into_iter()
+            .map(|i| {
+                let by = i.by.map(|by| format!(" by {by}")).unwrap_or_default();
+                AlertMessage::activity(
+                    activity_id(&format!("{source}:issue:{repo}#{}", i.number)),
+                    i.title,
+                    format!("New issue #{} in {label}{by}", i.number),
+                    kind,
+                    i.url,
+                )
+            })
+            .collect()
+    }
 }
 
 /// An alert id for a source's own alert that stays unique when it is longer
