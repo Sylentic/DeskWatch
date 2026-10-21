@@ -417,8 +417,6 @@
         // An alert from a git source links to its issue or comment.
         var txt = '<span class="main">' + esc(a.title) + '</span><span class="sub">' + sub + '</span>';
         var h = href(a.url);
-        // Info alerts (new issues, PR comments, a washer that is done) are news,
-        // not trouble: a plain row. Warnings and criticals keep their tint.
         return '<div class="abox ' + esc(a.severity) + '">' + src(alertKind(a)) +
           (h ? '<a class="txt link" href="' + esc(h) + '" target="_blank" rel="noopener noreferrer">' + txt + '</a>' : '<span class="txt">' + txt + '</span>') +
           (canDismiss() ? '<button type="button" class="ax" data-dismiss-alert="' + esc(a.id) + '" aria-label="Dismiss ' + esc(a.title) + '">&times;</button>' : '') +

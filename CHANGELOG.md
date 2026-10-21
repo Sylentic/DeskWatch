@@ -8,6 +8,11 @@ hardware yet, and its MQTT schema (v2) may still change or the display may be dr
 
 ## [Unreleased]
 
+### Changed
+
+- **Info alerts have their blue box again** in the dashboard's Alerts card, as before 1.0.2: new issues, PR comments
+  and Home Assistant info alerts. Warnings stay amber and critical alerts red.
+
 ## [1.0.2]
 
 ### Added
