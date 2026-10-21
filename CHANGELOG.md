@@ -37,6 +37,9 @@ every job of a run, and each user can arrange their own dashboard.
 
 ### Added
 
+- **DeskWatch has an icon.** The dashboard, Setup, the login page and My account now show the status ring in the
+  browser tab (`/favicon.svg`, with a PNG fallback and an `apple-touch-icon.png` for a phone home screen). The icon
+  routes need no login. The logo and a GitHub social preview image are in `docs/logo/`.
 - **Everyone can customize the dashboard.** The grid icon in the header opens edit mode: hide a panel, drag it (or use
   the arrows) to move it, and make it wider, narrower, taller or shorter. Hidden panels wait under "Hidden panels" in the
   edit bar, one click brings them back, and "Reset to default" restores the administrator's layout. The choice is kept per
