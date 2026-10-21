@@ -41,13 +41,14 @@ use anyhow::{Context, Result};
 use tokio::time::{Instant, MissedTickBehavior};
 use tracing::{debug, info, warn};
 
+use crate::alerts::{self, AlertMessage};
 use crate::ci::{OpenPull, RepoPulls, Run, RunStatus, Runner, RunnerStatus, RunningJob, Update};
 use crate::config::{AzureDevopsAuth, AzureDevopsConfig};
 use crate::gitea::payload::unix_seconds;
 use crate::model::{JobData, JobKind, MAX_TITLE_CHARS, NoticeData, truncate};
 use crate::source::{self, FactSink, Health, Interrupt, Source, SourceId, unix_now};
 use api::{EntraApp, HttpApi};
-use payload::{Agent, Build, PullRequest, Record};
+use payload::{Agent, Build, PullRequest, Record, Thread};
 use timeline::View;
 
 /// Adapter type: `[[source.azure_devops]]` in the config and `source` on panel pages.
@@ -58,6 +59,13 @@ pub const KIND: &str = "azure_devops";
 /// counts as waiting. Most of them pass within seconds, and a flash of
 /// "Check pending" on every deploy would be noise.
 const CHECK_POLLS: u8 = 2;
+
+/// Most open PRs per project whose comments are checked each poll, newest
+/// first, so a busy project does not cost hundreds of requests a minute.
+const MAX_COMMENT_PULLS: usize = 30;
+
+/// Longest comment text kept for the alert line.
+const COMMENT_CHARS: usize = 80;
 
 /// Poll delays after 1, 2, and 3 or more failed rounds in a row.
 const BACKOFF: [Duration; 3] = [
@@ -118,6 +126,14 @@ impl Source for AzureDevops {
         info!(source = %id, projects = config.projects.len(), "polling Azure DevOps");
         let poll = Duration::from_secs(config.poll_s);
         let mut state = AzdoState::new(&id, &config, unix_now());
+        if state.alert_pr_comments {
+            match api.me().await {
+                Ok(me) => state.set_me(me),
+                Err(err) => {
+                    warn!(source = %id, "cannot tell whose token this is, own PR comments will alert too: {err:#}")
+                }
+            }
+        }
 
         let mut next_poll = Instant::now();
         let mut failures = 0;
@@ -290,7 +306,31 @@ async fn poll_project(
         match api.pulls(project).await {
             Ok(pulls) => {
                 debug!(%project, open = pulls.len(), "polled open PRs");
+                let watch: Vec<(String, u64, String)> = pulls
+                    .iter()
+                    .take(MAX_COMMENT_PULLS)
+                    .map(|p| {
+                        (
+                            p.repository.name.clone(),
+                            p.pull_request_id,
+                            p.title.clone(),
+                        )
+                    })
+                    .collect();
                 out.extend(state.on_pulls(project, pulls, unix_now()));
+                if state.alert_pr_comments {
+                    state.keep_comments_of(project, &watch);
+                    for (repo, pull_id, title) in &watch {
+                        match api.threads(project, repo, *pull_id).await {
+                            Ok(threads) => out
+                                .extend(state.on_threads(project, repo, *pull_id, title, &threads)),
+                            // Alerts only: a failure here never marks the source broken.
+                            Err(err) => {
+                                debug!(%project, %repo, pull_id, "cannot poll PR threads: {err:#}")
+                            }
+                        }
+                    }
+                }
             }
             Err(err) => {
                 warn!(%project, "cannot poll Azure DevOps PRs: {err:#}");
@@ -356,6 +396,13 @@ pub struct AzdoState {
     interrupt: Interrupt,
     alias: BTreeMap<String, String>,
     notify_new_prs: bool,
+    /// Raise an alert for each new PR comment.
+    alert_pr_comments: bool,
+    /// Identity id of the token's user; their comments never alert.
+    me: Option<String>,
+    /// Comment ids (thread, comment) seen per project, repository and PR. A
+    /// PR is missing until its first look, so old comments do not alert.
+    comments: HashMap<(String, String, u64), HashSet<(u64, u64)>>,
     /// Lower-case words that make a pipeline a deploy.
     deploy_words: Vec<String>,
     /// Unix seconds when the source started. Builds that finished before then
@@ -385,6 +432,9 @@ impl AzdoState {
             interrupt: config.interrupt.clone(),
             alias: config.alias.clone(),
             notify_new_prs: config.notify_new_prs,
+            alert_pr_comments: config.pull_requests && config.alert_pr_comments,
+            me: None,
+            comments: HashMap::new(),
             deploy_words: config
                 .deploy_words
                 .iter()
@@ -398,6 +448,60 @@ impl AzdoState {
             web: (config.base_url.clone(), config.organization.clone()),
             health: BTreeMap::new(),
         }
+    }
+
+    pub fn set_me(&mut self, id: String) {
+        self.me = Some(id).filter(|id| !id.is_empty());
+    }
+
+    /// Forget the comments of PRs in `project` that are no longer watched
+    /// (closed, merged, or past `MAX_COMMENT_PULLS`).
+    pub fn keep_comments_of(&mut self, project: &str, watch: &[(String, u64, String)]) {
+        self.comments.retain(|(p, repo, id), _| {
+            p != project || watch.iter().any(|(r, i, _)| r == repo && i == id)
+        });
+    }
+
+    /// The threads of one PR from a poll: an alert for each comment by
+    /// someone else that was not there at the previous look.
+    pub fn on_threads(
+        &mut self,
+        project: &str,
+        repo: &str,
+        pull_id: u64,
+        title: &str,
+        threads: &[Thread],
+    ) -> Vec<Update> {
+        let key = (project.to_string(), repo.to_string(), pull_id);
+        let first_look = !self.comments.contains_key(&key);
+        let seen = self.comments.entry(key).or_default();
+        let mut out = Vec::new();
+        for thread in threads.iter().filter(|t| !t.is_deleted) {
+            for comment in &thread.comments {
+                if !seen.insert((thread.id, comment.id)) || first_look {
+                    continue;
+                }
+                let by_me = self.me.as_deref() == Some(comment.author.id.as_str());
+                if comment.is_deleted || comment.comment_type != "text" || by_me {
+                    continue;
+                }
+                let text = truncate(comment.content.trim(), COMMENT_CHARS);
+                out.push(Update::Alert {
+                    alert: AlertMessage::activity(
+                        alerts::activity_id(&format!(
+                            "{}:comment:{project}/{repo}!{pull_id}:{}:{}",
+                            self.id, thread.id, comment.id
+                        )),
+                        format!("{} on !{pull_id} {title}", comment.author.display_name),
+                        text,
+                        KIND,
+                        pull_url(&self.web, project, repo, pull_id)
+                            .map(|url| format!("{url}?discussionId={}", thread.id)),
+                    ),
+                });
+            }
+        }
+        out
     }
 
     /// Health from the polls: the worst project wins. `None` before the first poll.

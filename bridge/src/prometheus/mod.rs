@@ -37,12 +37,15 @@ use api::{HttpApi, Sample};
 pub const KIND: &str = "prometheus";
 
 /// Stats fields whose PromQL can be replaced in the config (`queries = { ... }`).
-pub const QUERY_KEYS: [&str; 6] = [
+pub const QUERY_KEYS: [&str; 9] = [
     "cpu_pct",
     "cpu_temp_c",
     "cpu_count",
     "ram_pct",
     "disk_pct",
+    "gpu_pct",
+    "gpu_mem_pct",
+    "gpu_temp_c",
     "uptime_s",
 ];
 
@@ -155,6 +158,11 @@ pub struct Queries {
     pub load: String,
     pub ram_pct: String,
     pub disk_pct: String,
+    /// GPU queries default to the NVIDIA DCGM exporter; hosts without it
+    /// simply return no data and the GPU figures stay hidden.
+    pub gpu_pct: String,
+    pub gpu_mem_pct: String,
+    pub gpu_temp_c: String,
     pub uptime_s: String,
     pub net_rx: String,
     pub net_tx: String,
@@ -199,6 +207,16 @@ impl Queries {
                      / node_filesystem_size_bytes{{mountpoint=\"{mount}\"}}))"
                 ),
             ),
+            gpu_pct: pick("gpu_pct", "max by (instance) (DCGM_FI_DEV_GPU_UTIL)".into()),
+            gpu_mem_pct: pick(
+                "gpu_mem_pct",
+                "100 * max by (instance) (DCGM_FI_DEV_FB_USED / (DCGM_FI_DEV_FB_USED + DCGM_FI_DEV_FB_FREE))"
+                    .into(),
+            ),
+            gpu_temp_c: pick(
+                "gpu_temp_c",
+                "max by (instance) (DCGM_FI_DEV_GPU_TEMP)".into(),
+            ),
             uptime_s: pick("uptime_s", "time() - node_boot_time_seconds".into()),
             net_rx: format!(
                 "sum by (instance, device) (rate(node_network_receive_bytes_total{{{device}}}[1m]))"
@@ -221,6 +239,9 @@ pub struct Answers {
     pub load: Vec<Sample>,
     pub ram_pct: Vec<Sample>,
     pub disk_pct: Vec<Sample>,
+    pub gpu_pct: Vec<Sample>,
+    pub gpu_mem_pct: Vec<Sample>,
+    pub gpu_temp_c: Vec<Sample>,
     pub uptime_s: Vec<Sample>,
     pub net_rx: Vec<Sample>,
     pub net_tx: Vec<Sample>,
@@ -252,6 +273,9 @@ pub async fn collect(
         load: ask("load", &queries.load).await?,
         ram_pct: ask("ram_pct", &queries.ram_pct).await?,
         disk_pct: ask("disk_pct", &queries.disk_pct).await?,
+        gpu_pct: ask("gpu_pct", &queries.gpu_pct).await?,
+        gpu_mem_pct: ask("gpu_mem_pct", &queries.gpu_mem_pct).await?,
+        gpu_temp_c: ask("gpu_temp_c", &queries.gpu_temp_c).await?,
         uptime_s: ask("uptime_s", &queries.uptime_s).await?,
         net_rx: ask("net_rx", &queries.net_rx).await?,
         net_tx: ask("net_tx", &queries.net_tx).await?,
@@ -303,6 +327,9 @@ fn host_stats(host: &HostConfig, answers: &Answers) -> StatsData {
         cpu_count: value(&answers.cpu_count).map(|c| c.max(0.0).round() as u32),
         ram_pct: value(&answers.ram_pct).map(percent),
         disk_pct: value(&answers.disk_pct).map(percent),
+        gpu_pct: value(&answers.gpu_pct).map(percent),
+        gpu_mem_pct: value(&answers.gpu_mem_pct).map(percent),
+        gpu_temp_c: value(&answers.gpu_temp_c).map(round1),
         uptime_s: value(&answers.uptime_s).map(|s| s.max(0.0) as u64),
         net: net(&answers.net_rx, &answers.net_tx, instance),
     }

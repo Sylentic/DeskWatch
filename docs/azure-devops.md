@@ -106,6 +106,7 @@ Optional keys:
 | `interrupt` | `false` | `true`, or a list of projects that may take over the screen. Off means work pipelines never take over the ESP screen: they show on the pipelines page, in the badges and on the kiosk dashboard |
 | `pull_requests` | `true` | Count open PRs (needs **Code: Read**) |
 | `notify_new_prs` | `true` | Flash "New PR" for a new non-draft PR |
+| `alert_pr_comments` | `true` | Put a new comment on an open PR in the alerts list until it is dismissed. Your own comments and system messages (votes, pushes) are skipped. One extra request per open PR (at most 30) per poll |
 | `deploy_words` | `["deploy", "terraform"]` | Pipelines whose name contains one of these words (any case) are deploys |
 | `agent_pools` | none | Names of self-hosted agent pools to show as runners (needs **Agent Pools: Read**) |
 | `agent_poll_s` | `60` | Seconds between agent pool polls |

@@ -90,6 +90,7 @@ pub fn parse_event(kind: &str, body: &[u8]) -> Result<Option<GiteaEvent>> {
         "workflow_run" => GiteaEvent::WorkflowRun(serde_json::from_slice(body)?),
         "workflow_job" => GiteaEvent::WorkflowJob(serde_json::from_slice(body)?),
         "pull_request" => GiteaEvent::PullRequest(serde_json::from_slice(body)?),
+        "issues" => GiteaEvent::Issue(serde_json::from_slice(body)?),
         _ => return Ok(None),
     };
     Ok(Some(event))

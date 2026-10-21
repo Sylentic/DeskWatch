@@ -793,6 +793,10 @@ pub struct GiteaConfig {
     /// Short panel labels for repositories, such as `{ "team/service-a" = "work A" }`.
     #[serde(default)]
     pub alias: BTreeMap<String, String>,
+    /// Put a new issue in the alerts list until it is dismissed. Needs the
+    /// "Issues" event ticked in the Gitea webhook.
+    #[serde(default = "yes")]
+    pub alert_new_issues: bool,
 }
 
 impl GiteaConfig {
@@ -837,6 +841,9 @@ pub struct GithubConfig {
     /// Flash "New PR" when a poll finds a new, non-draft PR.
     #[serde(default = "yes")]
     pub notify_new_prs: bool,
+    /// Put a new issue in the alerts list until it is dismissed.
+    #[serde(default = "yes")]
+    pub alert_new_issues: bool,
     /// Self-hosted runner lists for the kiosk `runners` widget:
     /// `"repo:<owner>/<name>"` or `"org:<name>"`. Needs extra token rights
     /// (docs/runners.md). Empty means runners are not polled. Do not list
@@ -1044,6 +1051,11 @@ pub struct AzureDevopsConfig {
     /// Flash "New PR" when a poll finds a new, non-draft PR.
     #[serde(default = "yes")]
     pub notify_new_prs: bool,
+    /// Put a new comment on an open PR in the alerts list until it is
+    /// dismissed. Your own comments are skipped. Costs one request per open
+    /// PR per poll.
+    #[serde(default = "yes")]
+    pub alert_pr_comments: bool,
     /// Pipelines whose name contains one of these words (any case) are
     /// deploys; the rest are builds.
     #[serde(default = "default_deploy_words")]

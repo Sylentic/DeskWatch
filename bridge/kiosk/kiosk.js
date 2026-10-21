@@ -101,8 +101,10 @@
     var k = String(id || '').split(':')[0].replace(/[-_]?enterprise$/, '');
     return k === 'stats' || k === 'proc' ? 'local' : k;
   }
-  // Where an alert comes from, for its mark: Home Assistant or anything else.
+  // Where an alert comes from, for its mark: a git source (new issue or PR
+  // comment), Home Assistant, or anything else.
   function alertKind(a) {
+    if (MARKS[a.source] && a.source !== 'local') return a.source;
     return /home.?assistant|^ha\b/i.test(a.source || '') ? 'home_assistant' : 'local';
   }
   // A row or card that opens its page on the source. The bridge only sends
@@ -154,10 +156,14 @@
     var vals = history[host.name] || [];
     var peak = vals.length ? Math.round(Math.max.apply(null, vals)) + '%' : '--';
     var fresh = s.uptime_s != null && s.uptime_s < REBOOT_S;
-    return '<div class="gauges">' + gauge('CPU', s.cpu_pct, 70, 90) + gauge('MEM', s.ram_pct, 80, 90) + gauge('DISK', s.disk_pct, 80, 90) + '</div>' +
+    return '<div class="gauges">' + gauge('CPU', s.cpu_pct, 70, 90) + gauge('MEM', s.ram_pct, 80, 90) + gauge('DISK', s.disk_pct, 80, 90) +
+      // GPU rows only for hosts that report a GPU.
+      (s.gpu_pct == null ? '' : gauge('GPU', s.gpu_pct, 80, 95)) +
+      (s.gpu_mem_pct == null ? '' : gauge('VRAM', s.gpu_mem_pct, 80, 95)) + '</div>' +
       '<div class="stat-grid">' +
       '<div><span class="l">Uptime</span><span' + (fresh ? ' class="warn-text"' : '') + '>' + uptime(s.uptime_s) + '</span></div>' +
       '<div><span class="l">Temp</span><span>' + (s.cpu_temp_c == null ? '--' : Math.round(s.cpu_temp_c) + ' &deg;C') + '</span></div>' +
+      (s.gpu_temp_c == null ? '' : '<div><span class="l">GPU temp</span><span>' + Math.round(s.gpu_temp_c) + ' &deg;C</span></div>') +
       '<div><span class="l">Load</span><span>' + load + '</span></div>' +
       '<div><span class="l">Net in</span><span>' + (s.net ? rate(s.net.rx_bps) : '--') + '</span></div>' +
       '<div><span class="l">Net out</span><span>' + (s.net ? rate(s.net.tx_bps) : '--') + '</span></div>' +
@@ -176,7 +182,7 @@
   function hostLook(h) {
     var s = h.stats || {};
     if (!h.up) return 'off';
-    if (s.cpu_pct >= 70 || s.ram_pct >= 80 || s.disk_pct >= 80) return 'look';
+    if (s.cpu_pct >= 70 || s.ram_pct >= 80 || s.disk_pct >= 80 || s.gpu_pct >= 95) return 'look';
     if (s.uptime_s != null && s.uptime_s < REBOOT_S) return 'look';
     return '';
   }
@@ -408,8 +414,13 @@
       var alerts = snap.alerts || [];
       var rows = alerts.map(function (a) {
         var sub = [a.message ? esc(a.message) : '', ago(nowS() - a.since)].filter(Boolean).join(' &middot; ');
+        // An alert from a git source links to its issue or comment.
+        var txt = '<span class="main">' + esc(a.title) + '</span><span class="sub">' + sub + '</span>';
+        var h = href(a.url);
+        // Info alerts (new issues, PR comments, a washer that is done) are news,
+        // not trouble: a plain row. Warnings and criticals keep their tint.
         return '<div class="abox ' + esc(a.severity) + '">' + src(alertKind(a)) +
-          '<span class="txt"><span class="main">' + esc(a.title) + '</span><span class="sub">' + sub + '</span></span>' +
+          (h ? '<a class="txt link" href="' + esc(h) + '" target="_blank" rel="noopener noreferrer">' + txt + '</a>' : '<span class="txt">' + txt + '</span>') +
           (canDismiss() ? '<button type="button" class="ax" data-dismiss-alert="' + esc(a.id) + '" aria-label="Dismiss ' + esc(a.title) + '">&times;</button>' : '') +
           '</div>';
       });
@@ -639,7 +650,7 @@
   }
   function alertRow(a) {
     var cfg = (snap.layout && snap.layout.alerts) || {};
-    var sub = [a.message ? esc(a.message) : '', a.source && cfg.show_source !== false ? 'via ' + esc(a.source) : '', a.since ? ago(nowS() - a.since) : '']
+    var sub = [a.message ? esc(a.message) : '', a.source && cfg.show_source !== false ? 'via ' + esc(SOURCES[a.source] || a.source) : '', a.since ? ago(nowS() - a.since) : '']
       .filter(Boolean).join(' &middot; ');
     return '<li><span class="what"><span class="dot ' + esc(a.severity) + '"></span><b>' + esc(a.title) + '</b>' +
       '<span class="sev ' + esc(a.severity) + '">' + esc(SEV_NAME[a.severity] || a.severity) + '</span><span class="sub">' + sub + '</span></span>' +

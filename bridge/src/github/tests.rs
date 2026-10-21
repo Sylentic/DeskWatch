@@ -551,3 +551,53 @@ fn runner_pages_follow_the_api_address() {
     // An address we cannot map makes no link at all.
     assert_eq!(links("http://127.0.0.1:9999").0, None);
 }
+
+fn issue(number: u64, title: &str, pull: bool) -> Issue {
+    serde_json::from_value(json!({
+        "number": number,
+        "title": title,
+        "html_url": format!("https://github.com/me/app/issues/{number}"),
+        "user": { "login": "dana" },
+        "pull_request": if pull { json!({}) } else { json!(null) },
+    }))
+    .unwrap()
+}
+
+#[test]
+fn new_issues_raise_alerts_after_the_first_poll() {
+    let mut state = state(true, 0).with_issue_alerts(true);
+    // First poll: what is open already is old news.
+    assert!(
+        state
+            .on_issues("me/app", vec![issue(3, "old bug", false)])
+            .is_empty()
+    );
+    // A new issue and a new PR (same number space): only the issue alerts.
+    let updates = state.on_issues(
+        "me/app",
+        vec![
+            issue(5, "crash on start", false),
+            issue(4, "a PR", true),
+            issue(3, "old bug", false),
+        ],
+    );
+    let [Update::Alert { alert }] = updates.as_slice() else {
+        panic!("one alert expected, got {updates:?}");
+    };
+    assert_eq!(alert.title.as_deref(), Some("crash on start"));
+    assert_eq!(
+        alert.message.as_deref(),
+        Some("New issue #5 in app by dana")
+    );
+    assert_eq!(alert.source.as_deref(), Some("github"));
+    assert_eq!(
+        alert.url.as_deref(),
+        Some("https://github.com/me/app/issues/5")
+    );
+    // The same list again: nothing new.
+    assert!(
+        state
+            .on_issues("me/app", vec![issue(5, "crash on start", false)])
+            .is_empty()
+    );
+}
