@@ -7,6 +7,12 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.0.3]
+
+This release removes the ESP32 desk display (see Removed: a `[[rotation]]` block in `bridge.toml` is now ignored with a
+warning) and makes the dashboard more useful day to day: alerts and pipelines are coloured by status, Running now shows
+every job of a run, and each user can arrange their own dashboard.
+
 ### Removed
 
 - **The ESP32 desk display is dropped.** Its firmware never ran on a board, so `firmware/` (with the TLS spike), the
