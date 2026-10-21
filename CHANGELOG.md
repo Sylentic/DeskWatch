@@ -7,6 +7,13 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Open a source's links in a Firefox container.** Setup > Sources and `bridge.toml` get an optional `container`
+  setting for Gitea, GitHub, GitLab, Bitbucket and Azure DevOps. In Firefox with the add-on "Open external links in a
+  container", the links of that source open in the named container. Off by default; other browsers are not affected.
+  See [docs/firefox-containers.md](docs/firefox-containers.md).
+
 ## [1.0.3]
 
 This release removes the ESP32 desk display (see Removed: a `[[rotation]]` block in `bridge.toml` is now ignored with a

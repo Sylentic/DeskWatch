@@ -239,6 +239,7 @@ async fn main() -> Result<()> {
         let built = Kiosk::new(&config.kiosk)
             .with_setup_link(config.setup.is_on())
             .with_alerts(&config.alerts, inbound_tx.clone())
+            .with_containers(supervisor.containers())
             .with_update(update.clone());
         hooks.add("/", built.router().layer(guard(Need::Viewer)));
         kiosk = Some(built);

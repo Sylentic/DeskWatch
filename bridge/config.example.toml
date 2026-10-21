@@ -239,6 +239,7 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 # # client_id = "00000000-0000-0000-0000-000000000000"
 # # client_secret_file = "azdo-work-secret"
 # poll_s = 60                   # builds, approvals and open PRs
+# # container = "Work"         # Firefox only: open this source's links in that container (docs/firefox-containers.md)
 # job_poll_s = 5                # step progress while a build may take over the screen
 # interrupt = false             # default; true, or a list such as ["project-a"]
 # pull_requests = true          # count open PRs (needs Code: Read)

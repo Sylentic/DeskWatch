@@ -170,6 +170,11 @@
     }
   };
 
+  // Every Git host can name the Firefox container its links open in.
+  Object.keys(FORMS).forEach(function (k) {
+    if (k !== 'prometheus') FORMS[k].strings.push(['container', 'Firefox container for links (optional)', '']);
+  });
+
   // The broker settings use the same form. The password is stored by the bridge
   // as a credential and never comes back.
   FORMS.mqtt = {
@@ -258,7 +263,18 @@
     spec.strings.forEach(function (x) {
       var i = el('input'); i.value = form.values[x[0]];
       i.addEventListener('input', function () { form.values[x[0]] = i.value; });
-      box.appendChild(field(x[1], i));
+      var lab = field(x[1], i);
+      if (x[0] === 'container') {
+        var help = el('span', 'muted');
+        help.appendChild(document.createTextNode('Firefox only. The links of this source type open in that container. Needs the add-on '));
+        var a = el('a', null, 'Open external links in a container');
+        a.href = 'https://addons.mozilla.org/firefox/addon/open-url-in-container/';
+        a.target = '_blank'; a.rel = 'noopener noreferrer';
+        help.appendChild(a);
+        help.appendChild(document.createTextNode('. Leave empty for normal links.'));
+        lab.appendChild(help);
+      }
+      box.appendChild(lab);
     });
     spec.lists.forEach(function (x) {
       var t = el('textarea'); t.rows = 4; t.value = form.values[x[0]];
@@ -393,6 +409,7 @@
     var dl = el('dl');
     row(dl, 'Address', s.address);
     if (s.repos && s.repos.length) row(dl, s.kind === 'prometheus' ? 'Hosts' : (s.kind === 'azure_devops' || s.kind === 'gitlab') ? 'Projects' : 'Repositories', s.repos.join(', '));
+    if (s.fields && s.fields.container) row(dl, 'Firefox container', s.fields.container);
     row(dl, 'Defined in', s.origin === 'data_folder' ? 'data folder (sources.toml)' : 'bridge.toml');
     s.credentials.forEach(function (c) {
       var v = el('span');
