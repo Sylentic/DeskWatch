@@ -17,7 +17,7 @@ use time::format_description::well_known::Rfc3339;
 pub struct Repository {
     /// `owner/name`.
     pub full_name: String,
-    /// Just `name`, shown on the panel.
+    /// Just `name`, shown on the dashboard.
     pub name: String,
 }
 

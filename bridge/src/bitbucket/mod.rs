@@ -40,7 +40,7 @@ use api::HttpApi;
 use payload::{Issue, Pipeline, PullRequest, Step};
 use runners::RunnerScope;
 
-/// Adapter type: `[[source.bitbucket]]` in the config and `source` on panel pages.
+/// Adapter type: `[[source.bitbucket]]` in the config and `source` on the `[[kiosk.panel]]` blocks.
 pub const KIND: &str = "bitbucket";
 
 /// Shown as the pipeline name when it is not a named custom pipeline.

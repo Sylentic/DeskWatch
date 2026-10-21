@@ -212,7 +212,7 @@ Enterprise Server and GHE.com; only `base_url` differs:
 | GitHub Enterprise Server | `https://ghe.example.com/api/v3` |
 | GHE.com (data residency) | `https://api.your-subdomain.ghe.com` |
 
-1. Create a fine-grained personal access token limited to the repositories you want on the panel, with read-only
+1. Create a fine-grained personal access token limited to the repositories you want on the dashboard, with read-only
    permissions **Metadata**, **Pull requests** and **Actions**. Nothing else is needed. Set an expiry you will
    remember; when it lapses the panel shows the `warn` badge.
 2. Store it: `/etc/deskwatch/credentials/github-personal` (mode 600), and add
@@ -363,7 +363,7 @@ and delete the broker users you created.
 | `MQTT connection error`, retries every 5 s | Wrong host, port or login, or the broker's ACL/listener settings; see [mosquitto.md](mosquitto.md) |
 | Gitea says delivery failed | `ALLOWED_HOST_LIST` not set, firewall blocks the port, or the URL's last part does not match the source `name` |
 | Webhook answers 401 | The secret in Gitea differs from the credential file |
-| `warn` badge on the panel | A source cannot log in or connect: check the journal for the source's name; a GitHub token may have expired |
+| "Source down" pill on the dashboard | A source cannot log in or connect: check the journal for the source's name; a GitHub token may have expired |
 | Panel shows nothing new after a Gitea run | Check the repository is not excluded by `interrupt`, and that the webhook has the **Workflow Run** and **Workflow Job** events |
 | Stats page shows `--` for CPU on the first screen | Normal: CPU use and network rates need two samples |
 

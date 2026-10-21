@@ -42,7 +42,7 @@ use crate::source::{self, FactSink, Health, Interrupt, Source, SourceId, unix_no
 use api::HttpApi;
 use payload::{Issue, Job, PullRequest, WorkflowRun};
 
-/// Adapter type: `[[source.github]]` in the config and `source` on panel pages.
+/// Adapter type: `[[source.github]]` in the config and `source` on the `[[kiosk.panel]]` blocks.
 pub const KIND: &str = "github";
 
 /// Poll delays after 1, 2, and 3 or more failed rounds in a row.
