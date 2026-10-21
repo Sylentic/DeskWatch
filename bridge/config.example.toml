@@ -3,7 +3,7 @@
 # Copy to /etc/deskwatch/bridge.toml (Linux) or
 # C:\ProgramData\DeskWatch\bridge.toml (Windows) and adjust. Every key is
 # optional; the values below are the defaults unless noted (the [[rotation]]
-# blocks at the end are an example: without any, only the stats page rotates). Never put
+# blocks at the end are an example: without any, the stats page rotates, plus the PR and pipeline pages when a Git host is set up). Never put
 # passwords or tokens in this file. Keys ending in `_file` name a credential:
 # a plain name is read from systemd's credentials folder (LoadCredential= in
 # deploy/deskwatch-bridge.service) or, on Windows, from
@@ -28,6 +28,7 @@ topic_prefix = "deskpanel"      # matches the schema, change only for testing
 keep_alive_s = 30
 
 [server]
+# enabled = false               # do not sample this machine: for a bridge that only shows Git hosts (Azure DevOps, GitHub Enterprise)
 # display_name = "homeserver"   # name on the stats page, defaults to the hostname
 interval_s = 5                  # stats sample and publish interval
 # net_iface = "eth0"            # defaults to the busiest non-loopback interface

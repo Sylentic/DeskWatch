@@ -240,7 +240,7 @@ async fn main() -> Result<()> {
                 config.http.listen
             );
         }
-        let built = Kiosk::new(&config.kiosk)
+        let built = Kiosk::new(&config.kiosk_config())
             .with_setup_link(config.setup.is_on())
             .with_alerts(&config.alerts, inbound_tx.clone())
             .with_update(update.clone());
@@ -336,7 +336,7 @@ async fn main() -> Result<()> {
         composer = Composer::new(demo::rotation(), unix_now());
         demo = Some(Demo::new(unix_now()));
     } else {
-        composer = Composer::new(config.rotation.clone(), unix_now());
+        composer = Composer::new(config.rotation(), unix_now());
         composer.alerts = Alerts::new(config.alerts.clone());
     }
     let mut shown = Shown::default();
@@ -349,7 +349,7 @@ async fn main() -> Result<()> {
     let mut restarting = false;
     loop {
         tokio::select! {
-            _ = stats_ticker.tick(), if demo.is_none() => composer.set_stats(collector.collect()),
+            _ = stats_ticker.tick(), if demo.is_none() && config.server.enabled => composer.set_stats(collector.collect()),
             _ = compose_ticker.tick() => {}
             Some(msg) = source_rx.recv() => composer.apply(msg, unix_now()),
             Some(msg) = inbound_rx.recv() => match msg {

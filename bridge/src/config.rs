@@ -224,8 +224,9 @@ pub struct Config {
     /// The browser dashboard for a big screen, served on `[http]`. Off by default.
     #[serde(default)]
     pub kiosk: KioskConfig,
-    /// Idle pages in the order they rotate. See `[[rotation]]` in the example config.
-    #[serde(default = "default_rotation")]
+    /// Idle pages in the order they rotate. See `[[rotation]]` in the example
+    /// config. Empty means the default: use [`Config::rotation`].
+    #[serde(default)]
     pub rotation: Vec<RotationEntry>,
 }
 
@@ -285,6 +286,10 @@ impl Default for MqttConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ServerConfig {
+    /// Sample the machine the bridge runs on. Turn off for a bridge that only
+    /// shows Git hosts (Azure DevOps, GitHub Enterprise): there is then no
+    /// "this machine" in the Hosts panel, on the stats page or in the ESP rotation.
+    pub enabled: bool,
     /// Name shown on the stats page. Defaults to the system hostname.
     pub display_name: Option<String>,
     /// Seconds between stats samples and publishes (5 s in the schema).
@@ -298,6 +303,7 @@ pub struct ServerConfig {
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
+            enabled: true,
             display_name: None,
             interval_s: 5,
             net_iface: None,
@@ -613,6 +619,17 @@ pub fn default_panels(view: HostView) -> Vec<PanelConfig> {
     ]
 }
 
+/// The built-in layout for a bridge with no host to show: Running now and
+/// Pipelines (2 wide, 2 tall each) on top, Open PRs and Alerts (2 wide) below.
+pub fn default_panels_without_hosts() -> Vec<PanelConfig> {
+    vec![
+        panel(Widget::Jobs, [2, 2]),
+        panel(Widget::Pipelines, [2, 2]),
+        panel(Widget::Prs, [2, 1]),
+        panel(Widget::Alerts, [2, 1]),
+    ]
+}
+
 /// The `[updates]` table: the "newer version available" notice.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -738,6 +755,17 @@ pub struct Sources {
     pub bitbucket: Vec<BitbucketConfig>,
     pub azure_devops: Vec<AzureDevopsConfig>,
     pub prometheus: Vec<PrometheusConfig>,
+}
+
+impl Sources {
+    /// Is any Git host (a source with PRs and CI runs) configured?
+    pub fn has_ci(&self) -> bool {
+        !(self.gitea.is_empty()
+            && self.github.is_empty()
+            && self.gitlab.is_empty()
+            && self.bitbucket.is_empty()
+            && self.azure_devops.is_empty())
+    }
 }
 
 /// One `[[source.gitea]]` block: Actions webhooks, job step polling and open PRs.
@@ -1195,13 +1223,13 @@ fn default_gitea_runner_poll_s() -> u64 {
     30
 }
 
-/// Rotation used when the config has no `[[rotation]]` blocks: the stats page only.
-fn default_rotation() -> Vec<RotationEntry> {
-    vec![RotationEntry {
-        page: "stats".into(),
-        dwell_s: 20,
-        skip_when_empty: false,
-    }]
+/// One rotation page of the default rotation.
+fn rotation_page(page: &str, dwell_s: u64, skip_when_empty: bool) -> RotationEntry {
+    RotationEntry {
+        page: page.into(),
+        dwell_s,
+        skip_when_empty,
+    }
 }
 
 /// `owner/name` with no empty part. The name goes into API URLs.
@@ -1379,10 +1407,6 @@ impl Config {
         anyhow::ensure!(
             self.server.interval_s > 0,
             "server.interval_s must be above 0"
-        );
-        anyhow::ensure!(
-            !self.rotation.is_empty(),
-            "rotation needs at least one page"
         );
         let mqtt = &self.mqtt;
         anyhow::ensure!(
@@ -1604,6 +1628,45 @@ impl Config {
     }
 
     /// Read and parse a config file.
+    /// The idle rotation: the `[[rotation]]` blocks, or when there are none a
+    /// default that fits what is configured. The stats page comes first while
+    /// the bridge samples its own machine (`[server] enabled`); the open PRs and
+    /// pipelines pages follow when a CI source exists (they skip themselves
+    /// while empty). A bridge that is only Azure DevOps or only GitHub
+    /// Enterprise therefore rotates the pages it can fill, with no config.
+    pub fn rotation(&self) -> Vec<RotationEntry> {
+        if !self.rotation.is_empty() {
+            return self.rotation.clone();
+        }
+        let mut pages = Vec::new();
+        if self.server.enabled {
+            pages.push(rotation_page("stats", 20, false));
+        }
+        if self.source.has_ci() {
+            pages.push(rotation_page("prs", 8, true));
+            pages.push(rotation_page("pipelines", 10, true));
+        }
+        if pages.is_empty() {
+            // The rotation may not be empty; the stats page shows "no data".
+            pages.push(rotation_page("stats", 20, false));
+        }
+        pages
+    }
+
+    /// The kiosk settings to run with. The built-in layout has a Hosts panel;
+    /// with no host to show (`[server] enabled = false` and no Prometheus
+    /// source, such as a bridge that only reads Azure DevOps) that panel would
+    /// stay empty, so the layout without it is used instead. Panels set with
+    /// `[[kiosk.panel]]` are never touched.
+    pub fn kiosk_config(&self) -> KioskConfig {
+        let mut kiosk = self.kiosk.clone();
+        let hosts = self.server.enabled || !self.source.prometheus.is_empty();
+        if kiosk.panel.is_empty() && !hosts {
+            kiosk.panel = default_panels_without_hosts();
+        }
+        kiosk
+    }
+
     pub fn load(path: &Path) -> Result<Self> {
         let text = std::fs::read_to_string(path)
             .with_context(|| format!("cannot read config file {}", path.display()))?;
@@ -1639,8 +1702,9 @@ mod tests {
         );
         assert_eq!(config.mqtt.topic_prefix, "deskpanel");
         assert_eq!(config.server.interval_s, 5);
-        assert_eq!(config.rotation.len(), 1);
-        assert_eq!(config.rotation[0].page, "stats");
+        assert!(config.rotation.is_empty());
+        assert_eq!(config.rotation().len(), 1);
+        assert_eq!(config.rotation()[0].page, "stats");
         assert!(config.source.gitea.is_empty());
         assert_eq!(config.http.listen.port(), 8787);
         assert!(config.http.tls.is_none());
@@ -1708,6 +1772,68 @@ mod tests {
         let config = Config::from_toml("[alerts]\ncritical_ids = [\"leak\"]\n").unwrap();
         assert!(config.alerts.allows_critical("leak"));
         assert!(!config.alerts.allows_critical("door"));
+    }
+
+    const AZURE_ONLY: &str = "[server]\nenabled = false\n\n[[source.azure_devops]]\nname = \"work\"\n\
+organization = \"o\"\nprojects = [\"p\"]\ntoken_file = \"azdo\"\n";
+
+    #[test]
+    fn default_rotation_follows_what_is_configured() {
+        let pages = |text: &str| -> Vec<String> {
+            Config::from_toml(text)
+                .unwrap()
+                .rotation()
+                .into_iter()
+                .map(|r| r.page)
+                .collect()
+        };
+        // Nothing configured: the stats page alone, as before.
+        assert_eq!(pages(""), ["stats"]);
+        // A Git host adds the PR and pipeline pages, which skip themselves while empty.
+        let with_ci = format!("{AZURE_ONLY}").replace("enabled = false", "enabled = true");
+        assert_eq!(pages(&with_ci), ["stats", "prs", "pipelines"]);
+        // Only a Git host: no stats page of this machine.
+        assert_eq!(pages(AZURE_ONLY), ["prs", "pipelines"]);
+        let config = Config::from_toml(AZURE_ONLY).unwrap();
+        assert!(config.rotation().iter().all(|r| r.skip_when_empty));
+        // Explicit [[rotation]] blocks win.
+        let explicit = format!("{AZURE_ONLY}\n[[rotation]]\npage = \"alerts\"\ndwell_s = 5\n");
+        assert_eq!(pages(&explicit), ["alerts"]);
+        // Nothing to rotate at all still leaves one page.
+        assert_eq!(pages("[server]\nenabled = false\n"), ["stats"]);
+    }
+
+    #[test]
+    fn layout_drops_the_hosts_panel_when_there_is_no_host() {
+        let widgets = |config: &Config| -> Vec<Widget> {
+            config
+                .kiosk_config()
+                .panels()
+                .iter()
+                .map(|p| p.widget)
+                .collect()
+        };
+        let plain = Config::from_toml("").unwrap();
+        assert!(widgets(&plain).contains(&Widget::Hosts));
+        let ci_only = Config::from_toml(AZURE_ONLY).unwrap();
+        assert!(!widgets(&ci_only).contains(&Widget::Hosts));
+        // A Prometheus source brings hosts back.
+        let with_prom = format!(
+            "{AZURE_ONLY}\n[[source.prometheus]]\nname = \"home\"\nurl = \"http://p.example:9090\"\n\
+hosts = [{{ instance = \"n:9100\" }}]\n"
+        );
+        let with_prom = Config::from_toml(&with_prom).unwrap();
+        assert!(widgets(&with_prom).contains(&Widget::Hosts));
+        // Panels the user placed are never changed.
+        let own = format!("{AZURE_ONLY}\n[[kiosk.panel]]\nwidget = \"hosts\"\n");
+        let own = Config::from_toml(&own).unwrap();
+        assert_eq!(widgets(&own), [Widget::Hosts]);
+        // The layout without Hosts fills the default 4x3 grid exactly.
+        let cells: u32 = default_panels_without_hosts()
+            .iter()
+            .map(|p| u32::from(p.span[0]) * u32::from(p.span[1]))
+            .sum();
+        assert_eq!(cells, 12);
     }
 
     #[test]

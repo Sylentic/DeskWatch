@@ -8,6 +8,15 @@ hardware yet, and its MQTT schema (v2) may still change or the display may be dr
 
 ## [Unreleased]
 
+### Added
+
+- **A bridge that only reads Azure DevOps (or only GitHub Enterprise) works cleanly.** `[server] enabled = false`
+  switches off the stats of the machine the bridge runs on. Without any host to show, the built-in dashboard layout
+  drops the empty Hosts panel. Without `[[rotation]]` blocks the ESP rotation now adds the PR and pipeline pages when a
+  Git host is configured. See `docs/git-hosts.md`.
+- **Research: Azure DevOps without a personal access token** (`docs/azure-devops-auth.md`): service principal,
+  managed identity and Entra OAuth compared, with a recommendation. Nothing is built from it yet.
+
 ## [1.0.1]
 
 ### Fixed

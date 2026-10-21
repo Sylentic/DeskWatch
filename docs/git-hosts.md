@@ -15,6 +15,50 @@ take.
 | Bitbucket Data Center / Server | none | Not built, see below. |
 | Gogs, Gitee, SourceHut, others | none | Not planned. |
 
+## Using only one host (Azure DevOps or GitHub Enterprise)
+
+You do not need Gitea, MQTT, Prometheus or an ESP panel. A bridge that only reads one Git host needs these blocks and
+nothing else (see [docker.md](docker.md) for the container side, [setup-page.md](setup-page.md) to fill it in from the
+browser instead):
+
+```toml
+[mqtt]
+enabled = false          # no broker, no warnings about one
+
+[server]
+enabled = false          # do not show the machine the bridge runs on (a container id, a work PC)
+
+[kiosk]
+enabled = true
+
+# Azure DevOps ...
+[[source.azure_devops]]
+name = "work"
+organization = "your-org"
+projects = ["project-a"]
+token_file = "azdo-work"
+
+# ... or GitHub Enterprise Server (use `https://api.<subdomain>.ghe.com` for GHE.com)
+# [[source.github]]
+# name = "work"
+# base_url = "https://ghe.example.com/api/v3"
+# token_file = "ghe-work"
+# repos = ["org/repo-a"]
+```
+
+What changes when no host can be shown (`[server] enabled = false` and no Prometheus source):
+
+- The built-in dashboard layout leaves out the empty Hosts panel: Running now and Pipelines on top, Open PRs and
+  Alerts below. Panels you place with `[[kiosk.panel]]` are never changed. The layout is read at start, so restart
+  the bridge after adding a Prometheus source from Setup to get the Hosts panel back.
+- Without `[[rotation]]` blocks the ESP rotation is the pages that exist: `stats` while the server source is on, plus
+  `prs` and `pipelines` (skipped while empty) as soon as any Git host is configured. A bridge without a Git host and
+  without `[server] enabled = false` rotates the stats page only, as before.
+- The Gitea webhook route is only opened for Gitea sources; nothing else listens.
+
+Azure DevOps today needs a personal access token. [azure-devops-auth.md](azure-devops-auth.md) compares the
+alternatives (service principal, managed identity, Entra OAuth) and recommends one.
+
 ## Forgejo and Codeberg
 
 Forgejo is a fork of Gitea, and Codeberg runs Forgejo. Nobody has tried DeskWatch against one, so this is what the

@@ -26,6 +26,9 @@ organisation has been made (it exposed the address problem fixed in 0.9.13), but
 pull requests, approvals, checks and agent pools show correct data there.
 [azure-devops-verify.md](azure-devops-verify.md) is the checklist for that.
 
+Only using Azure DevOps? See [Using only one host](git-hosts.md#using-only-one-host-azure-devops-or-github-enterprise).
+To avoid a personal access token, read [azure-devops-auth.md](azure-devops-auth.md).
+
 ## Before you start
 
 A personal access token (PAT) acts as you. If this is your employer's organisation, check that your organisation
