@@ -113,6 +113,27 @@ alert. Switch it off with `dismiss = false` in `[alerts]`.
 The header pill on or off and "via source" are `[alerts]` settings too (`ticker`, `show_source`), also
 changeable on the [setup page](setup-page.md#alerts).
 
+### Customize your own dashboard
+
+The grid icon in the header (next to the cogwheel for Setup) starts **edit mode**. Every panel gets a strip with a drag
+handle, arrows (move earlier or later, for touch screens), **W** and **H** (width and height in grid cells, up to the
+size of the grid) and an x to hide it. A hidden panel leaves the grid and waits under **Hidden panels** in the bar on top;
+click it there to bring it back. The bar counts the cells in use (`10 of 12`) and has **Reset to default**. **Done**
+leaves edit mode.
+
+The administrator's layout (the built-in one or your `[[kiosk.panel]]` blocks) stays the default. A user only stores the
+difference, so a panel the administrator adds later still shows up (at the end). Panels flow in order on the grid, so
+a smaller panel can leave a gap.
+
+Where the choice is kept:
+
+| Situation | Kept |
+|---|---|
+| Signed in (local user or GitHub/Microsoft), data folder writable | On the bridge, per user (`layouts.json`, mode 0600), so it follows the user to any browser. Every role may save its own layout, nobody can change another user's. |
+| No login, or a screen opened with a viewer key | In this browser (localStorage) |
+
+API: `GET /api/auth/layout`, `PUT /api/auth/layout`, `POST /api/auth/layout/reset` (409 when the sign-in is not a person).
+
 ### Where things run: source marks and the sources bar
 
 Every job, run, pull request, runner and alert carries a two-letter mark for its source: **Gt** Gitea, **GH** GitHub,

@@ -478,3 +478,95 @@ async fn a_chosen_password_must_be_replaced_before_anything_else() {
         StatusCode::OK
     );
 }
+
+// ---- per-user dashboard layout ---------------------------------------------
+
+async fn layout_call(
+    auth: &Auth,
+    method: &str,
+    uri: &str,
+    cookie: &str,
+    body: Option<&str>,
+) -> (StatusCode, Value) {
+    let mut req = HttpRequest::builder()
+        .method(method)
+        .uri(uri)
+        .header("cookie", format!("dw_session={cookie}"))
+        .header("x-deskwatch", "1")
+        .header("content-type", "application/json");
+    if body.is_none() {
+        req = req.header("content-length", "0");
+    }
+    let res = auth
+        .router()
+        .oneshot(
+            req.body(Body::from(body.unwrap_or("").to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = res.status();
+    let bytes = axum::body::to_bytes(res.into_body(), 1 << 20)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+#[tokio::test]
+async fn each_user_keeps_their_own_layout() {
+    let (d, auth) = fresh();
+    auth.setup_admin("admin", PW).unwrap();
+    add(&auth, "vera", Role::Viewer, "a viewer phrase!!");
+    add(&auth, "anna", Role::Operator, "an operator phrase");
+    let vera = auth
+        .login(ip("10.0.0.5"), "vera", "a viewer phrase!!")
+        .ok()
+        .unwrap()
+        .1;
+    let anna = auth
+        .login(ip("10.0.0.5"), "anna", "an operator phrase")
+        .ok()
+        .unwrap()
+        .1;
+    let mine = r#"{"order":["jobs#1","hosts#1"],"hidden":["alerts#1"],"span":{"hosts#1":[1,2]}}"#;
+
+    // Nothing saved yet.
+    let (s, j) = layout_call(&auth, "GET", "/api/auth/layout", &vera, None).await;
+    assert_eq!((s, j["layout"].is_null()), (StatusCode::OK, true));
+    // A viewer saves a layout of their own; nobody else sees it.
+    let (s, _) = layout_call(&auth, "PUT", "/api/auth/layout", &vera, Some(mine)).await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, j) = layout_call(&auth, "GET", "/api/auth/layout", &vera, None).await;
+    assert_eq!(j["layout"]["hidden"][0], "alerts#1");
+    let (_, j) = layout_call(&auth, "GET", "/api/auth/layout", &anna, None).await;
+    assert!(j["layout"].is_null());
+    // It survives a restart.
+    let again = Auth::open(Some(&d.0), false).unwrap();
+    let token = again
+        .login(ip("10.0.0.6"), "vera", "a viewer phrase!!")
+        .ok()
+        .unwrap()
+        .1;
+    let (_, j) = layout_call(&again, "GET", "/api/auth/layout", &token, None).await;
+    assert_eq!(j["layout"]["span"]["hosts#1"][1], 2);
+    // Sizes out of range are refused; reset gives the default back.
+    let bad = r#"{"span":{"hosts#1":[0,99]}}"#;
+    let (s, _) = layout_call(&auth, "PUT", "/api/auth/layout", &vera, Some(bad)).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let (s, _) = layout_call(&auth, "POST", "/api/auth/layout/reset", &vera, None).await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, j) = layout_call(&auth, "GET", "/api/auth/layout", &vera, None).await;
+    assert!(j["layout"].is_null());
+}
+
+#[tokio::test]
+async fn a_screen_key_has_no_saved_layout() {
+    let (_d, auth) = fresh();
+    auth.setup_admin("admin", PW).unwrap();
+    let screen = auth.new_session(Role::Viewer);
+    let (s, _) = layout_call(&auth, "GET", "/api/auth/layout", &screen, None).await;
+    assert_eq!(s, StatusCode::CONFLICT);
+}
