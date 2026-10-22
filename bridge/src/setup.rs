@@ -1090,8 +1090,18 @@ pub fn describe(config: &Config) -> Value {
             "id": format!("github:{}", s.name), "kind": "github", "name": s.name,
             "origin": origin("github", &s.name),
             "address": s.base_url, "repos": s.repos,
-            "credentials": [cred("token", &s.token_file, true)],
-            "fields": { "base_url": s.base_url, "repos": s.repos, "container": s.container },
+            "credentials": [match s.auth {
+                crate::config::GithubAuth::Token => cred("token", &s.token_file, true),
+                crate::config::GithubAuth::App => cred("private key", &s.private_key_file, true),
+            }],
+            "fields": {
+                "base_url": s.base_url, "repos": s.repos, "container": s.container,
+                "auth": match s.auth {
+                    crate::config::GithubAuth::Token => "token",
+                    crate::config::GithubAuth::App => "app",
+                },
+                "app_id": s.app_id, "installation_id": s.installation_id,
+            },
         }));
     }
     for s in &config.source.gitlab {

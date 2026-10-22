@@ -23,6 +23,10 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ### Added
 
+- **GitHub App sign-in.** A GitHub source can sign in as a GitHub App installed on the organisation (`auth = "app"`
+  with `app_id`, `installation_id` and `private_key_file`; in Setup: **Sign in with: GitHub App**) instead of with
+  one person's token. The bridge signs a short token with the App's private key and swaps it for an hour-long
+  installation token. Tried against mock answers only. Details in `docs/git-hosts.md`.
 - **Sign in with a service principal from the Setup page.** An Azure DevOps source has a **Sign in with** list:
   personal access token or Entra service principal (tenant id, application id, client secret). Until now the service
   principal could only be set in a config file. The list is built so another source type can get a choice of sign-in
@@ -41,6 +45,11 @@ All notable changes to DeskWatch are listed here. The format follows
 - **Scroll hint is a pill instead of a fade.** A card with more below no longer fades its bottom row; a small
   "↓ N more" pill shows how many items are out of view, and tapping it scrolls down. It only shows when the card can
   scroll.
+
+### Fixed
+
+- **Test connection and Remove now work for an Azure DevOps source that signs in with Entra.** The test used to
+  look for a token and fail, and removing such a source left its client secret behind.
 
 ## [1.0.3]
 

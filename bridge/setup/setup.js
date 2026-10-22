@@ -228,7 +228,14 @@
     github: {
       strings: [['base_url', 'API address', 'https://api.github.com']],
       lists: [['repos', 'Repositories, one per line (owner/name)']],
-      secrets: [['token', 'Token (read-only, fine-grained)', true]]
+      secrets: [],
+      auth: [
+        ['token', 'Access token', 'A fine-grained token. Acts as the person who made it.',
+         { strings: [], secrets: [['token', 'Token (read-only, fine-grained)', true]] }],
+        ['app', 'GitHub App', 'An app installed on your organisation. Not tied to a person.',
+         { strings: [['app_id', 'App id', ''], ['installation_id', 'Installation id', '']],
+           secrets: [['private_key', 'Private key (the .pem file, pasted)', true]], multiline: ['private_key'] }]
+      ]
     },
     gitlab: {
       strings: [['base_url', 'GitLab address (without /api/v4)', 'https://gitlab.com']],

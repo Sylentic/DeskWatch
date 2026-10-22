@@ -72,7 +72,7 @@ A personal token acts as one person and stops when they leave or lose access. Wh
 | Azure DevOps | Entra service principal (Basic licence per identity, two admins). [azure-devops-auth.md](azure-devops-auth.md) | **Built**: `auth = "entra"` |
 | GitLab | Project or group access token: a bot user with its own role (Reporter is enough), no licence on most plans | Works today, it is a token like any other. [gitlab.md](gitlab.md) |
 | Bitbucket Cloud | Repository, project or workspace access token (bearer). App passwords stopped working on 9 June 2026; API tokens are tied to a user | Works today, same token field. [bitbucket.md](bitbucket.md) |
-| GitHub, GitHub Enterprise | A GitHub App installed on the organisation (an hour-long installation token made from the app's private key), or a fine-grained token on a dedicated machine user | **Not built.** A GitHub App mode would be the next one; say if you want it |
+| GitHub, GitHub Enterprise | A GitHub App installed on the organisation (an hour-long installation token made from the app's private key), or a fine-grained token on a dedicated machine user | **Built**: `auth = "app"`, see below |
 | Gitea | A token of a dedicated bot user | Works today |
 
 GitLab, Bitbucket and Gitea already have the "service account" option, as a token you create on the bot or on the
@@ -125,3 +125,26 @@ does not change. A new host is one module under `bridge/src/<host>/` (API client
 payload types, a state machine, tests with fixtures), one config struct in `config.rs`, a line each in the
 supervisor, the Setup page and the connection test, and a docs page. `bridge/src/bitbucket/` is the most recent
 example to copy.
+
+### GitHub App
+
+Create the App under the organisation's **Settings > Developer settings > GitHub Apps** with read-only rights:
+Metadata, Pull requests, Actions, Issues (for new-issue alerts), plus Administration (repository runners) or
+Self-hosted runners (organisation runners) if you list `runners`. Install it on the repositories to watch, generate a
+private key (a `.pem` file) and note the **App ID** and the **installation id** (the number at the end of the
+installation's address). Then, in Setup, add a GitHub source and choose **Sign in with: GitHub App**, or in a config file:
+
+```toml
+[[source.github]]
+name = "work"
+auth = "app"
+app_id = "123456"
+installation_id = "7890123"
+private_key_file = "github-work-key"   # credential holding the .pem text
+repos = ["team/service-a"]
+```
+
+The bridge signs a short token with the key, swaps it for an installation token that lasts an hour, renews it before
+it runs out and gets a new one if GitHub revokes it. The key is stored like a token (the data folder's `credentials/`,
+never `sources.toml`) and never comes back to the browser. **This has been tried against mock answers only**, not
+against a real GitHub App. A key GitHub gave out as `BEGIN RSA PRIVATE KEY` or `BEGIN PRIVATE KEY` both work.

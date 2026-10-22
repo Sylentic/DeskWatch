@@ -251,6 +251,21 @@ async fn a_missing_credential_is_a_failed_check_not_a_crash() {
 }
 
 #[tokio::test]
+async fn service_accounts_are_tested_with_their_own_credential() {
+    let app = "[[source.github]]\nname = \"main\"\nauth = \"app\"\napp_id = \"1\"\n\
+               installation_id = \"2\"\nprivate_key_file = \"/nonexistent/dir/key\"\nrepos = [\"o/r\"]\n";
+    let report = report_for(app, "github:main").await;
+    assert!(!report.ok);
+    assert_eq!(report.checks[0].name, "private key");
+    let entra = "[[source.azure_devops]]\nname = \"w\"\nauth = \"entra\"\norganization = \"o\"\n\
+                 projects = [\"p\"]\ntenant_id = \"t\"\nclient_id = \"c\"\n\
+                 client_secret_file = \"/nonexistent/dir/secret\"\n";
+    let report = report_for(entra, "azure_devops:w").await;
+    assert!(!report.ok);
+    assert_eq!(report.checks[0].name, "client secret");
+}
+
+#[tokio::test]
 async fn unknown_sources_are_none() {
     let config = Config::from_toml("").unwrap();
     assert!(source(&config, "github:nope").await.is_none());

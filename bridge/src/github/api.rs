@@ -12,16 +12,19 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use reqwest::StatusCode;
-use reqwest::header::{ACCEPT, ETAG, HeaderMap, IF_NONE_MATCH};
+use reqwest::header::{ACCEPT, AUTHORIZATION, ETAG, HeaderMap, IF_NONE_MATCH};
+use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use tokio::sync::Mutex as AsyncMutex;
 
+use super::app::GithubApp;
 use super::payload::{Issue, Job, Jobs, PullRequest, WorkflowRun, WorkflowRuns};
 use crate::gitea::runners::{ApiRunner, RunnerList, RunnerScope};
-use crate::source::Secret;
+use crate::source::{AuthRefused, Secret};
 
 /// Default API root: github.com.
 pub const GITHUB_COM: &str = "https://api.github.com";
@@ -74,12 +77,33 @@ struct Quota {
     limit: u32,
 }
 
-/// GitHub API over HTTP with a read-only token.
+/// An installation token is renewed this long before it expires.
+const TOKEN_MARGIN: Duration = Duration::from_secs(300);
+
+/// How requests are signed.
+enum Auth {
+    Token(Secret),
+    App {
+        app: Box<GithubApp>,
+        /// The installation token in use and when to stop using it.
+        cached: AsyncMutex<Option<(Secret, Instant)>>,
+    },
+}
+
+/// The answer of GitHub's installation token endpoint.
+#[derive(Deserialize)]
+struct InstallationToken {
+    token: Option<String>,
+    expires_at: Option<String>,
+    message: Option<String>,
+}
+
+/// GitHub API over HTTP, with a read-only token or as a GitHub App.
 pub struct HttpApi {
     client: reqwest::Client,
     /// API root without trailing slash.
     base_url: String,
-    token: Secret,
+    auth: Auth,
     /// Last answer per URL. Holds a few entries per repository; job lists
     /// are dropped with `forget_jobs` once their run is over.
     cache: Mutex<HashMap<String, Cached>>,
@@ -88,7 +112,21 @@ pub struct HttpApi {
 }
 
 impl HttpApi {
+    /// Sign in with a fine-grained token.
     pub fn new(base_url: &str, token: Secret) -> Result<Self> {
+        Self::build(base_url, Auth::Token(token))
+    }
+
+    /// Sign in as a GitHub App installation.
+    pub fn with_app(base_url: &str, app: GithubApp) -> Result<Self> {
+        let auth = Auth::App {
+            app: Box::new(app),
+            cached: AsyncMutex::new(None),
+        };
+        Self::build(base_url, auth)
+    }
+
+    fn build(base_url: &str, auth: Auth) -> Result<Self> {
         let client = reqwest::Client::builder()
             .timeout(REQUEST_TIMEOUT)
             .user_agent(concat!("deskwatch-bridge/", env!("CARGO_PKG_VERSION")))
@@ -97,10 +135,84 @@ impl HttpApi {
         Ok(Self {
             client,
             base_url: base_url.trim_end_matches('/').to_string(),
-            token,
+            auth,
             cache: Mutex::new(HashMap::new()),
             quota: Mutex::new(None),
         })
+    }
+
+    /// The `Authorization` header value. As an App, the installation token is
+    /// reused until shortly before it expires (or `renew` asks for a new one).
+    async fn authorization(&self, renew: bool) -> Result<String> {
+        let (app, cached) = match &self.auth {
+            Auth::Token(token) => return Ok(format!("Bearer {}", token.expose())),
+            Auth::App { app, cached } => (app, cached),
+        };
+        let mut cached = cached.lock().await;
+        if !renew
+            && let Some((token, until)) = cached.as_ref()
+            && Instant::now() < *until
+        {
+            return Ok(format!("Bearer {}", token.expose()));
+        }
+        let (token, lifetime) = self.fetch_installation_token(app).await?;
+        let until = Instant::now() + lifetime.saturating_sub(TOKEN_MARGIN);
+        let header = format!("Bearer {}", token.expose());
+        *cached = Some((token, until));
+        Ok(header)
+    }
+
+    /// Trade the App's signed token for an installation token. GitHub refusing
+    /// the App (wrong key, unknown App or installation) is `AuthRefused`;
+    /// GitHub being unreachable is an ordinary request error.
+    async fn fetch_installation_token(&self, app: &GithubApp) -> Result<(Secret, Duration)> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        let url = format!(
+            "{}/app/installations/{}/access_tokens",
+            self.base_url, app.installation_id
+        );
+        let response = self
+            .client
+            .post(url)
+            .bearer_auth(app.jwt(now)?)
+            .header(ACCEPT, "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", API_VERSION)
+            .send()
+            .await
+            .context("GitHub App token request")?;
+        let status = response.status();
+        let body = response.bytes().await?;
+        let answer: InstallationToken =
+            serde_json::from_slice(&body).unwrap_or(InstallationToken {
+                token: None,
+                expires_at: None,
+                message: None,
+            });
+        if let (true, Some(token)) = (status.is_success(), answer.token) {
+            let lifetime = answer
+                .expires_at
+                .as_deref()
+                .and_then(|t| {
+                    time::OffsetDateTime::parse(t, &time::format_description::well_known::Rfc3339)
+                        .ok()
+                })
+                .map(|t| (t - time::OffsetDateTime::now_utc()).whole_seconds())
+                .filter(|s| *s > 0)
+                .map_or(Duration::from_secs(1800), |s| Duration::from_secs(s as u64));
+            return Ok((Secret::new(token), lifetime));
+        }
+        if status.is_client_error() {
+            let why = answer
+                .message
+                .as_deref()
+                .and_then(|m| m.lines().next())
+                .unwrap_or("no reason given");
+            return Err(anyhow::Error::new(AuthRefused)
+                .context(format!("GitHub refused the App ({status}): {why}")));
+        }
+        anyhow::bail!("GitHub answered HTTP {status} to the App token request")
     }
 
     /// Can the token see `owner/name`? One cheap request, for the setup
@@ -182,16 +294,23 @@ impl HttpApi {
         let url = format!("{}{path}", self.base_url);
         let etag = self.cache.lock().unwrap().get(&url).map(|c| c.etag.clone());
 
-        let mut request = self
-            .client
-            .get(&url)
-            .bearer_auth(self.token.expose())
-            .header(ACCEPT, "application/vnd.github+json")
-            .header("X-GitHub-Api-Version", API_VERSION);
-        if let Some(etag) = etag {
-            request = request.header(IF_NONE_MATCH, etag);
+        let send = |authorization: String| {
+            let mut request = self
+                .client
+                .get(&url)
+                .header(AUTHORIZATION, authorization)
+                .header(ACCEPT, "application/vnd.github+json")
+                .header("X-GitHub-Api-Version", API_VERSION);
+            if let Some(etag) = &etag {
+                request = request.header(IF_NONE_MATCH, etag);
+            }
+            request.send()
+        };
+        let mut response = send(self.authorization(false).await?).await?;
+        // An installation token can be revoked before it runs out: get a new one once.
+        if response.status() == StatusCode::UNAUTHORIZED && matches!(self.auth, Auth::App { .. }) {
+            response = send(self.authorization(true).await?).await?;
         }
-        let response = request.send().await?;
         let rate_limited = self.note_quota(response.headers());
 
         if response.status() == StatusCode::NOT_MODIFIED {
@@ -465,5 +584,137 @@ pub(crate) mod tests {
             .await
             .unwrap_err();
         assert_eq!(Health::from_error(&err), Health::AuthFailed);
+    }
+    // -- GitHub App sign-in ---------------------------------------------
+
+    use axum::routing::post;
+    use base64::Engine as _;
+    use ring::signature::{RSA_PKCS1_2048_8192_SHA256, UnparsedPublicKey};
+
+    use crate::github::app::GithubApp;
+    use crate::github::app::tests::{PKCS1, PUBLIC, pem};
+
+    /// A mock GitHub: hands out `inst-<n>` installation tokens for a JWT signed
+    /// with the test key, and lets only the token named in `valid` read.
+    #[derive(Default)]
+    struct AppMock {
+        issued: std::sync::atomic::AtomicUsize,
+        valid: Mutex<String>,
+        /// Answer for the token endpoint: 0 = fine, else this status.
+        refuse: std::sync::atomic::AtomicU16,
+    }
+
+    async fn app_mock(mock: Arc<AppMock>) -> String {
+        let router = Router::new()
+            .route(
+                "/api/v3/app/installations/678/access_tokens",
+                post(
+                    |State(mock): State<Arc<AppMock>>, headers: HeaderMap| async move {
+                        let refuse = mock.refuse.load(std::sync::atomic::Ordering::SeqCst);
+                        if refuse != 0 {
+                            return (
+                                StatusCode::from_u16(refuse).unwrap(),
+                                "{\"message\":\"A JSON web token could not be decoded\"}"
+                                    .to_string(),
+                            );
+                        }
+                        let jwt = headers["authorization"]
+                            .to_str()
+                            .unwrap()
+                            .strip_prefix("Bearer ")
+                            .unwrap()
+                            .to_string();
+                        let parts: Vec<&str> = jwt.split('.').collect();
+                        let public = base64::engine::general_purpose::STANDARD
+                            .decode(PUBLIC)
+                            .unwrap();
+                        let signature = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                            .decode(parts[2])
+                            .unwrap();
+                        if UnparsedPublicKey::new(&RSA_PKCS1_2048_8192_SHA256, public)
+                            .verify(format!("{}.{}", parts[0], parts[1]).as_bytes(), &signature)
+                            .is_err()
+                        {
+                            return (StatusCode::UNAUTHORIZED, "{}".into());
+                        }
+                        let n = mock
+                            .issued
+                            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                            + 1;
+                        let expires = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
+                        let expires = format!(
+                            "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+                            expires.year(),
+                            expires.month() as u8,
+                            expires.day(),
+                            expires.hour(),
+                            expires.minute(),
+                            expires.second()
+                        );
+                        (
+                            StatusCode::CREATED,
+                            format!("{{\"token\":\"inst-{n}\",\"expires_at\":\"{expires}\"}}"),
+                        )
+                    },
+                ),
+            )
+            .route(
+                "/api/v3/repos/{owner}/{repo}",
+                get(
+                    |State(mock): State<Arc<AppMock>>, headers: HeaderMap| async move {
+                        let want = format!("Bearer {}", mock.valid.lock().unwrap());
+                        if headers["authorization"] == want.as_str() {
+                            (StatusCode::OK, "{}")
+                        } else {
+                            (StatusCode::UNAUTHORIZED, "{}")
+                        }
+                    },
+                ),
+            )
+            .with_state(mock);
+        serve(router).await
+    }
+
+    fn app_api(base_url: &str, installation: &str) -> HttpApi {
+        let key = pem("RSA PRIVATE KEY", PKCS1);
+        HttpApi::with_app(
+            base_url,
+            GithubApp::new("12345", installation, &key).unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn app_signs_in_and_reuses_the_installation_token() {
+        let mock = Arc::new(AppMock::default());
+        *mock.valid.lock().unwrap() = "inst-1".into();
+        let api = app_api(&app_mock(mock.clone()).await, "678");
+        api.repo("o/a").await.unwrap();
+        api.repo("o/b").await.unwrap();
+        assert_eq!(mock.issued.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn app_gets_a_new_token_once_when_the_old_one_is_revoked() {
+        let mock = Arc::new(AppMock::default());
+        *mock.valid.lock().unwrap() = "inst-2".into();
+        let api = app_api(&app_mock(mock.clone()).await, "678");
+        api.repo("o/a").await.unwrap();
+        assert_eq!(mock.issued.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn app_refused_by_github_is_auth_failed_and_names_the_reason_only() {
+        let mock = Arc::new(AppMock::default());
+        let url = app_mock(mock.clone()).await;
+        // An installation the mock does not know.
+        let err = app_api(&url, "999").repo("o/a").await.unwrap_err();
+        assert_eq!(Health::from_error(&err), Health::AuthFailed);
+        mock.refuse.store(401, std::sync::atomic::Ordering::SeqCst);
+        let err = app_api(&url, "678").repo("o/a").await.unwrap_err();
+        assert_eq!(Health::from_error(&err), Health::AuthFailed);
+        let text = format!("{err:#}");
+        assert!(text.contains("could not be decoded"), "{text}");
+        assert!(!text.contains("PRIVATE KEY"));
     }
 }
