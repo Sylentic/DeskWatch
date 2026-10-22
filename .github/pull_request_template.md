@@ -1,7 +1,8 @@
-## What and why
+## What changed
 
-## How you checked it
+## Why
 
-- [ ] Branch is from `dev` and this PR targets `dev`
-- [ ] `Unreleased` in CHANGELOG.md has a line (if users can see the change)
-- [ ] No secrets, hostnames, IP addresses or client names
+## How it was tested
+
+<!-- Base branch: dev (main only takes dev, see docs/development.md). -->
+<!-- Checks: cargo fmt --all --check, cargo clippy --workspace --all-targets --locked -- -D warnings, cargo test --workspace --locked -->
