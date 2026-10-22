@@ -1,0 +1,54 @@
+# Fills in the description of the release pull request (dev into main) from the
+# CHANGELOG section of the version in Cargo.toml. It only writes when the
+# description is empty or still the untouched pull request template, so a text
+# somebody typed is never replaced. It is not a required check.
+name: Release PR
+
+on:
+  pull_request:
+    types: [opened]
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  describe:
+    name: release description
+    if: github.event.pull_request.head.ref == 'dev' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Fill in the description
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          # Empty after dropping headings, comments and blank lines: nothing was typed yet.
+          typed=$(printf '%s' "$BODY" | sed -e '/^#/d' -e '/^<!--.*-->$/d' | tr -d '[:space:]')
+          if [ -n "$typed" ]; then
+            echo "The description already has text, leaving it alone."
+            exit 0
+          fi
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "CHANGELOG.md has no section for $version, leaving the description alone."
+            exit 0
+          fi
+          {
+            printf '## What changed\n\nRelease %s. The list below is the %s section of CHANGELOG.md.\n' "$version" "$version"
+            cat notes.md
+            printf '\n## Why\n\nShips everything merged into dev since the last release. Merging with a merge commit tags v%s and publishes the release and the image.\n' "$version"
+            printf '\n## How it was tested\n\nCI on every pull request into dev, and on this one.\n'
+          } > body.md
+          gh pr edit "$PR" --repo "$GITHUB_REPOSITORY" --body-file body.md
