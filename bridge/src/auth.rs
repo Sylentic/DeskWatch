@@ -41,6 +41,8 @@ use crate::kiosk::asset;
 use crate::kiosk::origin;
 
 mod layouts;
+/// Check a `layouts.json` from a backup (see `setup::backup`).
+pub use layouts::check_text as check_layouts_text;
 pub mod oauth;
 
 const AUTH_FILE: &str = "auth.toml";

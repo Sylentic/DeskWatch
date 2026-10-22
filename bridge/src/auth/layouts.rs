@@ -163,3 +163,17 @@ pub(super) async fn reset_layout(State(auth): State<Auth>, headers: HeaderMap) -
         Err(e) => text(StatusCode::INSUFFICIENT_STORAGE, format!("{e:#}")),
     }
 }
+
+/// Check the text of a `layouts.json` (a backup being restored). Gives the
+/// number of users whose layout it holds.
+pub fn check_text(text: &str) -> Result<usize> {
+    let map: BTreeMap<String, UserLayout> =
+        serde_json::from_str(text).context("layouts.json in the backup is not valid")?;
+    if map.len() > MAX_USERS {
+        bail!("too many saved layouts");
+    }
+    for layout in map.values() {
+        layout.check()?;
+    }
+    Ok(map.len())
+}

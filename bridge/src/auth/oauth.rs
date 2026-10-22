@@ -202,6 +202,21 @@ fn valid_guid(s: &str) -> bool {
             .all(|(n, p)| p.len() == *n && p.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
+/// Check the text of an `oauth.toml` (a backup being restored). Gives the
+/// names of the providers it sets up.
+pub fn check_text(text: &str) -> Result<Vec<&'static str>> {
+    let config: Config = toml::from_str(text).context("oauth.toml in the backup is not valid")?;
+    config.validate()?;
+    let mut names = Vec::new();
+    if config.github.is_some() {
+        names.push(Provider::Github.label());
+    }
+    if config.microsoft.is_some() {
+        names.push(Provider::Microsoft.label());
+    }
+    Ok(names)
+}
+
 impl Config {
     /// Check a configuration before it is saved.
     pub fn validate(&self) -> Result<()> {

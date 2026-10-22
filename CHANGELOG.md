@@ -27,6 +27,11 @@ All notable changes to DeskWatch are listed here. The format follows
   with `app_id`, `installation_id` and `private_key_file`; in Setup: **Sign in with: GitHub App**) instead of with
   one person's token. The bridge signs a short token with the App's private key and swaps it for an hour-long
   installation token. Tried against mock answers only. Details in `docs/git-hosts.md`.
+- **Backup in Setup: export and import your settings.** Setup > Backup downloads sources, broker, alerts, dashboard
+  and sign-in rules and everyone's dashboard layout as one file, by default **without secrets** (safe to keep and
+  share). Optionally the stored tokens and client secrets go in too, locked with a password (Argon2id + XChaCha20-
+  Poly1305). Passwords, API keys and sessions are never exported. Importing shows what is inside before anything
+  changes, then replaces the settings; restart afterwards. Guide: [docs/backup.md](docs/backup.md).
 - **Sign in with a service principal from the Setup page.** An Azure DevOps source has a **Sign in with** list:
   personal access token or Entra service principal (tenant id, application id, client secret). Until now the service
   principal could only be set in a config file. The list is built so another source type can get a choice of sign-in

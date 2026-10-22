@@ -976,3 +976,107 @@ async fn a_found_update_shows_in_the_status() {
     let v: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(v["update"]["version"], "0.9.20");
 }
+
+/// Like `with_data`, without touching the process-wide credentials folder.
+fn isolated(tag: &str) -> (Router, Temp, Store) {
+    let temp = Temp::new(tag);
+    let store = Store::open_isolated(&temp.0.join("data")).unwrap();
+    let config = Config::from_toml("").unwrap();
+    let router = Setup::new(&config, MqttLink::default(), Some(store.clone()), None).router();
+    (router, temp, store)
+}
+
+#[tokio::test]
+async fn backup_export_and_import_over_http() {
+    let (router, _temp, store) = isolated("backup-from");
+    store
+        .write_sources("[[source.gitea]]\nname = \"p\"\nbase_url = \"https://prom.example\"\ntoken_file = \"tok\"\nwebhook_secret_file = \"hook\"\n")
+        .unwrap();
+    store.write_secret("tok", "VERY-SECRET-VALUE").unwrap();
+
+    // No secret in the plain export.
+    let (status, headers, plain) = send(&router, "GET", "/api/setup/export", &[], "").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        headers[header::CONTENT_DISPOSITION]
+            .to_str()
+            .unwrap()
+            .contains(".deskwatch")
+    );
+    assert!(!plain.contains("VERY-SECRET-VALUE"));
+
+    // Locked export needs a long password and a same-origin request.
+    let evil = [("host", "b.lan"), ("origin", "http://evil.example")];
+    let ask = |pw: &str| json!({ "password": pw }).to_string();
+    let (status, ..) = send(
+        &router,
+        "POST",
+        "/api/setup/export",
+        &evil,
+        &ask("long enough password"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, ..) = send(&router, "POST", "/api/setup/export", &[], &ask("short")).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _, locked) = send(
+        &router,
+        "POST",
+        "/api/setup/export",
+        &[],
+        &ask("long enough password"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(!locked.contains("VERY-SECRET-VALUE"));
+
+    // Restore the locked file into another install.
+    let (other, _other_temp, restored) = isolated("backup-to");
+    let with = |file: &str, pw: Option<&str>| json!({ "file": file, "password": pw }).to_string();
+    let (status, _, body) = send(
+        &other,
+        "POST",
+        "/api/setup/import/check",
+        &[],
+        &with(&locked, None),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap()["needs_password"],
+        true
+    );
+    let (status, ..) = send(
+        &other,
+        "POST",
+        "/api/setup/import",
+        &[],
+        &with(&locked, Some("wrong password!!")),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _, body) = send(
+        &other,
+        "POST",
+        "/api/setup/import/check",
+        &[],
+        &with(&locked, Some("long enough password")),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap()["summary"]["secrets"],
+        1
+    );
+    let (status, ..) = send(
+        &other,
+        "POST",
+        "/api/setup/import",
+        &[],
+        &with(&locked, Some("long enough password")),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(restored.read_sources().unwrap().contains("prom.example"));
+    assert_eq!(restored.read_secret("tok").unwrap(), "VERY-SECRET-VALUE");
+}
