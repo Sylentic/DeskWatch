@@ -453,7 +453,7 @@ Every version tag (from 0.9.6 on, except 0.9.8, which was never built) is built 
 `publish image` job in [`pipeline.yml`](../.github/workflows/pipeline.yml) and pushed to GitHub's registry:
 
 ```sh
-docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 1.0.3; no "v"
+docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 1.0.4; no "v"
 docker run --rm -p 8787:8787 ghcr.io/sylentic/deskwatch-bridge:<version> --demo --kiosk --no-mqtt
 ```
 
