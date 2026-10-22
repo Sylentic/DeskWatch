@@ -67,6 +67,17 @@ impl Store {
         Ok(store)
     }
 
+    /// `open` without the process-wide credentials folder, so a test that makes
+    /// its own folder cannot take over the lookup of the other tests.
+    #[cfg(test)]
+    pub(crate) fn open_isolated(dir: &Path) -> Result<Self> {
+        let store = Self {
+            dir: dir.to_path_buf(),
+        };
+        create_private_dir(&store.credentials())?;
+        Ok(store)
+    }
+
     fn credentials(&self) -> PathBuf {
         self.dir.join(CREDENTIALS_DIR)
     }
@@ -85,6 +96,33 @@ impl Store {
     /// `Config::with_overlay`; this only writes it safely.
     pub fn write_sources(&self, text: &str) -> Result<()> {
         write_atomic(&self.dir.join(SOURCES_FILE), text.as_bytes(), 0o644)
+    }
+
+    /// The text of one of the data folder's own files (`oauth.toml`,
+    /// `layouts.json`), or `None` when it is not there. Only for the backup.
+    pub fn read_data_file(&self, name: &str) -> Result<Option<String>> {
+        let path = self.dir.join(name);
+        match std::fs::read_to_string(&path) {
+            Ok(text) => Ok(Some(text)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e).with_context(|| format!("cannot read {}", path.display())),
+        }
+    }
+
+    /// Replace one of the data folder's own files, mode 0600 (a backup restore).
+    pub fn write_data_file(&self, name: &str, text: &str) -> Result<()> {
+        write_atomic(&self.dir.join(name), text.as_bytes(), 0o600)
+    }
+
+    /// The value of a stored secret, for an export locked with a password. It
+    /// never goes anywhere else.
+    pub fn read_secret(&self, name: &str) -> Result<String> {
+        check_name(name)?;
+        let path = self.credentials().join(name);
+        Ok(std::fs::read_to_string(&path)
+            .with_context(|| format!("cannot read the secret {name}"))?
+            .trim()
+            .to_string())
     }
 
     /// Store (or replace) a secret under a plain name. Surrounding whitespace

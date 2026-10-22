@@ -248,6 +248,13 @@ fn removing_returns_the_credentials_and_leaves_other_sources() {
     let config = Config::from_toml("").unwrap().with_overlay(&text).unwrap();
     assert_eq!(config.source.github.len(), 1);
     assert_eq!(config.source.github[0].name, "b");
+    // A source that signs in as an app returns its private key, too.
+    let app = "[[source.github]]\nname = \"c\"\nauth = \"app\"\napp_id = \"1\"\ninstallation_id = \"2\"\n\
+               private_key_file = \"github-c-private_key\"\nrepos = [\"o/c\"]\n";
+    assert_eq!(
+        remove(app, "github", "c").unwrap().1,
+        ["github-c-private_key"]
+    );
     // The last one leaves an empty file.
     let (text, _) = remove(&text, "github", "b").unwrap();
     assert_eq!(text.trim(), "");
@@ -435,4 +442,215 @@ fn alert_settings_are_written_checked_and_merged() {
     ] {
         assert!(set_alerts("", &fields(bad.clone())).is_err(), "{bad}");
     }
+}
+
+#[test]
+fn a_container_is_stored_and_an_empty_one_removes_it() {
+    let plan = github(
+        "",
+        true,
+        json!({ "base_url": "https://api.github.com", "repos": ["o/a"], "container": " Work " }),
+        &[("token", "t")],
+    )
+    .unwrap();
+    let config = Config::from_toml("")
+        .unwrap()
+        .with_overlay(&plan.text)
+        .unwrap();
+    assert_eq!(config.source.github[0].container, "Work");
+    assert_eq!(config.containers()["github"], "Work");
+
+    let plan = github(&plan.text, false, json!({ "container": "" }), &[]).unwrap();
+    assert!(!plan.text.contains("container"), "{}", plan.text);
+    let config = Config::from_toml("")
+        .unwrap()
+        .with_overlay(&plan.text)
+        .unwrap();
+    assert!(config.containers().is_empty());
+}
+
+#[test]
+fn prometheus_has_no_container() {
+    let err = upsert(
+        "",
+        "prometheus",
+        "p",
+        true,
+        &fields(json!({ "url": "http://p:9090", "hosts": ["h:9100"], "container": "Work" })),
+        &secrets(&[]),
+    );
+    assert!(err.is_err() || !err.unwrap().text.contains("container"));
+}
+
+#[test]
+fn a_container_name_with_a_control_character_is_refused() {
+    let toml = "[[source.github]]\nname = \"m\"\ntoken_file = \"t\"\nrepos = [\"o/a\"]\ncontainer = \"a\\nb\"\n";
+    assert!(Config::from_toml(toml).is_err());
+}
+
+#[test]
+fn azure_devops_switches_between_token_and_entra() {
+    let fields = |v: Value| fields(v);
+    let secrets = |k: &str, v: &str| secrets(&[(k, v)]);
+    let base = json!({ "organization": "acme", "projects": ["P"] });
+    // Add with a service principal.
+    let mut f = base.clone();
+    f["auth"] = json!("entra");
+    f["tenant_id"] = json!("t-1");
+    f["client_id"] = json!("c-1");
+    let plan = upsert(
+        "",
+        "azure_devops",
+        "work",
+        true,
+        &fields(f),
+        &secrets("client_secret", "s3cret"),
+    )
+    .unwrap();
+    assert!(plan.text.contains("auth = \"entra\""));
+    assert!(
+        plan.text
+            .contains("client_secret_file = \"azure_devops-work-client_secret\"")
+    );
+    assert!(!plan.text.contains("token_file"));
+    let config = Config::from_toml(&plan.text).unwrap();
+    assert_eq!(config.source.azure_devops[0].tenant_id, "t-1");
+    // A service principal needs its secret, and a token secret is refused for it.
+    let mut f2 = base.clone();
+    f2["auth"] = json!("entra");
+    f2["tenant_id"] = json!("t");
+    f2["client_id"] = json!("c");
+    assert!(
+        upsert(
+            "",
+            "azure_devops",
+            "w",
+            true,
+            &fields(f2.clone()),
+            &BTreeMap::new()
+        )
+        .is_err()
+    );
+    assert!(
+        upsert(
+            "",
+            "azure_devops",
+            "w",
+            true,
+            &fields(f2),
+            &secrets("token", "x")
+        )
+        .is_err()
+    );
+    // Back to a token on an existing source: Entra settings go, the token is needed.
+    let mut back = base.clone();
+    back["auth"] = json!("pat");
+    assert!(
+        upsert(
+            &plan.text,
+            "azure_devops",
+            "work",
+            false,
+            &fields(back.clone()),
+            &BTreeMap::new()
+        )
+        .is_err()
+    );
+    let plan2 = upsert(
+        &plan.text,
+        "azure_devops",
+        "work",
+        false,
+        &fields(back),
+        &secrets("token", "pat"),
+    )
+    .unwrap();
+    assert!(plan2.text.contains("token_file"));
+    assert!(!plan2.text.contains("tenant_id") && !plan2.text.contains("client_secret_file"));
+    // Unknown way to sign in.
+    let mut bad = base;
+    bad["auth"] = json!("magic");
+    assert!(
+        upsert(
+            "",
+            "azure_devops",
+            "w",
+            true,
+            &fields(bad),
+            &BTreeMap::new()
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn github_switches_between_token_and_app() {
+    let base = json!({ "repos": ["o/a"] });
+    let app = |extra: Value| {
+        let mut f = base.clone();
+        f["auth"] = json!("app");
+        f["app_id"] = json!("12345");
+        f["installation_id"] = json!("678");
+        f.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        f
+    };
+    let plan = upsert(
+        "",
+        "github",
+        "work",
+        true,
+        &fields(app(json!({}))),
+        &secrets(&[(
+            "private_key",
+            "-----BEGIN RSA PRIVATE KEY-----\nQUJD\n-----END RSA PRIVATE KEY-----",
+        )]),
+    )
+    .unwrap();
+    assert!(plan.text.contains("auth = \"app\""));
+    assert!(
+        plan.text
+            .contains("private_key_file = \"github-work-private_key\"")
+    );
+    assert!(!plan.text.contains("token_file") && !plan.text.contains("QUJD"));
+    let config = Config::from_toml(&plan.text).unwrap();
+    assert_eq!(config.source.github[0].installation_id, "678");
+    // The private key is needed, and a token is refused for an App.
+    assert!(
+        upsert(
+            "",
+            "github",
+            "w",
+            true,
+            &fields(app(json!({}))),
+            &secrets(&[])
+        )
+        .is_err()
+    );
+    assert!(
+        upsert(
+            "",
+            "github",
+            "w",
+            true,
+            &fields(app(json!({}))),
+            &secrets(&[("token", "x")])
+        )
+        .is_err()
+    );
+    // An old source without `auth` is a token source; switching drops the App settings.
+    let mut back = base;
+    back["auth"] = json!("token");
+    let plan2 = upsert(
+        &plan.text,
+        "github",
+        "work",
+        false,
+        &fields(back),
+        &secrets(&[("token", "t")]),
+    )
+    .unwrap();
+    assert!(plan2.text.contains("token_file"));
+    assert!(!plan2.text.contains("app_id") && !plan2.text.contains("private_key_file"));
 }

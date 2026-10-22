@@ -325,7 +325,7 @@ a.rsrc:hover, a.rsrc:focus-visible { background: var(--card); }
 body.lost .grid { opacity: .45; filter: grayscale(.7); }
 
 .card {
-  min-width: 0; min-height: 0; overflow: hidden;
+  position: relative; min-width: 0; min-height: 0; overflow: hidden;
   display: flex; flex-direction: column;
   background: var(--card); border: 1px solid var(--card-edge); border-radius: 0.9rem;
   padding: 0.75rem 1.1rem 0.9rem;
@@ -345,13 +345,18 @@ body.lost .grid { opacity: .45; filter: grayscale(.7); }
 .card.stale .body { opacity: .55; }
 /* A card scrolls inside itself (wheel, touch, keys) when its list is longer than
    it is tall. No scrollbar: it would clash with the card edge and the night
-   theme, so a fade at the bottom says there is more (.more-below, kiosk.js). */
+   theme, so a small pill at the bottom says how much more there is (.scroll-more, kiosk.js). */
 .body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column;
   scrollbar-width: none; overscroll-behavior: contain; }
 .body::-webkit-scrollbar { display: none; }
 .body > * { flex: none; }
 .body > .empty { flex: 1 1 auto; }
-.card.more-below .body { -webkit-mask-image: linear-gradient(#000 calc(100% - 2.2rem), transparent); mask-image: linear-gradient(#000 calc(100% - 2.2rem), transparent); }
+.scroll-more { position: absolute; left: 50%; bottom: 0.55rem; transform: translateX(-50%); z-index: 2;
+  padding: 0.22rem 0.7rem; border-radius: 999px; border: 1px solid var(--card-edge); background: var(--card-hi);
+  color: var(--text); font-family: var(--mono); font-size: 0.75rem; line-height: 1.2; white-space: nowrap; cursor: pointer;
+  box-shadow: 0 0.2rem 0.9rem rgba(0, 0, 0, .35); -webkit-tap-highlight-color: transparent; }
+.scroll-more:hover, .scroll-more:focus-visible { border-color: var(--dim); }
+.scroll-more:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .empty { margin: auto; color: var(--dim); font-size: 1rem; text-align: center; }
 .empty.good { color: var(--green); }
 .more { flex: none; color: var(--dim); font-family: var(--mono); font-size: 0.8rem; padding-top: 0.3rem; }

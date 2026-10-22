@@ -13,7 +13,7 @@
 # ../dashboard (next to this file, as in the steps above). To use this file from
 # another folder, or in Portainer or Dockge, set DESKWATCH_CONFIG_DIR to an
 # absolute folder that holds bridge.toml and credentials/, and replace the
-# `build:` block with `image: ghcr.io/sylentic/deskwatch-bridge:<version>`
+# `build:` block with `image: ghcr.io/sylentic/deskwatch-bridge:latest`
 # (docs/docker.md, section 10).
 
 services:

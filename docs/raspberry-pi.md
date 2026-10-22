@@ -1,149 +1,44 @@
 # DeskWatch on a Raspberry Pi
 
-A Raspberry Pi is a good always-on home for the bridge: it idles at a few watts, and the bridge needs very little
-(a Pi 3 or newer is plenty; a Pi Zero 2 W works too). It is also a fine always-on machine for the demo.
+A Raspberry Pi with a monitor or TV makes a good wall display for the dashboard. This page is only about the Pi; the
+rest is the same as on any Linux machine, so it points to the other guides.
 
-This page covers two ways to run the bridge on **Raspberry Pi OS 64-bit** (Debian 12 "Bookworm" or newer, the
-Lite image is enough). Everything else (config keys, sources, Mosquitto logins, Home Assistant) is the same as on any
-Linux server, so this page points to [install.md](install.md) for it. Every host name below is a placeholder.
+There are two ways to set it up, and the second is usually nicer:
 
-A Pi with a screen can also show the **kiosk dashboard**, a page with all the stats, jobs, PRs and pipelines at
-once, with no broker needed. That is a separate guide: [kiosk.md](kiosk.md). The page does not have to run on the
-Pi itself: a container on a homelab server can serve it ([docker.md](docker.md#3-the-dashboard-on-your-homelab)) and
-the Pi's browser just opens its address (`DESKWATCH_KIOSK_URL`, see [kiosk.md](kiosk.md#4-autostart-on-a-raspberry-pi)).
+- **The Pi only shows the page.** DeskWatch runs in a container on a homelab server
+  ([docker.md](docker.md#3-the-dashboard-on-your-homelab)) and the Pi's browser opens its address. The Pi needs no
+  DeskWatch software, only the autostart in [kiosk.md](kiosk.md#4-autostart-on-a-raspberry-pi) with
+  `DESKWATCH_KIOSK_URL` set to the server.
+- **The Pi runs DeskWatch itself.** Use Docker ([docker.md](docker.md); the published image is multi-arch and also
+  runs on `arm64`) or the systemd release binary (below), and open `http://localhost:8787/` in the browser.
 
-Contents: [1. Before you start](#1-before-you-start) · [2. Route A: systemd](#2-route-a-systemd-release-binary) ·
-[3. Route B: Docker](#3-route-b-docker) · [4. Mosquitto on the Pi](#4-mosquitto-on-the-pi) ·
-[5. Run the demo](#5-the-demo) · [6. Update and remove](#6-update-and-remove) ·
-[7. What was and was not tested](#7-what-was-and-was-not-tested)
+## Requirements
 
-## 1. Before you start
+- **64-bit Raspberry Pi OS** (Debian 12 "Bookworm" or newer; with desktop if the Pi shows the page). Check with
+  `uname -m`: it must print `aarch64`. A 32-bit OS (`armv7l`) is not supported by the release; re-flash with the
+  64-bit image. Pi 3, 4, 5, Zero 2 W and 400 all support it.
+- **A browser-capable Pi** if it shows the page: a Pi 4 with 2 GB or more, or a Pi 5 ([memory notes](kiosk.md#4-autostart-on-a-raspberry-pi)).
+  A Pi Zero 2 W can run the bridge but is not enough for a browser.
+- **A fixed address** (DHCP reservation) if other machines or webhooks reach the Pi.
 
-- **64-bit OS.** The release binary is `aarch64`. Check with `uname -m`: it must print `aarch64`. A 32-bit Raspberry
-  Pi OS (`armv7l`) is not supported by the release; re-flash with the 64-bit image (Raspberry Pi Imager lists it
-  as "Raspberry Pi OS (64-bit)"). Pi 3, 4, 5, Zero 2 W and 400 all support it.
-- **A broker.** Mosquitto on the Pi itself, or another machine, see [section 4](#4-mosquitto-on-the-pi).
-- **Storage wear.** The bridge writes nothing to disk unless you turn on the [data folder](data-dir.md), so an SD card is fine. Journald logs are the main writes.
-- **A fixed address.** Give the Pi a DHCP reservation on your router (or a static address) so the dashboard and Gitea
-  webhooks keep finding it.
+## Running the bridge from the release binary
 
-The local host card (CPU, memory, disk, temperature of the machine the bridge runs on) works on the Pi because
-it reads `/proc` and `/sys`, like on any Linux server.
+Each release has `deskwatch-bridge-<version>-aarch64-linux.tar.gz` next to the x86_64 one, built on Ubuntu 22.04
+(glibc 2.35), so it runs on Bookworm and newer. Download and verify it as described in
+[install.md](install.md#option-a-download-a-release) (take the aarch64 file), then follow the same systemd steps. The
+unit file is the same one. Building from source on a Pi works but is slow; prefer the binary or the image.
 
-## 2. Route A: systemd, release binary
+The bridge's own host card (CPU, memory, disk, temperature) works on the Pi because it reads `/proc` and `/sys`.
 
-Each release at <https://github.com/Sylentic/DeskWatch/releases> has a tarball for the Pi next to the
-x86_64 one, named `deskwatch-bridge-<version>-aarch64-linux.tar.gz`, with a `.sha256` file. It is built on
-Ubuntu 22.04 (glibc 2.35), so it runs on Raspberry Pi OS Bookworm and newer and needs nothing installed.
+## Showing the dashboard
 
-```sh
-VERSION=v1.0.3       # the release you want; the aarch64 tarball ships since 0.9.3
-cd "$(mktemp -d)"
-curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-aarch64-linux.tar.gz"
-curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-aarch64-linux.tar.gz.sha256"
-sha256sum -c "deskwatch-bridge-$VERSION-aarch64-linux.tar.gz.sha256"
-tar xzf "deskwatch-bridge-$VERSION-aarch64-linux.tar.gz"
-cd "deskwatch-bridge-$VERSION-aarch64-linux"
+Autostart of Chromium in kiosk mode, screen blanking, 4K and burn-in are in
+[kiosk.md section 4](kiosk.md#4-autostart-on-a-raspberry-pi). A dashboard alone needs no broker: set
+`[mqtt] enabled = false`.
 
-sudo install -m 755 deskwatch-bridge /usr/local/bin/deskwatch-bridge
-sudo install -D -m 644 config.example.toml /etc/deskwatch/bridge.toml
-sudo install -m 644 deploy/deskwatch-bridge.service /etc/systemd/system/
-sudo install -d -m 700 /etc/deskwatch/credentials
-```
+## What was and was not tested
 
-From here it is the same as on any server: edit `/etc/deskwatch/bridge.toml` (delete the example Gitea block if you
-have no Gitea), add secrets with `LoadCredential=` lines, then start it. Follow
-[install.md sections 2 to 7](install.md#2-install-the-bridge); the unit file is the same one.
-
-```sh
-sudo systemctl daemon-reload
-sudo systemctl enable --now deskwatch-bridge
-sudo journalctl -u deskwatch-bridge -f
-```
-
-Look for `connected to MQTT broker`.
-
-**Building from source instead** works on the Pi too ([install.md option B](install.md#option-b-build-from-source)),
-but a first build takes a long time on a Pi 3 and wants 2 GB of memory or swap. Prefer the release binary, or
-cross-build on a PC: `rustup target add aarch64-unknown-linux-gnu`, install `gcc-aarch64-linux-gnu`, then
-`CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
-cargo build --release --locked -p deskwatch-bridge --target aarch64-unknown-linux-gnu`. Build on a distribution with
-glibc 2.36 or older if you want the binary to run on Bookworm.
-
-## 3. Route B: Docker
-
-Handy if the Pi already runs other containers. [docker.md](docker.md) is the full guide; on the Pi:
-
-```sh
-curl -fsSL https://get.docker.com | sudo sh      # or: sudo apt install docker.io docker-compose
-sudo usermod -aG docker "$USER"                  # log out and in again afterwards
-
-git clone https://github.com/Sylentic/DeskWatch.git
-cd DeskWatch
-docker build -t deskwatch-bridge .               # builds natively for arm64
-```
-
-Every release also publishes a multi-arch image, so the Pi can simply pull it and skip the build:
-`docker pull ghcr.io/sylentic/deskwatch-bridge:<version>` ([docker.md section 10](docker.md#10-the-published-image)).
-
-The `Dockerfile` has no CPU-specific lines, so the same file builds for the Pi and for an x86_64 server. CI builds
-it for both `linux/amd64` and `linux/arm64` on every change. To build it yourself (a first build compiles every
-dependency and takes a while on a Pi; later ones reuse the layers), or to build the arm64 image on a faster PC and
-copy it over:
-
-```sh
-docker buildx build --platform linux/arm64 -t deskwatch-bridge:arm64 --load .
-docker save deskwatch-bridge:arm64 | ssh pi@raspberrypi.local docker load
-```
-
-(The `Dockerfile` cross-compiles the Rust code on your PC, so no CPU emulation is needed to build; running the
-arm64 image on the PC would need QEMU, but you do not have to.)
-
-Then continue with [docker.md section 4 onwards](docker.md#4-config-and-secrets): config and secrets mounted
-read-only, the Compose example in [`deploy/docker-compose.yml`](../deploy/docker-compose.yml), reaching the broker.
-Pointing `host` at the Pi's own broker needs the `host.docker.internal` or `network_mode: host` choice described there.
-
-Which route? Systemd is lighter (no Docker daemon) and is the simplest if the Pi does
-only this. Docker keeps the bridge self-contained and fits a Pi that already runs a container stack.
-
-## 4. Mosquitto on the Pi
-
-If the Pi is also the broker host:
-
-```sh
-sudo apt install mosquitto mosquitto-clients
-```
-
-Then follow [mosquitto.md](mosquitto.md) for logins and topic limits (do that before you put the broker on a shared network; an open
-broker on a home network lets anything raise alerts). The Pi's package is the same Mosquitto 2.0 the guide
-assumes. The bridge's `[mqtt] host` is then `localhost` for Route A, or see the broker table in
-[docker.md section 6](docker.md#6-reaching-the-broker) for Route B.
-
-## 5. The demo
-
-Try the bridge with no CI at all:
-
-```sh
-deskwatch-bridge --demo --kiosk --no-mqtt   # plays fake data on the dashboard page, no broker needed
-```
-
-A Pi with a monitor or TV can show the bridge's own dashboard page in a full-screen browser; the demo above plays it with fake data, and [kiosk.md](kiosk.md) covers the config,
-the Chromium autostart and the security notes. It needs no broker: set `[mqtt] enabled = false` (or pass `--no-mqtt`)
-so the bridge does not keep trying to reach one.
-
-## 6. Update and remove
-
-Route A: download the new tarball as in section 2, `sudo install -m 755 deskwatch-bridge /usr/local/bin/`, then
-`sudo systemctl restart deskwatch-bridge`. Route B: with the published image change the version in the `image:` line,
-then `docker compose pull && docker compose up -d`; when you build yourself, `git pull`, `docker build -t deskwatch-bridge .`,
-then `docker compose up -d`. Removal and rollback are the same as in
-[install.md section 9](install.md#9-update-roll-back-remove) and [docker.md section 11](docker.md#11-update-and-remove).
-
-## 7. What was and was not tested
-
-- The aarch64 binary was cross-compiled and checked as a valid ARM aarch64 ELF, and the release workflow builds
-  it natively on GitHub's arm64 Ubuntu 22.04 runner.
-- The multi-arch image build runs in CI (build only, nothing pushed); the release workflow publishes it. The published arm64 image has not been pulled or run on a Pi.
-- The kiosk dashboard ([kiosk.md](kiosk.md)) has its own list of what was and was not tested.
-- **Nothing here has run on real Raspberry Pi hardware yet.** The commands in this page follow the Linux guide and
-  are expected to work as written; if one does not, please open an issue with the Pi model and OS version.
+- The aarch64 binary is built natively on GitHub's arm64 runner, and the multi-arch image is built by CI.
+- **Nothing here has run on real Raspberry Pi hardware yet.** If something does not work, please
+  [open an issue](https://github.com/Sylentic/DeskWatch/issues/new/choose) with the Pi model and OS version, or tell us
+  that it works.

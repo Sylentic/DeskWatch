@@ -160,6 +160,49 @@ pub struct DataConfig {
 }
 
 impl Config {
+    /// The Firefox container each source type opens its links in, by type
+    /// (`azure_devops`). Only sources that name one are listed. The links on
+    /// the page only know the type, so the first source of a type that names
+    /// a container decides for the whole type.
+    pub fn containers(&self) -> std::collections::BTreeMap<String, String> {
+        let s = &self.source;
+        let named = [
+            (
+                "gitea",
+                s.gitea
+                    .iter()
+                    .map(|c| c.container.as_str())
+                    .collect::<Vec<_>>(),
+            ),
+            (
+                "github",
+                s.github.iter().map(|c| c.container.as_str()).collect(),
+            ),
+            (
+                "gitlab",
+                s.gitlab.iter().map(|c| c.container.as_str()).collect(),
+            ),
+            (
+                "bitbucket",
+                s.bitbucket.iter().map(|c| c.container.as_str()).collect(),
+            ),
+            (
+                "azure_devops",
+                s.azure_devops
+                    .iter()
+                    .map(|c| c.container.as_str())
+                    .collect(),
+            ),
+        ];
+        let mut out = std::collections::BTreeMap::new();
+        for (kind, list) in named {
+            if let Some(name) = list.into_iter().find(|n| !n.is_empty()) {
+                out.insert(kind.to_string(), name.to_string());
+            }
+        }
+        out
+    }
+
     /// The data folder: `[data] dir`, else the `DESKWATCH_DATA_DIR` environment variable.
     pub fn data_dir(&self) -> Option<PathBuf> {
         self.data.dir.clone().or_else(|| {
@@ -698,9 +741,12 @@ impl Default for AlertsConfig {
 impl AlertsConfig {
     /// May the alert with this id be critical?
     pub fn allows_critical(&self, id: &str) -> bool {
-        self.critical_ids
-            .as_ref()
-            .is_none_or(|ids| ids.iter().any(|allowed| allowed == id))
+        self.critical_ids.as_ref().is_none_or(|ids| {
+            ids.iter().any(|allowed| match allowed.strip_suffix('*') {
+                Some(prefix) => id.starts_with(prefix),
+                None => allowed == id,
+            })
+        })
     }
 }
 
@@ -747,6 +793,10 @@ pub struct GiteaConfig {
     /// Instance name, unique among Gitea sources. Used in the webhook URL
     /// (`/webhook/gitea/<name>`) and in logs.
     pub name: String,
+    /// Firefox container the links of this source open in (docs/firefox-containers.md).
+    /// Empty: links open as usual.
+    #[serde(default)]
+    pub container: String,
     /// Gitea web address, used for API polling, such as `https://gitea.example.com`.
     pub base_url: String,
     /// Credential with the webhook secret, the same value as in Gitea's
@@ -807,13 +857,30 @@ impl GiteaConfig {
 pub struct GithubConfig {
     /// Instance name, unique among GitHub sources. Used in logs and fact keys.
     pub name: String,
+    /// Firefox container the links of this source open in (docs/firefox-containers.md).
+    /// Empty: links open as usual.
+    #[serde(default)]
+    pub container: String,
     /// API root: `https://api.github.com` (default), `https://<host>/api/v3`
     /// for Enterprise Server, or `https://api.<subdomain>.ghe.com`.
     #[serde(default = "default_github_base_url")]
     pub base_url: String,
+    /// How the bridge signs in: `token` (default) or `app`.
+    #[serde(default)]
+    pub auth: GithubAuth,
     /// Credential with a read-only fine-grained token (Metadata, Pull
-    /// requests and Actions: read).
+    /// requests and Actions: read). For `auth = "token"`.
+    #[serde(default)]
     pub token_file: String,
+    /// Id of the GitHub App. For `auth = "app"`.
+    #[serde(default)]
+    pub app_id: String,
+    /// Id of the App's installation on the organisation or account. For `auth = "app"`.
+    #[serde(default)]
+    pub installation_id: String,
+    /// Credential holding the App's private key (the PEM text). For `auth = "app"`.
+    #[serde(default)]
+    pub private_key_file: String,
     /// Repositories (`owner/name`) to watch.
     pub repos: Vec<String>,
     /// Seconds between polls of open PRs and recent runs.
@@ -873,6 +940,10 @@ impl GithubConfig {
 pub struct GitlabConfig {
     /// Instance name, unique among GitLab sources. Used in logs and fact keys.
     pub name: String,
+    /// Firefox container the links of this source open in (docs/firefox-containers.md).
+    /// Empty: links open as usual.
+    #[serde(default)]
+    pub container: String,
     /// The GitLab site: `https://gitlab.com` (default) or
     /// `https://gitlab.example.com`. `/api/v4` is added by the bridge.
     #[serde(default = "default_gitlab_base_url")]
@@ -931,6 +1002,10 @@ impl GitlabConfig {
 pub struct BitbucketConfig {
     /// Instance name, unique among Bitbucket sources. Used in logs and fact keys.
     pub name: String,
+    /// Firefox container the links of this source open in (docs/firefox-containers.md).
+    /// Empty: links open as usual.
+    #[serde(default)]
+    pub container: String,
     /// API root. Only changes for tests.
     #[serde(default = "default_bitbucket_base_url")]
     pub base_url: String,
@@ -983,6 +1058,18 @@ impl BitbucketConfig {
     }
 }
 
+/// How a GitHub source proves who it is.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GithubAuth {
+    /// A fine-grained token (`token_file`): acts as one person.
+    #[default]
+    Token,
+    /// A GitHub App installed on the organisation (`app_id`, `installation_id`,
+    /// `private_key_file`): acts as an app, not as a person.
+    App,
+}
+
 /// How an Azure DevOps source proves who it is.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -1002,6 +1089,10 @@ pub enum AzureDevopsAuth {
 pub struct AzureDevopsConfig {
     /// Instance name, unique among Azure DevOps sources. Used in logs and fact keys.
     pub name: String,
+    /// Firefox container the links of this source open in (docs/firefox-containers.md).
+    /// Empty: links open as usual.
+    #[serde(default)]
+    pub container: String,
     /// The organisation: the first part of `https://dev.azure.com/<organization>`.
     pub organization: String,
     /// Service address. Only changes for tests.
@@ -1457,6 +1548,12 @@ impl Config {
                 "source.gitea {name}: repos entries must look like owner/name"
             );
         }
+        for (kind, container) in &self.containers() {
+            anyhow::ensure!(
+                container.chars().count() <= 64 && !container.chars().any(char::is_control),
+                "source.{kind}: container must be a short name without control characters"
+            );
+        }
         let mut names = HashSet::new();
         for github in &self.source.github {
             let name = &github.name;
@@ -1476,6 +1573,33 @@ impl Config {
                 github.poll_s > 0 && github.job_poll_s > 0 && github.runner_poll_s > 0,
                 "source.github {name}: poll_s, job_poll_s and runner_poll_s must be above 0"
             );
+            match github.auth {
+                GithubAuth::Token => anyhow::ensure!(
+                    !github.token_file.trim().is_empty(),
+                    "source.github {name}: token_file is needed (or set auth = \"app\")"
+                ),
+                GithubAuth::App => {
+                    anyhow::ensure!(
+                        !github.app_id.trim().is_empty()
+                            && !github.installation_id.trim().is_empty()
+                            && !github.private_key_file.trim().is_empty(),
+                        "source.github {name}: auth = \"app\" needs app_id, installation_id and private_key_file"
+                    );
+                    anyhow::ensure!(
+                        github
+                            .app_id
+                            .trim()
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric())
+                            && github
+                                .installation_id
+                                .trim()
+                                .chars()
+                                .all(|c| c.is_ascii_digit()),
+                        "source.github {name}: app_id and installation_id are the numbers GitHub shows"
+                    );
+                }
+            }
             github.runner_scopes()?;
             anyhow::ensure!(
                 !github.repos.is_empty(),
@@ -1772,6 +1896,13 @@ mod tests {
     }
 
     #[test]
+    fn critical_ids_accept_a_trailing_star() {
+        let config = Config::from_toml("[alerts]\ncritical_ids = [\"am:*\"]\n").unwrap();
+        assert!(config.alerts.allows_critical("am:DiskFull:abc"));
+        assert!(!config.alerts.allows_critical("leak"));
+    }
+
+    #[test]
     fn a_leftover_rotation_block_is_accepted_and_ignored() {
         let text = "[[rotation]]\npage = \"stats\"\ndwell_s = 20\n\n\
 [[rotation]]\npage = \"prs\"\ndwell_s = 8\nskip_when_empty = true\n";
@@ -1928,6 +2059,23 @@ mod tests {
             Config::from_toml(&block("token = \"ghp_x\"")).is_err(),
             "no inline tokens"
         );
+    }
+
+    #[test]
+    fn github_app_sign_in_needs_its_settings() {
+        let app = |extra: &str| {
+            format!(
+                "[[source.github]]\nname = \"work\"\nauth = \"app\"\nrepos = [\"o/a\"]\n{extra}"
+            )
+        };
+        let full = "app_id = \"12345\"\ninstallation_id = \"678\"\nprivate_key_file = \"key\"\n";
+        let config = Config::from_toml(&app(full)).unwrap();
+        assert_eq!(config.source.github[0].auth, GithubAuth::App);
+        assert!(Config::from_toml(&app("")).is_err());
+        assert!(Config::from_toml(&app("app_id = \"1\"\ninstallation_id = \"2\"\n")).is_err());
+        assert!(Config::from_toml(&app(&full.replace("678", "x y"))).is_err());
+        // Without an auth line it is still a token source, and needs its token.
+        assert!(Config::from_toml("[[source.github]]\nname = \"w\"\nrepos = [\"o/a\"]\n").is_err());
     }
 
     #[test]

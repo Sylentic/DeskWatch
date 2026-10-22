@@ -14,8 +14,8 @@
 use serde::Serialize;
 
 use crate::config::{
-    AzureDevopsConfig, BitbucketConfig, Config, GiteaConfig, GithubConfig, GitlabConfig,
-    MqttConfig, PrometheusConfig,
+    AzureDevopsAuth, AzureDevopsConfig, BitbucketConfig, Config, GiteaConfig, GithubAuth,
+    GithubConfig, GitlabConfig, MqttConfig, PrometheusConfig,
 };
 use crate::gitea::api::{GiteaApi, HttpApi as GiteaHttp};
 use crate::source::{Health, Secret, load_secret};
@@ -175,18 +175,44 @@ pub async fn source_with(config: &Config, id: &str, overrides: &Overrides) -> Op
 
 async fn github(config: &GithubConfig, overrides: &Overrides) -> Report {
     let mut report = Report::default();
-    let Some(token) = credential(&mut report, overrides, "token", &config.token_file) else {
-        return report;
+    let api = match config.auth {
+        GithubAuth::Token => {
+            let Some(token) = credential(&mut report, overrides, "token", &config.token_file)
+            else {
+                return report;
+            };
+            crate::github::api::HttpApi::new(&config.base_url, token)
+        }
+        GithubAuth::App => {
+            let Some(key) = credential(
+                &mut report,
+                overrides,
+                "private key",
+                &config.private_key_file,
+            ) else {
+                return report;
+            };
+            crate::github::app::GithubApp::new(&config.app_id, &config.installation_id, &key)
+                .and_then(|app| crate::github::api::HttpApi::with_app(&config.base_url, app))
+        }
     };
-    let api = match crate::github::api::HttpApi::new(&config.base_url, token) {
+    let api = match api {
         Ok(api) => api,
         Err(err) => {
             report.fail("setup", format!("{err:#}"));
             return report;
         }
     };
-    let hint = "Check that the token is valid and that it may read this repository \
-                (fine-grained token: Contents or Metadata, Pull requests and Actions, all read-only).";
+    let hint = match config.auth {
+        GithubAuth::Token => {
+            "Check that the token is valid and that it may read this repository \
+             (fine-grained token: Contents or Metadata, Pull requests and Actions, all read-only)."
+        }
+        GithubAuth::App => {
+            "Check the App id, the installation id and the private key, and that the App is \
+             installed on this repository (Metadata, Pull requests and Actions: read)."
+        }
+    };
     for repo in config.repos.iter().take(MAX_TARGETS) {
         report.result(format!("repository {repo}"), api.repo(repo).await, hint);
     }
@@ -336,20 +362,51 @@ async fn gitea(config: &GiteaConfig, overrides: &Overrides) -> Report {
 
 async fn azure_devops(config: &AzureDevopsConfig, overrides: &Overrides) -> Report {
     let mut report = Report::default();
-    let Some(token) = credential(&mut report, overrides, "token", &config.token_file) else {
-        return report;
-    };
-    let api =
-        match crate::azure_devops::api::HttpApi::new(&config.base_url, &config.organization, token)
-        {
-            Ok(api) => api,
-            Err(err) => {
-                report.fail("setup", format!("{err:#}"));
+    let api = match config.auth {
+        AzureDevopsAuth::Pat => {
+            let Some(token) = credential(&mut report, overrides, "token", &config.token_file)
+            else {
                 return report;
-            }
-        };
-    let hint = "Check that the PAT is valid, not expired, and covers this organisation \
-                (Build: read).";
+            };
+            crate::azure_devops::api::HttpApi::new(&config.base_url, &config.organization, token)
+        }
+        AzureDevopsAuth::Entra => {
+            let Some(client_secret) = credential(
+                &mut report,
+                overrides,
+                "client secret",
+                &config.client_secret_file,
+            ) else {
+                return report;
+            };
+            crate::azure_devops::api::HttpApi::with_entra(
+                &config.base_url,
+                &config.organization,
+                crate::azure_devops::api::EntraApp {
+                    login_url: config.login_url.clone(),
+                    tenant_id: config.tenant_id.clone(),
+                    client_id: config.client_id.clone(),
+                    client_secret,
+                },
+            )
+        }
+    };
+    let api = match api {
+        Ok(api) => api,
+        Err(err) => {
+            report.fail("setup", format!("{err:#}"));
+            return report;
+        }
+    };
+    let hint = match config.auth {
+        AzureDevopsAuth::Pat => {
+            "Check that the PAT is valid, not expired, and covers this organisation (Build: read)."
+        }
+        AzureDevopsAuth::Entra => {
+            "Check the tenant id, the application id and the client secret, and that the app \
+             was added to the organisation as a user (Build: read)."
+        }
+    };
     for project in config.projects.iter().take(MAX_TARGETS) {
         let builds = api.builds(project).await;
         let missing = is_not_found(&builds);

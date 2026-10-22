@@ -47,7 +47,7 @@ Addresses are built from the source's own configured address, never hard coded, 
 are used. The runner list links go to the page that lists the runners, because the APIs do not give a page per runner.
 
 Every card scrolls inside itself when its list is longer than the card: mouse wheel, touch drag or the arrow keys. There
-is no scrollbar (it clashes with the card edge and the night theme); a fade at the bottom edge shows that there is more.
+is no scrollbar (it clashes with the card edge and the night theme); a small "↓ N more" pill at the bottom edge shows how many items are below, and tapping it scrolls down.
 Open PRs and Running now show everything unless you set `rows`, so a long list scrolls instead of being cut off with
 "+N more". While you scroll a card, its contents are not redrawn (a redraw would throw your place away); about 8 seconds
 after you let go it catches up, and a card you left scrolled goes back to the top after 30 seconds, so a wall display
@@ -270,7 +270,7 @@ Users can also hide, move and resize panels for themselves, see [Customize your 
 
 ### Light mode, day and night theme
 
-The page is dark. The **Light mode** button on the [setup page](setup-page.md) switches the dashboard to light as well
+The page is dark. The **Light mode** button (the sun icon) on the [setup page](setup-page.md) switches the dashboard to light as well
 (the choice is kept in that browser, and a dashboard open in another tab follows at once); `?scheme=light` or
 `?scheme=dark` on the address overrides it for one screen. The night theme below wins over light mode at night.
 
@@ -307,7 +307,7 @@ the icon is not there.
 
 ## 4. Autostart on a Raspberry Pi
 
-Two parts: the bridge runs as in [raspberry-pi.md](raspberry-pi.md), and Chromium starts in kiosk mode when the Pi
+Two parts: the bridge runs somewhere ([raspberry-pi.md](raspberry-pi.md) lists the choices), and Chromium starts in kiosk mode when the Pi
 boots to the desktop. Use **Raspberry Pi OS with desktop, 64-bit**, set to log in automatically
 (`sudo raspi-config` > System Options > Boot / Auto Login > Desktop Autologin) and install the browser if it is
 missing: `sudo apt install chromium`. The package is called `chromium-browser` on older releases.

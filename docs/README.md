@@ -6,7 +6,7 @@ Start with the [project README](../README.md) for what DeskWatch is, a quick dem
 
 - [docker.md](docker.md): the container, Compose files, the dashboard on a homelab (the easiest start)
 - [install.md](install.md): the whole setup on a Linux server with systemd
-- [raspberry-pi.md](raspberry-pi.md): 64-bit Raspberry Pi OS, a monitor or TV as a wall display
+- [raspberry-pi.md](raspberry-pi.md): a Pi with a monitor or TV as a wall display
 - [windows.md](windows.md): the release zip, Mosquitto
 - [updates.md](updates.md): the quiet "update available" notice
 
@@ -14,6 +14,7 @@ Start with the [project README](../README.md) for what DeskWatch is, a quick dem
 
 - [kiosk.md](kiosk.md): the dashboard page, its widgets, layout and settings
 - [setup-page.md](setup-page.md): add and change sources and settings from the browser
+- [backup.md](backup.md): export and import the settings, without secrets or locked with a password
 - [data-dir.md](data-dir.md): the writable data folder the setup page and the login use
 - [runners.md](runners.md): the runners widget
 
@@ -27,10 +28,12 @@ Start with the [project README](../README.md) for what DeskWatch is, a quick dem
 - [git-hosts.md](git-hosts.md): which Git hosts work, and which are tested
 - [gitlab.md](gitlab.md), [bitbucket.md](bitbucket.md), [azure-devops.md](azure-devops.md): setup per source
 - [azure-devops-verify.md](azure-devops-verify.md): checklist for trying Azure DevOps on a real organisation
+- [firefox-containers.md](firefox-containers.md): open the links of a source in a Firefox container
 
 ## Alerts and MQTT
 
 - [home-assistant.md](home-assistant.md): alerts from Home Assistant and scripts, `POST /api/alert`
+- [alertmanager.md](alertmanager.md): alerts from Prometheus Alertmanager, `POST /api/alertmanager`
 - [mosquitto.md](mosquitto.md): broker logins, ACL and TLS
 - [mqtt-schema.md](mqtt-schema.md): the MQTT topics and the alert message format, with samples in [schema/](schema/)
 

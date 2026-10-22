@@ -20,9 +20,8 @@ the GitHub release. A merge into `main` without a new version releases nothing.
 1. On a branch from `dev`, prepare the release and merge it into `dev` (a normal pull request). It changes these
    places:
    - `version` in the root `Cargo.toml`, and `Cargo.lock` with it (the pipeline builds with `--locked`);
-   - `Unreleased` in `CHANGELOG.md`, turned into the new version section (the release notes are that section);
-   - the image tag in `deploy/docker-compose.yml`;
-   - the version examples in `docs/install.md` (two), `docs/raspberry-pi.md` and `docs/windows.md` (two), and the
+   - `Unreleased` in `CHANGELOG.md`, turned into the new version section (the release notes are that section; the pipeline adds the closing line "Something not working? Open an issue" by itself);
+   - the version examples in `docs/install.md` (two) and `docs/windows.md` (two), and the
      example in `docs/docker.md` section 10.
 2. Open the release pull request **from `dev` into `main`**, titled "Release x.y.z". Merge it with a merge commit
    once the pipeline is green (it also builds the image for both CPUs).
@@ -51,9 +50,9 @@ git push origin v1.0.1
 
 ## The image tag in the Compose file
 
-`deploy/docker-compose.yml` pins the image to a release. The image only exists after the pipeline has finished for the
-tag, so check that `ghcr.io/sylentic/deskwatch-bridge:<version>` can be pulled before announcing the release. If the run
-failed, the pinned tag does not exist and `docker compose pull` fails with "manifest unknown" until the release is fixed.
+`deploy/docker-compose.yml` uses the `latest` tag, so a release needs no change there. The pipeline moves `latest` to a
+new release (not to a pre-release such as `-rc.1`) once it has finished for the tag, so check that
+`ghcr.io/sylentic/deskwatch-bridge:<version>` can be pulled before announcing the release.
 
 ## v0.9.8 was never released
 

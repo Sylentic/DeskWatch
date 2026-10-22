@@ -20,13 +20,17 @@ make changes in your browser (the `Origin` check, below).
 
 The page uses the whole screen: a menu on the left (**Sources**, **MQTT broker**, **Dashboard**, **Alerts**,
 **Access**, **Sign-in providers**, **Bridge and restart**, **Stored secrets**) and the chosen section next to it, in several columns on a wide screen and one column on
-a phone. **Add a source** is the first thing in the first section. The menu entry is kept in the address
+a phone. **Add source** sits next to the title of the first section. The menu entry is kept in the address
 (`/setup#mqtt`), so a link opens that section.
 
-When the dashboard is on too, its header has a cogwheel that opens this page, and this page has a
-**Dashboard** link back.
+The top bar has the same height and look as the dashboard's header. Its buttons are icons; hover over one (or reach it
+with Tab) and a tooltip names it: **Dashboard** (when the dashboard is on; its header has a cogwheel that opens this
+page), **My account** (when signed in), **Light mode** / **Dark mode**, and **Sign out** last.
 
-The page is dark. The **Light mode** button in the header switches to light and remembers the choice in that
+Adding and changing things happens in a pop-up on the page: a source, the broker settings, a user, a new password, an
+API key and the sign-in providers. Esc, the X or **Cancel** closes it without saving.
+
+The page is dark. The **Light mode** button (the sun) switches to light and remembers the choice in that
 browser, for the dashboard too; the system's own light or dark setting is not followed.
 
 ## What it shows, and what it never shows
@@ -62,9 +66,12 @@ subscribe to, so an ACL mistake still shows up as a source of trouble in the bro
 
 With a data folder configured ([data-dir.md](data-dir.md)) the page can change sources that live in the data folder:
 
-- **Add a source** (Gitea, GitHub, GitLab, Bitbucket Cloud, Azure DevOps, Prometheus), **Edit** it, **Remove** it. Options
-  the form does not show, such as `alert_new_issues`, `alert_pr_comments` or Azure DevOps `auth = "entra"`, are set in
-  `sources.toml` by hand; the page keeps them on an edit.
+- **Add source** (pick Gitea, GitHub, GitLab, Bitbucket Cloud, Azure DevOps or Prometheus in the pop-up), change it
+  (pencil icon), remove it (bin icon). Options
+  the form does not show, such as `alert_new_issues` or `alert_pr_comments`, are set in
+  `sources.toml` by hand; the page keeps them on an edit. An Azure DevOps source asks **Sign in with**: a personal
+  access token or an Entra service principal ([azure-devops-auth.md](azure-devops-auth.md)); a GitHub source asks the same:
+  a token or a GitHub App ([git-hosts.md](git-hosts.md)).
 - A token field is write-only. Leave it empty on an edit to keep the current token; fill it in to replace it. The value
   goes to the bridge once and is stored as `credentials/<kind>-<name>-<key>` (0600). It is never sent back.
 - **Validate before save**: the whole configuration, as it would be, must load, and the connection test runs with the
@@ -77,7 +84,7 @@ With a data folder configured ([data-dir.md](data-dir.md)) the page can change s
   token file belongs to `bridge.toml` and stays. **Switch on again** undoes it. To delete such a source for good,
   remove its block from `bridge.toml` and restart. A mounted credential with the same name
   as a page-managed one is refused, because the mounted one would win and hide the change.
-- **Everything that deletes asks first**, in a box on the page (not a browser dialog): removing a source, switching
+- **Everything that deletes asks first**, in a pop-up or a box on the page (not a browser dialog): removing a source, switching
   one off, removing the broker login, resetting the broker settings, deleting a stored secret and restarting.
 - Every save or removal is logged (source id, which secret files were written; never a value).
 - **No restart needed.** A saved source starts at once, an edited one is replaced (its facts and warnings are dropped
@@ -114,8 +121,10 @@ The **Alerts** section has three cards.
 ## Access and sign-in providers
 
 With a data folder, the **Access** section is where the login is turned on and managed ([auth.md](auth.md)): the first
-administrator password, **users** with a role each (viewer, operator or administrator; a link to **My account** where a
-person changes their own password), and **API keys** for scripts (alerts) and screens (viewer keys). **Sign-in
+administrator password, **users** with a role each (viewer, operator or administrator; **New user** opens a pop-up,
+the key icon sets a new password, the bin removes the user), **API keys** for scripts (alerts) and screens (viewer
+keys; a new key is shown once, in a pop-up with a Copy button) and **Sessions** (**Sign out everywhere**). Everyone
+changes their own password on **My account** (the person icon in the top bar). **Sign-in
 providers** adds sign-in with GitHub or Microsoft and who may use it. Only an administrator sees these two sections once
 a login is set; without a password the page says so and offers the first-run form. Your own dashboard layout is not
 set here: every signed-in person customizes it with the grid icon on the dashboard ([kiosk.md](kiosk.md#customize-your-own-dashboard)).
@@ -142,6 +151,11 @@ On the **MQTT broker** section, **Remove login** clears the login name and delet
 **Reset to bridge.toml** removes everything the page saved for the broker (host, port, TLS, login, password), so
 `bridge.toml` decides again. A password file that is not the page's own (`mqtt-password`) is never deleted. Both
 apply after a restart.
+
+## Backup
+
+Setup > Backup downloads the settings as a file (without secrets by default) and restores them from one. See
+[backup.md](backup.md).
 
 ## Stored secrets
 

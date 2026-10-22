@@ -4,7 +4,11 @@
 
 **A dashboard for your homelab and your pipelines.** DeskWatch shows what your servers and CI are doing, on one screen:
 jobs that are running right now with live progress, failed runs, open pull requests, host stats and alerts from Home
-Assistant. Every line says where it comes from, so a glance tells you what runs where.
+Assistant, Prometheus Alertmanager or any script. Every line says where it comes from, so a glance tells you what runs
+where.
+
+> **Feedback welcome.** Something broken, missing or unclear? [Open an issue](https://github.com/Sylentic/DeskWatch/issues/new/choose).
+> Questions and "this is how I use it" go in [Discussions](https://github.com/Sylentic/DeskWatch/discussions).
 
 ![The DeskWatch dashboard with demo data](docs/dashboard.png)
 
@@ -21,11 +25,12 @@ or in Docker, and needs no internet beyond the sources you point it at.
   need a look (down, nearly full, just rebooted) come first.
 - **One event at a time in the header:** a failed run or critical alert in red until you dismiss it, a warning in
   yellow, a success (or a *Fixed* after a failure) in green that goes away by itself.
-- **Alerts** from Home Assistant or any script, over MQTT or HTTP, and from your Git hosts: a new issue, or a new
+- **Alerts** from Home Assistant, Prometheus Alertmanager or any script, over MQTT or HTTP, and from your Git hosts: a new issue, or a new
   comment on an open Azure DevOps pull request. Info is blue, warning yellow, critical red.
 - **Your own layout:** every user hides, moves and resizes panels with the grid icon in the header, kept per user.
-- **A setup page** to add sources, test connections and change settings from the browser, and an optional login
-  with viewer, operator and administrator roles (passwords, API keys, or sign-in with GitHub or Microsoft).
+- **A setup page** to add sources, test connections and change settings from the browser, with export and import of
+  your settings (secrets left out), and an optional login with viewer, operator and administrator roles (passwords,
+  API keys, or sign-in with GitHub or Microsoft).
 
 ## Try it in a minute
 
@@ -64,7 +69,7 @@ page and `POST /api/alert` only answer the local network.
 | GitLab (gitlab.com and self-managed) | Polling: merge requests, pipelines, runners ([guide](docs/gitlab.md)) | Against mock answers only |
 | Bitbucket Cloud | Polling: PRs, pipelines, runners ([guide](docs/bitbucket.md)) | Against mock answers only |
 | Prometheus | node_exporter and cAdvisor through the HTTP API | On a real server |
-| The bridge machine | `/proc` and `/sys` (Linux) | Yes |
+| The bridge machine | `/proc` and `/sys` (Linux only for now) | Yes |
 | Home Assistant, scripts | Alerts over MQTT or `POST /api/alert` ([guide](docs/home-assistant.md)) | Yes |
 
 Forgejo and Codeberg are not tested; what they and the others need is in [docs/git-hosts.md](docs/git-hosts.md). Gitea,
@@ -77,9 +82,29 @@ homelab. Not done yet:
 
 - The dashboard on a real Raspberry Pi (built and tested in Chromium on a PC), and GitLab and Bitbucket against real
   servers.
+- Local stats of the bridge machine on Windows (the host card shows dashes; Prometheus hosts work, see
+  [docs/windows.md](docs/windows.md)).
 - Release binaries for macOS and 32-bit ARM (build from source).
 
-What changed in each version is in the [changelog](CHANGELOG.md).
+What changed in each version is in the [changelog](CHANGELOG.md). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md); security problems go through [SECURITY.md](SECURITY.md).
+
+## Help testing
+
+DeskWatch runs on the author's homelab, but these parts were only tried against mock answers or on a PC. If you can try
+one, please [tell us how it went](https://github.com/Sylentic/DeskWatch/issues/new/choose) with the "I tested a source
+or feature" form. A short "works for me" helps as much as a bug report. Never post tokens, hostnames or IP addresses.
+
+| What | What to try | Guide |
+|---|---|---|
+| GitLab (gitlab.com or self-managed) | Merge requests, pipelines and runners against a real server | [docs/gitlab.md](docs/gitlab.md) |
+| Bitbucket Cloud | PRs, pipelines and runners | [docs/bitbucket.md](docs/bitbucket.md) |
+| GPU rows | NVIDIA through the DCGM exporter, or AMD on the bridge machine | [docs/git-hosts.md](docs/git-hosts.md) |
+| Raspberry Pi | The dashboard on a real Pi with a monitor or TV | [docs/raspberry-pi.md](docs/raspberry-pi.md) |
+| Microsoft Entra sign-in | A real login with your tenant, and Entra for Azure DevOps | [docs/auth.md](docs/auth.md), [docs/azure-devops-auth.md](docs/azure-devops-auth.md) |
+| GitHub App | A GitHub source signed in as an installed App | [docs/git-hosts.md](docs/git-hosts.md) |
+| Alertmanager | Alerts from a real Alertmanager webhook | [docs/alertmanager.md](docs/alertmanager.md) |
+| Backup | Export and import of your settings, with and without a password | [docs/backup.md](docs/backup.md) |
+| Forgejo, Codeberg | Whether the Gitea source works unchanged | [docs/git-hosts.md](docs/git-hosts.md) |
 
 ## Documentation
 

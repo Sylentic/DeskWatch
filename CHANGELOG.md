@@ -7,6 +7,59 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.0.4]
+
+### Changed
+
+- **`docs/raspberry-pi.md` is shorter.** It keeps what is special about a Pi (64-bit OS, the aarch64 binary, a Pi that only
+  shows the page) and points to `docker.md` and `install.md` for the rest.
+- **`deploy/docker-compose.yml` uses the `latest` image tag** instead of a fixed version, so `docker compose pull`
+  gives the newest release and a release no longer needs a change in the Compose file. Pin a version number in the
+  file to stay on one release. `docs/docker.md` and `docs/releasing.md` are updated.
+- **A tidier Setup page.** The top bar has the dashboard's height and look, with icon buttons that name themselves in a
+  tooltip: Dashboard, My account, Light/Dark mode (a sun in dark mode, a moon in light mode) and Sign out, last.
+  Adding and changing things now happens in a pop-up on the page instead of a form in between the cards: a source
+  (pick its type first), the broker settings, a user, a new password, an API key (shown once, with a Copy button) and
+  the GitHub and Microsoft sign-in. Access shows the numbers of users, keys and signed-in browsers, and a cleaner list
+  of users and keys. Removing anything still asks first. Nothing changes in what is saved.
+- **My account opens as a pop-up in Setup** (your role, your own password, Sign out). The `/account` page stays, for a
+  first password an administrator chose.
+- **Scroll hint is a pill instead of a fade.** A card with more below no longer fades its bottom row; a small
+  "↓ N more" pill shows how many items are out of view, and tapping it scrolls down. It only shows when the card can
+  scroll.
+
+### Added
+
+- **Ways to give feedback.** Issue forms for bugs, feature requests and "I tested a source or feature", a
+  `CONTRIBUTING.md`, a `SECURITY.md` and a pull request template. The README has a "Help testing" section listing what
+  was only tried against mock answers, and every GitHub release now ends with "Something not working? Open an issue".
+- **GitHub App sign-in.** A GitHub source can sign in as a GitHub App installed on the organisation (`auth = "app"`
+  with `app_id`, `installation_id` and `private_key_file`; in Setup: **Sign in with: GitHub App**) instead of with
+  one person's token. The bridge signs a short token with the App's private key and swaps it for an hour-long
+  installation token. Tried against mock answers only. Details in `docs/git-hosts.md`.
+- **Backup in Setup: export and import your settings.** Setup > Backup downloads sources, broker, alerts, dashboard
+  and sign-in rules and everyone's dashboard layout as one file, by default **without secrets** (safe to keep and
+  share). Optionally the stored tokens and client secrets go in too, locked with a password (Argon2id + XChaCha20-
+  Poly1305). Passwords, API keys and sessions are never exported. Importing shows what is inside before anything
+  changes, then replaces the settings; restart afterwards. Guide: [docs/backup.md](docs/backup.md).
+- **Sign in with a service principal from the Setup page.** An Azure DevOps source has a **Sign in with** list:
+  personal access token or Entra service principal (tenant id, application id, client secret). Until now the service
+  principal could only be set in a config file. The list is built so another source type can get a choice of sign-in
+  method later. Tried against mock answers only.
+- **Alertmanager webhooks.** Prometheus Alertmanager can post to `POST /api/alertmanager` (same `http_input` switch
+  and alert keys as `/api/alert`). Firing alerts appear with the severity from the `severity` label, `resolved` clears
+  them. `critical_ids` accepts a trailing `*`. Mocks only, not tried against a real Alertmanager. See
+  [docs/alertmanager.md](docs/alertmanager.md).
+- **Open a source's links in a Firefox container.** Setup > Sources and `bridge.toml` get an optional `container`
+  setting for Gitea, GitHub, GitLab, Bitbucket and Azure DevOps. In Firefox with the add-on "Open external links in a
+  container", the links of that source open in the named container. Off by default; other browsers are not affected.
+  See [docs/firefox-containers.md](docs/firefox-containers.md).
+
+### Fixed
+
+- **Test connection and Remove now work for an Azure DevOps source that signs in with Entra.** The test used to
+  look for a token and fail, and removing such a source left its client secret behind.
+
 ## [1.0.3]
 
 This release removes the ESP32 desk display (see Removed: a `[[rotation]]` block in `bridge.toml` is now ignored with a

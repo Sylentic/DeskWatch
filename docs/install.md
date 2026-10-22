@@ -6,7 +6,7 @@ DeskWatch supports **Linux and Windows** (x86_64 release binaries for both). Pic
 |---|---|
 | Linux with systemd (written for Debian 12 or newer; other systemd distributions work the same, with their own package commands) | This page |
 | Windows 10 and 11, Windows Server 2019 or newer | [windows.md](windows.md) covers the programs, Mosquitto, a config, running the bridge as a service and what differs from Linux |
-| Raspberry Pi (64-bit Raspberry Pi OS) | [raspberry-pi.md](raspberry-pi.md) covers the aarch64 release binary with systemd, and the Docker route |
+| Raspberry Pi (64-bit Raspberry Pi OS) | [raspberry-pi.md](raspberry-pi.md) covers what is special about a Pi; the install itself is the aarch64 binary below or Docker |
 | Any Linux or Windows machine with Docker | [docker.md](docker.md) covers building the image, a Compose file, secrets as files and reaching the broker; sources, Mosquitto and Home Assistant stay as on this page |
 | A full-size status page in a browser (no broker) | [docker.md](docker.md#3-the-dashboard-on-your-homelab) for a container on a homelab, [kiosk.md](kiosk.md) for the page itself and a Raspberry Pi with a screen; skip the Mosquitto steps below and set `[mqtt] enabled = false` |
 | macOS | Not covered yet; contributions are welcome |
@@ -48,7 +48,7 @@ aarch64, the Raspberry Pi, see [raspberry-pi.md](raspberry-pi.md)) and a checksu
 file (the Windows zip is covered in [windows.md](windows.md)). It is built on Ubuntu 22.04, so it runs on Debian 12 and newer. It needs nothing but the system C library.
 
 ```sh
-VERSION=v1.0.3       # the release you want
+VERSION=v1.0.4       # the release you want
 cd "$(mktemp -d)"
 curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-x86_64-linux.tar.gz"
 curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-x86_64-linux.tar.gz.sha256"
@@ -72,7 +72,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 git clone https://github.com/Sylentic/DeskWatch.git
 cd DeskWatch
-git checkout v1.0.3             # or dev for the newest code that is not released yet
+git checkout v1.0.4             # or dev for the newest code that is not released yet
 cargo build --release --locked -p deskwatch-bridge
 ```
 
