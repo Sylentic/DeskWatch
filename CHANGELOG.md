@@ -7,6 +7,8 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.0.4]
+
 ### Changed
 
 - **`docs/raspberry-pi.md` is shorter.** It keeps what is special about a Pi (64-bit OS, the aarch64 binary, a Pi that only
@@ -22,6 +24,9 @@ All notable changes to DeskWatch are listed here. The format follows
   of users and keys. Removing anything still asks first. Nothing changes in what is saved.
 - **My account opens as a pop-up in Setup** (your role, your own password, Sign out). The `/account` page stays, for a
   first password an administrator chose.
+- **Scroll hint is a pill instead of a fade.** A card with more below no longer fades its bottom row; a small
+  "↓ N more" pill shows how many items are out of view, and tapping it scrolls down. It only shows when the card can
+  scroll.
 
 ### Added
 
@@ -49,12 +54,6 @@ All notable changes to DeskWatch are listed here. The format follows
   setting for Gitea, GitHub, GitLab, Bitbucket and Azure DevOps. In Firefox with the add-on "Open external links in a
   container", the links of that source open in the named container. Off by default; other browsers are not affected.
   See [docs/firefox-containers.md](docs/firefox-containers.md).
-
-### Changed
-
-- **Scroll hint is a pill instead of a fade.** A card with more below no longer fades its bottom row; a small
-  "↓ N more" pill shows how many items are out of view, and tapping it scrolls down. It only shows when the card can
-  scroll.
 
 ### Fixed
 
