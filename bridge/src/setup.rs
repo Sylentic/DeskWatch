@@ -1276,6 +1276,7 @@ async fn export_locked(
 }
 
 /// Open the file in a request: `{ "file": "<text>", "password": "<optional>" }`.
+#[allow(clippy::result_large_err)]
 async fn open_backup(request: &Value) -> Result<backup::Backup, Response> {
     let file = request
         .get("file")
