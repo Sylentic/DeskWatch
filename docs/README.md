@@ -14,6 +14,7 @@ Start with the [project README](../README.md) for what DeskWatch is, a quick dem
 
 - [kiosk.md](kiosk.md): the dashboard page, its widgets, layout and settings
 - [setup-page.md](setup-page.md): add and change sources and settings from the browser
+- [backup.md](backup.md): export and import the settings, without secrets or locked with a password
 - [data-dir.md](data-dir.md): the writable data folder the setup page and the login use
 - [runners.md](runners.md): the runners widget
 

@@ -16,6 +16,8 @@ variable. The bridge creates the folder and stops at startup, with the reason, i
   oauth.toml            GitHub/Microsoft sign-in rules, no secrets (auth.md)
 ```
 
+Setup > Backup exports and restores these files ([backup.md](backup.md)).
+
 - **`sources.toml`** holds `[[source.gitea]]`, `[[source.github]]`, `[[source.gitlab]]`, `[[source.bitbucket]]`, `[[source.azure_devops]]` and
   `[[source.prometheus]]` blocks and nothing else. They are added to the ones in `bridge.toml` and checked together,
   so a name used twice for the same type is an error (nothing is replaced silently). `bridge.toml` itself is never

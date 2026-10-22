@@ -20,6 +20,11 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ### Added
 
+- **Backup in Setup: export and import your settings.** Setup > Backup downloads sources, broker, alerts, dashboard
+  and sign-in rules and everyone's dashboard layout as one file, by default **without secrets** (safe to keep and
+  share). Optionally the stored tokens and client secrets go in too, locked with a password (Argon2id + XChaCha20-
+  Poly1305). Passwords, API keys and sessions are never exported. Importing shows what is inside before anything
+  changes, then replaces the settings; restart afterwards. Guide: [docs/backup.md](docs/backup.md).
 - **Open a source's links in a Firefox container.** Setup > Sources and `bridge.toml` get an optional `container`
   setting for Gitea, GitHub, GitLab, Bitbucket and Azure DevOps. In Firefox with the add-on "Open external links in a
   container", the links of that source open in the named container. Off by default; other browsers are not affected.

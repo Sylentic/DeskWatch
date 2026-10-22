@@ -45,6 +45,7 @@ use crate::source::credential_status;
 use crate::store::Store;
 use crate::supervisor::Supervisor;
 
+pub mod backup;
 pub mod edit;
 
 const INDEX_HTML: &str = include_str!("../setup/index.html");
@@ -180,6 +181,9 @@ impl Setup {
             .route("/api/setup/alerts/test", post(test_alert))
             .route("/api/setup/updates", post(save_updates))
             .route("/api/setup/restart", post(restart))
+            .route("/api/setup/export", get(export_plain).post(export_locked))
+            .route("/api/setup/import/check", post(import_check))
+            .route("/api/setup/import", post(import_apply))
             .with_state(self.shared.clone())
     }
 }
@@ -288,7 +292,7 @@ fn effective_config(shared: &Shared) -> Config {
 }
 
 /// `kind:name` of every source in a config.
-fn source_ids(config: &Config) -> BTreeSet<String> {
+pub(crate) fn source_ids(config: &Config) -> BTreeSet<String> {
     let s = &config.source;
     let mut ids = BTreeSet::new();
     ids.extend(s.gitea.iter().map(|c| format!("gitea:{}", c.name)));
@@ -397,6 +401,17 @@ fn refuse(status: StatusCode, message: impl std::fmt::Display) -> Response {
 /// and a data folder to write to. Gives back the parsed JSON body.
 #[allow(clippy::result_large_err)]
 fn change_request(shared: &Shared, headers: &HeaderMap, body: &[u8]) -> Result<Value, Response> {
+    change_request_up_to(shared, headers, body, 16 * 1024)
+}
+
+/// `change_request` for a body that may be bigger (a backup file).
+#[allow(clippy::result_large_err)]
+fn change_request_up_to(
+    shared: &Shared,
+    headers: &HeaderMap,
+    body: &[u8],
+    limit: usize,
+) -> Result<Value, Response> {
     if !origin::same_origin(headers) {
         return Err(refuse(
             StatusCode::FORBIDDEN,
@@ -409,7 +424,7 @@ fn change_request(shared: &Shared, headers: &HeaderMap, body: &[u8]) -> Result<V
             "no data folder is configured, so nothing can be saved (docs/data-dir.md)",
         ));
     }
-    if body.len() > 16 * 1024 {
+    if body.len() > limit {
         return Err(refuse(StatusCode::PAYLOAD_TOO_LARGE, "request too large"));
     }
     serde_json::from_slice(body).map_err(|_| refuse(StatusCode::BAD_REQUEST, "expected JSON"))
@@ -1182,3 +1197,155 @@ pub fn describe(config: &Config) -> Value {
 
 #[cfg(test)]
 mod tests;
+
+// ---- Backup (backup.rs) ----
+
+/// The most a backup file may be: sources and layouts are small.
+const BACKUP_LIMIT: usize = 1024 * 1024;
+
+fn download(bytes: Vec<u8>) -> Response {
+    let day = time::OffsetDateTime::now_utc().date();
+    let mut response = Response::new(axum::body::Body::from(bytes));
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    if let Ok(value) = HeaderValue::from_str(&format!(
+        "attachment; filename=\"deskwatch-{day}.deskwatch\""
+    )) {
+        headers.insert(header::CONTENT_DISPOSITION, value);
+    }
+    response
+}
+
+/// The backup without secrets: safe to keep and share.
+async fn export_plain(State(shared): State<Arc<Shared>>) -> Response {
+    let Some(store) = shared.store.as_ref() else {
+        return refuse(
+            StatusCode::CONFLICT,
+            "no data folder is configured, so there is nothing to export (docs/data-dir.md)",
+        );
+    };
+    match backup::export(store, None) {
+        Ok(bytes) => {
+            tracing::info!("setup: backup downloaded (no secrets)");
+            download(bytes)
+        }
+        Err(err) => refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}")),
+    }
+}
+
+/// The backup with the stored secrets, encrypted with the given password.
+async fn export_locked(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let request = match change_request(&shared, &headers, &body) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    let password = request
+        .get("password")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let shared2 = shared.clone();
+    let made = tokio::task::spawn_blocking(move || {
+        backup::export(
+            shared2.store.as_ref().expect("checked above"),
+            Some(&password),
+        )
+    })
+    .await;
+    match made {
+        Ok(Ok(bytes)) => {
+            tracing::info!("setup: backup downloaded (secrets locked with a password)");
+            download(bytes)
+        }
+        Ok(Err(err)) => refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
+        Err(_) => refuse(StatusCode::INTERNAL_SERVER_ERROR, "the backup task failed"),
+    }
+}
+
+/// Open the file in a request: `{ "file": "<text>", "password": "<optional>" }`.
+async fn open_backup(request: &Value) -> Result<backup::Backup, Response> {
+    let file = request
+        .get("file")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .as_bytes()
+        .to_vec();
+    let password = request
+        .get("password")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let opened = tokio::task::spawn_blocking(move || backup::open(&file, password.as_deref()))
+        .await
+        .map_err(|_| refuse(StatusCode::INTERNAL_SERVER_ERROR, "the backup task failed"))?;
+    opened.map_err(|err| match err {
+        backup::OpenError::NeedsPassword => {
+            json_response(StatusCode::OK, json!({ "needs_password": true }))
+        }
+        backup::OpenError::WrongPassword => refuse(
+            StatusCode::BAD_REQUEST,
+            "wrong password, or the file was changed",
+        ),
+        backup::OpenError::Invalid(err) => refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
+    })
+}
+
+/// What is in a backup file, without changing anything.
+async fn import_check(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let request = match change_request_up_to(&shared, &headers, &body, BACKUP_LIMIT) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    let opened = match open_backup(&request).await {
+        Ok(opened) => opened,
+        Err(response) => return response,
+    };
+    match backup::check(&opened, &shared.base) {
+        Ok(summary) => json_response(StatusCode::OK, json!({ "summary": summary })),
+        Err(err) => refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
+    }
+}
+
+/// Restore a backup file into the data folder. It takes effect after a restart.
+async fn import_apply(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let request = match change_request_up_to(&shared, &headers, &body, BACKUP_LIMIT) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    let opened = match open_backup(&request).await {
+        Ok(opened) => opened,
+        Err(response) => return response,
+    };
+    if let Err(err) = backup::check(&opened, &shared.base) {
+        return refuse(StatusCode::BAD_REQUEST, format!("{err:#}"));
+    }
+    let store = shared.store.as_ref().expect("checked above");
+    let _saving = shared.saving.lock().await;
+    if let Err(err) = backup::restore(store, &opened) {
+        return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}"));
+    }
+    shared.changed.store(true, Ordering::Relaxed);
+    tracing::info!(
+        secrets = opened.secrets.len(),
+        "setup: backup restored, restart needed"
+    );
+    json_response(
+        StatusCode::OK,
+        json!({ "restored": true, "restart_needed": true }),
+    )
+}
