@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or "how do I use it"
+    url: https://github.com/Sylentic/DeskWatch/discussions
+    about: Ask questions and show how you use DeskWatch in Discussions.
+  - name: Security problem
+    url: https://github.com/Sylentic/DeskWatch/security/advisories/new
+    about: Report a vulnerability privately. Please do not open a public issue.

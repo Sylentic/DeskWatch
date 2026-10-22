@@ -452,6 +452,9 @@ jobs:
             echo "CHANGELOG.md has no section for $version" >&2
             exit 1
           fi
+          # Fixed closing line on every release.
+          printf '\n---\n\nSomething not working? [Open an issue](https://github.com/%s/issues/new/choose).\n' \
+            "$GITHUB_REPOSITORY" >> notes.md
 
       - name: Publish the release
         env:

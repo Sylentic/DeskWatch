@@ -1,0 +1,45 @@
+name: I tested a source or feature
+description: Report that GitLab, Bitbucket, GPU, Raspberry Pi, Entra, GitHub App, Alertmanager, Backup or Forgejo works (or does not) on your system.
+labels: [testing]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you! These parts were only tried against mock answers. The checklist for each one is in the guide
+        linked from the README section "Help testing". A short "works" is just as useful as a bug.
+  - type: dropdown
+    id: what
+    attributes:
+      label: What did you test?
+      options:
+        - GitLab
+        - Bitbucket Cloud
+        - GPU rows (NVIDIA DCGM or AMD)
+        - Raspberry Pi kiosk
+        - Microsoft Entra sign-in
+        - GitHub sign-in
+        - GitHub App
+        - Alertmanager
+        - Backup (export and import)
+        - Forgejo or Codeberg
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options: [Works, Works with problems, Does not work]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: DeskWatch version
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Your setup and what you saw
+      description: "Server or service version, hardware, what worked and what did not. Remove tokens, hostnames and IP addresses."
