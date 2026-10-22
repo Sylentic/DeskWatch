@@ -741,9 +741,12 @@ impl Default for AlertsConfig {
 impl AlertsConfig {
     /// May the alert with this id be critical?
     pub fn allows_critical(&self, id: &str) -> bool {
-        self.critical_ids
-            .as_ref()
-            .is_none_or(|ids| ids.iter().any(|allowed| allowed == id))
+        self.critical_ids.as_ref().is_none_or(|ids| {
+            ids.iter().any(|allowed| match allowed.strip_suffix('*') {
+                Some(prefix) => id.starts_with(prefix),
+                None => allowed == id,
+            })
+        })
     }
 }
 
@@ -1838,6 +1841,13 @@ mod tests {
         let config = Config::from_toml("[alerts]\ncritical_ids = [\"leak\"]\n").unwrap();
         assert!(config.alerts.allows_critical("leak"));
         assert!(!config.alerts.allows_critical("door"));
+    }
+
+    #[test]
+    fn critical_ids_accept_a_trailing_star() {
+        let config = Config::from_toml("[alerts]\ncritical_ids = [\"am:*\"]\n").unwrap();
+        assert!(config.alerts.allows_critical("am:DiskFull:abc"));
+        assert!(!config.alerts.allows_critical("leak"));
     }
 
     #[test]

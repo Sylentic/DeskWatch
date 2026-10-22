@@ -20,6 +20,10 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ### Added
 
+- **Alertmanager webhooks.** Prometheus Alertmanager can post to `POST /api/alertmanager` (same `http_input` switch
+  and alert keys as `/api/alert`). Firing alerts appear with the severity from the `severity` label, `resolved` clears
+  them. `critical_ids` accepts a trailing `*`. Mocks only, not tried against a real Alertmanager. See
+  [docs/alertmanager.md](docs/alertmanager.md).
 - **Open a source's links in a Firefox container.** Setup > Sources and `bridge.toml` get an optional `container`
   setting for Gitea, GitHub, GitLab, Bitbucket and Azure DevOps. In Firefox with the add-on "Open external links in a
   container", the links of that source open in the named container. Off by default; other browsers are not affected.

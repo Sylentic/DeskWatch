@@ -255,6 +255,12 @@ async fn main() -> Result<()> {
                 .layer(local_only.clone())
                 .layer(guard(Need::AlertKey)),
         );
+        hooks.add(
+            deskwatch_bridge::alertmanager::HTTP_PATH,
+            deskwatch_bridge::alertmanager::http_router(inbound_tx.clone())
+                .layer(local_only.clone())
+                .layer(guard(Need::AlertKey)),
+        );
         if warn_no_login(auth.enabled(), config.http.listen.ip().is_loopback()) {
             warn!(
                 "POST {} on {} has no login: anyone who can reach this port can put alerts on the dashboard. \
