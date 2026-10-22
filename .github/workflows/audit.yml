@@ -1,0 +1,31 @@
+# Checks Cargo.lock against the RustSec advisory database. It runs when the
+# lockfile changes (so also on every Dependabot pull request) and once a week,
+# because a lock that did not change can still become vulnerable. It is not a
+# required check: a new advisory should not block unrelated work.
+name: Audit
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths: [Cargo.lock]
+  push:
+    branches: [dev]
+    paths: [Cargo.lock]
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

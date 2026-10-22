@@ -61,6 +61,9 @@ Dependabot (`.github/dependabot.yml`) opens one pull request a week per ecosyste
 Dockerfile), always into `dev`, so the pipeline checks every update first. They are never merged automatically. The
 Rust version of the build image is raised by hand together with `rust-version` in `Cargo.toml`.
 
+`.github/workflows/audit.yml` checks `Cargo.lock` against the RustSec advisory database when the lockfile changes and
+every Monday. It reports a known vulnerability but is not a required check, so an advisory never blocks unrelated work.
+
 ## Checks before a pull request
 
 The same as the pipeline (`.github/workflows/pipeline.yml`):
