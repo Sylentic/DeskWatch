@@ -24,15 +24,33 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 var(--sans); font-variant-numeric: tabular-nums; }
-header { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1rem; min-height: 56px; padding: .5rem 20px; border-bottom: 1px solid var(--line); }
-#dashboard-link { margin-left: auto; color: var(--fg); text-decoration: none; font-size: .87rem; padding: .4rem .8rem; border: 1px solid var(--field-line); border-radius: 8px; }
-#dashboard-link:hover { background: var(--card); }
-button.theme { padding: .4rem .6rem; font-size: .87rem; margin-left: .25rem; }
-#dashboard-link[hidden] + button.theme { margin-left: auto; }
-#dashboard-link[hidden] { display: none; }
-h1 { margin: 0; font-family: "Space Grotesk", var(--sans); font-size: 1.3rem; font-weight: 700; letter-spacing: -0.02em; text-transform: uppercase; }
-h1 .where { font-family: var(--mono); font-size: .87rem; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--muted); margin-left: .5rem; }
-#build { font-family: var(--mono); font-size: .8rem; }
+/* The top bar matches the dashboard's header (kiosk.css, #top): 3.5rem tall,
+   the brand on the left, 2.4rem square icon buttons on the right. Keep the
+   two in step. Every icon button names itself in a tooltip (data-tip) and in
+   aria-label for screen readers. */
+#top { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: .75rem; height: 3.5rem; padding: 0 1.25rem; background: var(--bg); border-bottom: 1px solid var(--line); }
+.brand { font-family: "Space Grotesk", var(--sans); font-weight: 700; font-size: 1.25rem; letter-spacing: -0.02em; text-transform: uppercase; white-space: nowrap; }
+#top .where { font-family: var(--mono); font-size: .87rem; color: var(--muted); margin-left: -.25rem; white-space: nowrap; }
+#build { font-family: var(--mono); font-size: .8rem; white-space: nowrap; }
+.spacer { flex: 1; }
+.icon-btn { position: relative; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 2.4rem; height: 2.4rem; min-height: 0; padding: 0;
+  color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: .65rem; cursor: pointer; text-decoration: none; font-weight: 400; }
+.icon-btn:hover, .icon-btn:focus-visible { color: var(--fg); background: var(--card); }
+.icon-btn svg { width: 1.15rem; height: 1.15rem; flex: none; }
+.icon-btn[hidden] { display: none; }
+button.icon-btn.danger { color: var(--muted); border-color: var(--line); background: transparent; }
+button.icon-btn.danger:hover, button.icon-btn.danger:focus-visible { color: var(--bad); border-color: var(--bad-edge); background: var(--bad-bg); }
+#top .icon-btn { border-color: var(--field-line); }
+#theme .moon, :root[data-theme="light"] #theme .sun { display: none; }
+:root[data-theme="light"] #theme .moon { display: block; }
+/* A tooltip under (or, in a row, above) an icon button, on hover and on keyboard focus. */
+[data-tip]::after { content: attr(data-tip); position: absolute; top: calc(100% + .45rem); left: 50%; transform: translateX(-50%); z-index: 30;
+  padding: .3rem .55rem; border-radius: .4rem; background: var(--fg); color: var(--bg); font: 500 .78rem/1.2 var(--sans); white-space: nowrap;
+  pointer-events: none; opacity: 0; transition: opacity .12s .25s; }
+[data-tip]:hover::after, [data-tip]:focus-visible::after { opacity: 1; }
+#top [data-tip]:last-child::after { left: auto; right: 0; transform: none; }
+.rowacts [data-tip]::after { top: auto; bottom: calc(100% + .45rem); }
+.rowacts [data-tip]:last-child::after { left: auto; right: 0; transform: none; }
 h2 { font-size: 1.05rem; font-weight: 600; margin: 0 0 .6rem; }
 main { padding: 1.25rem 20px 3rem; }
 .muted { color: var(--muted); }
@@ -110,7 +128,6 @@ code { font-family: var(--mono); font-size: .9em; }
 form.accessform { display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; margin-top: 1rem; max-width: 30rem; }
 form.accessform h3, .card h3 { font-size: .93rem; font-weight: 600; margin: 1.25rem 0 .25rem; }
 label.field { display: grid; gap: .3rem; font-size: .85rem; color: var(--muted); }
-#signout[hidden] { display: none; }
 textarea { width: 100%; }
 
 /* Source marks, the same as on the dashboard. */
@@ -122,3 +139,94 @@ textarea { width: 100%; }
 .mark.bitbucket { background: #12223a; color: #7db2ff; }
 .mark.azure_devops { background: #0f2236; color: #5cb8ff; }
 .mark.prometheus { background: #2e1612; color: #f2805e; }
+
+/* ---- Section heads, card heads and rows ---- */
+.sectionhead { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 0 0 1rem; }
+.sectionhead .sectiontitle { margin: 0; }
+.cardhead { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: .75rem; }
+.cardhead h2 { margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: .1rem .4rem; }
+.cardhead h2 .mark { margin-right: .2rem; }
+.cardhead p { margin: .15rem 0 0; font-size: .87rem; }
+.rowacts { display: flex; gap: .4rem; flex: none; }
+.rowacts .icon-btn { width: 2.1rem; height: 2.1rem; border-radius: .55rem; }
+.rowacts .icon-btn svg { width: 1rem; height: 1rem; }
+button.add { display: inline-flex; align-items: center; gap: .4rem; flex: none; padding: 0 .9rem 0 .7rem; }
+button.add svg { width: 1rem; height: 1rem; }
+.small { font-size: .82rem; }
+p.lead { margin: 0 0 1rem; max-width: 60rem; }
+p.value { margin: 0; font-family: var(--mono); font-size: .9rem; }
+
+/* Access: three numbers, then lists of users and keys. */
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: .8rem 1.1rem; display: grid; gap: .1rem; }
+.stat span { color: var(--muted); font-family: var(--mono); font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; }
+.stat b { font-size: 1.6rem; font-weight: 600; letter-spacing: -0.02em; }
+.ulist { display: grid; }
+.urow { display: grid; grid-template-columns: auto minmax(0, 1fr) 11rem auto; align-items: center; gap: .9rem; padding: .7rem 0; border-top: 1px solid var(--line); }
+.ulist .urow:first-child { border-top: 0; }
+.urow:not(:has(select)) { grid-template-columns: auto minmax(0, 1fr) auto; }
+.urow select { width: 100%; height: 36px; padding: 0 .6rem; }
+.who { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .2rem .6rem; }
+.who b { font-weight: 600; overflow-wrap: anywhere; }
+.who small { flex-basis: 100%; color: var(--muted); font-size: .82rem; }
+.av { width: 2.1rem; height: 2.1rem; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: .9rem;
+  background: var(--card-hi); color: var(--soft); border: 1px solid var(--line); }
+.av.admin { background: #2a1f3d; color: #c4b5fd; border-color: #3b2d57; }
+.av.operator { background: #10283a; color: #7dd3fc; border-color: #17405c; }
+.av.key { border-radius: .55rem; }
+.av svg { width: 1rem; height: 1rem; }
+:root[data-theme="light"] .av.admin { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
+:root[data-theme="light"] .av.operator { background: #e0f2fe; color: #0369a1; border-color: #bae6fd; }
+.card > p.small:last-child { margin-bottom: 0; }
+
+/* Add a source: one tile per kind. */
+.kinds { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(15rem, 100%), 1fr)); gap: .6rem; margin-top: .75rem; }
+button.kind { display: flex; align-items: center; gap: .75rem; min-height: 0; padding: .8rem .9rem; text-align: left; font-weight: 400;
+  background: var(--field); color: var(--fg); border: 1px solid var(--field-line); border-radius: 10px; }
+button.kind:hover, button.kind:focus-visible { background: var(--card-hi); border-color: var(--muted); }
+button.kind .mark { margin: 0; flex: none; width: 2.1rem; height: 2.1rem; }
+button.kind b { display: block; font-weight: 600; }
+button.kind small { display: block; color: var(--muted); font-size: .8rem; }
+
+/* ---- The pop-up ---- */
+dialog.modal { width: min(34rem, calc(100vw - 2rem)); max-height: calc(100vh - 3rem); padding: 0; border: 1px solid var(--field-line); border-radius: 16px;
+  background: var(--card); color: var(--fg); box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, .55); overflow: hidden; }
+dialog.modal.wide { width: min(46rem, calc(100vw - 2rem)); }
+dialog.modal::backdrop { background: rgba(5, 6, 8, .6); backdrop-filter: blur(2px); }
+:root[data-theme="light"] dialog.modal::backdrop { background: rgba(17, 20, 24, .35); }
+.modal-card { display: flex; flex-direction: column; max-height: calc(100vh - 3rem); margin: 0; gap: 0; flex-wrap: nowrap; }
+.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.25rem .9rem; border-bottom: 1px solid var(--line); }
+.modal-head h2 { margin: 0; font-size: 1.1rem; }
+.modal-head .icon-btn { width: 2.1rem; height: 2.1rem; border: 0; }
+.modal-body { padding: 1rem 1.25rem; overflow-y: auto; }
+.modal-body > p:first-child { margin-top: 0; }
+.modal-foot { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: .5rem; padding: .9rem 1.25rem; border-top: 1px solid var(--line); background: var(--card-hi); }
+.modal-foot:empty { display: none; }
+.modal .form .field span, .modal label.field { font-size: .85rem; }
+button.danger.solid { background: #b91c1c; color: #fff; border: 0; }
+button.danger.solid:hover { background: #991b1b; }
+fieldset.group { border: 0; border-top: 1px solid var(--line); margin: 0; padding: 1rem 0 .25rem; display: grid; gap: .75rem; }
+fieldset.group:first-child { border-top: 0; padding-top: 0; }
+fieldset.group legend { padding: 0; font-weight: 600; font-size: .93rem; float: left; width: 100%; }
+fieldset.group > p { margin: -.4rem 0 0; }
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+code.onekey { display: block; padding: .7rem .8rem; background: var(--field); border: 1px solid var(--field-line); border-radius: 8px; word-break: break-all; user-select: all; }
+
+@media (max-width: 720px) {
+  #build, #top .where { display: none; }
+  #top { padding: 0 1rem; gap: .5rem; }
+  .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
+  .stat { padding: .6rem .7rem; }
+  .stat b { font-size: 1.3rem; }
+  .stat span { font-size: .6rem; }
+  .urow { grid-template-columns: auto minmax(0, 1fr) auto; gap: .5rem .75rem; }
+  .urow select { grid-column: 2 / 4; grid-row: 2; }
+  .pair { grid-template-columns: minmax(0, 1fr); }
+  dialog.modal, dialog.modal.wide { width: 100vw; max-width: 100vw; max-height: 92vh; margin: auto 0 0; border-radius: 16px 16px 0 0; border-bottom: 0; }
+  .modal-card { max-height: 92vh; }
+  .sectionhead .sectiontitle { font-size: 1.35rem; }
+}
+.mark.microsoft { background: #102a3a; color: #6cc4ff; }
+.modal-foot .grow { flex: 1; }
+.modal h3 { margin: .25rem 0 0; font-size: .93rem; font-weight: 600; }
+.modal .urow { border-top: 0; padding-top: 0; grid-template-columns: auto minmax(0, 1fr); }

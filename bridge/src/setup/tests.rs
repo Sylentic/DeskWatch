@@ -873,11 +873,50 @@ fn the_page_has_the_sections_the_confirm_boxes_and_the_restart_wait() {
     }
     // Deleting never goes through a browser dialog that could be blocked or skipped.
     assert!(!SETUP_JS.contains("window.confirm") && !SETUP_JS.contains("window.alert"));
-    // Add a source is the first thing in the first section.
-    let sources = SETUP_JS.find("function sourcesSection").unwrap();
-    let add = SETUP_JS[sources..].find("addBar(d)").unwrap();
-    let grid = SETUP_JS[sources..].find("srcgrid").unwrap();
-    assert!(add < grid);
+    // Add source sits next to the section title and opens the pop-up.
+    assert!(SETUP_JS.contains("addButton('Add source')"));
+    assert!(SETUP_JS.contains("addSource);"));
+}
+
+/// Adding and changing things happens in one <dialog> outside the redrawn
+/// part of the page, so the refresh every few seconds cannot wipe a form.
+#[test]
+fn forms_open_in_a_pop_up_outside_the_redrawn_page() {
+    assert!(INDEX_HTML.contains(r#"<dialog id="modal""#));
+    let main = INDEX_HTML.find(r#"<main id="app""#).unwrap();
+    let dialog = INDEX_HTML.find(r#"<dialog id="modal""#).unwrap();
+    assert!(dialog > INDEX_HTML.find("</main>").unwrap() && dialog > main);
+    for needle in [
+        "showModal()",
+        "function newUserModal",
+        "function newKeyModal",
+        "function passwordModal",
+        "function githubModal",
+        "function microsoftModal",
+        "function drawForm",
+    ] {
+        assert!(SETUP_JS.contains(needle), "the page lacks {needle}");
+    }
+}
+
+/// The top bar holds icon buttons only; each one names itself for a tooltip
+/// and for a screen reader, and Sign out is the last one.
+#[test]
+fn the_top_bar_has_named_icon_buttons_with_sign_out_last() {
+    let start = INDEX_HTML.find("<header").unwrap();
+    let header = &INDEX_HTML[start..INDEX_HTML.find("</header>").unwrap()];
+    for id in ["dashboard-link", "account-link", "theme", "signout"] {
+        let at = header
+            .find(&format!(r#"id="{id}""#))
+            .unwrap_or_else(|| panic!("no {id}"));
+        let tag = &header[at..at + header[at..].find('>').unwrap()];
+        assert!(
+            tag.contains("data-tip=") && tag.contains("aria-label="),
+            "{id} is not named"
+        );
+    }
+    let signout = header.find(r#"id="signout""#).unwrap();
+    assert!(!header[signout..].contains("<button id=") && !header[signout..].contains("<a id="));
 }
 
 /// The setup page is dark unless the person picks light with its button: the

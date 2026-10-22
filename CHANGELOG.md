@@ -7,6 +7,17 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **A tidier Setup page.** The top bar has the dashboard's height and look, with icon buttons that name themselves in a
+  tooltip: Dashboard, My account, Light/Dark mode (a sun in dark mode, a moon in light mode) and Sign out, last.
+  Adding and changing things now happens in a pop-up on the page instead of a form in between the cards: a source
+  (pick its type first), the broker settings, a user, a new password, an API key (shown once, with a Copy button) and
+  the GitHub and Microsoft sign-in. Access shows the numbers of users, keys and signed-in browsers, and a cleaner list
+  of users and keys. Removing anything still asks first. Nothing changes in what is saved.
+- **My account opens as a pop-up in Setup** (your role, your own password, Sign out). The `/account` page stays, for a
+  first password an administrator chose.
+
 ### Added
 
 - **Open a source's links in a Firefox container.** Setup > Sources and `bridge.toml` get an optional `container`

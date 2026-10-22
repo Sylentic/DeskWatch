@@ -34,7 +34,9 @@
   function applyTheme(name) {
     if (name === 'light') document.documentElement.setAttribute('data-theme', 'light');
     else document.documentElement.removeAttribute('data-theme');
-    themeButton.textContent = name === 'light' ? 'Dark mode' : 'Light mode';
+    var tip = name === 'light' ? 'Dark mode' : 'Light mode';
+    themeButton.setAttribute('data-tip', tip);
+    themeButton.setAttribute('aria-label', tip);
   }
   applyTheme(theme());
   themeButton.addEventListener('click', function () {
@@ -66,6 +68,93 @@
   }
 
   function pill(text, cls) { return el('span', 'pill ' + cls, text); }
+
+  // Small line icons for buttons, as the shapes they are drawn from (the page
+  // never parses markup, see the note at the top).
+  var ICONS = {
+    close: [['path', { d: 'M6 6l12 12M18 6L6 18' }]],
+    plus: [['path', { d: 'M12 5v14M5 12h14' }]],
+    edit: [['path', { d: 'M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z' }], ['path', { d: 'M13.5 6.5l4 4' }]],
+    trash: [['path', { d: 'M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3' }]],
+    key: [['circle', { cx: '8', cy: '15', r: '4' }], ['path', { d: 'M11 12l9-9M17 6l3 3M15 8l2 2' }]],
+    power: [['path', { d: 'M12 3v9' }], ['path', { d: 'M6.3 7.3a8 8 0 1 0 11.4 0' }]]
+  };
+  function svg(name) {
+    var NS = 'http://www.w3.org/2000/svg';
+    var s = document.createElementNS(NS, 'svg');
+    s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor');
+    s.setAttribute('stroke-width', '1.7'); s.setAttribute('stroke-linecap', 'round'); s.setAttribute('stroke-linejoin', 'round');
+    s.setAttribute('aria-hidden', 'true');
+    ICONS[name].forEach(function (shape) {
+      var e = document.createElementNS(NS, shape[0]);
+      Object.keys(shape[1]).forEach(function (k) { e.setAttribute(k, shape[1][k]); });
+      s.appendChild(e);
+    });
+    return s;
+  }
+  // A square button with only an icon: its name is in the tooltip and in aria-label.
+  function iconButton(name, tip, cls) {
+    var b = el('button', 'icon-btn' + (cls ? ' ' + cls : ''));
+    b.type = 'button';
+    b.setAttribute('data-tip', tip); b.setAttribute('aria-label', tip);
+    b.appendChild(svg(name));
+    return b;
+  }
+  // A text button with an icon in front, such as "+ New user".
+  function addButton(text) {
+    var b = el('button', 'add'); b.type = 'button';
+    b.appendChild(svg('plus')); b.appendChild(document.createTextNode(text));
+    return b;
+  }
+
+  // ---- The pop-up ----
+  // One <dialog> outside #app, so the redraw every few seconds leaves it alone.
+  // Every pop-up is a form: Enter sends it, Esc, the X and Cancel close it.
+  var modal = document.getElementById('modal');
+  var onModalClose = null;
+  function openModal(title, wide) {
+    modal.textContent = '';
+    modal.className = 'modal' + (wide ? ' wide' : '');
+    var f = el('form', 'modal-card');
+    f.noValidate = true;
+    var head = el('div', 'modal-head');
+    var h = el('h2', null, title); h.id = 'modal-title';
+    var x = iconButton('close', 'Close');
+    x.addEventListener('click', closeModal);
+    head.appendChild(h); head.appendChild(x);
+    var body = el('div', 'modal-body');
+    var foot = el('div', 'modal-foot');
+    f.appendChild(head); f.appendChild(body); f.appendChild(foot);
+    modal.appendChild(f);
+    if (!modal.open) modal.showModal();
+    return { form: f, body: body, foot: foot };
+  }
+  function closeModal() { if (modal.open) modal.close(); }
+  modal.addEventListener('close', function () {
+    modal.textContent = '';
+    var f = onModalClose; onModalClose = null;
+    if (f) f();
+  });
+  // Cancel and the main button at the bottom of a pop-up.
+  function modalButtons(m, text, cls) {
+    var cancel = el('button', 'secondary', 'Cancel'); cancel.type = 'button';
+    cancel.addEventListener('click', closeModal);
+    var ok = el('button', cls || null, text); ok.type = 'submit';
+    m.foot.appendChild(cancel); m.foot.appendChild(ok);
+    return ok;
+  }
+  function modalError(m, text) {
+    var old = m.body.querySelector('.err.modal-err'); if (old) old.remove();
+    var e = el('p', 'err modal-err', text); e.setAttribute('role', 'alert');
+    m.body.appendChild(e);
+  }
+  // A question with Cancel and a red button, for anything that removes or stops.
+  function confirmModal(question, detail, yes, onYes) {
+    var m = openModal(question);
+    if (detail) m.body.appendChild(el('p', 'muted', detail));
+    modalButtons(m, yes, 'danger solid');
+    m.form.addEventListener('submit', function (ev) { ev.preventDefault(); closeModal(); onYes(); });
+  }
 
   function row(dl, term, value) {
     dl.appendChild(el('dt', null, term));
@@ -202,10 +291,8 @@
     if (kind === 'mqtt') values.username = f.username || '';
     form = { kind: kind, mode: source ? 'edit' : 'add', name: source ? source.name : '', values: values,
              secrets: {}, advanced: !!f.hosts_advanced, busy: false, result: null, error: null };
-    if (last) render(last);
+    drawForm();
   }
-
-  function closeForm() { form = null; if (last) render(last); }
 
   function submitForm(force) {
     var spec = FORMS[form.kind], fields = {}, secrets = {};
@@ -218,7 +305,7 @@
     spec.secrets.forEach(function (x) { if (form.secrets[x[0]]) secrets[x[0]] = form.secrets[x[0]]; });
     notice = null;
     form.busy = true; form.error = null; if (!force) form.result = null;
-    render(last);
+    drawForm();
     var isMqtt = form.kind === 'mqtt';
     if (isMqtt) fields.port = /^\d+$/.test(String(fields.port).trim()) ? parseInt(fields.port, 10) : fields.port;
     var request = isMqtt
@@ -229,9 +316,9 @@
       if (!j || !form) return;
       form.busy = false;
       if (j.error) form.error = j.error;
-      else if (j.saved) { results[j.id] = j.report; notice = isMqtt ? null : applyNotice(j); form = null; load(); return; }
+      else if (j.saved) { results[j.id] = j.report; notice = isMqtt ? null : applyNotice(j); closeModal(); load(); return; }
       else form.result = j.report;
-      render(last);
+      drawForm();
     });
   }
 
@@ -249,14 +336,19 @@
     return label;
   }
 
-  function formCard() {
-    var spec = FORMS[form.kind], card = el('section', 'card');
+  // The add or change form of a source (or of the broker), in the pop-up. It is
+  // drawn again when its state changes (testing, a failed test).
+  function drawForm() {
+    var spec = FORMS[form.kind];
     var isMqtt = form.kind === 'mqtt';
-    card.appendChild(el('h2', null, isMqtt ? 'Change the MQTT broker settings'
-      : (form.mode === 'add' ? 'Add ' : 'Change ') + (KIND[form.kind] || form.kind) + ' source'));
+    var m = openModal(isMqtt ? 'Change the MQTT broker settings'
+      : (form.mode === 'add' ? 'Add ' : 'Change ') + (KIND[form.kind] || form.kind) + ' source', true);
+    onModalClose = function () { form = null; };
+    var card = m.body;
     var box = el('div', 'form');
     if (!isMqtt) {
       var name = el('input'); name.value = form.name; name.readOnly = form.mode === 'edit';
+      if (form.mode === 'add') name.autofocus = true;
       name.addEventListener('input', function () { form.name = name.value; });
       box.appendChild(field('Name (letters, digits, - and _)', name));
     }
@@ -296,19 +388,14 @@
       box.appendChild(field(x[1], i));
     });
     card.appendChild(box);
-    var buttons = el('div', 'buttons');
-    var save = el('button', null, form.busy ? 'Testing…' : 'Test and save');
-    save.type = 'button'; save.disabled = form.busy;
-    save.addEventListener('click', function () { submitForm(false); });
-    var cancel = el('button', 'secondary', 'Cancel');
-    cancel.type = 'button'; cancel.addEventListener('click', closeForm);
-    buttons.appendChild(save); buttons.appendChild(cancel);
     if (form.result && !form.result.ok) {
       var force = el('button', 'secondary', 'Save anyway');
       force.type = 'button'; force.addEventListener('click', function () { submitForm(true); });
-      buttons.appendChild(force);
+      m.foot.appendChild(force);
     }
-    card.appendChild(buttons);
+    var save = modalButtons(m, form.busy ? 'Testing…' : 'Test and save');
+    save.disabled = form.busy;
+    m.form.addEventListener('submit', function (ev) { ev.preventDefault(); if (!form.busy) submitForm(false); });
     if (form.error) { var e = el('p', 'err', form.error); e.setAttribute('role', 'alert'); card.appendChild(e); }
     if (form.result) {
       card.appendChild(el('p', form.result.ok ? 'muted' : 'err', form.result.ok ? 'The test passed.' : 'Not saved: the test failed. Fix the details, or save anyway.'));
@@ -320,8 +407,8 @@
         list.appendChild(li);
       });
       card.appendChild(list);
+      list.scrollIntoView({ block: 'nearest' });
     }
-    return card;
   }
 
   // ---- Confirm step: an inline box instead of a browser dialog ----
@@ -384,28 +471,43 @@
 
   // ---- Pieces of the page ----
 
-  function addBar(d) {
-    var bar = el('section', 'card addbar');
-    bar.appendChild(el('h2', null, 'Add a source'));
-    var kind = el('select'); kind.dataset.keep = 'add-kind';
-    Object.keys(FORMS).forEach(function (k) { if (k === 'mqtt') return; var o = el('option', null, KIND[k]); o.value = k; kind.appendChild(o); });
-    var go = el('button', null, 'Add');
-    go.type = 'button'; go.addEventListener('click', function () { openForm(kind.value, null); });
-    bar.appendChild(kind); bar.appendChild(go);
-    bar.appendChild(el('span', 'muted', 'A new source starts working right away, no restart needed.'));
-    return bar;
+  // The first step of adding a source: pick its kind.
+  function addSource() {
+    var m = openModal('Add a source', true);
+    m.body.appendChild(el('p', 'muted', 'What should DeskWatch watch? A new source starts working right away, no restart needed.'));
+    var grid = el('div', 'kinds');
+    Object.keys(FORMS).forEach(function (k) {
+      if (k === 'mqtt') return;
+      var b = el('button', 'kind'); b.type = 'button';
+      b.appendChild(el('span', 'mark ' + k, MARK[k]));
+      var t = el('span'); t.appendChild(el('b', null, KIND[k])); t.appendChild(el('small', null, KIND_HINT[k]));
+      b.appendChild(t);
+      b.addEventListener('click', function () { openForm(k, null); });
+      grid.appendChild(b);
+    });
+    m.body.appendChild(grid);
+    var cancel = el('button', 'secondary', 'Cancel'); cancel.type = 'button';
+    cancel.addEventListener('click', closeModal);
+    m.foot.appendChild(cancel);
   }
+
+  // The same two-letter mark as on the dashboard.
+  var MARK = { gitea: 'Gt', github: 'GH', gitlab: 'GL', bitbucket: 'BB', azure_devops: 'AZ', prometheus: 'PM' };
+  var KIND_HINT = { github: 'Pull requests and Actions runs', gitlab: 'Merge requests and pipelines', bitbucket: 'Pull requests and pipelines',
+    gitea: 'Pull requests and Actions runs, by webhook', azure_devops: 'Pull requests, pipelines and agents', prometheus: 'Host stats from node_exporter' };
 
   function sourceCard(s) {
     var card = el('section', 'card' + (s.hidden ? ' off' : ''));
+    var head = el('div', 'cardhead');
     var h = el('h2');
-    // The same two-letter mark as on the dashboard.
-    var MARK = { gitea: 'Gt', github: 'GH', gitlab: 'GL', bitbucket: 'BB', azure_devops: 'AZ', prometheus: 'PM' };
     if (MARK[s.kind]) h.appendChild(el('span', 'mark ' + s.kind, MARK[s.kind]));
     h.appendChild(document.createTextNode((KIND[s.kind] || s.kind) + ': ' + s.name + ' '));
     var hs = HEALTH[s.health] || (s.hidden ? ['switched off', 'muted'] : [s.health, 'warn']);
     h.appendChild(pill(hs[0], hs[1]));
-    card.appendChild(h);
+    head.appendChild(h);
+    var acts = el('div', 'rowacts');
+    head.appendChild(acts);
+    card.appendChild(head);
     var dl = el('dl');
     row(dl, 'Address', s.address);
     if (s.repos && s.repos.length) row(dl, s.kind === 'prometheus' ? 'Hosts' : (s.kind === 'azure_devops' || s.kind === 'gitlab') ? 'Projects' : 'Repositories', s.repos.join(', '));
@@ -424,31 +526,29 @@
       if (!s.running) card.appendChild(el('p', 'muted', 'Saved, but not running. Fix the details and save again, or restart the bridge.'));
       card.appendChild(testBlock(s.id));
     }
-    var key = 'source:' + s.id;
-    var b = el('div', 'buttons');
     if (s.editable) {
-      var edit = el('button', 'secondary', 'Edit');
-      edit.type = 'button'; edit.addEventListener('click', function () { openForm(s.kind, s); });
-      var rm = el('button', 'secondary danger', 'Remove');
-      rm.type = 'button'; rm.addEventListener('click', function () { ask(key); });
-      b.appendChild(edit); b.appendChild(rm);
-      card.appendChild(b);
-      if (confirming === key) card.appendChild(confirmBox(key, 'Remove ' + s.name + '?',
-        'The source stops and its tokens saved in the data folder are deleted. This cannot be undone.', 'Yes, remove',
-        function () { removeSource(s); }));
-    } else if (s.hideable) {
-      var off = el('button', s.hidden ? 'secondary' : 'secondary danger', s.hidden ? 'Switch on again' : 'Switch off here');
-      off.type = 'button';
-      off.addEventListener('click', function () {
-        if (s.hidden) change('api/setup/source/hide', { kind: s.kind, name: s.name, hidden: false });
-        else ask(key);
+      var edit = iconButton('edit', 'Change');
+      edit.addEventListener('click', function () { openForm(s.kind, s); });
+      var rm = iconButton('trash', 'Remove', 'danger');
+      rm.addEventListener('click', function () {
+        confirmModal('Remove ' + s.name + '?', 'The source stops and its tokens saved in the data folder are deleted. This cannot be undone.',
+          'Yes, remove', function () { removeSource(s); });
       });
-      b.appendChild(off);
-      card.appendChild(b);
-      if (!s.hidden) card.appendChild(el('p', 'muted', 'This source is defined in bridge.toml, which this page never edits. Switching it off stops it here and keeps bridge.toml as it is; to delete it for good, remove its block from bridge.toml.'));
-      if (confirming === key) card.appendChild(confirmBox(key, 'Switch off ' + s.name + '?',
-        'It stops and leaves the dashboard. Its token file belongs to bridge.toml and stays. You can switch it on again here.', 'Yes, switch off',
-        function () { change('api/setup/source/hide', { kind: s.kind, name: s.name, hidden: true }); }));
+      acts.appendChild(edit); acts.appendChild(rm);
+    } else if (s.hideable) {
+      if (s.hidden) {
+        var on = el('button', 'secondary', 'Switch on again'); on.type = 'button';
+        on.addEventListener('click', function () { change('api/setup/source/hide', { kind: s.kind, name: s.name, hidden: false }); });
+        acts.appendChild(on);
+      } else {
+        var off = iconButton('power', 'Switch off here', 'danger');
+        off.addEventListener('click', function () {
+          confirmModal('Switch off ' + s.name + '?', 'It stops and leaves the dashboard. Its token file belongs to bridge.toml and stays. You can switch it on again here.',
+            'Yes, switch off', function () { change('api/setup/source/hide', { kind: s.kind, name: s.name, hidden: true }); });
+        });
+        acts.appendChild(off);
+        card.appendChild(el('p', 'muted', 'Defined in bridge.toml, which this page never edits. Switching it off stops it here; to delete it for good, remove its block from bridge.toml.'));
+      }
     } else if (!s.hidden) {
       card.appendChild(el('p', 'muted', 'This source is defined in bridge.toml. Give the bridge a data folder to switch it off from here; to delete it, remove its block from bridge.toml.'));
     }
@@ -457,15 +557,10 @@
 
   function sourcesSection(d) {
     var box = el('div');
-    if (form && form.mode === 'add') box.appendChild(formCard());
-    else if (d.can_edit) box.appendChild(addBar(d));
-    else box.appendChild(el('p', 'muted', 'To add and change sources here, give the bridge a data folder ([data] dir, see docs/data-dir.md).'));
+    if (!d.can_edit) box.appendChild(el('p', 'muted', 'To add and change sources here, give the bridge a data folder ([data] dir, see docs/data-dir.md).'));
     if (!d.sources.length) box.appendChild(el('p', 'muted', 'No sources configured.'));
     var grid = el('div', 'srcgrid');
-    d.sources.forEach(function (s) {
-      var editing = form && form.mode === 'edit' && form.kind === s.kind && form.name === s.name;
-      grid.appendChild(editing ? formCard() : sourceCard(s));
-    });
+    d.sources.forEach(function (s) { grid.appendChild(sourceCard(s)); });
     box.appendChild(grid);
     box.appendChild(el('p', 'muted', 'Tokens are never sent to the browser.'));
     return box;
@@ -473,7 +568,6 @@
 
   function mqttSection(d) {
     var m = d.mqtt, box = el('div');
-    if (form && form.kind === 'mqtt') { box.appendChild(formCard()); return box; }
     var info = el('section', 'card');
     var h = el('h2', null, 'MQTT broker ');
     if (m.enabled) h.appendChild(pill(m.connected ? 'connected' : 'not connected', m.connected ? 'ok' : 'bad'));
@@ -730,8 +824,9 @@
       .then(function (r) { return r.json(); })
       .then(function (a) {
         access = a;
-        var out = document.getElementById('signout');
-        if (out) out.hidden = a.state !== 'signed_in';
+        document.getElementById('signout').hidden = a.state !== 'signed_in';
+        // A person (not a screen key) gets My account.
+        document.getElementById('account-link').hidden = !(a.state === 'signed_in' && (a.name || a.user));
         if (last) render(last);
       }, function () { /* the section says it cannot load */ });
   }
@@ -799,93 +894,252 @@
     }
     var a = access.account;
     if (!a) { card.appendChild(el('p', 'muted', 'Only the administrator can change the access settings.')); return card; }
-    var dl = el('dl');
-    row(dl, 'Users', String(a.users.length));
-    row(dl, 'Signed-in browsers', String(a.sessions));
-    card.appendChild(dl);
+    var box = el('div');
+    while (card.firstChild) box.appendChild(card.firstChild);   // the result line of the last change
 
-    var ROLE_NAMES = { admin: 'Administrator', operator: 'Operator', viewer: 'Viewer' };
-    card.appendChild(el('h3', null, 'Users'));
-    card.appendChild(el('p', 'muted', 'A viewer can look at the dashboard. An operator can also dismiss alerts and failed runs. An administrator can do everything, including this page. A new user gets the password you choose and must replace it at the first sign-in.'));
+    var stats = el('div', 'stats');
+    [['Users', a.users.length], ['API keys', a.keys.length], ['Signed in', a.sessions]].forEach(function (x) {
+      var t = el('div', 'stat'); t.appendChild(el('span', null, x[0])); t.appendChild(el('b', null, String(x[1])));
+      stats.appendChild(t);
+    });
+    box.appendChild(stats);
+
+    // Users: one row each, the role changes on the spot.
+    var users = el('section', 'card');
+    var uh = el('div', 'cardhead');
+    var ut = el('div'); ut.appendChild(el('h2', null, 'Users'));
+    ut.appendChild(el('p', 'muted', 'Who can sign in with a password.'));
+    uh.appendChild(ut);
+    var addUser = addButton('New user');
+    addUser.addEventListener('click', function () { newUserModal(min); });
+    uh.appendChild(addUser);
+    users.appendChild(uh);
+    var list = el('div', 'ulist');
     a.users.forEach(function (u) {
-      var line = el('div', 'secret');
-      var left = el('span'); left.appendChild(document.createTextNode(u.name));
-      left.appendChild(el('br'));
-      left.appendChild(el('small', null, (ROLE_NAMES[u.role] || u.role) + (u.must_change ? ', has to choose a new password' : '')));
-      line.appendChild(left);
+      var line = el('div', 'urow');
+      line.appendChild(el('span', 'av ' + u.role, u.name.charAt(0).toUpperCase()));
+      var who = el('div', 'who');
+      who.appendChild(el('b', null, u.name));
+      if (u.must_change) who.appendChild(pill('new password at next sign-in', 'warn'));
+      line.appendChild(who);
       var role = el('select'); role.setAttribute('aria-label', 'Role of ' + u.name);
       ['viewer', 'operator', 'admin'].forEach(function (r) {
         var op = el('option', null, ROLE_NAMES[r]); op.value = r; if (r === u.role) op.selected = true; role.appendChild(op);
       });
       role.addEventListener('change', function () {
-        accessCall('api/auth/user/role', { name: u.name, role: role.value }, 'The role is changed.');
+        accessCall('api/auth/user/role', { name: u.name, role: role.value }, 'The role of ' + u.name + ' is changed.');
       });
       line.appendChild(role);
-      var reset = el('button', 'secondary', 'New password'); reset.type = 'button';
-      reset.addEventListener('click', function () { ask('userpw:' + u.name); });
-      line.appendChild(reset);
-      var del = el('button', 'secondary danger', 'Delete'); del.type = 'button';
-      del.addEventListener('click', function () { ask('userdel:' + u.name); });
-      line.appendChild(del);
-      card.appendChild(line);
-      if (confirming === 'userdel:' + u.name) card.appendChild(confirmBox('userdel:' + u.name, 'Remove ' + u.name + '?',
-        'They are signed out right away.', 'Yes, remove',
-        function () { accessCall('api/auth/user/delete', { name: u.name }, 'The user is removed.'); }));
-      if (confirming === 'userpw:' + u.name) {
-        card.appendChild(accessForm('New password for ' + u.name, [
-          el('p', 'muted', 'They are signed out and must replace it at the next sign-in.'),
-          labelled('Password (at least ' + min + ' characters)', input('password', 'password', 'new-password'))
-        ], 'Set password', function (f) {
-          confirming = null;
-          accessCall('api/auth/user/password', { name: u.name, password: f.password.value }, 'The password is changed.');
-        }));
-      }
+      var acts = el('div', 'rowacts');
+      var reset = iconButton('key', 'New password');
+      reset.addEventListener('click', function () { passwordModal(u.name, min); });
+      var del = iconButton('trash', 'Delete user', 'danger');
+      del.addEventListener('click', function () {
+        confirmModal('Remove ' + u.name + '?', 'They are signed out right away. This cannot be undone.', 'Yes, remove',
+          function () { accessCall('api/auth/user/delete', { name: u.name }, 'The user ' + u.name + ' is removed.'); });
+      });
+      acts.appendChild(reset); acts.appendChild(del);
+      line.appendChild(acts);
+      list.appendChild(line);
     });
-    var newRole = el('select'); newRole.name = 'role'; newRole.dataset.keep = 'new-user-role';
-    [['viewer', 'Viewer (the dashboard only)'], ['operator', 'Operator (also dismiss alerts and failed runs)'], ['admin', 'Administrator (everything)']].forEach(function (o) {
-      var op = el('option', null, o[1]); op.value = o[0]; if (o[0] === 'operator') op.selected = true; newRole.appendChild(op);
-    });
-    card.appendChild(accessForm('New user', [
-      labelled('User name', input('text', 'name', 'off')),
-      labelled('Role', newRole),
-      labelled('Password (at least ' + min + ' characters, they replace it at the first sign-in)', input('password', 'password', 'new-password'))
-    ], 'Create user', function (f) {
-      accessCall('api/auth/user', { name: f.name.value, role: f.role.value, password: f.password.value }, 'The user is created.');
-    }));
-    var me = el('p', 'muted'); var meLink = el('a', null, 'My account'); meLink.href = '/account';
-    me.appendChild(document.createTextNode('To change your own password: ')); me.appendChild(meLink); me.appendChild(document.createTextNode('.'));
-    card.appendChild(me);
+    users.appendChild(list);
+    users.appendChild(el('p', 'muted small', 'A viewer can look at the dashboard. An operator can also dismiss alerts and failed runs. An administrator can do everything, including this page.'));
+    box.appendChild(users);
 
-    var out = el('button', 'secondary', 'Sign out everywhere'); out.type = 'button';
-    out.addEventListener('click', function () {
-      post('api/auth/logout-all', {}).then(function () { location.href = '/login'; });
-    });
-    card.appendChild(el('h3', null, 'Sessions'));
-    card.appendChild(out);
-
-    card.appendChild(el('h3', null, 'API keys'));
-    card.appendChild(el('p', 'muted', 'For scripts and screens, so they never need a password. An "alert" key may send POST /api/alert (Authorization: Bearer <key>). A "viewer" key opens the dashboard once: https://host/?key=<key>.'));
-    if (!a.keys.length) card.appendChild(el('p', 'muted', 'No keys yet.'));
+    var two = el('div', 'two');
+    // API keys, for scripts and screens.
+    var keys = el('section', 'card');
+    var kh = el('div', 'cardhead');
+    var kt = el('div'); kt.appendChild(el('h2', null, 'API keys'));
+    kt.appendChild(el('p', 'muted', 'For scripts and screens, so they never need a password.'));
+    kh.appendChild(kt);
+    var addKey = addButton('New key');
+    addKey.addEventListener('click', newKeyModal);
+    kh.appendChild(addKey);
+    keys.appendChild(kh);
+    if (!a.keys.length) keys.appendChild(el('p', 'muted', 'No keys yet.'));
+    var klist = el('div', 'ulist');
     a.keys.forEach(function (k) {
-      var line = el('div', 'secret');
-      var left = el('span'); left.appendChild(document.createTextNode(k.name));
-      left.appendChild(el('br')); left.appendChild(el('small', null, k.scope + ' key'));
-      line.appendChild(left);
-      var del = el('button', 'secondary danger', 'Delete'); del.type = 'button';
-      del.addEventListener('click', function () { accessCall('api/auth/key/delete', { name: k.name }, 'The key is deleted.'); });
-      line.appendChild(del);
-      card.appendChild(line);
+      var line = el('div', 'urow');
+      var ic = el('span', 'av key'); ic.appendChild(svg('key')); line.appendChild(ic);
+      var who = el('div', 'who'); who.appendChild(el('b', null, k.name));
+      who.appendChild(el('small', null, k.scope === 'alert' ? 'may send alerts' : k.scope === 'viewer' ? 'may open the dashboard' : k.scope + ' key'));
+      line.appendChild(who);
+      var acts = el('div', 'rowacts');
+      var del = iconButton('trash', 'Delete key', 'danger');
+      del.addEventListener('click', function () {
+        confirmModal('Delete the key ' + k.name + '?', 'Whatever uses it stops working right away.', 'Yes, delete',
+          function () { accessCall('api/auth/key/delete', { name: k.name }, 'The key ' + k.name + ' is deleted.'); });
+      });
+      acts.appendChild(del); line.appendChild(acts);
+      klist.appendChild(line);
     });
-    var scope = el('select'); scope.name = 'scope'; scope.dataset.keep = 'new-key-scope';
-    [['alert', 'alert (send alerts)'], ['viewer', 'viewer (open the dashboard)']].forEach(function (o) {
+    keys.appendChild(klist);
+    keys.appendChild(el('p', 'muted small', 'An alert key may send POST /api/alert (Authorization: Bearer <key>). A viewer key opens the dashboard once: https://host/?key=<key>.'));
+    two.appendChild(keys);
+
+    // Sessions.
+    var sess = el('section', 'card');
+    sess.appendChild(el('h2', null, 'Sessions'));
+    sess.appendChild(el('p', 'muted', a.sessions === 1 ? 'One browser is signed in.' : a.sessions + ' browsers are signed in.'));
+    var out = el('button', 'secondary danger', 'Sign out everywhere'); out.type = 'button';
+    out.addEventListener('click', function () {
+      confirmModal('Sign out everywhere?', 'Every browser and screen is signed out, this one too. Viewer keys keep working.', 'Yes, sign out',
+        function () { post('api/auth/logout-all', {}).then(function () { location.href = '/login'; }); });
+    });
+    var sb = el('div', 'buttons'); sb.appendChild(out); sess.appendChild(sb);
+    var me = el('p', 'muted small'); var meLink = el('a', null, 'My account'); meLink.href = '/account';
+    me.appendChild(document.createTextNode('To change your own password: ')); me.appendChild(meLink); me.appendChild(document.createTextNode('.'));
+    sess.appendChild(me);
+    two.appendChild(sess);
+    box.appendChild(two);
+    return box;
+  }
+
+  var ROLE_NAMES = { admin: 'Administrator', operator: 'Operator', viewer: 'Viewer' };
+
+  // "My account" in the pop-up: who you are, your own password, sign out. The
+  // /account page stays for a password an administrator chose, which must be
+  // replaced before anything else.
+  var ROLE_TEXT = { admin: 'Administrator: everything, including setup and users.',
+    operator: 'Operator: the dashboard, and dismissing alerts and failed runs.', viewer: 'Viewer: the dashboard only.' };
+  function accountModal() {
+    if (!access) return;
+    var m = openModal('My account');
+    var name = access.name || access.user || 'you';
+    var who = el('div', 'urow');
+    who.appendChild(el('span', 'av ' + (access.role || ''), name.charAt(0).toUpperCase()));
+    var w = el('div', 'who'); w.appendChild(el('b', null, name)); w.appendChild(el('small', null, ROLE_TEXT[access.role] || ''));
+    who.appendChild(w);
+    m.body.appendChild(who);
+    var out = el('button', 'secondary', 'Sign out'); out.type = 'button';
+    out.addEventListener('click', function () { post('api/auth/logout', {}).then(function () { location.href = '/login'; }); });
+    m.foot.appendChild(out);
+    m.foot.appendChild(el('span', 'grow'));
+    if (!access.name) {
+      m.body.appendChild(el('p', 'muted', 'This sign-in comes from a provider, so there is no password to change here.'));
+      m.form.addEventListener('submit', function (ev) { ev.preventDefault(); });
+      return;
+    }
+    var min = access.min_password || 12;
+    var cur = input('password', 'current', 'current-password'); cur.autofocus = true;
+    var neu = input('password', 'new', 'new-password'), rep = input('password', 'repeat', 'new-password');
+    var f = el('div', 'form');
+    f.appendChild(el('h3', null, 'Change password'));
+    f.appendChild(labelled('Current password', cur));
+    f.appendChild(labelled('New password (at least ' + min + ' characters)', neu));
+    f.appendChild(labelled('Repeat new password', rep));
+    m.body.appendChild(f);
+    var save = el('button', null, 'Change password'); save.type = 'submit';
+    m.foot.appendChild(save);
+    m.form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      if (!neu.value) { modalError(m, 'Type a new password.'); return; }
+      if (neu.value !== rep.value) { modalError(m, 'The two passwords differ.'); return; }
+      save.disabled = true;
+      post('api/auth/password', { current: cur.value, new: neu.value }).then(function (j) {
+        save.disabled = false;
+        if (j.error || j.status >= 400) { modalError(m, j.error || 'The password was not changed.'); return; }
+        cur.value = neu.value = rep.value = '';
+        var old = m.body.querySelector('.modal-err'); if (old) old.remove();
+        var ok = el('p', 'ok modal-err', 'Your password is changed.'); ok.setAttribute('role', 'status');
+        m.body.appendChild(ok);
+      });
+    });
+  }
+  document.getElementById('account-link').addEventListener('click', function (ev) {
+    if (!access) return;            // not loaded yet: the link opens /account
+    ev.preventDefault(); accountModal();
+  });
+
+  // Send a pop-up's form; on success close it and show the result on the page,
+  // on an error keep it open and say what is wrong.
+  function modalCall(m, url, body, done, then) {
+    var b = m.form.querySelector('button[type=submit]'); b.disabled = true;
+    return post(url, body).then(function (j) {
+      b.disabled = false;
+      if (j.error) { modalError(m, j.error); return; }
+      closeModal();
+      accessNote = { ok: done };
+      if (then) then(j);
+      loadAccess();
+    });
+  }
+
+  function newUserModal(min) {
+    var m = openModal('New user');
+    var name = input('text', 'name', 'off'); name.autofocus = true;
+    var role = el('select'); role.name = 'role';
+    [['viewer', 'Viewer: the dashboard only'], ['operator', 'Operator: also dismiss alerts and failed runs'], ['admin', 'Administrator: everything']].forEach(function (o) {
+      var op = el('option', null, o[1]); op.value = o[0]; if (o[0] === 'operator') op.selected = true; role.appendChild(op);
+    });
+    var pw = input('password', 'password', 'new-password');
+    var f = el('div', 'form');
+    f.appendChild(labelled('User name', name));
+    f.appendChild(labelled('Role', role));
+    f.appendChild(labelled('First password (at least ' + min + ' characters)', pw));
+    f.appendChild(el('p', 'muted small', 'They choose their own password at the first sign-in.'));
+    m.body.appendChild(f);
+    modalButtons(m, 'Create user');
+    m.form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      modalCall(m, 'api/auth/user', { name: name.value, role: role.value, password: pw.value }, 'The user ' + name.value + ' is created.');
+    });
+  }
+
+  function passwordModal(user, min) {
+    var m = openModal('New password for ' + user);
+    var pw = input('password', 'password', 'new-password'); pw.autofocus = true;
+    var f = el('div', 'form');
+    f.appendChild(el('p', 'muted', 'They are signed out and must replace it at the next sign-in.'));
+    f.appendChild(labelled('Password (at least ' + min + ' characters)', pw));
+    m.body.appendChild(f);
+    modalButtons(m, 'Set password');
+    m.form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      modalCall(m, 'api/auth/user/password', { name: user, password: pw.value }, 'The password of ' + user + ' is changed.');
+    });
+  }
+
+  function newKeyModal() {
+    var m = openModal('New API key');
+    var name = input('text', 'name'); name.autofocus = true;
+    var scope = el('select'); scope.name = 'scope';
+    [['alert', 'Send alerts (POST /api/alert)'], ['viewer', 'Open the dashboard']].forEach(function (o) {
       var op = el('option', null, o[1]); op.value = o[0]; scope.appendChild(op);
     });
-    card.appendChild(accessForm('New key', [
-      labelled('Name', input('text', 'name')), labelled('What it may do', scope)
-    ], 'Create key', function (f) {
-      accessCall('api/auth/key', { name: f.name.value, scope: f.scope.value }, 'The key is created.');
-    }));
-    return card;
+    var f = el('div', 'form');
+    f.appendChild(labelled('Name (what uses it, such as homeassistant)', name));
+    f.appendChild(labelled('What it may do', scope));
+    m.body.appendChild(f);
+    modalButtons(m, 'Create key');
+    m.form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var keyName = name.value;
+      modalCall(m, 'api/auth/key', { name: keyName, scope: scope.value }, 'The key ' + keyName + ' is created.', function (j) {
+        if (j.key) showKey(keyName, j.key);
+      });
+    });
+  }
+
+  // A new key is shown once, in its own pop-up with a copy button.
+  function showKey(name, key) {
+    var m = openModal('Key ' + name);
+    m.body.appendChild(el('p', null, 'Copy this key now. It is shown once and cannot be read again.'));
+    var code = el('code', 'onekey', key);
+    m.body.appendChild(code);
+    var copy = el('button', 'secondary', 'Copy'); copy.type = 'button';
+    copy.addEventListener('click', function () {
+      var range = document.createRange(); range.selectNodeContents(code);
+      var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      var done = function () { copy.textContent = 'Copied'; };
+      if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(key).then(done, function () { document.execCommand('copy'); done(); });
+      else { document.execCommand('copy'); done(); }
+    });
+    m.foot.appendChild(copy);
+    var ok = el('button', null, 'Done'); ok.type = 'submit';
+    m.foot.appendChild(ok);
+    m.form.addEventListener('submit', function (ev) { ev.preventDefault(); closeModal(); });
   }
 
   function loadOauth() {
@@ -905,6 +1159,67 @@
     return t;
   }
 
+  // What is saved for each provider, with an unchanged secret (null keeps it).
+  function oauthGithub(g) {
+    return g ? { client_id: g.client_id, secret: null, users: g.users || [], orgs: g.orgs || [], teams: g.teams || [],
+      operator_users: g.operator_users || [], operator_teams: g.operator_teams || [], admin_users: g.admin_users || [], admin_teams: g.admin_teams || [] } : null;
+  }
+  function oauthMicrosoft(m) {
+    return m ? { tenant: m.tenant, client_id: m.client_id, secret: null, groups: m.groups || [],
+      operator_groups: m.operator_groups || [], admin_groups: m.admin_groups || [] } : null;
+  }
+  // Save the whole sign-in setting with one part changed. In a pop-up the
+  // error stays in the pop-up.
+  function saveOauth(part, done, m) {
+    var body = { public_url: oauth.public_url || null, github: oauthGithub(oauth.github), microsoft: oauthMicrosoft(oauth.microsoft) };
+    Object.keys(part).forEach(function (k) { body[k] = part[k]; });
+    var b = m && m.form.querySelector('button[type=submit]'); if (b) b.disabled = true;
+    return post('api/auth/oauth', body).then(function (j) {
+      if (b) b.disabled = false;
+      if (j.error) { if (m) { modalError(m, j.error); return; } oauthNote = { error: j.error }; }
+      else { closeModal(); oauthNote = { ok: done }; }
+      return loadOauth();
+    });
+  }
+
+  function count(list, one, many) {
+    var n = (list || []).length;
+    return n ? n + ' ' + (n === 1 ? one : many) : null;
+  }
+  function who(parts) { var p = parts.filter(Boolean); return p.length ? p.join(', ') : 'nobody'; }
+
+  function providerCard(id, name, mark, conf, summary, edit) {
+    var card = el('section', 'card' + (conf ? '' : ' off'));
+    var head = el('div', 'cardhead');
+    var h = el('h2'); h.appendChild(el('span', 'mark ' + id, mark));
+    h.appendChild(document.createTextNode(name + ' '));
+    h.appendChild(pill(conf ? 'on' : 'off', conf ? 'ok' : 'muted'));
+    head.appendChild(h);
+    var acts = el('div', 'rowacts');
+    if (conf) {
+      var e = iconButton('edit', 'Change'); e.addEventListener('click', edit);
+      var off = iconButton('power', 'Turn off', 'danger');
+      off.addEventListener('click', function () {
+        var part = {}; part[id] = null;
+        confirmModal('Turn off sign-in with ' + name + '?', 'The button leaves the login page and its settings and secret are removed. People signed in with it stay signed in until they sign out.',
+          'Yes, turn off', function () { saveOauth(part, 'Sign-in with ' + name + ' is off.'); });
+      });
+      acts.appendChild(e); acts.appendChild(off);
+    }
+    head.appendChild(acts);
+    card.appendChild(head);
+    if (conf) {
+      var dl = el('dl');
+      summary.forEach(function (r) { row(dl, r[0], r[1]); });
+      card.appendChild(dl);
+    } else {
+      card.appendChild(el('p', 'muted', 'Not set up. People cannot sign in with ' + name + '.'));
+      var b = el('div', 'buttons'); var set = el('button', 'secondary', 'Set up'); set.type = 'button';
+      set.addEventListener('click', edit); b.appendChild(set); card.appendChild(b);
+    }
+    return card;
+  }
+
   function signinSection() {
     var card = el('section', 'card');
     if (!oauth) { loadOauth(); card.appendChild(el('p', 'muted', 'Loading…')); return card; }
@@ -912,72 +1227,111 @@
       card.appendChild(el('p', 'muted', 'Only the administrator can change the sign-in providers, and a login password must be set first (see Access).'));
       return card;
     }
+    var box = el('div');
     if (oauthNote) {
       var n = el('p', oauthNote.error ? 'err' : 'banner', oauthNote.error || oauthNote.ok);
-      n.setAttribute('role', 'status'); card.appendChild(n);
+      n.setAttribute('role', 'status'); box.appendChild(n);
     }
-    card.appendChild(el('p', 'muted', 'Let people sign in with GitHub or Microsoft. Nobody gets in by default: list who is allowed. A person who matches an administrator rule is an administrator, one who matches an operator rule can also dismiss alerts and failed runs, and anyone else who is allowed can only look. With several matches the highest role wins. The local administrator password always keeps working. The sign-in needs the public address below, over HTTPS.'));
-    var g = oauth.github, m = oauth.microsoft;
-    var url = input('text', 'public_url'); url.value = oauth.public_url || ''; url.placeholder = 'https://deskwatch.example.org';
-    var gOn = el('input'); gOn.type = 'checkbox'; gOn.checked = !!g;
-    var mOn = el('input'); mOn.type = 'checkbox'; mOn.checked = !!m;
-    var f = el('form', 'accessform');
-    f.style.maxWidth = '40rem';
-    f.appendChild(labelled('Public address', url));
+    box.appendChild(el('p', 'muted lead', 'Let people sign in with GitHub or Microsoft. Nobody gets in by default: list who is allowed. Someone who matches an administrator rule is an administrator, an operator rule can also dismiss alerts and failed runs, and anyone else who is allowed can only look. The local password always keeps working.'));
 
-    function toggle(box, text) { var l = el('label'); l.appendChild(box); l.appendChild(document.createTextNode(' ' + text)); return l; }
+    var addr = el('section', 'card');
+    var ah = el('div', 'cardhead');
+    var at = el('div'); at.appendChild(el('h2', null, 'Public address'));
+    at.appendChild(el('p', 'muted', 'The address people open, over HTTPS. The providers send them back to it.'));
+    ah.appendChild(at);
+    var ae = el('div', 'rowacts'); var aeb = iconButton('edit', 'Change'); ae.appendChild(aeb); ah.appendChild(ae);
+    addr.appendChild(ah);
+    addr.appendChild(el('p', 'value' + (oauth.public_url ? '' : ' muted'), oauth.public_url || 'not set'));
+    aeb.addEventListener('click', addressModal);
+    box.appendChild(addr);
 
-    f.appendChild(el('h3', null, 'GitHub'));
-    f.appendChild(toggle(gOn, 'Allow sign-in with GitHub'));
-    f.appendChild(el('p', 'muted', 'On GitHub: Settings, Developer settings, OAuth Apps, New. Callback URL: ' + (oauth.redirect.github || '<public address>/auth/callback/github')));
-    var gid = input('text', 'g_id'); gid.value = g ? g.client_id : '';
-    var gsec = input('password', 'g_secret', 'new-password'); gsec.placeholder = g && g.secret_set ? '(set, leave empty to keep)' : '';
-    f.appendChild(labelled('Client ID', gid));
-    f.appendChild(labelled('Client secret (never shown again)', gsec));
-    var gUsers = textarea('g_users', 3, g && g.users), gOrgs = textarea('g_orgs', 2, g && g.orgs), gTeams = textarea('g_teams', 3, g && g.teams);
+    var g = oauth.github, m = oauth.microsoft, two = el('div', 'two');
+    two.appendChild(providerCard('github', 'GitHub', 'GH', g, g ? [
+      ['Client ID', g.client_id], ['Client secret', g.secret_set ? 'set' : 'missing'],
+      ['May sign in', who([count(g.users, 'user', 'users'), count(g.orgs, 'organisation', 'organisations'), count(g.teams, 'team', 'teams')])],
+      ['Operators', who([count(g.operator_users, 'user', 'users'), count(g.operator_teams, 'team', 'teams')])],
+      ['Administrators', who([count(g.admin_users, 'user', 'users'), count(g.admin_teams, 'team', 'teams')])]
+    ] : [], githubModal));
+    two.appendChild(providerCard('microsoft', 'Microsoft', 'MS', m, m ? [
+      ['Tenant', m.tenant], ['Client ID', m.client_id], ['Client secret', m.secret_set ? 'set' : 'missing'],
+      ['May sign in', who([count(m.groups, 'group', 'groups')])],
+      ['Operators', who([count(m.operator_groups, 'group', 'groups')])],
+      ['Administrators', who([count(m.admin_groups, 'group', 'groups')])]
+    ] : [], microsoftModal));
+    box.appendChild(two);
+    return box;
+  }
+
+  function addressModal() {
+    var m = openModal('Public address');
+    var url = input('text', 'public_url'); url.value = oauth.public_url || ''; url.placeholder = 'https://deskwatch.example.org'; url.autofocus = true;
+    var f = el('div', 'form'); f.appendChild(labelled('Public address (https://…)', url)); m.body.appendChild(f);
+    modalButtons(m, 'Save');
+    m.form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      saveOauth({ public_url: url.value.trim() || null }, 'The public address is saved.', m);
+    });
+  }
+
+  function group(title, hint) {
+    var g = el('fieldset', 'group'); g.appendChild(el('legend', null, title));
+    if (hint) g.appendChild(el('p', 'muted small', hint));
+    return g;
+  }
+
+  function githubModal() {
+    var g = oauth.github;
+    var m = openModal(g ? 'GitHub sign-in' : 'Set up GitHub sign-in', true);
+    var app = group('The OAuth app', 'On GitHub: Settings, Developer settings, OAuth Apps, New. Callback URL: ' + (oauth.redirect.github || '<public address>/auth/callback/github'));
+    var gid = input('text', 'g_id'); gid.value = g ? g.client_id : ''; gid.autofocus = true;
+    var gsec = input('password', 'g_secret', 'new-password'); gsec.placeholder = g && g.secret_set ? 'set, leave empty to keep' : '';
+    app.appendChild(labelled('Client ID', gid));
+    app.appendChild(labelled('Client secret (never shown again)', gsec));
+    var allow = group('Who may sign in', 'One per line. Organisations and teams only work when the organisation approves this OAuth app (Organization settings, Third-party access).');
+    var gUsers = textarea('g_users', 2, g && g.users), gOrgs = textarea('g_orgs', 2, g && g.orgs), gTeams = textarea('g_teams', 2, g && g.teams);
+    allow.appendChild(labelled('GitHub users', gUsers));
+    allow.appendChild(labelled('Organisations', gOrgs));
+    allow.appendChild(labelled('Teams (organisation/team)', gTeams));
+    var roles = group('Roles', 'Everyone else who may sign in is a viewer.');
     var gOU = textarea('g_ou', 2, g && g.operator_users), gOT = textarea('g_ot', 2, g && g.operator_teams);
     var gAU = textarea('g_au', 2, g && g.admin_users), gAT = textarea('g_at', 2, g && g.admin_teams);
-    f.appendChild(labelled('Allowed users (GitHub user names, one per line)', gUsers));
-    f.appendChild(labelled('Allowed organisations (one per line)', gOrgs));
-    f.appendChild(labelled('Allowed teams (organisation/team, one per line)', gTeams));
-    f.appendChild(labelled('Operators: users', gOU));
-    f.appendChild(labelled('Operators: teams (organisation/team)', gOT));
-    f.appendChild(labelled('Administrators: users', gAU));
-    f.appendChild(labelled('Administrators: teams (organisation/team)', gAT));
-    f.appendChild(el('p', 'muted', 'Organisations and teams are only visible if the organisation approves this OAuth app (GitHub, Organization settings, Third-party access). Personal users always work.'));
-
-    f.appendChild(el('h3', null, 'Microsoft'));
-    f.appendChild(toggle(mOn, 'Allow sign-in with Microsoft'));
-    f.appendChild(el('p', 'muted', 'In Microsoft Entra: App registrations, New, Web, redirect URI: ' + (oauth.redirect.microsoft || '<public address>/auth/callback/microsoft') + '. Add a client secret. The permission User.Read (the default) is enough.'));
-    var mt = input('text', 'm_tenant'); mt.value = m ? m.tenant : '';
-    var mid = input('text', 'm_id'); mid.value = m ? m.client_id : '';
-    var msec = input('password', 'm_secret', 'new-password'); msec.placeholder = m && m.secret_set ? '(set, leave empty to keep)' : '';
-    var mg = textarea('m_groups', 3, m && m.groups), mag = textarea('m_admin', 2, m && m.admin_groups);
-    var mog = textarea('m_op', 2, m && m.operator_groups);
-    f.appendChild(labelled('Directory (tenant) ID', mt));
-    f.appendChild(labelled('Application (client) ID', mid));
-    f.appendChild(labelled('Client secret (never shown again)', msec));
-    f.appendChild(labelled('Allowed groups (Object Id of each group, one per line)', mg));
-    f.appendChild(labelled('Operator groups (Object Id)', mog));
-    f.appendChild(labelled('Administrator groups (Object Id)', mag));
-
-    var b = el('button', null, 'Save'); b.type = 'submit'; f.appendChild(b);
-    f.addEventListener('submit', function (ev) {
+    var grid = el('div', 'pair');
+    grid.appendChild(labelled('Operators: users', gOU)); grid.appendChild(labelled('Operators: teams', gOT));
+    grid.appendChild(labelled('Administrators: users', gAU)); grid.appendChild(labelled('Administrators: teams', gAT));
+    roles.appendChild(grid);
+    m.body.appendChild(app); m.body.appendChild(allow); m.body.appendChild(roles);
+    modalButtons(m, g ? 'Save' : 'Turn on');
+    m.form.addEventListener('submit', function (ev) {
       ev.preventDefault();
-      var body = { public_url: url.value.trim() || null, github: null, microsoft: null };
-      if (gOn.checked) body.github = { client_id: gid.value, secret: gsec.value || null, users: lines(gUsers.value),
-        orgs: lines(gOrgs.value), teams: lines(gTeams.value), operator_users: lines(gOU.value), operator_teams: lines(gOT.value), admin_users: lines(gAU.value), admin_teams: lines(gAT.value) };
-      if (mOn.checked) body.microsoft = { tenant: mt.value, client_id: mid.value, secret: msec.value || null,
-        groups: lines(mg.value), operator_groups: lines(mog.value), admin_groups: lines(mag.value) };
-      b.disabled = true;
-      post('api/auth/oauth', body).then(function (j) {
-        oauthNote = j.error ? { error: j.error } : { ok: 'Saved. The sign-in buttons are on the login page now.' };
-        b.disabled = false;
-        return loadOauth();
-      });
+      saveOauth({ github: { client_id: gid.value, secret: gsec.value || null, users: lines(gUsers.value), orgs: lines(gOrgs.value),
+        teams: lines(gTeams.value), operator_users: lines(gOU.value), operator_teams: lines(gOT.value), admin_users: lines(gAU.value), admin_teams: lines(gAT.value) } },
+        'Saved. The GitHub button is on the login page.', m);
     });
-    card.appendChild(f);
-    return card;
+  }
+
+  function microsoftModal() {
+    var x = oauth.microsoft;
+    var m = openModal(x ? 'Microsoft sign-in' : 'Set up Microsoft sign-in', true);
+    var app = group('The app registration', 'In Microsoft Entra: App registrations, New, Web, redirect URI: ' + (oauth.redirect.microsoft || '<public address>/auth/callback/microsoft') + '. Add a client secret. The permission User.Read (the default) is enough.');
+    var mt = input('text', 'm_tenant'); mt.value = x ? x.tenant : ''; mt.autofocus = true;
+    var mid = input('text', 'm_id'); mid.value = x ? x.client_id : '';
+    var msec = input('password', 'm_secret', 'new-password'); msec.placeholder = x && x.secret_set ? 'set, leave empty to keep' : '';
+    app.appendChild(labelled('Directory (tenant) ID', mt));
+    app.appendChild(labelled('Application (client) ID', mid));
+    app.appendChild(labelled('Client secret (never shown again)', msec));
+    var allow = group('Who may sign in', 'The Object Id of each group, one per line. Everyone else who may sign in is a viewer.');
+    var mg = textarea('m_groups', 2, x && x.groups), mog = textarea('m_op', 2, x && x.operator_groups), mag = textarea('m_admin', 2, x && x.admin_groups);
+    allow.appendChild(labelled('Allowed groups', mg));
+    allow.appendChild(labelled('Operator groups', mog));
+    allow.appendChild(labelled('Administrator groups', mag));
+    m.body.appendChild(app); m.body.appendChild(allow);
+    modalButtons(m, x ? 'Save' : 'Turn on');
+    m.form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      saveOauth({ microsoft: { tenant: mt.value, client_id: mid.value, secret: msec.value || null,
+        groups: lines(mg.value), operator_groups: lines(mog.value), admin_groups: lines(mag.value) } },
+        'Saved. The Microsoft button is on the login page.', m);
+    });
   }
 
   var TITLES = { sources: 'Sources', mqtt: 'MQTT broker', dashboard: 'Dashboard', alerts: 'Alerts', access: 'Access', signin: 'Sign-in providers', bridge: 'Bridge and restart', secrets: 'Stored secrets' };
@@ -1047,7 +1401,14 @@
     });
     layout.appendChild(nav);
     var content = el('div', 'content');
-    content.appendChild(el('h2', 'sectiontitle', TITLES[section]));
+    var head = el('div', 'sectionhead');
+    head.appendChild(el('h2', 'sectiontitle', TITLES[section]));
+    if (section === 'sources' && d.can_edit) {
+      var add = addButton('Add source');
+      add.addEventListener('click', addSource);
+      head.appendChild(add);
+    }
+    content.appendChild(head);
     content.appendChild(({ sources: sourcesSection, mqtt: mqttSection, dashboard: dashboardSection, alerts: alertsSection,
                            access: accessSection, signin: signinSection, bridge: bridgeSection, secrets: secretsSection })[section](d));
     layout.appendChild(content);
@@ -1055,7 +1416,7 @@
     restoreChoices(kept);
   }
 
-  window.addEventListener('hashchange', function () { form = null; confirming = null; if (last) render(last); });
+  window.addEventListener('hashchange', function () { closeModal(); form = null; confirming = null; if (last) render(last); });
 
   function load() {
     clearTimeout(timer);
