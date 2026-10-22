@@ -21,8 +21,7 @@ the GitHub release. A merge into `main` without a new version releases nothing.
    places:
    - `version` in the root `Cargo.toml`, and `Cargo.lock` with it (the pipeline builds with `--locked`);
    - `Unreleased` in `CHANGELOG.md`, turned into the new version section (the release notes are that section; the pipeline adds the closing line "Something not working? Open an issue" by itself);
-   - the image tag in `deploy/docker-compose.yml`;
-   - the version examples in `docs/install.md` (two), `docs/raspberry-pi.md` and `docs/windows.md` (two), and the
+   - the version examples in `docs/install.md` (two) and `docs/windows.md` (two), and the
      example in `docs/docker.md` section 10.
 2. Open the release pull request **from `dev` into `main`**, titled "Release x.y.z". Merge it with a merge commit
    once the pipeline is green (it also builds the image for both CPUs).

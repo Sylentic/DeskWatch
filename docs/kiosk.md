@@ -307,7 +307,7 @@ the icon is not there.
 
 ## 4. Autostart on a Raspberry Pi
 
-Two parts: the bridge runs as in [raspberry-pi.md](raspberry-pi.md), and Chromium starts in kiosk mode when the Pi
+Two parts: the bridge runs somewhere ([raspberry-pi.md](raspberry-pi.md) lists the choices), and Chromium starts in kiosk mode when the Pi
 boots to the desktop. Use **Raspberry Pi OS with desktop, 64-bit**, set to log in automatically
 (`sudo raspi-config` > System Options > Boot / Auto Login > Desktop Autologin) and install the browser if it is
 missing: `sudo apt install chromium`. The package is called `chromium-browser` on older releases.

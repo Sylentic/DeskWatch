@@ -6,7 +6,7 @@ Start with the [project README](../README.md) for what DeskWatch is, a quick dem
 
 - [docker.md](docker.md): the container, Compose files, the dashboard on a homelab (the easiest start)
 - [install.md](install.md): the whole setup on a Linux server with systemd
-- [raspberry-pi.md](raspberry-pi.md): 64-bit Raspberry Pi OS, a monitor or TV as a wall display
+- [raspberry-pi.md](raspberry-pi.md): a Pi with a monitor or TV as a wall display
 - [windows.md](windows.md): the release zip, Mosquitto
 - [updates.md](updates.md): the quiet "update available" notice
 

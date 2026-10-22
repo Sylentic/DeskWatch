@@ -9,6 +9,8 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ### Changed
 
+- **`docs/raspberry-pi.md` is shorter.** It keeps what is special about a Pi (64-bit OS, the aarch64 binary, a Pi that only
+  shows the page) and points to `docker.md` and `install.md` for the rest.
 - **`deploy/docker-compose.yml` uses the `latest` image tag** instead of a fixed version, so `docker compose pull`
   gives the newest release and a release no longer needs a change in the Compose file. Pin a version number in the
   file to stay on one release. `docs/docker.md` and `docs/releasing.md` are updated.
