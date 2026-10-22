@@ -14,6 +14,12 @@ All notable changes to DeskWatch are listed here. The format follows
   container", the links of that source open in the named container. Off by default; other browsers are not affected.
   See [docs/firefox-containers.md](docs/firefox-containers.md).
 
+### Changed
+
+- **Scroll hint is a pill instead of a fade.** A card with more below no longer fades its bottom row; a small
+  "↓ N more" pill shows how many items are out of view, and tapping it scrolls down. It only shows when the card can
+  scroll.
+
 ## [1.0.3]
 
 This release removes the ESP32 desk display (see Removed: a `[[rotation]]` block in `bridge.toml` is now ignored with a

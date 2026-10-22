@@ -571,12 +571,33 @@
     hint(entry.el);
   }
 
-  // A card with more below shows a fade at its bottom edge (there is no
-  // scrollbar). Wheel, touch and keys scroll it.
+  // A card with more below shows a small "N more" pill at its bottom edge
+  // (there is no scrollbar). Wheel, touch and keys scroll it; tapping the
+  // pill scrolls down a screenful. N counts the items not fully in view.
   function hint(el) {
     var body = el.querySelector('.body');
-    var more = !!body && body.scrollHeight - body.clientHeight - body.scrollTop > 4;
-    if (el.classList.contains('more-below') !== more) el.classList.toggle('more-below', more);
+    var n = 0;
+    if (body && body.scrollHeight - body.clientHeight - body.scrollTop > 4) {
+      var rows = body.querySelector('.rows');
+      var items = (rows || body).children, bottom = body.getBoundingClientRect().bottom;
+      for (var i = 0; i < items.length; i++) {
+        if (!items[i].classList.contains('more') && items[i].getBoundingClientRect().bottom > bottom + 1) n++;
+      }
+    }
+    var pill = el.querySelector('.scroll-more');
+    if (!n) { if (pill) pill.remove(); return; }
+    if (!pill) {
+      pill = document.createElement('button');
+      pill.type = 'button';
+      pill.className = 'scroll-more';
+      pill.addEventListener('click', function () {
+        var b = el.querySelector('.body');
+        if (b) b.scrollBy({ top: b.clientHeight * 0.8, behavior: 'smooth' });
+      });
+      el.appendChild(pill);
+    }
+    var text = '\u2193 ' + n + ' more';
+    if (pill.textContent !== text) pill.textContent = text;
   }
 
   // Remember when a card was last touched, wheeled or keyed.
@@ -588,11 +609,15 @@
   ['wheel', 'touchstart', 'touchmove', 'pointerdown', 'keydown'].forEach(function (name) {
     document.addEventListener(name, touched, { passive: true, capture: true });
   });
-  // Scroll events do not bubble; listen on the way down to update the fade.
+  // Scroll events do not bubble; listen on the way down to update the pill.
   document.addEventListener('scroll', function (ev) {
     var el = ev.target && ev.target.closest ? ev.target.closest('.card') : null;
     if (el) hint(el);
   }, { passive: true, capture: true });
+  // A new window size or panel size can make a list fit, or stop fitting.
+  window.addEventListener('resize', function () {
+    Object.keys(cards).forEach(function (key) { hint(cards[key].el); });
+  });
 
   // A card that was scrolled and then left alone goes back to the top, so a
   // wall display shows the newest items again.
