@@ -1,0 +1,39 @@
+name: Bug report
+description: Something does not work or shows the wrong thing.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What did you click or configure? Demo mode (`--demo`) reproduces many display problems.
+  - type: input
+    id: version
+    attributes:
+      label: DeskWatch version
+      description: "The release you downloaded or the Docker image tag, for example 1.0.4."
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How do you run it?
+      options: [Docker, Linux binary, Windows, Raspberry Pi, From source]
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and screen (for display problems)
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log output
+      description: "Remove tokens, passwords, hostnames and IP addresses first."
+      render: text

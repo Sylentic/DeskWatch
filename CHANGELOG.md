@@ -23,6 +23,9 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ### Added
 
+- **Ways to give feedback.** Issue forms for bugs, feature requests and "I tested a source or feature", a
+  `CONTRIBUTING.md`, a `SECURITY.md` and a pull request template. The README has a "Help testing" section listing what
+  was only tried against mock answers, and every GitHub release now ends with "Something not working? Open an issue".
 - **GitHub App sign-in.** A GitHub source can sign in as a GitHub App installed on the organisation (`auth = "app"`
   with `app_id`, `installation_id` and `private_key_file`; in Setup: **Sign in with: GitHub App**) instead of with
   one person's token. The bridge signs a short token with the App's private key and swaps it for an hour-long
