@@ -505,7 +505,7 @@ If the image does not suit you (your own changes, another CPU), section 1 builds
 
 ## 11. Update and remove
 
-With the published image (the default in `deploy/docker-compose.yml`): read [CHANGELOG.md](../CHANGELOG.md) first, a
+new release may add config keys, then run (the Compose file uses `latest`; if you pinned a version, change it in the `image:` line first):
 new release may add config keys, then change the version in the `image:` line and run:
 
 ```sh

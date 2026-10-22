@@ -28,8 +28,9 @@ or in Docker, and needs no internet beyond the sources you point it at.
 - **Alerts** from Home Assistant, Prometheus Alertmanager or any script, over MQTT or HTTP, and from your Git hosts: a new issue, or a new
   comment on an open Azure DevOps pull request. Info is blue, warning yellow, critical red.
 - **Your own layout:** every user hides, moves and resizes panels with the grid icon in the header, kept per user.
-- **A setup page** to add sources, test connections and change settings from the browser, and an optional login
-  with viewer, operator and administrator roles (passwords, API keys, or sign-in with GitHub or Microsoft).
+- **A setup page** to add sources, test connections and change settings from the browser, with export and import of
+  your settings (secrets left out), and an optional login with viewer, operator and administrator roles (passwords,
+  API keys, or sign-in with GitHub or Microsoft).
 
 ## Try it in a minute
 
@@ -68,7 +69,7 @@ page and `POST /api/alert` only answer the local network.
 | GitLab (gitlab.com and self-managed) | Polling: merge requests, pipelines, runners ([guide](docs/gitlab.md)) | Against mock answers only |
 | Bitbucket Cloud | Polling: PRs, pipelines, runners ([guide](docs/bitbucket.md)) | Against mock answers only |
 | Prometheus | node_exporter and cAdvisor through the HTTP API | On a real server |
-| The bridge machine | `/proc` and `/sys` (Linux) | Yes |
+| The bridge machine | `/proc` and `/sys` (Linux only for now) | Yes |
 | Home Assistant, scripts | Alerts over MQTT or `POST /api/alert` ([guide](docs/home-assistant.md)) | Yes |
 
 Forgejo and Codeberg are not tested; what they and the others need is in [docs/git-hosts.md](docs/git-hosts.md). Gitea,
@@ -81,6 +82,8 @@ homelab. Not done yet:
 
 - The dashboard on a real Raspberry Pi (built and tested in Chromium on a PC), and GitLab and Bitbucket against real
   servers.
+- Local stats of the bridge machine on Windows (the host card shows dashes; Prometheus hosts work, see
+  [docs/windows.md](docs/windows.md)).
 - Release binaries for macOS and 32-bit ARM (build from source).
 
 What changed in each version is in the [changelog](CHANGELOG.md). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md); security problems go through [SECURITY.md](SECURITY.md).

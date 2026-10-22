@@ -134,8 +134,8 @@ so the bridge does not keep trying to reach one.
 ## 6. Update and remove
 
 Route A: download the new tarball as in section 2, `sudo install -m 755 deskwatch-bridge /usr/local/bin/`, then
-`sudo systemctl restart deskwatch-bridge`. Route B: with the published image change the version in the `image:` line,
-then `docker compose pull && docker compose up -d`; when you build yourself, `git pull`, `docker build -t deskwatch-bridge .`,
+`sudo systemctl restart deskwatch-bridge`. Route B: with the published image (tag `latest` in the Compose file) run
+`docker compose pull && docker compose up -d`; when you build yourself, `git pull`, `docker build -t deskwatch-bridge .`,
 then `docker compose up -d`. Removal and rollback are the same as in
 [install.md section 9](install.md#9-update-roll-back-remove) and [docker.md section 11](docker.md#11-update-and-remove).
 
