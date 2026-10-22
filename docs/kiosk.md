@@ -270,7 +270,7 @@ Users can also hide, move and resize panels for themselves, see [Customize your 
 
 ### Light mode, day and night theme
 
-The page is dark. The **Light mode** button on the [setup page](setup-page.md) switches the dashboard to light as well
+The page is dark. The **Light mode** button (the sun icon) on the [setup page](setup-page.md) switches the dashboard to light as well
 (the choice is kept in that browser, and a dashboard open in another tab follows at once); `?scheme=light` or
 `?scheme=dark` on the address overrides it for one screen. The night theme below wins over light mode at night.
 

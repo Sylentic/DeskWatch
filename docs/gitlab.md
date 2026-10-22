@@ -47,7 +47,7 @@ Store the token as a credential file, like the other sources: `/etc/deskwatch/cr
 600) with `LoadCredential=gitlab-personal:/etc/deskwatch/credentials/gitlab-personal` in the unit, or
 `C:\ProgramData\DeskWatch\credentials\gitlab-personal` on Windows ([windows.md](windows.md#secrets)). In Docker it
 is a file in the credentials volume ([docker.md](docker.md)). The Setup page stores it for you if you add the
-source there (section **Sources**, "Add a source", GitLab). The token never goes into the config, the logs or MQTT.
+source there (section **Sources**, "Add source", GitLab). The token never goes into the config, the logs or MQTT.
 
 ## 3. Add the block
 
