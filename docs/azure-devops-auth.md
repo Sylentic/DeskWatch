@@ -94,8 +94,13 @@ client_secret_file = "azdo-work-secret"
 Entra refuses, or an app Azure DevOps does not know, shows the **Source down** pill and the log says which. Real tenant,
 client and organisation names stay out of the repository.
 
-Not built yet: choosing the sign-in method on the Setup page (edit `sources.toml` or `bridge.toml` by hand for now),
-a certificate instead of a secret, and managed identity.
+On the Setup page, an Azure DevOps source has a **Sign in with** list: **Personal access token** or **Entra service
+principal** (tenant id, application id and client secret). The secret is stored in the data folder like a token and
+never comes back to the browser. Switching an existing source from one to the other removes the settings of the old
+one from `sources.toml` and asks for the new secret; the old secret file stays in the data folder until you delete it
+under **Stored secrets**.
+
+Not built yet: a certificate instead of a secret, and managed identity.
 
 ## Overlap with the multi-user login
 
