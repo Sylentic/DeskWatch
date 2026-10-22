@@ -250,7 +250,14 @@
       strings: [['organization', 'Organisation (the name after dev.azure.com/)', ''], ['base_url', 'Address (without the organisation)', 'https://dev.azure.com']],
       lists: [['projects', 'Projects, one per line']],
       bools: [['pull_requests', 'Show open pull requests']],
-      secrets: [['token', 'Personal access token (read-only)', true]]
+      secrets: [],
+      auth: [
+        ['pat', 'Personal access token', 'Acts as the person who made the token and stops working when they leave.',
+         { strings: [], secrets: [['token', 'Personal access token (read-only)', true]] }],
+        ['entra', 'Entra service principal', 'An app registration that is not tied to a person. Needs a Basic licence in the organisation.',
+         { strings: [['tenant_id', 'Tenant (directory) id', ''], ['client_id', 'Application (client) id', '']],
+           secrets: [['client_secret', 'Client secret', true]] }]
+      ]
     },
     prometheus: {
       strings: [['url', 'Prometheus address', 'http://prometheus.example.lan:9090']],
@@ -283,8 +290,18 @@
     }, function () { return { error: 'Cannot reach the bridge.' }; });
   }
 
+  // Kinds with a choice of sign-in method (`auth`) have their extra fields per method.
+  function modeOf(spec, values) {
+    var m = (spec.auth || []).filter(function (a) { return a[0] === values.auth; })[0];
+    return m ? m[3] : { strings: [], secrets: [] };
+  }
+
   function openForm(kind, source) {
     var spec = FORMS[kind], values = {}, f = source && source.fields || {};
+    if (spec.auth) {
+      values.auth = f.auth || spec.auth[0][0];
+      spec.auth.forEach(function (a) { a[3].strings.forEach(function (x) { values[x[0]] = f[x[0]] != null ? String(f[x[0]]) : x[2]; }); });
+    }
     spec.strings.forEach(function (x) { values[x[0]] = f[x[0]] != null ? String(f[x[0]]) : x[2]; });
     spec.lists.forEach(function (x) { values[x[0]] = (f[x[0]] || []).join('\n'); });
     (spec.bools || []).forEach(function (x) { values[x[0]] = !!f[x[0]]; });
@@ -297,6 +314,10 @@
   function submitForm(force) {
     var spec = FORMS[form.kind], fields = {}, secrets = {};
     spec.strings.forEach(function (x) { fields[x[0]] = form.values[x[0]]; });
+    var mode = modeOf(spec, form.values);
+    if (spec.auth) fields.auth = form.values.auth;
+    mode.strings.forEach(function (x) { fields[x[0]] = form.values[x[0]]; });
+    mode.secrets.forEach(function (x) { if (form.secrets[x[0]]) secrets[x[0]] = form.secrets[x[0]]; });
     spec.lists.forEach(function (x) {
       if (x[0] === 'hosts' && form.advanced) return;     // advanced host settings stay as they are
       fields[x[0]] = form.values[x[0]].split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
@@ -352,7 +373,37 @@
       name.addEventListener('input', function () { form.name = name.value; });
       box.appendChild(field('Name (letters, digits, - and _)', name));
     }
+    var mode = modeOf(spec, form.values);
+    function textField(x) {
+      var i = el('input'); i.value = form.values[x[0]];
+      i.addEventListener('input', function () { form.values[x[0]] = i.value; });
+      return field(x[1], i);
+    }
+    function secretField(x) {
+      var multi = (mode.multiline || []).indexOf(x[0]) >= 0;
+      var i = el(multi ? 'textarea' : 'input');
+      if (multi) { i.rows = 4; i.className = 'secret-area'; } else i.type = 'password';
+      i.autocomplete = 'new-password'; i.spellcheck = false;
+      i.placeholder = form.mode === 'edit' ? 'leave empty to keep the current one' : (x[2] ? 'required' : 'optional');
+      i.addEventListener('input', function () { form.secrets[x[0]] = i.value; });
+      return field(x[1], i);
+    }
+    var authBox = null;
+    if (spec.auth) {
+      var pick = el('select');
+      spec.auth.forEach(function (a) {
+        var op = el('option', null, a[1]); op.value = a[0]; if (a[0] === form.values.auth) op.selected = true; pick.appendChild(op);
+      });
+      pick.addEventListener('change', function () { form.values.auth = pick.value; form.result = null; form.error = null; drawForm(); });
+      authBox = el('div', 'authbox');
+      authBox.appendChild(field('Sign in with', pick));
+      var cur = spec.auth.filter(function (a) { return a[0] === form.values.auth; })[0];
+      authBox.appendChild(el('p', 'muted authhelp', cur[2]));
+      mode.strings.forEach(function (x) { authBox.appendChild(textField(x)); });
+      mode.secrets.forEach(function (x) { authBox.appendChild(secretField(x)); });
+    }
     spec.strings.forEach(function (x) {
+      if (x[0] === 'container' && authBox) { box.appendChild(authBox); authBox = null; }
       var i = el('input'); i.value = form.values[x[0]];
       i.addEventListener('input', function () { form.values[x[0]] = i.value; });
       var lab = field(x[1], i);

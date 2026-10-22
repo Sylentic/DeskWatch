@@ -68,8 +68,9 @@ With a data folder configured ([data-dir.md](data-dir.md)) the page can change s
 
 - **Add source** (pick Gitea, GitHub, GitLab, Bitbucket Cloud, Azure DevOps or Prometheus in the pop-up), change it
   (pencil icon), remove it (bin icon). Options
-  the form does not show, such as `alert_new_issues`, `alert_pr_comments` or Azure DevOps `auth = "entra"`, are set in
-  `sources.toml` by hand; the page keeps them on an edit.
+  the form does not show, such as `alert_new_issues` or `alert_pr_comments`, are set in
+  `sources.toml` by hand; the page keeps them on an edit. An Azure DevOps source asks **Sign in with**: a personal
+  access token or an Entra service principal ([azure-devops-auth.md](azure-devops-auth.md)).
 - A token field is write-only. Leave it empty on an edit to keep the current token; fill it in to replace it. The value
   goes to the bridge once and is stored as `credentials/<kind>-<name>-<key>` (0600). It is never sent back.
 - **Validate before save**: the whole configuration, as it would be, must load, and the connection test runs with the

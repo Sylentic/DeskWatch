@@ -23,6 +23,10 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ### Added
 
+- **Sign in with a service principal from the Setup page.** An Azure DevOps source has a **Sign in with** list:
+  personal access token or Entra service principal (tenant id, application id, client secret). Until now the service
+  principal could only be set in a config file. The list is built so another source type can get a choice of sign-in
+  method later. Tried against mock answers only.
 - **Alertmanager webhooks.** Prometheus Alertmanager can post to `POST /api/alertmanager` (same `http_input` switch
   and alert keys as `/api/alert`). Firing alerts appear with the severity from the `severity` label, `resolved` clears
   them. `critical_ids` accepts a trailing `*`. Mocks only, not tried against a real Alertmanager. See

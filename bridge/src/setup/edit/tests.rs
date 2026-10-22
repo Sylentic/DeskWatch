@@ -480,3 +480,98 @@ fn a_container_name_with_a_control_character_is_refused() {
     let toml = "[[source.github]]\nname = \"m\"\ntoken_file = \"t\"\nrepos = [\"o/a\"]\ncontainer = \"a\\nb\"\n";
     assert!(Config::from_toml(toml).is_err());
 }
+
+#[test]
+fn azure_devops_switches_between_token_and_entra() {
+    let fields = |v: Value| fields(v);
+    let secrets = |k: &str, v: &str| secrets(&[(k, v)]);
+    let base = json!({ "organization": "acme", "projects": ["P"] });
+    // Add with a service principal.
+    let mut f = base.clone();
+    f["auth"] = json!("entra");
+    f["tenant_id"] = json!("t-1");
+    f["client_id"] = json!("c-1");
+    let plan = upsert(
+        "",
+        "azure_devops",
+        "work",
+        true,
+        &fields(f),
+        &secrets("client_secret", "s3cret"),
+    )
+    .unwrap();
+    assert!(plan.text.contains("auth = \"entra\""));
+    assert!(
+        plan.text
+            .contains("client_secret_file = \"azure_devops-work-client_secret\"")
+    );
+    assert!(!plan.text.contains("token_file"));
+    let config = Config::from_toml(&plan.text).unwrap();
+    assert_eq!(config.source.azure_devops[0].tenant_id, "t-1");
+    // A service principal needs its secret, and a token secret is refused for it.
+    let mut f2 = base.clone();
+    f2["auth"] = json!("entra");
+    f2["tenant_id"] = json!("t");
+    f2["client_id"] = json!("c");
+    assert!(
+        upsert(
+            "",
+            "azure_devops",
+            "w",
+            true,
+            &fields(f2.clone()),
+            &BTreeMap::new()
+        )
+        .is_err()
+    );
+    assert!(
+        upsert(
+            "",
+            "azure_devops",
+            "w",
+            true,
+            &fields(f2),
+            &secrets("token", "x")
+        )
+        .is_err()
+    );
+    // Back to a token on an existing source: Entra settings go, the token is needed.
+    let mut back = base.clone();
+    back["auth"] = json!("pat");
+    assert!(
+        upsert(
+            &plan.text,
+            "azure_devops",
+            "work",
+            false,
+            &fields(back.clone()),
+            &BTreeMap::new()
+        )
+        .is_err()
+    );
+    let plan2 = upsert(
+        &plan.text,
+        "azure_devops",
+        "work",
+        false,
+        &fields(back),
+        &secrets("token", "pat"),
+    )
+    .unwrap();
+    assert!(plan2.text.contains("token_file"));
+    assert!(!plan2.text.contains("tenant_id") && !plan2.text.contains("client_secret_file"));
+    // Unknown way to sign in.
+    let mut bad = base;
+    bad["auth"] = json!("magic");
+    assert!(
+        upsert(
+            "",
+            "azure_devops",
+            "w",
+            true,
+            &fields(bad),
+            &BTreeMap::new()
+        )
+        .is_err()
+    );
+}
