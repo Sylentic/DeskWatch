@@ -1147,6 +1147,11 @@ pub fn describe(config: &Config) -> Value {
                 "organization": s.organization, "base_url": s.base_url,
                 "projects": s.projects, "pull_requests": s.pull_requests,
                 "container": s.container,
+                "auth": match s.auth {
+                    crate::config::AzureDevopsAuth::Pat => "pat",
+                    crate::config::AzureDevopsAuth::Entra => "entra",
+                },
+                "tenant_id": s.tenant_id, "client_id": s.client_id,
             },
         }));
     }

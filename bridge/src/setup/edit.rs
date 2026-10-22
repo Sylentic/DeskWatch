@@ -28,6 +28,17 @@ pub struct Spec {
     pub bools: &'static [&'static str],
     /// Secrets: (form key, config key that names the credential, required when adding).
     pub secrets: &'static [(&'static str, &'static str, bool)],
+    /// Ways to sign in, for a kind that has more than one (the `auth` field).
+    /// The first is the default. Empty: the kind has one way, `strings` and `secrets` above.
+    pub modes: &'static [Mode],
+}
+
+/// One way to sign in: the extra fields and secrets that go with it.
+pub struct Mode {
+    /// The value of `auth` in the config.
+    pub name: &'static str,
+    pub strings: &'static [&'static str],
+    pub secrets: &'static [(&'static str, &'static str, bool)],
 }
 
 const SPECS: &[Spec] = &[
@@ -37,6 +48,7 @@ const SPECS: &[Spec] = &[
         lists: &["repos"],
         bools: &[],
         secrets: &[("token", "token_file", true)],
+        modes: &[],
     },
     Spec {
         kind: "gitlab",
@@ -44,6 +56,7 @@ const SPECS: &[Spec] = &[
         lists: &["projects"],
         bools: &[],
         secrets: &[("token", "token_file", true)],
+        modes: &[],
     },
     Spec {
         kind: "bitbucket",
@@ -51,6 +64,7 @@ const SPECS: &[Spec] = &[
         lists: &["repos"],
         bools: &[],
         secrets: &[("token", "token_file", true)],
+        modes: &[],
     },
     Spec {
         kind: "gitea",
@@ -61,13 +75,26 @@ const SPECS: &[Spec] = &[
             ("token", "token_file", false),
             ("webhook_secret", "webhook_secret_file", true),
         ],
+        modes: &[],
     },
     Spec {
         kind: "azure_devops",
         strings: &["organization", "base_url", "container"],
         lists: &["projects"],
         bools: &["pull_requests"],
-        secrets: &[("token", "token_file", true)],
+        secrets: &[],
+        modes: &[
+            Mode {
+                name: "pat",
+                strings: &[],
+                secrets: &[("token", "token_file", true)],
+            },
+            Mode {
+                name: "entra",
+                strings: &["tenant_id", "client_id"],
+                secrets: &[("client_secret", "client_secret_file", true)],
+            },
+        ],
     },
     Spec {
         kind: "prometheus",
@@ -75,6 +102,7 @@ const SPECS: &[Spec] = &[
         lists: &["hosts"],
         bools: &[],
         secrets: &[("token", "token_file", false)],
+        modes: &[],
     },
 ];
 
@@ -138,12 +166,6 @@ pub fn upsert(
         valid_name(name),
         "the name is letters, digits, '-' and '_' (got {name:?})"
     );
-    for key in secrets.keys() {
-        anyhow::ensure!(
-            spec.secrets.iter().any(|(k, ..)| k == key),
-            "{kind} has no secret called {key:?}"
-        );
-    }
     let mut root = parse(current)?;
     let list = sources(&mut root, kind)?;
     let found = position(list, name);
@@ -163,8 +185,51 @@ pub fn upsert(
     };
     let entry = list[index].as_table_mut().expect("entries are tables");
 
+    // The way to sign in: asked for, else the one the source has, else the first.
+    let mode = if spec.modes.is_empty() {
+        None
+    } else {
+        let wanted = match fields.get("auth") {
+            Some(v) => v.as_str().context("auth must be text")?,
+            None => entry
+                .get("auth")
+                .and_then(toml::Value::as_str)
+                .unwrap_or(spec.modes[0].name),
+        };
+        let mode = spec
+            .modes
+            .iter()
+            .find(|m| m.name == wanted)
+            .with_context(|| format!("{kind} cannot sign in with {wanted:?}"))?;
+        entry.insert("auth".into(), toml::Value::String(mode.name.into()));
+        // What belonged to another way no longer applies.
+        for other in spec.modes.iter().filter(|m| m.name != mode.name) {
+            for key in other.strings {
+                entry.remove(*key);
+            }
+            for (_, field, _) in other.secrets {
+                entry.remove(*field);
+            }
+        }
+        Some(mode)
+    };
+    let mode_strings: &[&str] = mode.map_or(&[], |m| m.strings);
+    let mode_secrets: &[(&str, &str, bool)] = mode.map_or(&[], |m| m.secrets);
+    for key in secrets.keys() {
+        anyhow::ensure!(
+            spec.secrets
+                .iter()
+                .chain(mode_secrets)
+                .any(|(k, ..)| k == key),
+            "{kind} has no secret called {key:?}"
+        );
+    }
+
     for (key, value) in fields {
-        if spec.strings.contains(&key.as_str()) {
+        if key == "auth" && mode.is_some() {
+            continue;
+        }
+        if spec.strings.contains(&key.as_str()) || mode_strings.contains(&key.as_str()) {
             let text = value
                 .as_str()
                 .with_context(|| format!("{key} must be text"))?
@@ -209,7 +274,7 @@ pub fn upsert(
     }
 
     let mut stored = Vec::new();
-    for (key, field, required) in spec.secrets {
+    for (key, field, required) in spec.secrets.iter().chain(mode_secrets) {
         let given = secrets
             .get(*key)
             .map(|v| v.trim())
@@ -226,7 +291,9 @@ pub fn upsert(
                 entry.insert((*field).into(), toml::Value::String(credential.clone()));
                 stored.push((credential, Secret::new(value)));
             }
-            None if create && *required => bail!("the {key} is required"),
+            None if *required && (create || !entry.contains_key(*field)) => {
+                bail!("the {key} is required")
+            }
             None => {}
         }
     }

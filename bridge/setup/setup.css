@@ -234,3 +234,6 @@ code.onekey { display: block; padding: .7rem .8rem; background: var(--field); bo
 .warn-note { color: var(--warn, #e0a82e); font-size: 13px; }
 .setting.pick { cursor: pointer; }
 .setting.pick > input { flex: none; margin-left: auto; }
+.authbox { display: contents; }
+.authhelp { margin: -.3rem 0 0; }
+.secret-area { font-family: "Geist Mono", monospace; font-size: .8rem; }

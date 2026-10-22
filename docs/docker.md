@@ -154,7 +154,7 @@ Stack managers such as Komodo and Portainer can run a Compose file with the conf
 
    services:
      deskwatch:
-       image: ghcr.io/sylentic/deskwatch-bridge:<version>
+       image: ghcr.io/sylentic/deskwatch-bridge:latest
        restart: unless-stopped
        cap_drop: [ALL]
        security_opt: ["no-new-privileges:true"]
@@ -273,7 +273,7 @@ Traefik configuration. In a Compose file every `$` in the hash must be written `
 ```yaml
 services:
   deskwatch:
-    image: ghcr.io/sylentic/deskwatch-bridge:<version>
+    image: ghcr.io/sylentic/deskwatch-bridge:latest
     # volumes, read_only, cap_drop: as in deploy/docker-compose.dashboard.yml; no `ports:`
     networks: [proxy]
     labels:
@@ -347,7 +347,7 @@ secrets:
 
 ## 5. Compose with a broker
 
-[`deploy/docker-compose.yml`](../deploy/docker-compose.yml) is a ready example: it pulls the published image (pinned to a release, section 10), mounts the
+[`deploy/docker-compose.yml`](../deploy/docker-compose.yml) is a ready example: it pulls the published image (the `latest` tag, section 10), mounts the
 config and the `credentials/` folder read-only, runs with a read-only root filesystem, drops all capabilities, and
 restarts unless stopped. Copy it next to your config:
 
@@ -457,14 +457,14 @@ docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 1.0.3
 docker run --rm -p 8787:8787 ghcr.io/sylentic/deskwatch-bridge:<version> --demo --kiosk --no-mqtt
 ```
 
-Tags are the version without the `v` and, for tags without a suffix such as `-rc.1`, `latest`. Pin the version in
-production (`latest` moves). [`deploy/docker-compose.yml`](../deploy/docker-compose.yml) already uses the image,
-pinned to a release. The dashboard and demo Compose files build from the checkout they sit in, which is
+Tags are the version without the `v` and, for tags without a suffix such as `-rc.1`, `latest`. `latest` moves with
+each release, so `docker compose pull` updates it; to stay on one version, use the version tag instead.
+[`deploy/docker-compose.yml`](../deploy/docker-compose.yml) already uses the image with `latest`. The dashboard and demo Compose files build from the checkout they sit in, which is
 repeatable as long as you stay on one commit; to use the image there, replace their `build:` block with
-`image: ghcr.io/sylentic/deskwatch-bridge:<version>`. An updater such as Renovate or Watchtower can bump the tag.
+`image: ghcr.io/sylentic/deskwatch-bridge:latest`. An updater such as Renovate or Watchtower can bump the tag.
 The package on `ghcr.io` is public, so servers pull it without a login. (A fork publishing its own image has to make
 the package public once in its package settings, because a new package starts private.) The image exists only after
-the pipeline has finished for that tag; check that the pull works before you bump the pinned version. For pull
+the pipeline has finished for that tag; check that the pull works before you update. For pull
 requests the `docker image` job only checks that the image builds and starts (and, for pull requests into main, that it
 builds for both CPUs); nothing is pushed from pull requests or branches.
 

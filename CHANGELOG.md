@@ -9,6 +9,9 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ### Changed
 
+- **`deploy/docker-compose.yml` uses the `latest` image tag** instead of a fixed version, so `docker compose pull`
+  gives the newest release and a release no longer needs a change in the Compose file. Pin a version number in the
+  file to stay on one release. `docs/docker.md` and `docs/releasing.md` are updated.
 - **A tidier Setup page.** The top bar has the dashboard's height and look, with icon buttons that name themselves in a
   tooltip: Dashboard, My account, Light/Dark mode (a sun in dark mode, a moon in light mode) and Sign out, last.
   Adding and changing things now happens in a pop-up on the page instead of a form in between the cards: a source
@@ -25,6 +28,14 @@ All notable changes to DeskWatch are listed here. The format follows
   share). Optionally the stored tokens and client secrets go in too, locked with a password (Argon2id + XChaCha20-
   Poly1305). Passwords, API keys and sessions are never exported. Importing shows what is inside before anything
   changes, then replaces the settings; restart afterwards. Guide: [docs/backup.md](docs/backup.md).
+- **Sign in with a service principal from the Setup page.** An Azure DevOps source has a **Sign in with** list:
+  personal access token or Entra service principal (tenant id, application id, client secret). Until now the service
+  principal could only be set in a config file. The list is built so another source type can get a choice of sign-in
+  method later. Tried against mock answers only.
+- **Alertmanager webhooks.** Prometheus Alertmanager can post to `POST /api/alertmanager` (same `http_input` switch
+  and alert keys as `/api/alert`). Firing alerts appear with the severity from the `severity` label, `resolved` clears
+  them. `critical_ids` accepts a trailing `*`. Mocks only, not tried against a real Alertmanager. See
+  [docs/alertmanager.md](docs/alertmanager.md).
 - **Open a source's links in a Firefox container.** Setup > Sources and `bridge.toml` get an optional `container`
   setting for Gitea, GitHub, GitLab, Bitbucket and Azure DevOps. In Firefox with the add-on "Open external links in a
   container", the links of that source open in the named container. Off by default; other browsers are not affected.
