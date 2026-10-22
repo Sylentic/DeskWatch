@@ -51,9 +51,9 @@ git push origin v1.0.1
 
 ## The image tag in the Compose file
 
-`deploy/docker-compose.yml` pins the image to a release. The image only exists after the pipeline has finished for the
-tag, so check that `ghcr.io/sylentic/deskwatch-bridge:<version>` can be pulled before announcing the release. If the run
-failed, the pinned tag does not exist and `docker compose pull` fails with "manifest unknown" until the release is fixed.
+`deploy/docker-compose.yml` uses the `latest` tag, so a release needs no change there. The pipeline moves `latest` to a
+new release (not to a pre-release such as `-rc.1`) once it has finished for the tag, so check that
+`ghcr.io/sylentic/deskwatch-bridge:<version>` can be pulled before announcing the release.
 
 ## v0.9.8 was never released
 

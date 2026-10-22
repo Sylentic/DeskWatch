@@ -9,6 +9,9 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ### Changed
 
+- **`deploy/docker-compose.yml` uses the `latest` image tag** instead of a fixed version, so `docker compose pull`
+  gives the newest release and a release no longer needs a change in the Compose file. Pin a version number in the
+  file to stay on one release. `docs/docker.md` and `docs/releasing.md` are updated.
 - **A tidier Setup page.** The top bar has the dashboard's height and look, with icon buttons that name themselves in a
   tooltip: Dashboard, My account, Light/Dark mode (a sun in dark mode, a moon in light mode) and Sign out, last.
   Adding and changing things now happens in a pop-up on the page instead of a form in between the cards: a source
