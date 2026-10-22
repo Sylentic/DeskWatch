@@ -865,9 +865,22 @@ pub struct GithubConfig {
     /// for Enterprise Server, or `https://api.<subdomain>.ghe.com`.
     #[serde(default = "default_github_base_url")]
     pub base_url: String,
+    /// How the bridge signs in: `token` (default) or `app`.
+    #[serde(default)]
+    pub auth: GithubAuth,
     /// Credential with a read-only fine-grained token (Metadata, Pull
-    /// requests and Actions: read).
+    /// requests and Actions: read). For `auth = "token"`.
+    #[serde(default)]
     pub token_file: String,
+    /// Id of the GitHub App. For `auth = "app"`.
+    #[serde(default)]
+    pub app_id: String,
+    /// Id of the App's installation on the organisation or account. For `auth = "app"`.
+    #[serde(default)]
+    pub installation_id: String,
+    /// Credential holding the App's private key (the PEM text). For `auth = "app"`.
+    #[serde(default)]
+    pub private_key_file: String,
     /// Repositories (`owner/name`) to watch.
     pub repos: Vec<String>,
     /// Seconds between polls of open PRs and recent runs.
@@ -1043,6 +1056,18 @@ impl BitbucketConfig {
             })
             .collect()
     }
+}
+
+/// How a GitHub source proves who it is.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GithubAuth {
+    /// A fine-grained token (`token_file`): acts as one person.
+    #[default]
+    Token,
+    /// A GitHub App installed on the organisation (`app_id`, `installation_id`,
+    /// `private_key_file`): acts as an app, not as a person.
+    App,
 }
 
 /// How an Azure DevOps source proves who it is.
@@ -1548,6 +1573,33 @@ impl Config {
                 github.poll_s > 0 && github.job_poll_s > 0 && github.runner_poll_s > 0,
                 "source.github {name}: poll_s, job_poll_s and runner_poll_s must be above 0"
             );
+            match github.auth {
+                GithubAuth::Token => anyhow::ensure!(
+                    !github.token_file.trim().is_empty(),
+                    "source.github {name}: token_file is needed (or set auth = \"app\")"
+                ),
+                GithubAuth::App => {
+                    anyhow::ensure!(
+                        !github.app_id.trim().is_empty()
+                            && !github.installation_id.trim().is_empty()
+                            && !github.private_key_file.trim().is_empty(),
+                        "source.github {name}: auth = \"app\" needs app_id, installation_id and private_key_file"
+                    );
+                    anyhow::ensure!(
+                        github
+                            .app_id
+                            .trim()
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric())
+                            && github
+                                .installation_id
+                                .trim()
+                                .chars()
+                                .all(|c| c.is_ascii_digit()),
+                        "source.github {name}: app_id and installation_id are the numbers GitHub shows"
+                    );
+                }
+            }
             github.runner_scopes()?;
             anyhow::ensure!(
                 !github.repos.is_empty(),
@@ -2007,6 +2059,23 @@ mod tests {
             Config::from_toml(&block("token = \"ghp_x\"")).is_err(),
             "no inline tokens"
         );
+    }
+
+    #[test]
+    fn github_app_sign_in_needs_its_settings() {
+        let app = |extra: &str| {
+            format!(
+                "[[source.github]]\nname = \"work\"\nauth = \"app\"\nrepos = [\"o/a\"]\n{extra}"
+            )
+        };
+        let full = "app_id = \"12345\"\ninstallation_id = \"678\"\nprivate_key_file = \"key\"\n";
+        let config = Config::from_toml(&app(full)).unwrap();
+        assert_eq!(config.source.github[0].auth, GithubAuth::App);
+        assert!(Config::from_toml(&app("")).is_err());
+        assert!(Config::from_toml(&app("app_id = \"1\"\ninstallation_id = \"2\"\n")).is_err());
+        assert!(Config::from_toml(&app(&full.replace("678", "x y"))).is_err());
+        // Without an auth line it is still a token source, and needs its token.
+        assert!(Config::from_toml("[[source.github]]\nname = \"w\"\nrepos = [\"o/a\"]\n").is_err());
     }
 
     #[test]

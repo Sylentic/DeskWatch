@@ -47,8 +47,19 @@ const SPECS: &[Spec] = &[
         strings: &["base_url", "container"],
         lists: &["repos"],
         bools: &[],
-        secrets: &[("token", "token_file", true)],
-        modes: &[],
+        secrets: &[],
+        modes: &[
+            Mode {
+                name: "token",
+                strings: &[],
+                secrets: &[("token", "token_file", true)],
+            },
+            Mode {
+                name: "app",
+                strings: &["app_id", "installation_id"],
+                secrets: &[("private_key", "private_key_file", true)],
+            },
+        ],
     },
     Spec {
         kind: "gitlab",
@@ -519,6 +530,7 @@ pub fn remove(current: &str, kind: &str, name: &str) -> Result<(String, Vec<Stri
     let used = spec
         .secrets
         .iter()
+        .chain(spec.modes.iter().flat_map(|m| m.secrets))
         .filter_map(|(_, field, _)| removed.get(*field)?.as_str().map(str::to_string))
         .collect();
     // Do not leave empty containers behind.

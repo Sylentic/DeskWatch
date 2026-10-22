@@ -470,6 +470,7 @@ dependencies = [
  "nix",
  "rcgen",
  "reqwest",
+ "ring",
  "rumqttc",
  "serde",
  "serde_json",

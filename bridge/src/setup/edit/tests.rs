@@ -248,6 +248,13 @@ fn removing_returns_the_credentials_and_leaves_other_sources() {
     let config = Config::from_toml("").unwrap().with_overlay(&text).unwrap();
     assert_eq!(config.source.github.len(), 1);
     assert_eq!(config.source.github[0].name, "b");
+    // A source that signs in as an app returns its private key, too.
+    let app = "[[source.github]]\nname = \"c\"\nauth = \"app\"\napp_id = \"1\"\ninstallation_id = \"2\"\n\
+               private_key_file = \"github-c-private_key\"\nrepos = [\"o/c\"]\n";
+    assert_eq!(
+        remove(app, "github", "c").unwrap().1,
+        ["github-c-private_key"]
+    );
     // The last one leaves an empty file.
     let (text, _) = remove(&text, "github", "b").unwrap();
     assert_eq!(text.trim(), "");
@@ -574,4 +581,76 @@ fn azure_devops_switches_between_token_and_entra() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn github_switches_between_token_and_app() {
+    let base = json!({ "repos": ["o/a"] });
+    let app = |extra: Value| {
+        let mut f = base.clone();
+        f["auth"] = json!("app");
+        f["app_id"] = json!("12345");
+        f["installation_id"] = json!("678");
+        f.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        f
+    };
+    let plan = upsert(
+        "",
+        "github",
+        "work",
+        true,
+        &fields(app(json!({}))),
+        &secrets(&[(
+            "private_key",
+            "-----BEGIN RSA PRIVATE KEY-----\nQUJD\n-----END RSA PRIVATE KEY-----",
+        )]),
+    )
+    .unwrap();
+    assert!(plan.text.contains("auth = \"app\""));
+    assert!(
+        plan.text
+            .contains("private_key_file = \"github-work-private_key\"")
+    );
+    assert!(!plan.text.contains("token_file") && !plan.text.contains("QUJD"));
+    let config = Config::from_toml(&plan.text).unwrap();
+    assert_eq!(config.source.github[0].installation_id, "678");
+    // The private key is needed, and a token is refused for an App.
+    assert!(
+        upsert(
+            "",
+            "github",
+            "w",
+            true,
+            &fields(app(json!({}))),
+            &secrets(&[])
+        )
+        .is_err()
+    );
+    assert!(
+        upsert(
+            "",
+            "github",
+            "w",
+            true,
+            &fields(app(json!({}))),
+            &secrets(&[("token", "x")])
+        )
+        .is_err()
+    );
+    // An old source without `auth` is a token source; switching drops the App settings.
+    let mut back = base;
+    back["auth"] = json!("token");
+    let plan2 = upsert(
+        &plan.text,
+        "github",
+        "work",
+        false,
+        &fields(back),
+        &secrets(&[("token", "t")]),
+    )
+    .unwrap();
+    assert!(plan2.text.contains("token_file"));
+    assert!(!plan2.text.contains("app_id") && !plan2.text.contains("private_key_file"));
 }

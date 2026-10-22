@@ -21,6 +21,7 @@
 //! than 10 % of the rate limit is left.
 
 pub mod api;
+pub mod app;
 pub mod payload;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -33,13 +34,14 @@ use tokio::time::{Instant, MissedTickBehavior};
 use tracing::{debug, info, warn};
 
 use crate::ci::{OpenPull, RepoPulls, Run, RunJob, RunStatus, RunningJob, Update};
-use crate::config::GithubConfig;
+use crate::config::{GithubAuth, GithubConfig};
 use crate::gitea::payload::{unix_seconds, workflow_file};
 use crate::gitea::runners::RunnerScope;
 use crate::gitea::{job_kind, step_progress};
 use crate::model::{JobData, MAX_TITLE_CHARS, truncate};
 use crate::source::{self, FactSink, Health, Interrupt, Source, SourceId, unix_now};
 use api::HttpApi;
+use app::GithubApp;
 use payload::{Issue, Job, PullRequest, WorkflowRun};
 
 /// Adapter type: `[[source.github]]` in the config and `source` on the `[[kiosk.panel]]` blocks.
@@ -67,15 +69,34 @@ impl Github {
     /// Load the token. Fails when the credential file is missing.
     pub fn new(config: &GithubConfig) -> Result<Self> {
         let id = SourceId::new(KIND, &config.name);
-        let token =
-            source::load_secret(&config.token_file).with_context(|| format!("{id}: token_file"))?;
-        let api = HttpApi::new(&config.base_url, token).context("GitHub API")?;
+        let api = api_for(&id, config)?;
         Ok(Self {
             id,
             config: config.clone(),
             api,
         })
     }
+}
+
+/// The API client for a source, signed in the way its config says.
+pub fn api_for(id: &SourceId, config: &GithubConfig) -> Result<HttpApi> {
+    match config.auth {
+        GithubAuth::Token => {
+            let token = source::load_secret(&config.token_file)
+                .with_context(|| format!("{id}: token_file"))?;
+            HttpApi::new(&config.base_url, token)
+        }
+        GithubAuth::App => {
+            let key = source::load_secret(&config.private_key_file)
+                .with_context(|| format!("{id}: private_key_file"))?;
+            HttpApi::with_app(
+                &config.base_url,
+                GithubApp::new(&config.app_id, &config.installation_id, &key)
+                    .with_context(|| format!("{id}: private_key_file"))?,
+            )
+        }
+    }
+    .context("GitHub API")
 }
 
 impl Source for Github {
