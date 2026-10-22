@@ -116,7 +116,7 @@ jobs:
             toolchain: "1.88"
             lint: false
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         if: needs.changes.outputs.code == 'true'
 
       - uses: dtolnay/rust-toolchain@master
@@ -152,7 +152,7 @@ jobs:
     needs: [changes]
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         if: needs.changes.outputs.code == 'true'
 
       - uses: dtolnay/rust-toolchain@stable
@@ -185,7 +185,7 @@ jobs:
     needs: [changes]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         if: needs.changes.outputs.code == 'true'
 
       - uses: docker/setup-buildx-action@v4
@@ -256,7 +256,7 @@ jobs:
     if: github.event_name == 'pull_request' && github.base_ref == 'main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: docker/setup-buildx-action@v4
 
@@ -292,7 +292,7 @@ jobs:
       release: ${{ steps.decide.outputs.release }}
       tag: ${{ steps.decide.outputs.tag }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Decide the release
         id: decide
@@ -337,7 +337,7 @@ jobs:
             runner: ubuntu-22.04-arm
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -375,7 +375,7 @@ jobs:
     env:
       TAG: ${{ needs.version.outputs.tag }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -424,7 +424,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: docker/setup-buildx-action@v4
 
@@ -469,7 +469,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: docker/setup-buildx-action@v4
 
@@ -508,7 +508,7 @@ jobs:
     env:
       TAG: ${{ needs.version.outputs.tag }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: actions/download-artifact@v8
         with:
