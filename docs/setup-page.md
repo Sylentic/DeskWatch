@@ -151,6 +151,11 @@ On the **MQTT broker** section, **Remove login** clears the login name and delet
 `bridge.toml` decides again. A password file that is not the page's own (`mqtt-password`) is never deleted. Both
 apply after a restart.
 
+## Backup
+
+Setup > Backup downloads the settings as a file (without secrets by default) and restores them from one. See
+[backup.md](backup.md).
+
 ## Stored secrets
 
 The **Stored secrets** section lists the files in the data folder's `credentials/` with what uses each one (a source,

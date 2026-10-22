@@ -53,7 +53,7 @@
   var form = null;       // the open add/edit form, or null (see openForm)
   var confirming = null; // key of the action waiting for its confirm click, or null
   var restarting = null; // { boot, since } while the page waits for a restart to finish
-  var SECTIONS = ['sources', 'mqtt', 'dashboard', 'alerts', 'access', 'signin', 'bridge', 'secrets'];
+  var SECTIONS = ['sources', 'mqtt', 'dashboard', 'alerts', 'access', 'signin', 'backup', 'bridge', 'secrets'];
   var oauth = null;      // last answer of api/auth/oauth (the Sign-in section)
   var oauthNote = null;
   var access = null;     // last answer of api/auth/status (the Access section)
@@ -839,6 +839,140 @@
     return box;
   }
 
+
+  // ---- Backup: export and import of the settings ----
+  var backup = { withSecrets: false };
+  function backupSection(d) {
+    var box = el('div', 'two');
+    var out = el('section', 'card');
+    out.appendChild(el('h2', null, 'Export'));
+    out.appendChild(el('p', 'muted', 'Download your settings as one file: sources, broker, alerts, dashboard layouts and sign-in rules. '
+      + 'Tokens, client secrets and passwords are left out, so the file is safe to keep and share.'));
+    var plain = el('input'); plain.type = 'radio'; plain.name = 'bk'; plain.checked = !backup.withSecrets;
+    var sealed = el('input'); sealed.type = 'radio'; sealed.name = 'bk'; sealed.checked = backup.withSecrets;
+    plain.addEventListener('change', function () { backup.withSecrets = false; });
+    sealed.addEventListener('change', function () { backup.withSecrets = true; });
+    var r1 = settingRow('Without secrets', 'Recommended. After an import you enter the tokens again.', plain);
+    var r2 = settingRow('With secrets, locked by a password', 'Tokens and client secrets are encrypted in the file. You need the password to import it.', sealed);
+    [[r1, plain], [r2, sealed]].forEach(function (x) {
+      x[0].classList.add('pick');
+      x[0].addEventListener('click', function (ev) { if (ev.target !== x[1]) { x[1].checked = true; x[1].dispatchEvent(new Event('change')); } });
+    });
+    out.appendChild(r1); out.appendChild(r2);
+    var go = el('button', null, 'Download backup'); go.type = 'button'; go.disabled = !d.can_edit;
+    go.addEventListener('click', function () { backup.withSecrets ? exportSealed() : exportPlain(); });
+    var line = el('div', 'buttons'); line.appendChild(go); out.appendChild(line);
+    out.appendChild(el('p', 'muted', 'Never included: administrator and viewer passwords, API keys and sessions. Set those up again on the new install.'));
+    box.appendChild(out);
+
+    var inn = el('section', 'card');
+    inn.appendChild(el('h2', null, 'Import'));
+    inn.appendChild(el('p', 'muted', 'Restore settings from a backup file. You see what is inside before anything changes.'));
+    var file = el('input'); file.type = 'file'; file.accept = '.deskwatch,application/json';
+    file.addEventListener('change', function () { if (file.files[0]) readBackup(file.files[0]); });
+    var pick = el('button', 'secondary', 'Choose backup file…'); pick.type = 'button'; pick.disabled = !d.can_edit;
+    pick.addEventListener('click', function () { file.click(); });
+    var l2 = el('div', 'buttons'); l2.appendChild(pick); inn.appendChild(l2);
+    inn.appendChild(el('p', 'muted', 'Importing replaces your sources, alerts and layouts with the ones in the file. The bridge needs a restart afterwards.'));
+    box.appendChild(inn);
+    if (!d.can_edit) {
+      var none = el('p', 'muted', 'Give the bridge a data folder to make or restore a backup here ([data] dir, see docs/data-dir.md).');
+      var wrap = el('div'); wrap.appendChild(none); wrap.appendChild(box); return wrap;
+    }
+    return box;
+  }
+
+
+  // The file goes to the browser as a download; nothing is kept in the page.
+  function saveFile(r) {
+    var name = /filename="([^"]+)"/.exec(r.headers.get('Content-Disposition') || '');
+    return r.blob().then(function (blob) {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name ? name[1] : 'deskwatch.deskwatch';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    });
+  }
+  function exportPlain() {
+    fetch('api/setup/export', { cache: 'no-store', credentials: 'same-origin' }).then(function (r) {
+      if (!r.ok) return r.json().then(function (j) { notice = j.error || 'Cannot make the backup.'; load(); });
+      return saveFile(r);
+    });
+  }
+  function exportSealed() {
+    var m = openModal('Lock the backup with a password');
+    m.body.appendChild(el('p', 'muted', 'Tokens and client secrets go into the file, encrypted. Keep the password safe: without it the file cannot be opened, and it cannot be reset.'));
+    var pw = input('password', 'pw', 'new-password'), pw2 = input('password', 'pw2', 'new-password');
+    m.body.appendChild(labelled('Password (at least 12 characters)', pw));
+    m.body.appendChild(labelled('Repeat password', pw2));
+    var ok = modalButtons(m, 'Download locked backup');
+    m.form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      if (pw.value.length < 12) { modalError(m, 'The password needs at least 12 characters.'); return; }
+      if (pw.value !== pw2.value) { modalError(m, 'The two passwords are not the same.'); return; }
+      ok.disabled = true;
+      fetch('api/setup/export', {
+        method: 'POST', cache: 'no-store', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw.value })
+      }).then(function (r) {
+        if (r.ok) { closeModal(); return saveFile(r); }
+        return r.json().then(function (j) { ok.disabled = false; modalError(m, j.error || 'Cannot make the backup.'); });
+      });
+    });
+    pw.focus();
+  }
+
+  // The chosen file is read in the browser and sent to the bridge, which opens
+  // it and says what is inside. Nothing changes until the person confirms.
+  function readBackup(f) {
+    if (f.size > 1024 * 1024) { notice = 'That file is too big to be a DeskWatch backup.'; load(); return; }
+    var reader = new FileReader();
+    reader.onload = function () { checkBackup(f.name, String(reader.result), ''); };
+    reader.readAsText(f);
+  }
+  function checkBackup(name, text, password) {
+    post('api/setup/import/check', { file: text, password: password }).then(function (j) {
+      if (j.needs_password || (password && j.error && /password/.test(j.error))) { askBackupPassword(name, text, j.error); return; }
+      if (j.error) { var e = openModal('This is not a usable backup'); e.body.appendChild(el('p', 'err', j.error)); modalButtons(e, 'Close'); e.form.addEventListener('submit', function (ev) { ev.preventDefault(); closeModal(); }); return; }
+      showBackup(name, text, password, j.summary);
+    });
+  }
+  function askBackupPassword(name, text, error) {
+    var m = openModal('This backup is locked');
+    m.body.appendChild(el('p', 'muted', name + ' holds secrets locked with a password. Enter it to see what is inside.'));
+    var pw = input('password', 'pw', 'current-password');
+    m.body.appendChild(labelled('Password', pw));
+    if (error) modalError(m, error);
+    modalButtons(m, 'Open backup');
+    m.form.addEventListener('submit', function (ev) { ev.preventDefault(); closeModal(); checkBackup(name, text, pw.value); });
+    pw.focus();
+  }
+  function showBackup(name, text, password, s) {
+    var m = openModal('Import this backup?');
+    var when = s.created ? new Date(s.created * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+    m.body.appendChild(el('p', 'muted', name + ' · made by DeskWatch ' + s.app + (when ? ' on ' + when : '')));
+    var dl = el('dl');
+    var total = s.sources.reduce(function (n, x) { return n + x[1]; }, 0);
+    row(dl, 'Sources', total ? total + ' (' + s.sources.map(function (x) { return x[1] + ' ' + (KIND[x[0]] || x[0]); }).join(', ') + ')' : 'none');
+    row(dl, 'MQTT broker', s.mqtt ? 'yes' : 'no');
+    row(dl, 'Alerts and dashboard', (s.alerts || s.dashboard ? 'yes' : 'no') + (s.layouts != null ? ' · ' + s.layouts + ' personal layout' + (s.layouts === 1 ? '' : 's') : ''));
+    row(dl, 'Sign-in providers', s.providers.length ? s.providers.length + ' (' + s.providers.join(', ') + ')' : 'none');
+    row(dl, 'Secrets', s.secrets ? s.secrets + ' (tokens and client secrets)' : 'none in this file');
+    m.body.appendChild(dl);
+    m.body.appendChild(el('p', 'warn-note', 'This replaces your current sources, alerts and layouts. Passwords and API keys stay as they are.'
+      + (s.secrets ? '' : ' Sources will show "token missing" until you enter their tokens again.')));
+    var ok = modalButtons(m, 'Replace my settings', 'danger solid');
+    m.form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      ok.disabled = true;
+      post('api/setup/import', { file: text, password: password }).then(function (j) {
+        if (j.error) { ok.disabled = false; modalError(m, j.error); return; }
+        closeModal(); notice = null; load();
+      });
+    });
+  }
+
   function secretsSection(d) {
     var card = el('section', 'card');
     card.appendChild(el('h2', null, 'Stored secrets'));
@@ -1385,7 +1519,7 @@
     });
   }
 
-  var TITLES = { sources: 'Sources', mqtt: 'MQTT broker', dashboard: 'Dashboard', alerts: 'Alerts', access: 'Access', signin: 'Sign-in providers', bridge: 'Bridge and restart', secrets: 'Stored secrets' };
+  var TITLES = { sources: 'Sources', mqtt: 'MQTT broker', dashboard: 'Dashboard', alerts: 'Alerts', access: 'Access', signin: 'Sign-in providers', backup: 'Backup', bridge: 'Bridge and restart', secrets: 'Stored secrets' };
 
   function currentSection() {
     var id = (location.hash || '').replace('#', '');
@@ -1461,7 +1595,7 @@
     }
     content.appendChild(head);
     content.appendChild(({ sources: sourcesSection, mqtt: mqttSection, dashboard: dashboardSection, alerts: alertsSection,
-                           access: accessSection, signin: signinSection, bridge: bridgeSection, secrets: secretsSection })[section](d));
+                           access: accessSection, signin: signinSection, backup: backupSection, bridge: bridgeSection, secrets: secretsSection })[section](d));
     layout.appendChild(content);
     app.appendChild(layout);
     restoreChoices(kept);
