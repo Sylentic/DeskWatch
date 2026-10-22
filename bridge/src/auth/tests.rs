@@ -587,3 +587,18 @@ async fn a_screen_key_has_no_saved_layout() {
     let (s, _) = layout_call(&auth, "GET", "/api/auth/layout", &screen, None).await;
     assert_eq!(s, StatusCode::CONFLICT);
 }
+
+#[test]
+fn a_hash_made_by_an_older_version_still_verifies_and_new_hashes_work() {
+    // Made with argon2 0.5.3 (the version before the 0.6 bump), default
+    // parameters, for PW. A stored auth.toml must keep working after updates.
+    let old = "$argon2id$v=19$m=19456,t=2,p=1$MDEyMzQ1Njc4OWFiY2RlZg$69I7qCjDTsQwhQqFvpQJiqEI0lGQvxC84fXE0Ktxca4";
+    assert!(verify_password(old, PW));
+    assert!(!verify_password(old, "wrong password entirely"));
+    assert!(!verify_password("not a hash", PW));
+
+    let new = hash_password(PW).unwrap();
+    assert!(new.starts_with("$argon2id$v=19$"));
+    assert!(verify_password(&new, PW));
+    assert!(!verify_password(&new, "wrong password entirely"));
+}
