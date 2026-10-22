@@ -32,6 +32,7 @@ Start with the [project README](../README.md) for what DeskWatch is, a quick dem
 ## Alerts and MQTT
 
 - [home-assistant.md](home-assistant.md): alerts from Home Assistant and scripts, `POST /api/alert`
+- [alertmanager.md](alertmanager.md): alerts from Prometheus Alertmanager, `POST /api/alertmanager`
 - [mosquitto.md](mosquitto.md): broker logins, ACL and TLS
 - [mqtt-schema.md](mqtt-schema.md): the MQTT topics and the alert message format, with samples in [schema/](schema/)
 
