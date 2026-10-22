@@ -47,7 +47,7 @@ Addresses are built from the source's own configured address, never hard coded, 
 are used. The runner list links go to the page that lists the runners, because the APIs do not give a page per runner.
 
 Every card scrolls inside itself when its list is longer than the card: mouse wheel, touch drag or the arrow keys. There
-is no scrollbar (it clashes with the card edge and the night theme); a fade at the bottom edge shows that there is more.
+is no scrollbar (it clashes with the card edge and the night theme); a small "↓ N more" pill at the bottom edge shows how many items are below, and tapping it scrolls down.
 Open PRs and Running now show everything unless you set `rows`, so a long list scrolls instead of being cut off with
 "+N more". While you scroll a card, its contents are not redrawn (a redraw would throw your place away); about 8 seconds
 after you let go it catches up, and a card you left scrolled goes back to the top after 30 seconds, so a wall display
