@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
-use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::password_hash::{PasswordHasher, PasswordVerifier};
 use argon2::{Algorithm, Argon2, Params, Version};
 use axum::Json;
 use axum::Router;
@@ -228,21 +228,16 @@ fn hasher() -> Argon2<'static> {
 fn hash_password(password: &str) -> Result<String> {
     let mut raw = [0u8; 16];
     getrandom::fill(&mut raw).expect("the system has no random source");
-    let salt = SaltString::encode_b64(&raw).map_err(|e| anyhow::anyhow!("salt: {e}"))?;
     hasher()
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password_with_salt(password.as_bytes(), &raw)
         .map(|h| h.to_string())
         .map_err(|e| anyhow::anyhow!("cannot hash the password: {e}"))
 }
 
 fn verify_password(hash: &str, password: &str) -> bool {
-    PasswordHash::new(hash)
-        .map(|parsed| {
-            Argon2::default()
-                .verify_password(password.as_bytes(), &parsed)
-                .is_ok()
-        })
-        .unwrap_or(false)
+    Argon2::default()
+        .verify_password(password.as_bytes(), hash)
+        .is_ok()
 }
 
 fn check_password(password: &str) -> Result<()> {

@@ -29,3 +29,9 @@ jobs:
       - uses: rustsec/audit-check@v2.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          # rumqttc 0.25.1 (the newest) depends on rustls-webpki 0.102.8 only
+          # for the name of an error type; the real certificate checks of the
+          # MQTT connection run on rustls-webpki 0.103.x, which has these
+          # fixes. Remove this ignore list when a rumqttc release
+          # moves to a newer rustls-webpki.
+          ignore: RUSTSEC-2026-0049,RUSTSEC-2026-0098,RUSTSEC-2026-0099,RUSTSEC-2026-0104,RUSTSEC-2026-0382
