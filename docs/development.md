@@ -55,6 +55,12 @@ To test what is on `dev` before it goes to `main`, every merge into `dev` publis
 `ghcr.io/sylentic/deskwatch-bridge:dev`; [docker.md](docker.md#the-dev-image-try-what-is-not-released-yet) shows how
 to run it next to the released one.
 
+## Dependency updates
+
+Dependabot (`.github/dependabot.yml`) opens one pull request a week per ecosystem (Cargo, GitHub Actions, the
+Dockerfile), always into `dev`, so the pipeline checks every update first. They are never merged automatically. The
+Rust version of the build image is raised by hand together with `rust-version` in `Cargo.toml`.
+
 ## Checks before a pull request
 
 The same as the pipeline (`.github/workflows/pipeline.yml`):

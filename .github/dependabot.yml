@@ -1,0 +1,42 @@
+# Dependabot opens one pull request per ecosystem per week, into dev, so the
+# pipeline checks every update before anything reaches main. Updates never
+# merge by themselves: a merge into main with a new version is a release.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "deps"
+    groups:
+      cargo:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "docker"
+    ignore:
+      # The Rust version of the build image follows rust-version in
+      # Cargo.toml (the MSRV), so it is only raised by hand.
+      - dependency-name: rust
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
