@@ -91,8 +91,9 @@ point the variable at an absolute folder that holds `bridge.toml` and `credentia
 docker compose -f docker-compose.dashboard.yml up -d`, or a line in a `.env` file next to the Compose file) and use the
 published image instead of `build:`, see section 10.
 
-Then open `http://<docker host>:8787/`. Until you set an administrator password there is no login, so it works at
-once from any browser on your network, and a Raspberry Pi kiosk needs nothing typed on first boot. **Keep it on your
+Then open `http://<docker host>:8787/`. With a new, empty data volume the first visit asks you to create the
+administrator account (or to continue without a login). Until a password is set there is no login, so a kiosk that
+should need nothing typed on first boot needs `[auth] required = false` in `bridge.toml` ([auth.md](auth.md)). **Keep it on your
 home network** while it is like that: do not forward the port from your router. To use it beyond the home network, turn
 on the [built-in login](auth.md) (and HTTPS, [https.md](https.md)); see "Protecting the page" below. Without a password
 the bridge logs one warning at startup that the page has no login.
@@ -453,7 +454,7 @@ Every version tag (from 0.9.6 on, except 0.9.8, which was never built) is built 
 `publish image` job in [`pipeline.yml`](../.github/workflows/pipeline.yml) and pushed to GitHub's registry:
 
 ```sh
-docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 1.0.4; no "v"
+docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 1.0.5; no "v"
 docker run --rm -p 8787:8787 ghcr.io/sylentic/deskwatch-bridge:<version> --demo --kiosk --no-mqtt
 ```
 

@@ -24,7 +24,8 @@ the GitHub release. A merge into `main` without a new version releases nothing.
    - the version examples in `docs/install.md` (two) and `docs/windows.md` (two), and the
      example in `docs/docker.md` section 10.
 2. Open the release pull request **from `dev` into `main`**, titled "Release x.y.z". Merge it with a merge commit
-   once the pipeline is green (it also builds the image for both CPUs).
+   once the pipeline is green (it also builds the image for both CPUs). The workflow `release-pr.yml` fills in the description from the
+   CHANGELOG section when the pull request is opened, as long as nobody typed one yet.
 3. That is all. The run on `main` (Actions › Pipeline) tags the merge commit in its `release version` job and
    publishes the release a few minutes later. Check the release page and that the image pulls (below).
 

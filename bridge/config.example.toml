@@ -59,6 +59,13 @@ listen = "0.0.0.0:8787"
 # enabled = true
 # allow_restart = true          # a "Restart now" button; only when Docker or systemd starts the bridge again
 
+# The login (docs/auth.md). A new install (an empty data folder) opens on a page
+# that asks for the first account. Set required = false to keep a new install
+# open until someone sets a password, for example a kiosk that needs nothing
+# typed on first boot.
+# [auth]
+# required = false
+
 # Dashboard page for a big screen (a Raspberry Pi with a monitor, a wall
 # tablet): all stats, jobs, PRs, pipelines and alerts at once, served on the
 # [http] listener above. Off by default. Guide: docs/kiosk.md

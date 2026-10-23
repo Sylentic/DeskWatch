@@ -40,7 +40,8 @@ browsers and other sources are not affected.
 - **Per source type.** A link on the dashboard knows the type of its source (`azure_devops`, `github`, ...), not the
   name of the block. With two blocks of one type, the first block that names a container decides for all links of
   that type.
-- **No new tab.** The add-on opens the container tab itself, so DeskWatch does not open a tab first.
+- **New tab.** Like other links, these open in a new tab, so the dashboard stays open. The add-on then moves it
+  to the container. Without this, the add-on took over the dashboard tab.
 - **Confirmation.** The add-on asks "open this link?" for links without a signature, and Firefox can show its own
   warning for external protocols (since Firefox 121). If that gets in the way, the add-on's own issue tracker
   describes a Firefox setting (`network.protocol-handler.external.ext+container` in `about:config`). Way 1 avoids this.

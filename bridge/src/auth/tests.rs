@@ -587,3 +587,70 @@ async fn a_screen_key_has_no_saved_layout() {
     let (s, _) = layout_call(&auth, "GET", "/api/auth/layout", &screen, None).await;
     assert_eq!(s, StatusCode::CONFLICT);
 }
+
+#[test]
+fn a_hash_made_by_an_older_version_still_verifies_and_new_hashes_work() {
+    // Made with argon2 0.5.3 (the version before the 0.6 bump), default
+    // parameters, for PW. A stored auth.toml must keep working after updates.
+    let old = "$argon2id$v=19$m=19456,t=2,p=1$MDEyMzQ1Njc4OWFiY2RlZg$69I7qCjDTsQwhQqFvpQJiqEI0lGQvxC84fXE0Ktxca4";
+    assert!(verify_password(old, PW));
+    assert!(!verify_password(old, "wrong password entirely"));
+    assert!(!verify_password("not a hash", PW));
+
+    let new = hash_password(PW).unwrap();
+    assert!(new.starts_with("$argon2id$v=19$"));
+    assert!(verify_password(&new, PW));
+    assert!(!verify_password(&new, "wrong password entirely"));
+}
+
+#[tokio::test]
+async fn a_new_install_opens_on_the_first_run_page_and_scripts_are_left_alone() {
+    let (_d, auth) = fresh();
+    let app = app(&auth, Need::Admin);
+    let page = [("accept", "text/html")];
+    let r = send(&app, "GET", "/", &page).await;
+    assert_eq!(r.status(), StatusCode::SEE_OTHER);
+    assert_eq!(r.headers()[header::LOCATION], "/login");
+    // A script (no HTML accept header), a write and the health probe path are untouched.
+    assert_eq!(send(&app, "GET", "/", &[]).await.status(), StatusCode::OK);
+    assert_eq!(send(&app, "POST", "/", &[]).await.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn a_new_install_can_stay_open() {
+    // `[auth] required = false`
+    let (_d, auth) = fresh();
+    auth.configure(false, true);
+    let app = app(&auth, Need::Viewer);
+    let r = send(&app, "GET", "/", &[("accept", "text/html")]).await;
+    assert_eq!(r.status(), StatusCode::OK);
+    // "Continue without a login" is remembered across a restart.
+    let (d, auth) = fresh();
+    auth.continue_without_login().unwrap();
+    let r = send(&app_for(&auth), "GET", "/", &[("accept", "text/html")]).await;
+    assert_eq!(r.status(), StatusCode::OK);
+    let again = Auth::open(Some(&d.0), false).unwrap();
+    let r = send(&app_for(&again), "GET", "/", &[("accept", "text/html")]).await;
+    assert_eq!(r.status(), StatusCode::OK);
+}
+
+fn app_for(auth: &Auth) -> Router {
+    app(auth, Need::Viewer)
+}
+
+#[tokio::test]
+async fn an_existing_install_without_a_password_is_not_redirected() {
+    let (d, auth) = fresh();
+    std::fs::write(d.0.join("sources.toml"), "").unwrap();
+    let again = Auth::open(Some(&d.0), false).unwrap();
+    let r = send(&app_for(&again), "GET", "/", &[("accept", "text/html")]).await;
+    assert_eq!(r.status(), StatusCode::OK);
+    drop(auth);
+}
+
+#[tokio::test]
+async fn without_a_data_folder_nothing_is_redirected() {
+    let auth = Auth::open(None, false).unwrap();
+    let r = send(&app_for(&auth), "GET", "/", &[("accept", "text/html")]).await;
+    assert_eq!(r.status(), StatusCode::OK);
+}

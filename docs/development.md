@@ -62,7 +62,9 @@ Dockerfile), always into `dev`, so the pipeline checks every update first. They 
 Rust version of the build image is raised by hand together with `rust-version` in `Cargo.toml`.
 
 `.github/workflows/audit.yml` checks `Cargo.lock` against the RustSec advisory database when the lockfile changes and
-every Monday. It reports a known vulnerability but is not a required check, so an advisory never blocks unrelated work.
+every Monday. It reports a known vulnerability but is not a required check, so an advisory never blocks unrelated work. Five advisories on `rustls-webpki 0.102.8` are ignored there on purpose
+(it is only an error type inside the MQTT library `rumqttc`, whose newest release still asks for it); the comment in
+the workflow says when to remove them.
 
 ## Checks before a pull request
 

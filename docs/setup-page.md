@@ -12,7 +12,8 @@ It is **off by default**. Turn it on in `bridge.toml`, restart the bridge and op
 enabled = true
 ```
 
-Until you set an administrator password ([auth.md](auth.md)) there is no login. Whoever can reach the port can use the
+On a new install the first visit asks for an administrator account ([auth.md](auth.md)), unless you continue without
+one. Until a password is set there is no login. Whoever can reach the port can use the
 page, so it belongs on a network you trust (your home network). The bridge logs a warning at startup when the page is
 reachable from the network without one. **Never expose the port to the internet** without the built-in login (and HTTPS). The page never
 shows a secret (only whether a credential exists), token fields are write-only, and a page from another website cannot
