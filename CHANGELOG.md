@@ -15,6 +15,11 @@ All notable changes to DeskWatch are listed here. The format follows
   nothing typed on first boot. Installs that already have files in their data folder, installs without a data folder
   and the demo are not redirected. (#158)
 
+### Fixed
+
+- **Container links no longer replace the dashboard tab.** A link of a source with a Firefox container now opens in
+  a new tab like every other link, so DeskWatch stays open.
+
 ## [1.0.4]
 
 ### Changed
