@@ -113,14 +113,15 @@
   function href(url) { return typeof url === 'string' && /^https?:\/\//i.test(url) ? url : null; }
   // A source can name a Firefox container (Setup > Sources). Then, in Firefox,
   // its links go through the "Open external links in a container" add-on:
-  // ext+container:name=<container>&url=<address>. The add-on does the opening,
-  // so there is no new tab. Any other browser, or a source without a
+  // ext+container:name=<container>&url=<address>. Like every link it opens in a
+  // new tab, so the dashboard stays. Any other browser, or a source without a
   // container, keeps the plain link.
   var FIREFOX = /\bFirefox\/\d/.test(navigator.userAgent || '');
   function linkAttrs(h, source) {
     var name = FIREFOX && snap && snap.containers && source && snap.containers[source];
+    // Both need target=_blank: without it the add-on's handler took over the dashboard tab.
     if (!name) return 'href="' + esc(h) + '" target="_blank" rel="noopener noreferrer"';
-    return 'href="' + esc('ext+container:name=' + encodeURIComponent(name) + '&url=' + encodeURIComponent(h)) + '" rel="noopener noreferrer"';
+    return 'href="' + esc('ext+container:name=' + encodeURIComponent(name) + '&url=' + encodeURIComponent(h)) + '" target="_blank" rel="noopener noreferrer"';
   }
   function linkOpen(url, cls, source) {
     var h = href(url);

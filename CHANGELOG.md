@@ -7,6 +7,11 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Container links no longer replace the dashboard tab.** A link of a source with a Firefox container now opens in
+  a new tab like every other link, so DeskWatch stays open.
+
 ## [1.0.4]
 
 ### Changed
