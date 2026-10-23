@@ -53,7 +53,7 @@
   };
   var NAMES = { github: 'GitHub', microsoft: 'Microsoft' };
 
-  function show(state, min, providers) {
+  function show(state, min, providers, setup) {
     card.textContent = '';
     var first = state === 'first_run';
     card.appendChild(el('h2', {}, first ? 'Set an administrator password' : 'Sign in'));
@@ -97,7 +97,11 @@
       button.disabled = true;
       post(first ? 'api/auth/setup' : 'api/auth/login',
         { username: data.get('username'), password: data.get('password') })
-        .then(function (r) { location.href = r && r.must_change ? '/account' : nextUrl(); })
+        .then(function (r) {
+          var wanted = new URLSearchParams(location.search).get('next');
+          // A new administrator lands on Setup to add sources.
+          location.href = r && r.must_change ? '/account' : (first && !wanted && setup ? '/setup' : nextUrl());
+        })
         .catch(function (err) {
           message.textContent = err.message;
           message.hidden = false;
@@ -108,6 +112,14 @@
     if (first) {
       card.appendChild(el('div', { class: 'msg warn' },
         'Until a password is set, the page only answers the local network.'));
+      var skip = el('a', { href: '#', class: 'hint' }, 'Continue without a login');
+      skip.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        post('api/auth/skip', {})
+          .then(function () { location.href = nextUrl(); })
+          .catch(function (err) { message.textContent = err.message; message.hidden = false; });
+      });
+      card.appendChild(el('p', { class: 'hint links' }, '')).appendChild(skip);
     } else {
       card.appendChild(el('p', { class: 'hint links' },
         'Forgot it? On the host run: deskwatch-bridge auth reset'));
@@ -118,7 +130,7 @@
     .then(function (r) { return r.json(); })
     .then(function (s) {
       if (s.state === 'signed_in' || s.state === 'open') { location.href = nextUrl(); return; }
-      show(s.state, s.min_password || 12, s.providers || []);
+      show(s.state, s.min_password || 12, s.providers || [], !!s.setup);
     })
     .catch(function () {
       card.textContent = '';

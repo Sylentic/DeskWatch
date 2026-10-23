@@ -9,7 +9,21 @@ It needs the [data folder](data-dir.md), because the password hash is saved ther
 
 ## Turn it on
 
-Open the page from the local network and go to **/login** (or Setup, **Access**): the first-run form asks for a user name
+A **new install** (a data folder with no `auth.toml`, `sources.toml`, `oauth.toml` or `layouts.json`) opens on the
+first-run page by itself: `/` and `/setup` send a browser there, and after you save the first account you land on
+Setup to add sources. Under the form is a **Continue without a login** link, which keeps the old behaviour and is
+remembered in `auth.toml`. To skip the page for good, for example on a Pi kiosk that should need nothing typed on first
+boot, put this in `bridge.toml`:
+
+```toml
+[auth]
+required = false
+```
+
+An install that already has files in its data folder, one without a data folder, and `--demo` are never redirected.
+`/healthz`, webhooks and `POST /api/alert` stay as they are while no account exists.
+
+To do it by hand instead, open the page from the local network and go to **/login** (or Setup, **Access**): the first-run form asks for a user name
 and a password of at least 12 characters (a few words are fine). Only a client on the local network may do this first
 step. On a server without a browser, do it on the host instead:
 

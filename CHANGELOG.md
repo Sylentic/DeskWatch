@@ -7,6 +7,14 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **A new install starts on an account setup page.** With an empty data folder, `/` and `/setup` open the first-run
+  page, which asks for a user name and a password; you then land on Setup to add sources. A **Continue without a
+  login** link and `[auth] required = false` keep the old behaviour, for a home network or a Pi kiosk that needs
+  nothing typed on first boot. Installs that already have files in their data folder, installs without a data folder
+  and the demo are not redirected. (#158)
+
 ### Fixed
 
 - **Container links no longer replace the dashboard tab.** A link of a source with a Firefox container now opens in

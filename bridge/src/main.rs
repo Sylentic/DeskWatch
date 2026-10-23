@@ -199,6 +199,7 @@ async fn main() -> Result<()> {
         config.data_dir().as_deref(),
         config.http.tls.is_some(),
     )?;
+    auth.configure(config.auth.required && !args.demo, config.setup.is_on());
     if config.http.allow_public && !auth.enabled() {
         anyhow::bail!(
             "[http] allow_public needs a login password first: run `deskwatch-bridge auth set-password` \
