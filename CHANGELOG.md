@@ -7,6 +7,8 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.0.5]
+
 ### Added
 
 - **A new install starts on an account setup page.** With an empty data folder, `/` and `/setup` open the first-run
@@ -14,6 +16,12 @@ All notable changes to DeskWatch are listed here. The format follows
   login** link and `[auth] required = false` keep the old behaviour, for a home network or a Pi kiosk that needs
   nothing typed on first boot. Installs that already have files in their data folder, installs without a data folder
   and the demo are not redirected. (#158)
+
+### Changed
+
+- **Dependencies updated.** argon2 0.6 (the password code is adapted; hashes made by earlier versions still
+  verify, a test covers it), base64, getrandom, serde_json, sha2, tokio and toml. The `rustls-webpki` 0.102.8
+  advisories that the newest rumqttc still pulls in for an error type are ignored in the audit with a written reason.
 
 ### Fixed
 
