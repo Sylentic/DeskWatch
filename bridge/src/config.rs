@@ -149,6 +149,22 @@ impl SetupConfig {
     }
 }
 
+/// The login (docs/auth.md).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct AuthConfig {
+    /// A new install (an empty data folder) opens on a page that asks for
+    /// the first account. `false` keeps today's behaviour: no login until
+    /// someone sets a password.
+    pub required: bool,
+}
+
+impl Default for AuthConfig {
+    fn default() -> Self {
+        Self { required: true }
+    }
+}
+
 /// Where the bridge may keep files it writes itself.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -229,6 +245,9 @@ pub struct Config {
     /// The setup page. Off unless `enabled = true`.
     #[serde(default)]
     pub setup: SetupConfig,
+    /// The login. A new install asks for the first account unless `required = false`.
+    #[serde(default)]
+    pub auth: AuthConfig,
     /// `kind:name` of the sources that came from `sources.toml` in the data
     /// folder rather than `bridge.toml`. Filled by `with_overlay`.
     #[serde(skip)]

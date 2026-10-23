@@ -106,6 +106,10 @@ struct Persist {
     admin: Option<Admin>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     viewer: Option<Viewer>,
+    /// "Continue without a login" was chosen on the first-run page: do not
+    /// send a new install to the account page again.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    no_login: bool,
 }
 
 impl Persist {
@@ -201,6 +205,11 @@ struct Inner {
     oauth: oauth::OAuth,
     layouts: layouts::Layouts,
     tls: bool,
+    /// A new install: the data folder was empty at startup and nobody chose
+    /// to go without a login. `/` and `/setup` then open the first-run page.
+    fresh: AtomicBool,
+    /// Is the setup page served (where a new administrator lands)?
+    setup_on: AtomicBool,
 }
 
 /// Handle on the login state; cheap to clone.
@@ -273,6 +282,13 @@ fn sha256_hex(text: &str) -> String {
     hex::encode(Sha256::digest(text.as_bytes()))
 }
 
+/// Is this data folder new: none of the files the bridge writes are there?
+fn is_empty_install(dir: &Path) -> bool {
+    [AUTH_FILE, "sources.toml", "oauth.toml", "layouts.json"]
+        .iter()
+        .all(|f| !dir.join(f).exists())
+}
+
 fn now_secs() -> u64 {
     crate::source::unix_now()
 }
@@ -293,6 +309,7 @@ impl Auth {
         };
         let mut state = state;
         state.migrate();
+        let fresh = dir.is_some_and(is_empty_install) && !state.no_login;
         let enabled = Arc::new(AtomicBool::new(state.has_admin()));
         Ok(Self(Arc::new(Inner {
             path,
@@ -303,7 +320,35 @@ impl Auth {
             oauth: oauth::OAuth::open(dir)?,
             layouts: layouts::Layouts::open(dir),
             tls,
+            fresh: AtomicBool::new(fresh),
+            setup_on: AtomicBool::new(false),
         })))
+    }
+
+    /// Settings from `bridge.toml`: `[auth] required = false` keeps a new
+    /// install open, and `setup_on` says where the first administrator lands.
+    pub fn configure(&self, required: bool, setup_on: bool) {
+        if !required {
+            self.0.fresh.store(false, Ordering::Relaxed);
+        }
+        self.0.setup_on.store(setup_on, Ordering::Relaxed);
+    }
+
+    /// Does a new install still need its first account (see `Inner::fresh`)?
+    fn needs_first_account(&self) -> bool {
+        !self.enabled() && self.can_save() && self.0.fresh.load(Ordering::Relaxed)
+    }
+
+    /// "Continue without a login": remember the choice in the data folder.
+    pub fn continue_without_login(&self) -> Result<()> {
+        let mut state = self.read();
+        if state.has_admin() {
+            bail!("an administrator password is already set");
+        }
+        state.no_login = true;
+        self.save(state)?;
+        self.0.fresh.store(false, Ordering::Relaxed);
+        Ok(())
     }
 
     /// Is a password set, so that everything needs a login?
@@ -837,6 +882,17 @@ fn query_key(query: &str) -> Option<&str> {
 pub async fn enforce(State(guard): State<Guard>, request: Request, next: Next) -> Response {
     let auth = &guard.auth;
     if !auth.enabled() {
+        // A new install opens on the account page first, for the pages only.
+        let path = request.uri().path();
+        let page = path == "/" || path == "/setup" || path.starts_with("/setup/");
+        if auth.needs_first_account()
+            && page
+            && matches!(guard.need, Need::Viewer | Need::Admin)
+            && matches!(request.method(), &Method::GET | &Method::HEAD)
+            && wants_html(request.headers(), path)
+        {
+            return Redirect::to("/login").into_response();
+        }
         return next.run(request).await;
     }
     let headers = request.headers();
@@ -981,6 +1037,7 @@ async fn status(State(auth): State<Auth>, headers: HeaderMap) -> Response {
         "user": cookie_token(&headers).and_then(|t| auth.session_label(&t)),
         "name": local,
         "must_change": must_change,
+        "setup": auth.0.setup_on.load(Ordering::Relaxed),
     });
     if role == Some(Role::Admin) {
         body["account"] = auth.describe();
@@ -1037,6 +1094,36 @@ async fn setup_admin(
             info!("administrator password set from the browser");
             let token = auth.new_session(Role::Admin);
             started(&auth, Role::Admin, &token, &headers, false)
+        }
+        Err(e) => text(StatusCode::BAD_REQUEST, format!("{e:#}")),
+    }
+}
+
+async fn skip_login(
+    State(auth): State<Auth>,
+    peer: ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+) -> Response {
+    if !origin::same_origin(&headers) {
+        return text(StatusCode::FORBIDDEN, "cross-origin request refused");
+    }
+    if !client(Some(peer.0), &headers).is_some_and(crate::access::is_local) {
+        return text(
+            StatusCode::FORBIDDEN,
+            "this can only be chosen from the local network",
+        );
+    }
+    if !auth.can_save() {
+        return text(
+            StatusCode::CONFLICT,
+            "login needs a data folder (docs/data-dir.md)",
+        );
+    }
+    let a = auth.clone();
+    match blocking(move || a.continue_without_login()).await {
+        Ok(()) => {
+            info!("continuing without a login (chosen on the first-run page)");
+            Json(json!({ "ok": true })).into_response()
         }
         Err(e) => text(StatusCode::BAD_REQUEST, format!("{e:#}")),
     }
@@ -1539,6 +1626,7 @@ impl Auth {
             )
             .route("/api/auth/status", get(status))
             .route("/api/auth/setup", post(setup_admin))
+            .route("/api/auth/skip", post(skip_login))
             .route("/api/auth/login", post(login))
             .route("/api/auth/logout", post(logout))
             .route("/auth/login/{provider}", get(oauth_start))
