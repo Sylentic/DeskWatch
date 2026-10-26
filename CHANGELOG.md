@@ -17,6 +17,10 @@ All notable changes to DeskWatch are listed here. The format follows
   transcoding on NVENC/NVDEC read about 4 % with its encoder at 100 %. The default `gpu_pct` is now the busiest of the
   GPU, encoder and decoder.
 
+- **A red "not reachable" badge now says why, and a passing test clears it.** A single failed request (a timeout, a
+  rate limit) turned a GitHub source red until its next poll, which after a failure is delayed by the backoff, even
+  when Test connection already said ok. Setup now shows the last error under the badge (and as its tooltip), and a
+  Test connection that passes restarts a source that is shown as failing, so it polls again right away.
 - **Dismissed failed runs stay dismissed after a restart.** They are kept in `dismissed.json` in the data folder (a new
   failure of the same pipeline still shows). Without a data folder they are still forgotten on restart.
 - **The failed pill opens the run.** The pipeline name in the red pill is now a link to the failed run (it opens in the

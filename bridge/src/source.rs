@@ -123,6 +123,9 @@ impl Health {
 #[derive(Debug, Default)]
 pub struct HealthBoard {
     sources: BTreeMap<SourceId, Health>,
+    /// Why a source is not working, as its last error said. Cleared when the
+    /// source reports `Ok`.
+    reasons: BTreeMap<SourceId, String>,
 }
 
 impl HealthBoard {
@@ -130,6 +133,9 @@ impl HealthBoard {
     /// down does not flood the log.
     pub fn set(&mut self, source: &SourceId, health: Health) {
         let before = self.sources.insert(source.clone(), health);
+        if health == Health::Ok {
+            self.reasons.remove(source);
+        }
         if before != Some(health) {
             match health {
                 Health::Ok => info!(%source, "source is working"),
@@ -138,9 +144,23 @@ impl HealthBoard {
         }
     }
 
+    /// Record why a source is not working (`None` clears it).
+    pub fn set_reason(&mut self, source: &SourceId, reason: Option<String>) {
+        match reason {
+            Some(reason) => self.reasons.insert(source.clone(), reason),
+            None => self.reasons.remove(source),
+        };
+    }
+
+    /// Why a source is not working, if it said.
+    pub fn reasons(&self) -> impl Iterator<Item = (&SourceId, &str)> {
+        self.reasons.iter().map(|(id, r)| (id, r.as_str()))
+    }
+
     /// Drop a removed source, so it no longer counts in the `warn` badge.
     pub fn forget(&mut self, source: &SourceId) {
         self.sources.remove(source);
+        self.reasons.remove(source);
     }
 
     /// Every source that has reported, with its health.
@@ -176,6 +196,8 @@ pub enum SourceBody {
     /// Host stats and what is down, replacing the source's previous report.
     Stats(StatsReport),
     Health(Health),
+    /// The error behind a health that is not `Ok`, for the Setup page.
+    Reason(Option<String>),
     /// The source was removed or replaced: drop everything it reported.
     Forget,
 }
@@ -224,6 +246,12 @@ impl FactSink {
         self.send(SourceBody::Health(health)).await
     }
 
+    /// Report why the source is not working. Returns false once the main
+    /// loop has stopped.
+    pub async fn reason(&self, reason: Option<String>) -> bool {
+        self.send(SourceBody::Reason(reason)).await
+    }
+
     async fn send(&self, body: SourceBody) -> bool {
         let msg = SourceMsg {
             source: self.source.clone(),
@@ -262,6 +290,7 @@ pub fn spawn(source: impl Source, tx: mpsc::Sender<SourceMsg>) -> tokio::task::J
         if let Err(err) = source.run(sink.clone()).await {
             warn!(source = %id, "source stopped: {err:#}");
             sink.health(Health::Unreachable).await;
+            sink.reason(Some(format!("{err:#}"))).await;
         }
     })
 }
@@ -570,6 +599,17 @@ mod tests {
         std::fs::write(&file, "\n").unwrap();
         assert!(load_secret(file.to_str().unwrap()).is_err());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn health_board_reason_is_cleared_by_ok() {
+        let mut board = HealthBoard::default();
+        let id = SourceId::new("github", "main");
+        board.set(&id, Health::Unreachable);
+        board.set_reason(&id, Some("timed out".into()));
+        assert_eq!(board.reasons().collect::<Vec<_>>(), [(&id, "timed out")]);
+        board.set(&id, Health::Ok);
+        assert_eq!(board.reasons().count(), 0);
     }
 
     #[test]

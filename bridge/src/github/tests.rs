@@ -272,6 +272,22 @@ fn health_worst_repo_wins() {
 }
 
 #[test]
+fn failed_poll_keeps_its_reason_until_the_repo_recovers() {
+    let mut source = state(true, 0);
+    assert_eq!(source.reason(), None);
+    let err = anyhow::anyhow!("GitHub rate limit exhausted");
+    source.set_failure("me/a", &err);
+    assert_eq!(source.health(), Some(Health::Unreachable));
+    assert_eq!(
+        source.reason().as_deref(),
+        Some("me/a: GitHub rate limit exhausted")
+    );
+    source.set_health("me/a", Health::Ok);
+    assert_eq!(source.health(), Some(Health::Ok));
+    assert_eq!(source.reason(), None, "a good poll clears the reason");
+}
+
+#[test]
 fn status_mapping() {
     let cases = [
         ("queued", None, RunStatus::Queued),
@@ -333,6 +349,7 @@ async fn source_polls_a_mock_enterprise_server() {
         match msg.body {
             SourceBody::Health(h) => health = Some(h),
             SourceBody::Forget => panic!("a source never forgets itself"),
+            SourceBody::Reason(_) => {}
             SourceBody::Facts(updates) => {
                 for update in updates {
                     match update {
@@ -460,6 +477,7 @@ async fn refused_runner_list_does_not_hurt_source_health() {
             }
             SourceBody::Stats(_) => panic!("GitHub sends no host stats"),
             SourceBody::Forget => panic!("a source never forgets itself"),
+            SourceBody::Reason(_) => {}
         }
     }
     assert_eq!(healths, [Health::Ok]);
