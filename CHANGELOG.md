@@ -15,6 +15,11 @@ All notable changes to DeskWatch are listed here. The format follows
 - **Smoother customizing.** A panel floats with the pointer while you move it and is resized by dragging a corner handle
   that snaps to the grid and shows the size. Both work with the mouse and with touch, and from the keyboard. This
   replaces the small W, H and arrow buttons (#165).
+- **The `:dev` image shows it is a dev build.** The version on the setup page now reads e.g. `1.0.5-dev (abc1234)`
+  instead of the plain number. Release images are unchanged.
+- **Smoother customizing.** Moving a panel now shows a floating panel and a dashed drop slot while the others make
+  room, and resizing is done by dragging a corner handle that snaps to the grid and shows the size. Both work with the
+  mouse and with touch, and from the keyboard. This replaces the small W, H and arrow buttons (#165).
 - **`[server] enabled = false` hides the bridge's own machine** from the dashboard, with a **Show this machine's own
   stats** switch under **Dashboard hosts** on the setup page (it applies after a restart). For a bridge in Docker
   whose Prometheus source already covers the machine, so the container's own numbers no longer show as a second host.
