@@ -7,8 +7,19 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.0.8]
+
+### Added
+
+- **Stay signed in for 30 days.** A box under the password on the sign-in page (off by default, also for GitHub and
+  Microsoft sign-in) makes that session last 30 days from the sign-in, whatever the idle time. Use it only on your own
+  devices; **Sign out everywhere** on My account ends it.
+
 ### Fixed
 
+- **A restart no longer signs everyone out.** Sessions are saved in `sessions.json` in the data folder (mode 0600, only
+  a hash of each session id), so an update or restart keeps you signed in. A missing or broken file just means signing
+  in again.
 - **CPU temperature is the CPU again on Prometheus hosts.** The default query took the hottest sensor of the machine,
   which is often an NVMe drive or a board sensor reporting junk (one showed 216 °C). It now reads the CPU's own sensor
   (`coretemp`, `k10temp`, `zenpower` or `cpu_thermal`, `temp1`), like the bridge's own host card did before 1.0.7, and
@@ -16,7 +27,6 @@ All notable changes to DeskWatch are listed here. The format follows
 - **GPU usage includes video encoding and decoding.** `DCGM_FI_DEV_GPU_UTIL` only counts the shader cores, so a GPU
   transcoding on NVENC/NVDEC read about 4 % with its encoder at 100 %. The default `gpu_pct` is now the busiest of the
   GPU, encoder and decoder.
-
 - **A red "not reachable" badge now says why, and a passing test clears it.** A single failed request (a timeout, a
   rate limit) turned a GitHub source red until its next poll, which after a failure is delayed by the backoff, even
   when Test connection already said ok. Setup now shows the last error under the badge (and as its tooltip), and a
@@ -30,6 +40,7 @@ All notable changes to DeskWatch are listed here. The format follows
 
 - **Passed and skipped stages clean up.** In Running now, a stage of a run that is still going disappears 30 seconds
   after it passed or was skipped, so running and failed stages stand out.
+
 ### Security
 
 - **A forwarded address only counts from a proxy on the local network.** The bridge read `X-Forwarded-For` from any
