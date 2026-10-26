@@ -69,8 +69,14 @@ Setup, Access, **API keys** creates a key (shown once, only its hash is stored).
 ## Sessions and safety
 
 - A session is a random 256-bit id in a cookie (`HttpOnly`, `SameSite=Lax`, `Secure` over HTTPS or behind a proxy
-  that sends `X-Forwarded-Proto: https`). Sessions live in memory: a restart signs everyone out. They end after seven
-  idle days, with **Sign out**, or with **Sign out everywhere**.
+  that sends `X-Forwarded-Proto: https`). Sessions are saved in `sessions.json` in the data folder (mode 0600, only a
+  hash of each id), so a restart or an update does not sign anyone out. They end after seven idle days (one day for a
+  GitHub or Microsoft sign-in), with **Sign out**, or with **Sign out everywhere**. A changed password or role ends that
+  user's sessions.
+- **Stay signed in for 30 days** (a box under the password, off by default) makes that one session last 30 days from
+  the sign-in, whatever the idle time, and gives the cookie the same lifetime. It also works with GitHub and Microsoft.
+  Use it only on your own devices: anyone who can use that browser is signed in. If you lose a device, use **Sign out
+  everywhere** on My account.
 - Every change needs the header `X-DeskWatch: 1` (the pages add it) besides the existing `Origin` check, so a page on
   another site cannot act for you.
 - Five wrong passwords make that address wait five minutes (then ten, up to an hour). A wrong user name answers like a
