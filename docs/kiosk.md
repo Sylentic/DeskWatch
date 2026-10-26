@@ -178,7 +178,7 @@ the page shows the winner as a coloured **pill in the header**:
 - **NOTICE** (blue).
 
 While a job runs, a thin orange progress line under the header follows it. A run that finished well stays in Running
-now for 30 seconds as **Done**, and a row in Pipelines that just finished is tinted red or green for 30 seconds. An
+now for 30 seconds as **Done**. In a run that is still going, a stage that passed or was skipped leaves the list 30 seconds after it ended, so running and failed stages stand out. A a row in Pipelines that just finished is tinted red or green for 30 seconds. An
 open PR younger than an hour carries **NEW**.
 
 The size follows the screen width, so the same layout is readable on 1080p and 4K and on a small 1280x720 screen.

@@ -7,6 +7,10 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Passed and skipped stages clean up.** In Running now, a stage of a run that is still going disappears 30 seconds
+  after it passed or was skipped, so running and failed stages stand out.
 ### Security
 
 - **A forwarded address only counts from a proxy on the local network.** The bridge read `X-Forwarded-For` from any
