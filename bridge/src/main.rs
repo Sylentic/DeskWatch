@@ -331,7 +331,9 @@ async fn main() -> Result<()> {
     };
 
     if config.server.enabled {
-        warn!("[server] enabled = true does nothing any more: the bridge no longer reads its own machine. Add it as a Prometheus host (docs/hosts.md)");
+        warn!(
+            "[server] enabled = true does nothing any more: the bridge no longer reads its own machine. Add it as a Prometheus host (docs/hosts.md)"
+        );
     }
     let mut composer;
     let mut demo = None;

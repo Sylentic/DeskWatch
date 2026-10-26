@@ -9,17 +9,15 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ### Added
 
+- **A Hosts page in Setup.** DeskWatch asks Prometheus which machines it collects from (Linux or Windows, up or not
+  answering, pending updates) and you tick the ones to show. **Edit** opens a pop-up to rename a host and choose which
+  parts of its card to show (`show` in the config); parts the machine does not report are greyed out.
 - **Windows hosts in the Hosts panel.** A host running windows_exporter works like a node_exporter host: CPU, memory,
   the `C:` drive, uptime and network. The bundled queries cover both, so nothing needs to be set per host
   ([docs/hosts.md](docs/hosts.md)).
 - **Pending updates and restart needed** on the host card, for hosts that report them (apt's node_exporter script, or a
   small text file; examples for Debian, Windows and Fedora in the docs). They are asked every 15 minutes. A host that
   needs a restart gets an amber pip in the list. New `updates` and `reboot_needed` query keys.
-
-### Changed (Setup menu)
-
-- **The Setup menu is grouped** under Connect, Display, Security and Maintenance, and **Sign-in providers** is now
-  **Sign-in options**.
 
 ### Removed
 
@@ -28,10 +26,13 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ### Changed
 
-- **The bridge no longer shows its own machine by default.** Hosts come from Prometheus, which is exact (and right in
-  Docker, where the bridge only sees the container). To keep the old behaviour set `[server] enabled = true`, or use
-  **Show this machine's own stats** under **Dashboard hosts** on the setup page. Add the machine as a Prometheus host
-  instead ([docs/hosts.md](docs/hosts.md)).
+- **The Setup menu is grouped** under Connect, Display, Security and Maintenance, and **Sign-in providers** is now
+  **Sign-in options**.
+- **The bridge no longer reads its own machine.** Hosts come from Prometheus, which is exact (and right in Docker,
+  where the bridge only sees the container). This removes the bridge's own host card and the **Show this machine's own
+  stats** switch from 1.0.6; `[server]` in `bridge.toml` is still accepted but ignored (`enabled = true` logs a
+  warning). Add the machine as a Prometheus host instead ([docs/hosts.md](docs/hosts.md)).
+- **A Prometheus source no longer needs `hosts`.** The machines are chosen on the new Hosts page.
 
 ## [1.0.6]
 

@@ -347,6 +347,115 @@ pub async fn collect(
 }
 
 // ---------------------------------------------------------------------------
+// Discovery: which machines does this Prometheus collect from?
+// ---------------------------------------------------------------------------
+
+/// A machine Prometheus collects from: a node_exporter (Linux) or
+/// windows_exporter (Windows) target and what it reports.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Found {
+    /// The `instance` label, which is what a host in the config is called.
+    pub instance: String,
+    /// `linux` or `windows`.
+    pub kind: &'static str,
+    pub up: bool,
+    /// The `config::HOST_SHOW` parts this machine has numbers for.
+    pub reports: Vec<&'static str>,
+    pub updates: Option<u32>,
+    pub reboot_needed: Option<bool>,
+}
+
+/// One round of queries that is only about what exists. Targets that are
+/// neither a node_exporter nor a windows_exporter (cAdvisor, Prometheus
+/// itself) are not machines and are left out.
+pub async fn discover(api: &HttpApi, queries: &Queries) -> Result<Vec<Found>> {
+    let ask = |name: &'static str, promql: &str| {
+        let promql = promql.to_string();
+        async move {
+            api.query(&promql)
+                .await
+                .with_context(|| format!("query {name}"))
+        }
+    };
+    let up = ask("up", &queries.up).await?;
+    let linux = ask("linux", "max by (instance) (node_memory_MemTotal_bytes)").await?;
+    let windows = ask(
+        "windows",
+        "max by (instance) (windows_cs_physical_memory_bytes)",
+    )
+    .await?;
+    let parts: [(&'static str, Vec<Sample>); 9] = [
+        ("cpu", ask("cpu_pct", &queries.cpu_pct).await?),
+        ("memory", ask("ram_pct", &queries.ram_pct).await?),
+        ("disk", ask("disk_pct", &queries.disk_pct).await?),
+        ("uptime", ask("uptime_s", &queries.uptime_s).await?),
+        ("network", ask("net_rx", &queries.net_rx).await?),
+        ("updates", ask("updates", &queries.updates).await?),
+        (
+            "reboot",
+            ask("reboot_needed", &queries.reboot_needed).await?,
+        ),
+        ("temperature", ask("cpu_temp_c", &queries.cpu_temp_c).await?),
+        ("gpu", ask("gpu_pct", &queries.gpu_pct).await?),
+    ];
+    Ok(build_found(&up, &linux, &windows, &parts))
+}
+
+/// Pure part of `discover`, so the tests need no server.
+pub fn build_found(
+    up: &[Sample],
+    linux: &[Sample],
+    windows: &[Sample],
+    parts: &[(&'static str, Vec<Sample>)],
+) -> Vec<Found> {
+    let mut found: Vec<Found> = Vec::new();
+    for sample in up {
+        let Some(instance) = sample.label("instance") else {
+            continue;
+        };
+        let has = |samples: &[Sample]| first_value(samples, instance).is_some();
+        let kind = if has(linux) {
+            "linux"
+        } else if has(windows) {
+            "windows"
+        } else {
+            continue;
+        };
+        if found.iter().any(|f| f.instance == instance) {
+            continue;
+        }
+        let part = |key: &str| {
+            parts
+                .iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, samples)| samples.as_slice())
+                .unwrap_or_default()
+        };
+        found.push(Found {
+            instance: instance.to_string(),
+            kind,
+            up: is_up(up, instance),
+            reports: parts
+                .iter()
+                .filter(|(_, samples)| has(samples))
+                .map(|(key, _)| *key)
+                .collect(),
+            updates: first_value(part("updates"), instance).map(|n| n.max(0.0).round() as u32),
+            reboot_needed: first_value(part("reboot"), instance).map(|n| n >= 1.0),
+        });
+    }
+    found.sort_by(|a, b| a.instance.cmp(&b.instance));
+    found
+}
+
+/// Ask the Prometheus of one `[[source.prometheus]]` block what it collects
+/// from, for the setup page.
+pub async fn discover_source(config: &PrometheusConfig) -> Result<Vec<Found>> {
+    let prometheus = Prometheus::new(config)?;
+    discover(&prometheus.api, &Queries::new(config)).await
+}
+
+// ---------------------------------------------------------------------------
 // Answers to facts
 // ---------------------------------------------------------------------------
 
@@ -378,19 +487,52 @@ pub fn build_report(hosts: &[HostConfig], answers: &Answers) -> StatsReport {
 fn host_stats(host: &HostConfig, answers: &Answers) -> StatsData {
     let instance = host.instance.as_str();
     let value = |samples: &[Sample]| first_value(samples, instance);
+    // A part the setup page switched off is left empty, and named in `hide`
+    // so the card leaves it out instead of showing a dash.
+    let shown = |key: &str| {
+        host.show
+            .as_ref()
+            .is_none_or(|show| show.iter().any(|s| s == key))
+    };
+    let hide = crate::config::HOST_SHOW
+        .iter()
+        .filter(|key| !shown(key))
+        .map(|key| key.to_string())
+        .collect();
     StatsData {
         host: host.name.clone(),
-        cpu_pct: value(&answers.cpu_pct).map(percent),
-        cpu_temp_c: value(&answers.cpu_temp_c).map(round1),
-        ram_pct: value(&answers.ram_pct).map(percent),
-        disk_pct: value(&answers.disk_pct).map(percent),
-        gpu_pct: value(&answers.gpu_pct).map(percent),
-        gpu_mem_pct: value(&answers.gpu_mem_pct).map(percent),
-        gpu_temp_c: value(&answers.gpu_temp_c).map(round1),
-        uptime_s: value(&answers.uptime_s).map(|s| s.max(0.0) as u64),
-        net: net(&answers.net_rx, &answers.net_tx, instance),
-        updates: value(&answers.updates).map(|n| n.max(0.0).round() as u32),
-        reboot_needed: value(&answers.reboot_needed).map(|n| n >= 1.0),
+        cpu_pct: value(&answers.cpu_pct)
+            .map(percent)
+            .filter(|_| shown("cpu")),
+        cpu_temp_c: value(&answers.cpu_temp_c)
+            .map(round1)
+            .filter(|_| shown("temperature")),
+        ram_pct: value(&answers.ram_pct)
+            .map(percent)
+            .filter(|_| shown("memory")),
+        disk_pct: value(&answers.disk_pct)
+            .map(percent)
+            .filter(|_| shown("disk")),
+        gpu_pct: value(&answers.gpu_pct)
+            .map(percent)
+            .filter(|_| shown("gpu")),
+        gpu_mem_pct: value(&answers.gpu_mem_pct)
+            .map(percent)
+            .filter(|_| shown("gpu")),
+        gpu_temp_c: value(&answers.gpu_temp_c)
+            .map(round1)
+            .filter(|_| shown("gpu")),
+        uptime_s: value(&answers.uptime_s)
+            .map(|s| s.max(0.0) as u64)
+            .filter(|_| shown("uptime")),
+        net: net(&answers.net_rx, &answers.net_tx, instance).filter(|_| shown("network")),
+        updates: value(&answers.updates)
+            .map(|n| n.max(0.0).round() as u32)
+            .filter(|_| shown("updates")),
+        reboot_needed: value(&answers.reboot_needed)
+            .map(|n| n >= 1.0)
+            .filter(|_| shown("reboot")),
+        hide,
     }
 }
 

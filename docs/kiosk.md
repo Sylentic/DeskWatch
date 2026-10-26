@@ -20,7 +20,7 @@ A grid of cards, 4 columns by 3 rows by default:
 | Widget | Shows |
 |---|---|
 | `stats` | One host in detail: CPU, RAM, disk bars with warning colours, GPU and VRAM bars and GPU temperature (only for a host that reports a GPU, see [GPU](#gpu-on-the-host-card)), temperature, network rates, uptime, pending updates and restart needed (for hosts that report them, see [hosts.md](hosts.md)), a CPU graph of the last few minutes |
-| `hosts` | Every host a Prometheus source reports (and the bridge's own machine with `[server] enabled = true`): a list, or with `view = "detailed"` the chosen host in detail on top of the list |
+| `hosts` | Every host chosen on the setup page's Hosts page: a list, or with `view = "detailed"` the chosen host in detail on top of the list |
 | `jobs` | Running now: a heading per run, and under it a row per job (parallel jobs, GitLab jobs, Bitbucket steps, Azure DevOps jobs) with its status colour, step, progress bar and a live elapsed time |
 | `prs` | Open pull requests per repository, newest first, with the total |
 | `pipelines` | The latest run of every pipeline, one boxed row each, tinted by status (failed red, success green, running orange, waiting for approval amber), newest first across all sources (a running run counts from its start, a finished one from its end), so the top rows are always the most recent activity; in the default layout it is two cells wide and scrolls |
@@ -58,8 +58,7 @@ shows the newest items again.
 A host that reports a GPU gets **GPU** and **VRAM** bars and a **GPU temp** line on its card; hosts without a GPU show
 nothing extra. A GPU above 95 % puts the host in the "needs a look" group. Prometheus hosts read the figures from the
 NVIDIA DCGM exporter by default; `gpu_pct`, `gpu_mem_pct` and `gpu_temp_c` can be replaced per host under `queries`
-([install.md](install.md#prometheus-host-stats-and-containers)). The bridge machine itself reads AMD GPUs from sysfs;
-Intel and NVIDIA GPUs on the bridge machine need a Prometheus host. Not yet tried on a real GPU.
+([install.md](install.md#prometheus-host-stats-and-containers)). Not yet tried on a real GPU.
 
 ### Hosts: detailed or compact
 

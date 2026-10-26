@@ -508,3 +508,68 @@ async fn updates_are_asked_rarely() {
     assert_eq!(mock.queries.lock().unwrap().len(), 14 + 12);
     assert_eq!(report.hosts[0].stats.updates, Some(12));
 }
+
+#[test]
+fn discovery_lists_linux_and_windows_machines_only() {
+    let at = |instance: &str| sample(&[("instance", instance)], 1.0);
+    let up = vec![
+        at("nas:9100"),
+        at("office-pc:9182"),
+        at("cadvisor:8080"),
+        sample(&[("instance", "old-box:9100")], 0.0),
+    ];
+    let parts = vec![
+        ("cpu", vec![at("nas:9100"), at("office-pc:9182")]),
+        (
+            "updates",
+            vec![sample(&[("instance", "office-pc:9182")], 3.0)],
+        ),
+        (
+            "reboot",
+            vec![sample(&[("instance", "office-pc:9182")], 1.0)],
+        ),
+        ("temperature", vec![at("nas:9100")]),
+    ];
+    let found = build_found(&up, &[at("nas:9100")], &[at("office-pc:9182")], &parts);
+    // cAdvisor is not a machine, and a machine that is down has no metrics to
+    // recognise it by.
+    assert_eq!(
+        found
+            .iter()
+            .map(|f| f.instance.as_str())
+            .collect::<Vec<_>>(),
+        ["nas:9100", "office-pc:9182"]
+    );
+    assert_eq!(found[0].kind, "linux");
+    assert_eq!(found[0].reports, ["cpu", "temperature"]);
+    assert_eq!(found[0].updates, None);
+    assert_eq!(found[1].kind, "windows");
+    assert_eq!(found[1].updates, Some(3));
+    assert_eq!(found[1].reboot_needed, Some(true));
+}
+
+#[test]
+fn a_host_card_leaves_out_what_the_host_does_not_show() {
+    let mut host: HostConfig = toml::from_str("instance = \"node-a:9100\"").unwrap();
+    host.show = Some(vec!["cpu".into(), "updates".into()]);
+    let at = |v: f64| vec![sample(&[("instance", "node-a:9100")], v)];
+    let answers = Answers {
+        up: at(1.0),
+        cpu_pct: at(20.0),
+        ram_pct: at(50.0),
+        disk_pct: at(60.0),
+        updates: at(4.0),
+        reboot_needed: at(1.0),
+        ..Answers::default()
+    };
+    let stats = host_stats(&host, &answers);
+    assert_eq!(stats.cpu_pct, Some(20.0));
+    assert_eq!(stats.updates, Some(4));
+    assert_eq!((stats.ram_pct, stats.disk_pct), (None, None));
+    assert_eq!(stats.reboot_needed, None);
+    assert!(stats.hide.contains(&"memory".to_string()));
+    assert!(!stats.hide.contains(&"cpu".to_string()));
+    // Without a list everything is shown.
+    host.show = None;
+    assert!(host_stats(&host, &answers).hide.is_empty());
+}

@@ -26,13 +26,6 @@ client_id = "deskwatch-bridge"
 topic_prefix = "deskpanel"      # matches the schema, change only for testing
 keep_alive_s = 30
 
-[server]
-# enabled = true                # also show this machine's own stats (read from /proc); off by default, hosts come from Prometheus
-# display_name = "homeserver"   # name on the stats page, defaults to the hostname
-interval_s = 5                  # stats sample and publish interval
-# net_iface = "eth0"            # defaults to the busiest non-loopback interface
-disk_path = "/"                 # filesystem for disk_pct (local stats are Linux only)
-
 # Shared listener for the Gitea webhook, the kiosk page, the setup page and the
 # Docker health check (/healthz, whenever MQTT is on). It stays closed only when
 # none of those is in use.
@@ -145,7 +138,7 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 
 # Host stats and container health from a Prometheus server that scrapes
 # node_exporter or windows_exporter (and cAdvisor). Each host gets its own card on the kiosk page.
-# The bridge's own machine is only shown with [server] enabled = true.
+# Choose the machines on the setup page (Hosts), or list them below.
 # [[source.prometheus]]
 # name = "home"                 # required: used in logs
 # url = "http://prometheus.example.lan:9090"  # required
@@ -159,6 +152,7 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 #   # With `cadvisor` (that machine's cAdvisor instance) and
 #   # `expect_containers`, a container that stopped shows on the kiosk
 #   # "down" list and in the `server` badge.
+#   # `show = ["cpu", "memory", "updates"]` limits what the card shows (see docs/hosts.md).
 #   { instance = "node-exporter:9100", name = "home", cadvisor = "cadvisor:8080", expect_containers = ["gitea", "mosquitto"] },
 #   "nas.example.lan:9100",
 # ]

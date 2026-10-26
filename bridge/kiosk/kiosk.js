@@ -165,24 +165,29 @@
   var REBOOT_S = 3600;
   function hostBody(host) {
     var s = host.stats || {};
+    // Parts switched off for this host on the setup page are left out, not shown as dashes.
+    var hide = s.hide || [];
+    var show = function (part) { return hide.indexOf(part) < 0; };
     var vals = history[host.name] || [];
     var peak = vals.length ? Math.round(Math.max.apply(null, vals)) + '%' : '--';
     var fresh = s.uptime_s != null && s.uptime_s < REBOOT_S;
-    return '<div class="gauges">' + gauge('CPU', s.cpu_pct, 70, 90) + gauge('MEM', s.ram_pct, 80, 90) + gauge('DISK', s.disk_pct, 80, 90) +
+    var gauges = (show('cpu') ? gauge('CPU', s.cpu_pct, 70, 90) : '') + (show('memory') ? gauge('MEM', s.ram_pct, 80, 90) : '') +
+      (show('disk') ? gauge('DISK', s.disk_pct, 80, 90) : '') +
       // GPU rows only for hosts that report a GPU.
       (s.gpu_pct == null ? '' : gauge('GPU', s.gpu_pct, 80, 95)) +
-      (s.gpu_mem_pct == null ? '' : gauge('VRAM', s.gpu_mem_pct, 80, 95)) + '</div>' +
-      '<div class="stat-grid">' +
-      '<div><span class="l">Uptime</span><span' + (fresh ? ' class="warn-text"' : '') + '>' + uptime(s.uptime_s) + '</span></div>' +
-      '<div><span class="l">Temp</span><span>' + (s.cpu_temp_c == null ? '--' : Math.round(s.cpu_temp_c) + ' &deg;C') + '</span></div>' +
+      (s.gpu_mem_pct == null ? '' : gauge('VRAM', s.gpu_mem_pct, 80, 95));
+    var cells = (show('uptime') ? '<div><span class="l">Uptime</span><span' + (fresh ? ' class="warn-text"' : '') + '>' + uptime(s.uptime_s) + '</span></div>' : '') +
+      (show('temperature') ? '<div><span class="l">Temp</span><span>' + (s.cpu_temp_c == null ? '--' : Math.round(s.cpu_temp_c) + ' &deg;C') + '</span></div>' : '') +
       (s.gpu_temp_c == null ? '' : '<div><span class="l">GPU temp</span><span>' + Math.round(s.gpu_temp_c) + ' &deg;C</span></div>') +
-      '<div><span class="l">Net in</span><span>' + (s.net ? rate(s.net.rx_bps) : '--') + '</span></div>' +
-      '<div><span class="l">Net out</span><span>' + (s.net ? rate(s.net.tx_bps) : '--') + '</span></div>' +
+      (show('network') ? '<div><span class="l">Net in</span><span>' + (s.net ? rate(s.net.rx_bps) : '--') + '</span></div>' +
+        '<div><span class="l">Net out</span><span>' + (s.net ? rate(s.net.tx_bps) : '--') + '</span></div>' : '') +
       // Only for hosts that report them (see docs/hosts.md).
       (s.updates == null ? '' : '<div><span class="l">Pending updates</span><span>' + s.updates + '</span></div>') +
-      (s.reboot_needed ? '<div><span class="l">Restart</span><span class="warn-text">needed</span></div>' : '') +
-      '</div><div class="sparkhead"><span>CPU' + (gpuHistory[host.name] && gpuHistory[host.name].some(function (g) { return g != null; }) ? ' <span class="gpu-key">&amp; GPU</span>' : '') + ' &middot; ' + spanLabel(vals.length) + '</span><span>PEAK ' + peak + '</span></div>' +
-      sparkline(vals, gpuHistory[host.name]);
+      (s.reboot_needed ? '<div><span class="l">Restart</span><span class="warn-text">needed</span></div>' : '');
+    return (gauges ? '<div class="gauges">' + gauges + '</div>' : '') +
+      (cells ? '<div class="stat-grid">' + cells + '</div>' : '') +
+      (show('cpu') ? '<div class="sparkhead"><span>CPU' + (gpuHistory[host.name] && gpuHistory[host.name].some(function (g) { return g != null; }) ? ' <span class="gpu-key">&amp; GPU</span>' : '') + ' &middot; ' + spanLabel(vals.length) + '</span><span>PEAK ' + peak + '</span></div>' +
+        sparkline(vals, gpuHistory[host.name]) : '');
   }
 
   // How much time the graph covers: one reading per 5 s, at most HISTORY.

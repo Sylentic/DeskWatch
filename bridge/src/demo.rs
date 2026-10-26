@@ -186,6 +186,7 @@ pub fn stats(now: u64) -> StatsData {
         }),
         updates: Some(7),
         reboot_needed: Some(false),
+        hide: Vec::new(),
     }
 }
 

@@ -457,6 +457,84 @@ pub fn set_updates(current: &str, check: bool) -> Result<String> {
     toml::to_string(&root).context("cannot write sources.toml")
 }
 
+/// A host as the Hosts page sends it.
+#[derive(Debug, Clone)]
+pub struct HostEdit {
+    pub instance: String,
+    /// The name on the dashboard.
+    pub name: String,
+    /// What to show; `None` is everything the host reports.
+    pub show: Option<Vec<String>>,
+}
+
+/// Replace the hosts of Prometheus source `name` in `sources.toml`. What the
+/// page does not know about a host (`cadvisor`, `expect_containers`) is kept
+/// for hosts that stay. A host named like its default (the instance without
+/// its port) and without a `show` list is written as a plain instance.
+pub fn set_hosts(current: &str, name: &str, hosts: &[HostEdit]) -> Result<String> {
+    let mut root = parse(current)?;
+    let list = sources(&mut root, "prometheus")?;
+    let index = position(list, name).with_context(|| {
+        format!(
+            "there is no prometheus source named {name:?} in the data folder \
+             (sources from bridge.toml are changed in that file)"
+        )
+    })?;
+    let entry = list[index].as_table_mut().expect("entries are tables");
+    let old: Vec<toml::Value> = entry
+        .get("hosts")
+        .and_then(toml::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let instance_of = |v: &toml::Value| {
+        v.as_str()
+            .or_else(|| v.get("instance").and_then(toml::Value::as_str))
+            .map(str::to_string)
+    };
+    let mut out = Vec::new();
+    for host in hosts {
+        let instance = host.instance.trim();
+        anyhow::ensure!(!instance.is_empty(), "a host needs its address");
+        anyhow::ensure!(
+            crate::config::valid_host_name(&host.name),
+            "the name {:?} must be 1 to 40 characters without spaces at the ends",
+            host.name
+        );
+        for item in host.show.iter().flatten() {
+            anyhow::ensure!(
+                crate::config::HOST_SHOW.contains(&item.as_str()),
+                "a host cannot show {item:?}"
+            );
+        }
+        let mut table = old
+            .iter()
+            .find(|v| instance_of(v).as_deref() == Some(instance))
+            .and_then(|v| v.as_table().cloned())
+            .unwrap_or_default();
+        table.insert("instance".into(), toml::Value::String(instance.into()));
+        table.insert("name".into(), toml::Value::String(host.name.clone()));
+        match &host.show {
+            Some(show) => table.insert(
+                "show".into(),
+                toml::Value::Array(
+                    show.iter()
+                        .map(|s| toml::Value::String(s.clone()))
+                        .collect(),
+                ),
+            ),
+            None => table.remove("show"),
+        };
+        let plain = table.len() == 2 && host.name == crate::config::default_host_name(instance);
+        out.push(if plain {
+            toml::Value::String(instance.into())
+        } else {
+            toml::Value::Table(table)
+        });
+    }
+    entry.insert("hosts".into(), toml::Value::Array(out));
+    toml::to_string(&root).context("cannot write sources.toml")
+}
+
 /// Switch a `bridge.toml` source off (`hide`) or on again. The source stays in
 /// `bridge.toml`; `sources.toml` only lists its id under `hidden`.
 pub fn set_hidden(current: &str, kind: &str, name: &str, hide: bool) -> Result<String> {

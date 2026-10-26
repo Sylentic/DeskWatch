@@ -151,6 +151,10 @@ pub struct StatsData {
     pub updates: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reboot_needed: Option<bool>,
+    /// Parts of the host card the setup page switched off for this host
+    /// (`config::HOST_SHOW` names). Their values are left empty too.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub hide: Vec<String>,
 }
 
 /// Network part of the stats, rates in bytes per second.

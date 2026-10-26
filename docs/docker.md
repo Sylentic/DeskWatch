@@ -105,7 +105,7 @@ alerts sent over MQTT (Home Assistant). `[kiosk] enabled = true` serves the page
 layout and widgets are in [kiosk.md](kiosk.md#3-choose-the-widgets). To also take alerts from MQTT,
 set `enabled = true` (or delete the line) and give `[mqtt]` the broker's host, as in section 6.
 
-**Your own data.** Without any `[[source.*]]` block the page shows no hosts and nothing else. Add
+**Your own data.** Without any `[[source.*]]` block the page is empty. Add
 the sources you use (GitHub, Azure DevOps, Gitea, Prometheus) exactly as in
 [bridge/config.example.toml](../bridge/config.example.toml) and [install.md](install.md#5-sources), with their
 secrets in `dashboard/credentials/`, section 4 explains how. Only a Gitea source needs an incoming connection
@@ -401,20 +401,10 @@ Prometheus sources only make outgoing requests and need no published port.
 
 ## 8. Host stats in a container
 
-The bridge machine's own host card reads `/proc` and `/sys`, and a container sees only part of the real machine:
-
-- **Host name:** the container id by default. Set `display_name = "homeserver"` under `[server]`.
-- **RAM and uptime:** the host's numbers (Docker does not virtualize `/proc/meminfo` and `/proc/uptime`).
-- **CPU load:** the host's, as the kernel computes it for everything.
-- **Network:** the container's own interface, so the rates are the bridge's traffic, not the host's. With
-  `network_mode: host` they are the host's.
-- **Disk:** the filesystem under the container's root, not a host disk. Mount the host path you care about
-  read-only (for example `- /srv:/hostdisk:ro`) and set `disk_path = "/hostdisk"`.
-- **CPU temperature:** often empty, because the thermal sensors are not always visible inside a container.
-
-If you want exact numbers for several machines, use a Prometheus source with node_exporter instead
-([install.md](install.md#prometheus-host-stats-and-containers)). The bridge's own card is off by default, so only the
-Prometheus hosts show; `enabled = true` under `[server]` brings it back.
+The bridge does not read the machine it runs on: from inside a container it would only see part of the real
+machine (the container's network, no sensors). Host numbers come from Prometheus with node_exporter on each machine
+(Linux) or windows_exporter (Windows), which are exact, including for the Docker host itself. Add a Prometheus source
+under **Sources**, then choose the machines on the **Hosts** page ([hosts.md](hosts.md)).
 
 ## 9. Health and restarts
 

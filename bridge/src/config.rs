@@ -1194,6 +1194,7 @@ pub struct PrometheusConfig {
     /// The machines to show, each on its own `stats:<name>` page. An entry is
     /// the node_exporter `instance` label (`"node-exporter:9100"`), or a table
     /// with `instance`, `name`, `cadvisor` and `expect_containers`.
+    #[serde(default)]
     pub hosts: Vec<HostConfig>,
     /// Seconds between queries.
     #[serde(default = "default_prometheus_interval_s")]
@@ -1232,7 +1233,23 @@ pub struct HostConfig {
     /// Containers that must be running. A stopped container vanishes from
     /// cAdvisor, so only listed names can be reported as down.
     pub expect_containers: Vec<String>,
+    /// What the host card shows, from `HOST_SHOW`. `None`: everything the
+    /// host reports.
+    pub show: Option<Vec<String>>,
 }
+
+/// The parts of a host card the setup page can switch off per host.
+pub const HOST_SHOW: [&str; 9] = [
+    "cpu",
+    "memory",
+    "disk",
+    "uptime",
+    "network",
+    "updates",
+    "reboot",
+    "temperature",
+    "gpu",
+];
 
 /// The two ways to write a host in the config.
 #[derive(Deserialize)]
@@ -1250,6 +1267,7 @@ struct HostTable {
     cadvisor: Option<String>,
     #[serde(default)]
     expect_containers: Vec<String>,
+    show: Option<Vec<String>>,
 }
 
 impl From<HostSpec> for HostConfig {
@@ -1260,6 +1278,7 @@ impl From<HostSpec> for HostConfig {
                 name: None,
                 cadvisor: None,
                 expect_containers: Vec::new(),
+                show: None,
             },
             HostSpec::Table(table) => table,
         };
@@ -1271,13 +1290,20 @@ impl From<HostSpec> for HostConfig {
             name,
             cadvisor: table.cadvisor,
             expect_containers: table.expect_containers,
+            show: table.show,
         }
     }
 }
 
+/// A host name as shown on the dashboard: plain text, 1 to 40 characters.
+pub fn valid_host_name(name: &str) -> bool {
+    let count = name.chars().count();
+    (1..=40).contains(&count) && name.trim() == name && !name.chars().any(char::is_control)
+}
+
 /// `node-exporter:9100` becomes `node-exporter`; anything that cannot be in
 /// a page name turns into `-`.
-fn default_host_name(instance: &str) -> String {
+pub fn default_host_name(instance: &str) -> String {
     let host = instance.rsplit_once(':').map_or(instance, |(host, _)| host);
     host.chars()
         .map(|c| if valid_name(&c.to_string()) { c } else { '-' })
@@ -1760,10 +1786,6 @@ impl Config {
                 prom.interval_s > 0,
                 "source.prometheus {name}: interval_s must be above 0"
             );
-            anyhow::ensure!(
-                !prom.hosts.is_empty(),
-                "source.prometheus {name}: hosts needs at least one entry"
-            );
             // The mount point and device go into PromQL label matchers.
             for (key, value) in [
                 ("disk_mountpoint", Some(&prom.disk_mountpoint)),
@@ -1777,12 +1799,20 @@ impl Config {
             let mut pages = HashSet::new();
             for host in &prom.hosts {
                 anyhow::ensure!(
-                    valid_name(&host.name),
-                    "source.prometheus {name}: host name {:?} may only use letters, digits, - and _ \
-                     (set `name` for instance {:?})",
+                    valid_host_name(&host.name),
+                    "source.prometheus {name}: host name {:?} must be 1 to 40 characters without \
+                     control characters or spaces at the ends (set `name` for instance {:?})",
                     host.name,
                     host.instance
                 );
+                for item in host.show.iter().flatten() {
+                    anyhow::ensure!(
+                        HOST_SHOW.contains(&item.as_str()),
+                        "source.prometheus {name}: host {} cannot show {item:?} (known: {})",
+                        host.name,
+                        HOST_SHOW.join(", ")
+                    );
+                }
                 anyhow::ensure!(
                     pages.insert(&host.name),
                     "source.prometheus {name}: two hosts are named {:?}",
@@ -1894,6 +1924,22 @@ mod tests {
         assert!(!with.updates.check);
         assert!(with.without_overlay().updates.check);
         assert!(Config::from_toml("[updates]\nother = 1\n").is_err());
+    }
+
+    #[test]
+    fn a_host_has_a_free_name_and_a_checked_show_list() {
+        let text = |host: &str| {
+            format!("[[source.prometheus]]\nname = \"p\"\nurl = \"http://p\"\nhosts = [{host}]\n")
+        };
+        let config = Config::from_toml(&text(
+            "{ instance = \"a:9100\", name = \"Office PC\", show = [\"cpu\", \"updates\"] }",
+        ))
+        .unwrap();
+        let host = &config.source.prometheus[0].hosts[0];
+        assert_eq!(host.name, "Office PC");
+        assert_eq!(host.show.as_ref().unwrap().len(), 2);
+        assert!(Config::from_toml(&text("{ instance = \"a:9100\", show = [\"fans\"] }")).is_err());
+        assert!(Config::from_toml(&text("{ instance = \"a:9100\", name = \" x\" }")).is_err());
     }
 
     #[test]
@@ -2368,8 +2414,15 @@ mod tests {
         assert!(
             Config::from_toml(&block("").replace("http://prom.local:9090", "prom.local")).is_err()
         );
+        // No hosts yet is fine: they are chosen on the setup page's Hosts page.
+        let bare = "[[source.prometheus]]\nname = \"p\"\nurl = \"http://prom.local:9090\"\n";
+        assert!(
+            Config::from_toml(bare).unwrap().source.prometheus[0]
+                .hosts
+                .is_empty()
+        );
         let no_hosts = block("").replace("[\"node-exporter:9100\"]", "[]");
-        assert!(Config::from_toml(&no_hosts).is_err());
+        assert!(Config::from_toml(&no_hosts).is_ok());
         // Containers need a cAdvisor instance to be looked up on.
         let orphan = block("").replace(
             "[\"node-exporter:9100\"]",

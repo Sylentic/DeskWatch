@@ -53,7 +53,7 @@
   var form = null;       // the open add/edit form, or null (see openForm)
   var confirming = null; // key of the action waiting for its confirm click, or null
   var restarting = null; // { boot, since } while the page waits for a restart to finish
-  var SECTIONS = ['sources', 'mqtt', 'dashboard', 'alerts', 'access', 'signin', 'backup', 'bridge', 'secrets'];
+  var SECTIONS = ['sources', 'hosts', 'mqtt', 'dashboard', 'alerts', 'access', 'signin', 'backup', 'bridge', 'secrets'];
   var oauth = null;      // last answer of api/auth/oauth (the Sign-in section)
   var oauthNote = null;
   var access = null;     // last answer of api/auth/status (the Access section)
@@ -268,7 +268,8 @@
     },
     prometheus: {
       strings: [['url', 'Prometheus address', 'http://prometheus.example.lan:9090']],
-      lists: [['hosts', 'Hosts, one per line (the exporter instance, such as node-exporter:9100 for Linux or win-pc:9182 for Windows)']],
+      // The machines are chosen on the Hosts page.
+      lists: [],
       secrets: [['token', 'Bearer token (only behind a proxy)', false]]
     }
   };
@@ -314,7 +315,7 @@
     (spec.bools || []).forEach(function (x) { values[x[0]] = !!f[x[0]]; });
     if (kind === 'mqtt') values.username = f.username || '';
     form = { kind: kind, mode: source ? 'edit' : 'add', name: source ? source.name : '', values: values,
-             secrets: {}, advanced: !!f.hosts_advanced, busy: false, result: null, error: null };
+             secrets: {}, busy: false, result: null, error: null };
     drawForm();
   }
 
@@ -326,7 +327,6 @@
     mode.strings.forEach(function (x) { fields[x[0]] = form.values[x[0]]; });
     mode.secrets.forEach(function (x) { if (form.secrets[x[0]]) secrets[x[0]] = form.secrets[x[0]]; });
     spec.lists.forEach(function (x) {
-      if (x[0] === 'hosts' && form.advanced) return;     // advanced host settings stay as they are
       fields[x[0]] = form.values[x[0]].split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
     });
     (spec.bools || []).forEach(function (x) { fields[x[0]] = !!form.values[x[0]]; });
@@ -429,9 +429,8 @@
     });
     spec.lists.forEach(function (x) {
       var t = el('textarea'); t.rows = 4; t.value = form.values[x[0]];
-      t.disabled = x[0] === 'hosts' && form.advanced;
       t.addEventListener('input', function () { form.values[x[0]] = t.value; });
-      var lab = field(x[1] + (t.disabled ? ' (has advanced settings: edit sources.toml by hand)' : ''), t);
+      var lab = field(x[1], t);
       box.appendChild(lab);
     });
     (spec.bools || []).forEach(function (x) {
@@ -623,6 +622,169 @@
     box.appendChild(grid);
     box.appendChild(el('p', 'muted', 'Tokens are never sent to the browser.'));
     return box;
+  }
+
+
+  // ---- Hosts: the machines a Prometheus source collects from ----
+  // Asked from the server when the page opens and on Refresh (not with the
+  // status that is polled), kept here so a redraw does not ask again. `draft`
+  // holds the ticks and edits per source until they are saved.
+  var HOST_PARTS = [['cpu', 'CPU'], ['memory', 'Memory'], ['disk', 'Disk'], ['uptime', 'Uptime'], ['network', 'Network in and out'],
+                    ['updates', 'Pending updates'], ['reboot', 'Restart needed'], ['temperature', 'Temperature'], ['gpu', 'GPU and VRAM']];
+  var hostsState = { loaded: false, loading: false, data: null, error: null, draft: {}, saving: false, message: null };
+
+  function defaultHostName(instance) {
+    var i = instance.lastIndexOf(':');
+    return i > 0 ? instance.slice(0, i) : instance;
+  }
+
+  function fetchHosts() {
+    hostsState.loading = true;
+    fetch('api/setup/hosts', { cache: 'no-store', credentials: 'same-origin' }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(function (j) {
+      hostsState.data = j; hostsState.error = null;
+      // Ticks and names from the config; everything else found starts off.
+      hostsState.draft = {};
+      j.sources.forEach(function (s) {
+        var rows = {};
+        s.found.forEach(function (f) { rows[f.instance] = { on: false, name: defaultHostName(f.instance), show: null }; });
+        s.configured.forEach(function (c) { rows[c.instance] = { on: true, name: c.name, show: c.show }; });
+        hostsState.draft[s.name] = rows;
+      });
+    }).catch(function () {
+      hostsState.error = 'Cannot read the hosts from the bridge.';
+    }).then(function () {
+      hostsState.loaded = true; hostsState.loading = false;
+      if (currentSection() === 'hosts' && last) render(last);
+    });
+  }
+
+  function hostsSection(d) {
+    var box = el('div');
+    if (!hostsState.loaded && !hostsState.loading) fetchHosts();
+    if (!hostsState.loaded) { box.appendChild(el('p', 'muted', 'Asking Prometheus which machines it collects from...')); return box; }
+    if (hostsState.error) { box.appendChild(el('p', 'err', hostsState.error)); return box; }
+    var sources = hostsState.data.sources;
+    if (!sources.length) {
+      box.appendChild(el('p', 'muted', 'Hosts come from a Prometheus source. Add one under Sources first.'));
+      var go = el('button', 'secondary', 'Go to Sources'); go.type = 'button';
+      go.addEventListener('click', function () { location.hash = '#sources'; });
+      var line = el('div', 'buttons'); line.appendChild(go); box.appendChild(line);
+      return box;
+    }
+    box.appendChild(el('p', 'muted', 'DeskWatch asks your Prometheus which machines it collects from. Tick the ones to show on the dashboard.'));
+    if (hostsState.message) box.appendChild(el('p', hostsState.message.bad ? 'err' : 'muted', hostsState.message.text));
+    sources.forEach(function (s) { box.appendChild(hostsCard(s, d)); });
+    var tip = el('section', 'card');
+    tip.appendChild(el('h2', null, 'A machine is missing?'));
+    tip.appendChild(el('p', 'muted', 'Prometheus only lists machines it already collects from. Install node_exporter (Linux) or windows_exporter (Windows) on it, add it to Prometheus, then press Refresh. Step by step: docs/hosts.md.'));
+    box.appendChild(tip);
+    return box;
+  }
+
+  function hostsCard(s, d) {
+    var card = el('section', 'card');
+    var head = el('div', 'cardhead');
+    var t = el('div');
+    var h = el('h2', null, 'Prometheus "' + s.name + '" ');
+    h.appendChild(s.error ? pill('not reachable', 'bad') : pill('connected', 'ok'));
+    t.appendChild(h);
+    t.appendChild(el('p', 'muted', s.error ? s.error : s.found.length + ' machine' + (s.found.length === 1 ? '' : 's') + ' found.'));
+    head.appendChild(t);
+    var refresh = el('button', 'secondary', 'Refresh'); refresh.type = 'button';
+    refresh.addEventListener('click', function () { hostsState.loaded = false; hostsState.message = null; render(last); });
+    head.appendChild(refresh);
+    card.appendChild(head);
+
+    var rows = hostsState.draft[s.name] || {};
+    var byInstance = {};
+    s.found.forEach(function (f) { byInstance[f.instance] = f; });
+    // Chosen hosts that Prometheus no longer lists (a machine that is down).
+    var instances = s.found.map(function (f) { return f.instance; });
+    s.configured.forEach(function (c) { if (!byInstance[c.instance]) instances.push(c.instance); });
+    if (!instances.length && !s.error) card.appendChild(el('p', 'muted', 'No node_exporter or windows_exporter targets found.'));
+    instances.forEach(function (instance) {
+      var f = byInstance[instance], row = rows[instance];
+      var line = el('label', 'hostrow');
+      var cb = checkbox(row.on, !s.editable);
+      cb.addEventListener('change', function () { row.on = cb.checked; });
+      var text = el('div', 'hosttext');
+      var title = el('h2', null, row.name + ' ');
+      title.appendChild(f ? pill(f.up ? 'up' : 'not answering', f.up ? 'ok' : 'bad') : pill('not answering', 'bad'));
+      text.appendChild(title);
+      var bits = [f ? (f.kind === 'windows' ? 'Windows' : 'Linux') : null, instance];
+      if (f && f.updates != null) bits.push(f.updates + ' pending update' + (f.updates === 1 ? '' : 's'));
+      else if (f && f.up) bits.push('no updates data');
+      if (f && f.reboot_needed) bits.push('restart needed');
+      text.appendChild(el('p', 'muted', bits.filter(Boolean).join(' · ')));
+      line.appendChild(cb); line.appendChild(text);
+      if (s.editable) {
+        var edit = el('button', 'secondary', 'Edit'); edit.type = 'button';
+        edit.addEventListener('click', function (e) { e.preventDefault(); editHost(s, instance, f); });
+        line.appendChild(edit);
+      }
+      card.appendChild(line);
+    });
+    if (!s.editable) {
+      card.appendChild(el('p', 'muted', 'This source is set in bridge.toml, so its hosts are changed there (see docs/hosts.md).'));
+    } else if (instances.length) {
+      var save = el('button', null, hostsState.saving ? 'Saving...' : 'Save'); save.type = 'button'; save.disabled = hostsState.saving;
+      save.addEventListener('click', function () { saveHosts(s); });
+      var bar = el('div', 'buttons'); bar.appendChild(save); card.appendChild(bar);
+    }
+    return card;
+  }
+
+  // The pop-up of one host: its name on the dashboard and which parts to show.
+  // Only what Prometheus reports for the machine can be ticked.
+  function editHost(s, instance, f) {
+    var row = hostsState.draft[s.name][instance];
+    var reports = f ? f.reports : [];
+    var m = openModal('Edit ' + defaultHostName(instance));
+    var name = el('input'); name.type = 'text'; name.maxLength = 40; name.value = row.name;
+    m.body.appendChild(field('Name on the dashboard', name));
+    m.body.appendChild(el('p', 'muted', 'What to show for this host. Only what Prometheus reports for it can be ticked.'));
+    var grid = el('div', 'partgrid'), boxes = {};
+    HOST_PARTS.forEach(function (p) {
+      var has = reports.indexOf(p[0]) >= 0;
+      var on = has && (row.show == null || row.show.indexOf(p[0]) >= 0);
+      var c = checkbox(on, !has);
+      boxes[p[0]] = c;
+      var lab = el('label', 'part');
+      lab.appendChild(c); lab.appendChild(el('span', has ? null : 'muted', p[1] + (has ? '' : ' (not reported)')));
+      grid.appendChild(lab);
+    });
+    m.body.appendChild(grid);
+    var ok = modalButtons(m, 'Save');
+    m.form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var text = name.value.trim();
+      if (!text || text.length > 40) { modalError(m, 'The name must be 1 to 40 characters.'); return; }
+      var picked = HOST_PARTS.map(function (p) { return p[0]; }).filter(function (k) { return boxes[k].checked; });
+      var all = reports.length === picked.length && reports.every(function (k) { return picked.indexOf(k) >= 0; });
+      row.name = text; row.show = all ? null : picked;
+      row.on = true;
+      closeModal();
+      saveHosts(s);
+    });
+  }
+
+  function saveHosts(s) {
+    var rows = hostsState.draft[s.name], list = [];
+    Object.keys(rows).forEach(function (instance) {
+      var r = rows[instance];
+      if (r.on) list.push({ instance: instance, name: r.name, show: r.show });
+    });
+    hostsState.saving = true; hostsState.message = null; render(last);
+    post('api/setup/hosts', { source: s.name, hosts: list }).then(function (j) {
+      hostsState.saving = false;
+      if (j && j.error) hostsState.message = { bad: true, text: j.error };
+      else hostsState.message = { bad: false, text: j.applied ? 'Saved. The dashboard shows the change within a few seconds.' : 'Saved. ' + (applyNotice(j) || 'Restart the bridge to apply it.') };
+      hostsState.loaded = false;
+      load();
+    });
   }
 
   function mqttSection(d) {
@@ -1528,7 +1690,7 @@
     });
   }
 
-  var TITLES = { sources: 'Sources', mqtt: 'MQTT broker', dashboard: 'Dashboard', alerts: 'Alerts', access: 'Access', signin: 'Sign-in options', backup: 'Backup', bridge: 'Bridge and restart', secrets: 'Stored secrets' };
+  var TITLES = { sources: 'Sources', hosts: 'Hosts', mqtt: 'MQTT broker', dashboard: 'Dashboard', alerts: 'Alerts', access: 'Access', signin: 'Sign-in options', backup: 'Backup', bridge: 'Bridge and restart', secrets: 'Stored secrets' };
 
   function currentSection() {
     var id = (location.hash || '').replace('#', '');
@@ -1586,7 +1748,7 @@
     var nav = el('nav', 'side');
     nav.setAttribute('aria-label', 'sections');
     // Grouped by what you do there, so the nine sections are easier to scan.
-    var GROUPS = [['Connect', ['sources', 'mqtt']], ['Display', ['dashboard', 'alerts']],
+    var GROUPS = [['Connect', ['sources', 'hosts', 'mqtt']], ['Display', ['dashboard', 'alerts']],
                   ['Security', ['access', 'signin', 'secrets']], ['Maintenance', ['backup', 'bridge']]];
     GROUPS.forEach(function (g) {
       nav.appendChild(el('div', 'group', g[0]));
@@ -1610,7 +1772,7 @@
       head.appendChild(add);
     }
     content.appendChild(head);
-    content.appendChild(({ sources: sourcesSection, mqtt: mqttSection, dashboard: dashboardSection, alerts: alertsSection,
+    content.appendChild(({ sources: sourcesSection, hosts: hostsSection, mqtt: mqttSection, dashboard: dashboardSection, alerts: alertsSection,
                            access: accessSection, signin: signinSection, backup: backupSection, bridge: bridgeSection, secrets: secretsSection })[section](d));
     layout.appendChild(content);
     app.appendChild(layout);

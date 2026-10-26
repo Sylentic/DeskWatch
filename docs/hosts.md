@@ -1,11 +1,40 @@
 # Linux and Windows hosts
 
-The Hosts panel gets its numbers from Prometheus. A host can be a Linux machine running
-[node_exporter](https://github.com/prometheus/node_exporter) or a Windows machine running
-[windows_exporter](https://github.com/prometheus-community/windows_exporter). DeskWatch tells them apart by the
-metrics they have, so you add both kinds the same way: the exporter's address (`instance`) in the host list of a
-Prometheus source (Setup, Sources, or `[[source.prometheus]]` in the config, see [install.md](install.md)). There is
-no Linux or Windows switch to set.
+The Hosts panel gets its numbers from Prometheus, not from the machine DeskWatch runs on. The bridge does not measure
+its own machine (inside Docker it could only see the container), so every machine you want to see, the DeskWatch
+server included, is a host in Prometheus.
+
+A host is a Linux machine running [node_exporter](https://github.com/prometheus/node_exporter) or a Windows machine
+running [windows_exporter](https://github.com/prometheus-community/windows_exporter), collected by one Prometheus
+server. DeskWatch only talks to that Prometheus.
+
+## Choosing hosts on the setup page
+
+1. Under **Sources**, add your Prometheus (its address, for example `http://your-server:9090`).
+2. Open **Hosts**. DeskWatch lists the machines Prometheus collects from, with Linux or Windows, up or not answering,
+   and pending updates. Tick the ones to show and press **Save**.
+3. **Edit** changes the name shown on the dashboard and which parts to show. Only what Prometheus reports for that
+   machine can be ticked. **Refresh** asks Prometheus again.
+
+Linux and Windows are told apart by the metrics a machine has, so there is no setting for it. A machine that is down
+cannot be recognised until it answers again; one you have already chosen stays in the list as "not answering".
+
+By hand, in `bridge.toml` or `sources.toml`:
+
+```toml
+[[source.prometheus]]
+name = "home"
+url = "http://prometheus.example.lan:9090"
+hosts = [
+  "nas:9100",
+  { instance = "office-pc:9182", name = "Office PC", show = ["cpu", "memory", "updates", "reboot"] },
+]
+```
+
+`show` takes `cpu`, `memory`, `disk`, `uptime`, `network`, `updates`, `reboot`, `temperature` and `gpu`; without it a
+host shows everything it reports.
+
+## What is read
 
 | Shown | Linux (node_exporter) | Windows (windows_exporter) |
 |---|---|---|
@@ -15,7 +44,7 @@ no Linux or Windows switch to set.
 | Temperature | yes, when the machine has sensors | no, windows_exporter has none |
 | Updates, restart needed | yes, see below | yes, see below |
 
-Anything else can be changed per source with `queries = { ... }`; the names are `cpu_pct`, `cpu_temp_c`, `ram_pct`,
+The PromQL for each field can be changed per source with `queries = { ... }`; the names are `cpu_pct`, `cpu_temp_c`, `ram_pct`,
 `disk_pct`, `gpu_pct`, `gpu_mem_pct`, `gpu_temp_c`, `uptime_s`, `updates` and `reboot_needed`.
 
 ## Windows
