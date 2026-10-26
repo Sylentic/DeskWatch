@@ -27,6 +27,7 @@ topic_prefix = "deskpanel"      # matches the schema, change only for testing
 keep_alive_s = 30
 
 [server]
+# enabled = false               # skip this machine's own stats, e.g. when a Prometheus source covers it
 # display_name = "homeserver"   # name on the stats page, defaults to the hostname
 interval_s = 5                  # stats sample and publish interval
 # net_iface = "eth0"            # defaults to the busiest non-loopback interface

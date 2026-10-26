@@ -379,6 +379,8 @@ body.lost .grid { opacity: .45; filter: grayscale(.7); }
 .hostdetail .sparkhead { margin-top: 0.9rem; }
 .hostdetail .spark { margin-top: 0; flex: 1 1 3rem; height: auto; min-height: 3rem; max-height: 14rem; }
 .spark polyline { fill: none; stroke: var(--blue); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.spark polyline.gpu { stroke: var(--red); stroke-width: 1.5; }
+.sparkhead .gpu-key { color: var(--red); }
 .spark path { fill: color-mix(in srgb, var(--blue) 14%, transparent); stroke: none; }
 .sparkhead { display: flex; margin-top: 0.65rem; font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.08em; color: var(--dim); }
 .sparkhead span:last-child { margin-left: auto; }
@@ -566,22 +568,43 @@ a.link:active { background: rgba(255, 255, 255, .08); }
 .edit-bar[hidden] { display: none; }
 .edit-bar .t { font-weight: 600; }
 .edit-bar .hint { color: var(--dim); font-size: 0.85rem; }
+.edit-bar .hint .warn { color: var(--amber); font-weight: 600; }
 .edit-bar .cells { margin-left: auto; font-family: var(--mono); font-size: 0.8rem; color: var(--dim); }
 .edit-bar .cells.over { color: var(--amber); }
 .edit-bar button { font: inherit; font-size: 0.85rem; color: var(--text); background: transparent; border: 1px solid var(--track); border-radius: 0.5rem; padding: 0.35rem 0.8rem; cursor: pointer; }
 .edit-bar button:disabled { opacity: .4; cursor: default; }
 .edit-bar button.primary { background: var(--text); color: var(--card); border-color: var(--text); }
-.grid.editing .card { position: relative; outline: 1px dashed var(--track); outline-offset: -1px; cursor: grab; }
-.grid.editing .card.dragging { opacity: .4; }
+.grid.editing .card { position: relative; outline: 1px dashed var(--track); outline-offset: -1px; }
 .grid.editing .card .body { pointer-events: none; opacity: .55; }
-.edit-tools { position: absolute; left: 0.6rem; right: 0.6rem; bottom: 0.6rem; display: flex; align-items: center; gap: 0.3rem; padding: 0.35rem 0.5rem;
-  background: var(--card-hi); border: 1px solid var(--track); border-radius: 0.6rem; font-family: var(--mono); font-size: 0.75rem; flex-wrap: wrap; }
-.edit-tools .grip { color: var(--dim); font-size: 1rem; margin-right: 0.2rem; }
-.edit-tools .gap { flex: 1; }
-.edit-tools .sz { color: var(--dim); margin-left: 0.3rem; }
-.edit-tools .n { min-width: 0.9rem; text-align: center; }
-.edit-tools button { min-width: 1.7rem; height: 1.7rem; font: inherit; color: var(--text); background: transparent; border: 1px solid var(--track); border-radius: 0.4rem; cursor: pointer; }
-.edit-tools button:hover { background: var(--card); }
+.edit-grip, .edit-x, .edit-resize { position: absolute; z-index: 3; font: inherit; color: var(--dim); background: var(--card-hi); border: 1px solid var(--track); cursor: pointer; touch-action: none; }
+.edit-grip { top: 0.5rem; left: 50%; transform: translateX(-50%); padding: 0.25rem 0.8rem; border-radius: 2rem; font-family: var(--mono); font-size: 0.75rem; cursor: grab; white-space: nowrap; }
+.edit-x { top: 0.5rem; right: 0.5rem; width: 1.9rem; height: 1.9rem; border-radius: 0.55rem; color: var(--text); }
+.edit-resize { right: 0.55rem; bottom: 0.55rem; width: 1.9rem; height: 1.9rem; border-radius: 0.55rem; display: grid; place-items: center; cursor: nwse-resize; }
+.edit-resize svg { width: 0.95rem; height: 0.95rem; }
+.edit-grip:hover, .edit-x:hover, .edit-resize:hover { color: var(--text); }
+.edit-grip:focus-visible, .edit-x:focus-visible, .edit-resize:focus-visible { outline: 2px solid #5aa9ff; outline-offset: 2px; }
+.edit-resize.on { background: #5aa9ff; border-color: #5aa9ff; color: #0b1220; box-shadow: 0 0 0 4px color-mix(in srgb, #5aa9ff 25%, transparent); }
+body.gesturing { user-select: none; -webkit-user-select: none; }
+body.gesturing, body.gesturing * { cursor: grabbing !important; }
+.grid.editing .card.lifted { position: fixed; z-index: 30; margin: 0; pointer-events: none; transform: rotate(-1.5deg) scale(1.02);
+  box-shadow: 0 1.2rem 2.5rem rgba(0, 0, 0, .55); outline: 2px solid #5aa9ff; }
+.grid.editing { position: relative; }
+.grid.tall { overflow-y: auto; scrollbar-width: none; grid-template-rows: repeat(var(--rows, 3), var(--auto-row, 14rem)); grid-auto-rows: var(--auto-row, 14rem); }
+.grid.tall::-webkit-scrollbar { display: none; }
+.grid-bg, .grid-fx { position: absolute; inset: 0; display: grid; padding: inherit; gap: inherit; pointer-events: none;
+  grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); grid-template-rows: repeat(var(--rows, 3), minmax(0, 1fr)); }
+.grid-bg { z-index: 0; }
+.grid-fx { z-index: 5; }
+.bg-cell { position: relative; border: 1px dashed color-mix(in srgb, var(--text) 22%, transparent); border-radius: 0.9rem;
+  background: color-mix(in srgb, var(--text) 3%, transparent); display: grid; place-items: center; }
+.bg-cell .coord { position: absolute; left: 0.6rem; top: 0.45rem; color: var(--dim); opacity: .7; font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.08em; }
+.bg-cell.free { border-color: color-mix(in srgb, var(--text) 35%, transparent); }
+.bg-cell.free::after { content: "+"; font-size: 1.6rem; color: var(--dim); }
+.drop-target { position: relative; border: 2px solid #5aa9ff; border-radius: 1rem; background: color-mix(in srgb, #5aa9ff 16%, transparent); }
+.drop-target.bad { border-color: #ff6b6b; background: color-mix(in srgb, #ff6b6b 16%, transparent); }
+.drop-target .badge { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 0.3rem 0.8rem; border-radius: 2rem;
+  background: #5aa9ff; color: #0b1220; font-family: var(--mono); font-weight: 700; white-space: nowrap; }
+.drop-target.bad .badge { background: #ff6b6b; }
 .edit-veil { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.6rem;
   background: color-mix(in srgb, var(--card) 80%, transparent); color: var(--dim); font-family: var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
 .edit-veil button { font: inherit; color: var(--text); background: transparent; border: 1px solid var(--track); border-radius: 0.5rem; padding: 0.35rem 0.9rem; cursor: pointer; }

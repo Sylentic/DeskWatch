@@ -7,6 +7,38 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.0.6]
+
+### Added
+
+- **Free placement on a visible grid.** In edit mode the grid is drawn behind the panels. A panel can be put on any free
+  cell and sized on the cells (no overlap, red when it does not fit), and the grid grows downwards when you want
+  everything under each other. The bridge saves a column and row per panel (`pos` in `layouts.json`).
+- **The `:dev` image shows it is a dev build.** The version on the setup page now reads e.g. `1.0.5-dev (abc1234)`
+  instead of the plain number. Release images are unchanged.
+- **Smoother customizing.** Moving a panel now shows a floating panel and a dashed drop slot while the others make
+  room, and resizing is done by dragging a corner handle that snaps to the grid and shows the size. Both work with the
+  mouse and with touch, and from the keyboard. This replaces the small W, H and arrow buttons (#165).
+- **`[server] enabled = false` hides the bridge's own machine** from the dashboard, with a **Show this machine's own
+  stats** switch under **Dashboard hosts** on the setup page (it applies after a restart). For a bridge in Docker
+  whose Prometheus source already covers the machine, so the container's own numbers no longer show as a second host.
+- **A red GPU line on the CPU graph** of a host that reports a GPU, on the same 0 to 100 % scale.
+
+### Changed
+
+- **Dependencies updated:** tokio 1.54.1 and the GitHub Actions checkout step (v7).
+
+### Fixed
+
+- **Customized layouts are saved more reliably.** A change the bridge could not store (for example a lost session or no
+  writable data folder) used to be dropped without a word and was gone after a reload; the Customize bar now says so.
+  Saves are sent one after the other, a late answer from the bridge no longer overwrites a change you just made, and
+  the layout calls use relative addresses like the rest of the page, so they also work behind a proxy under a sub path.
+- **Setup no longer shows an error after saving the Dashboard hosts view.** Changing Detailed to Compact (or back)
+  was saved correctly, but the page said "Saved, but kiosk could not be started" because the answer did not say it
+  was applied. It now shows the normal "Restart now" notice; the restart itself is expected, as the layout is built
+  at startup.
+
 ## [1.0.5]
 
 ### Added

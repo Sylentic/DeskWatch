@@ -413,7 +413,8 @@ The bridge machine's own host card reads `/proc` and `/sys`, and a container see
 - **CPU temperature:** often empty, because the thermal sensors are not always visible inside a container.
 
 If you want exact numbers for several machines, use a Prometheus source with node_exporter instead
-([install.md](install.md#prometheus-host-stats-and-containers)) and leave the local card as is.
+([install.md](install.md#prometheus-host-stats-and-containers)). Set `enabled = false` under `[server]` to hide the
+bridge's own card, so only the Prometheus hosts show.
 
 ## 9. Health and restarts
 
@@ -454,7 +455,7 @@ Every version tag (from 0.9.6 on, except 0.9.8, which was never built) is built 
 `publish image` job in [`pipeline.yml`](../.github/workflows/pipeline.yml) and pushed to GitHub's registry:
 
 ```sh
-docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 1.0.5; no "v"
+docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 1.0.6; no "v"
 docker run --rm -p 8787:8787 ghcr.io/sylentic/deskwatch-bridge:<version> --demo --kiosk --no-mqtt
 ```
 

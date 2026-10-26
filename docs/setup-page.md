@@ -103,6 +103,10 @@ With a data folder, the **Dashboard hosts** card chooses how the built-in dashbo
 applies after a restart, like the broker settings. Panels set with `[[kiosk.panel]]` in `bridge.toml` are not
 touched. See [kiosk.md](kiosk.md#hosts-detailed-or-compact).
 
+The card also has a **Show this machine's own stats** switch. Turn it off when a Prometheus source already covers the
+machine the bridge runs on, so the bridge's own card (in Docker: the container's network and sensors) is not shown as a
+second host. It needs a restart and is the same as `enabled = false` under `[server]`.
+
 ## Alerts
 
 The **Alerts** section has three cards.

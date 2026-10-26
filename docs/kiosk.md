@@ -127,15 +127,26 @@ changeable on the [setup page](setup-page.md#alerts).
 
 ### Customize your own dashboard
 
-The grid icon in the header (next to the cogwheel for Setup) starts **edit mode**. Every panel gets a strip with a drag
-handle, arrows (move earlier or later, for touch screens), **W** and **H** (width and height in grid cells, up to the
-size of the grid) and an x to hide it. A hidden panel leaves the grid and waits under **Hidden panels** in the bar on top;
-click it there to bring it back. The bar counts the cells in use (`10 of 12`) and has **Reset to default**. **Done**
-leaves edit mode.
+The grid icon in the header (next to the cogwheel for Setup) starts **edit mode**. The whole grid is drawn behind the
+panels, cell by cell (each with its column and row), and empty cells show a plus. Every panel gets a **Drag to move**
+grip on top, an x to hide it and a resize handle in the bottom right corner.
+
+- **Move:** drag the grip with the mouse or a finger onto any free cell. The cells the panel would take light up blue, or
+  red when another panel is in the way (let go then and the panel goes back). Esc cancels.
+- **Resize:** drag the corner handle. The outline snaps to the grid cells and shows the size (`2 × 1`), red when it would
+  run into another panel. A panel can be as wide as the grid.
+- **Put everything under each other if you like:** the grid grows downwards. One extra row is always offered below the
+  last panel (up to 12 rows); the dashboard then scrolls. Make a panel the full width and stack the rest below it.
+- **Keyboard:** focus the grip and use the arrow keys to move the panel one cell; focus the handle and use the arrow keys
+  to change its width and height.
+- Panels never overlap. Hiding a panel leaves its cells free; the others stay where they are.
+
+A hidden panel waits under **Hidden panels** in the bar on top; click it there to bring it back (it takes the first free
+place). The bar counts the cells in use (`10 of 12`) and has **Reset to default**. **Done** leaves edit mode.
 
 The administrator's layout (the built-in one or your `[[kiosk.panel]]` blocks) stays the default. A user only stores the
-difference, so a panel the administrator adds later still shows up (at the end). Panels flow in order on the grid, so
-a smaller panel can leave a gap.
+difference (the place of each panel, its size and which are hidden), so a panel the administrator adds later still shows
+up, in the first free place.
 
 Where the choice is kept:
 

@@ -40,6 +40,7 @@
   var skew = 0;                // server clock minus client clock, in seconds
   var build = null;            // bridge version, to reload the page after an upgrade
   var history = {};            // host name -> recent CPU readings
+  var gpuHistory = {};         // host name -> recent GPU readings, same timing as `history`
   var historyAt = {};          // host name -> client time of the last reading
   var cards = {};              // card key -> { el, html }
   var problem = null;          // why no data arrives, see describe(); null when all is well
@@ -180,8 +181,8 @@
       '<div><span class="l">Net in</span><span>' + (s.net ? rate(s.net.rx_bps) : '--') + '</span></div>' +
       '<div><span class="l">Net out</span><span>' + (s.net ? rate(s.net.tx_bps) : '--') + '</span></div>' +
       '<div><span class="l">Cores</span><span>' + (s.cpu_count == null ? '--' : s.cpu_count) + '</span></div>' +
-      '</div><div class="sparkhead"><span>CPU &middot; ' + spanLabel(vals.length) + '</span><span>PEAK ' + peak + '</span></div>' +
-      sparkline(vals);
+      '</div><div class="sparkhead"><span>CPU' + (gpuHistory[host.name] && gpuHistory[host.name].some(function (g) { return g != null; }) ? ' <span class="gpu-key">&amp; GPU</span>' : '') + ' &middot; ' + spanLabel(vals.length) + '</span><span>PEAK ' + peak + '</span></div>' +
+      sparkline(vals, gpuHistory[host.name]);
   }
 
   // How much time the graph covers: one reading per 5 s, at most HISTORY.
@@ -249,18 +250,26 @@
       '<span class="v">' + pct(value) + '</span></div>';
   }
 
-  function sparkline(values) {
+  function sparkline(values, gpuValues) {
     if (!values || values.length < 2) return '<svg class="spark"></svg>';
     // The readings so far fill the whole width, so the graph is not a small
     // line at the right edge for the first minutes after a reload.
     var w = 100, h = 30;
     var step = w / (values.length - 1), off = 0;
+    var y = function (v) { return (h - Math.max(0, Math.min(100, v)) / 100 * h).toFixed(1); };
     var pts = values.map(function (v, i) {
-      return (off + i * step).toFixed(1) + ',' + (h - Math.max(0, Math.min(100, v)) / 100 * h).toFixed(1);
+      return (off + i * step).toFixed(1) + ',' + y(v);
     });
+    // A red GPU line on the same scale, when the host reports a GPU.
+    var gpuLine = '';
+    if (gpuValues && gpuValues.length === values.length && gpuValues.some(function (g) { return g != null; })) {
+      var gpts = [];
+      gpuValues.forEach(function (g, i) { if (g != null) gpts.push((off + i * step).toFixed(1) + ',' + y(g)); });
+      if (gpts.length > 1) gpuLine = '<polyline class="gpu" points="' + gpts.join(' ') + '"/>';
+    }
     return '<svg class="spark" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
       '<path d="M' + pts.join(' L') + ' L' + (off + (values.length - 1) * step).toFixed(1) + ',' + h + ' L' + off.toFixed(1) + ',' + h + ' Z"/>' +
-      '<polyline points="' + pts.join(' ') + '"/></svg>';
+      '<polyline points="' + pts.join(' ') + '"/>' + gpuLine + '</svg>';
   }
 
   // ---- filters ------------------------------------------------------------
@@ -550,10 +559,10 @@
       var el = document.createElement('section');
       el.setAttribute('data-key', key);
       el.setAttribute('data-id', panel.id);
-      if (editing) el.setAttribute('draggable', 'true');
       var span = panel.span || [1, 1];
-      el.style.gridColumn = 'span ' + span[0];
-      el.style.gridRow = 'span ' + span[1];
+      // A panel with a saved place sits on its own cell; the others flow around it.
+      el.style.gridColumn = panel.pos ? panel.pos[0] + ' / span ' + span[0] : 'span ' + span[0];
+      el.style.gridRow = panel.pos ? panel.pos[1] + ' / span ' + span[1] : 'span ' + span[1];
       grid.appendChild(el);
       entry = cards[key] = { el: el, html: '', touched: 0 };
     }
@@ -967,6 +976,11 @@
       var list = history[h.name] = history[h.name] || [];
       list.push(v);
       if (list.length > HISTORY) list.shift();
+      // GPU line, only for hosts that report a GPU. Pad with nulls so both lines stay aligned.
+      var g = h.stats.gpu_pct;
+      var glist = gpuHistory[h.name] = gpuHistory[h.name] || [];
+      glist.push(g == null ? null : g);
+      if (glist.length > HISTORY) glist.shift();
     });
 
     var layout = snap.layout || { columns: 4, rows: 3, panels: [] };
@@ -996,14 +1010,15 @@
   // this browser.
   var TITLES = { jobs: 'Running now', hosts: 'Hosts', stats: 'Host', pipelines: 'Pipelines', prs: 'Open PRs', alerts: 'Alerts', containers: 'Containers', health: 'Health', runners: 'Runners' };
   var editing = false;
-  var custom = null;           // { order: [id], hidden: [id], span: { id: [c, r] } } or null
+  var MAX_ROWS = 12;           // the grid grows downwards when panels are put below the last row
+  var custom = null;           // { order: [id], hidden: [id], span: { id: [c, r] }, pos: { id: [col, row] } } or null
   var CUSTOM_KEY = 'deskwatch.layout';
   // The signed-in role (viewer, operator, admin), or null without a login. A
   // viewer gets no Dismiss or Mute buttons and Setup is for administrators:
   // the bridge refuses them anyway, this only keeps buttons that do nothing
   // off the page.
   var myRole = null;
-  fetch('/api/auth/status').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+  fetch('api/auth/status').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
     myRole = (j && j.state === 'signed_in' && j.role) || null;
     document.documentElement.classList.toggle('ro', myRole === 'viewer');
     if (snap) render(snap);
@@ -1012,10 +1027,12 @@
   try { custom = JSON.parse(localStorage.getItem(CUSTOM_KEY) || 'null'); } catch (e) { custom = null; }
   // A signed-in person's layout lives on the bridge. Without a login, or with a
   // screen key, the answer is an error and the layout stays in this browser.
-  fetch('/api/auth/layout').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+  // (Relative addresses, like the other calls, so a proxy under a sub path works.)
+  var edited = false;          // the person changed the layout here before the bridge's copy arrived
+  fetch('api/auth/layout').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
     if (!j) return;
     onServer = true;
-    custom = j.layout || null;
+    if (!edited) custom = j.layout || null;
     if (snap) drawGrid();
   }).catch(function () {});
 
@@ -1038,41 +1055,55 @@
     });
     return out.map(function (p) {
       var sp = custom.span && custom.span[p.id];
-      if (sp) p.span = [Math.min(sp[0], layout.columns), Math.min(sp[1], layout.rows)];
+      if (sp) p.span = [Math.min(sp[0], layout.columns), Math.min(sp[1], MAX_ROWS)];
+      var at = custom.pos && custom.pos[p.id], s = p.span || [1, 1];
+      if (at) p.pos = [Math.max(1, Math.min(at[0], layout.columns - s[0] + 1)), Math.max(1, Math.min(at[1], MAX_ROWS - s[1] + 1))];
       p.hidden = hidden.indexOf(p.id) >= 0;
       return p;
     });
   }
-  function saveCustom() {
-    if (onServer) {
-      fetch('/api/auth/layout', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(custom) }).catch(function () {});
-      return;
-    }
+  // Saves go one after the other, so an older answer can never overwrite a newer one.
+  // When the bridge cannot keep it (signed out, no data folder) the bar says so; before, the
+  // change was lost on the next reload without a word.
+  var saveChain = Promise.resolve(), saveNote = '';
+  function saveLocal() {
     try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); } catch (e) {}
+  }
+  function saveCustom() {
+    edited = true;
+    if (!onServer) { saveLocal(); return; }
+    var body = JSON.stringify(custom);
+    saveChain = saveChain.then(function () {
+      return fetch('api/auth/layout', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: body })
+        .then(function (r) { if (!r.ok) throw new Error(String(r.status)); saveNote = ''; })
+        .catch(function () { saveNote = 'Could not save to your account. Sign in again and retry.'; })
+        .then(function () { if (snap && editing && !gesture) renderEditBar(snap.layout); });
+    });
   }
   function resetCustom() {
     custom = null;
-    if (onServer) fetch('/api/auth/layout/reset', { method: 'POST' }).catch(function () {});
+    edited = true;
+    if (onServer) saveChain = saveChain.then(function () { return fetch('api/auth/layout/reset', { method: 'POST' }); }).catch(function () {});
     else try { localStorage.removeItem(CUSTOM_KEY); } catch (x) {}
   }
   function ensureCustom() {
-    if (!custom) custom = { order: customPanels(snap.layout).map(function (p) { return p.id; }), hidden: [], span: {} };
-    custom.hidden = custom.hidden || []; custom.span = custom.span || {};
+    if (!custom) custom = { order: customPanels(snap.layout).map(function (p) { return p.id; }), hidden: [], span: {}, pos: {} };
+    custom.hidden = custom.hidden || []; custom.span = custom.span || {}; custom.pos = custom.pos || {};
     return custom;
   }
   function usedCells(layout) {
     return customPanels(layout).filter(function (p) { return !p.hidden; })
       .reduce(function (n, p) { var s = p.span || [1, 1]; return n + s[0] * s[1]; }, 0);
   }
-  function editControls(panel, pos) {
-    var s = panel.span || [1, 1];
-    var b = function (act, label, title) { return '<button type="button" data-edit="' + act + '" data-id="' + esc(panel.id) + '" title="' + title + '" aria-label="' + title + '">' + label + '</button>'; };
-    return '<div class="edit-tools"><span class="grip" title="Drag to move">&#10303;</span>' +
-      b('earlier', '&lsaquo;', 'Move earlier') + b('later', '&rsaquo;', 'Move later') +
-      '<span class="gap"></span>' +
-      '<span class="sz">W</span>' + b('w-', '&minus;', 'Narrower') + '<span class="n">' + s[0] + '</span>' + b('w+', '+', 'Wider') +
-      '<span class="sz">H</span>' + b('h-', '&minus;', 'Shorter') + '<span class="n">' + s[1] + '</span>' + b('h+', '+', 'Taller') +
-      '<span class="gap"></span>' + b('hide', '&times;', 'Hide this panel') + '</div>';
+  // Each panel in edit mode: a grip on top to move it, a cross to hide it and a
+  // handle in the corner to resize it. Both gestures also work from the keyboard
+  // (arrow keys on the grip and on the handle).
+  var RESIZE_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M13 5L5 13M13 9L9 13"/></svg>';
+  function editControls(panel) {
+    var id = esc(panel.id);
+    return '<button type="button" class="edit-grip" data-grip="' + id + '" title="Drag to move (arrow keys too)" aria-label="Move this panel">&#10303; Drag to move</button>' +
+      '<button type="button" class="edit-x" data-edit="hide" data-id="' + id + '" title="Hide this panel" aria-label="Hide this panel">&times;</button>' +
+      '<button type="button" class="edit-resize" data-resize="' + id + '" title="Drag to resize (arrow keys too)" aria-label="Resize this panel">' + RESIZE_ICON + '</button>';
   }
   function renderEditBar(layout) {
     var bar = $('edit-bar');
@@ -1085,26 +1116,22 @@
       return '<button type="button" class="add" data-edit="show" data-id="' + esc(p.id) + '" title="Show this panel again">+ ' + esc(p.title || TITLES[p.widget] || p.widget) + '</button>';
     }).join('') : '<span class="none">none</span>';
     bar.innerHTML = '<span class="t">Customize</span>' +
-      '<span class="hint">Drag a panel or use the arrows to move it. W and H set its size. Saved ' + (onServer ? 'for your account.' : 'in this browser.') + '</span>' +
+      '<span class="hint">Drag a panel by its handle onto any free cell, drag the corner to resize it.' + (saveNote ? ' <b class="warn">' + saveNote + '</b>' : ' Saved ' + (onServer ? 'for your account.' : 'in this browser.')) + '</span>' +
       '<span class="tray"><span class="lbl">Hidden panels</span>' + tray + '</span>' +
       '<span class="cells' + (used > cap ? ' over' : '') + '">' + used + ' of ' + cap + ' cells' + (used > cap ? ' &middot; too big, the grid will scroll' : '') + '</span>' +
       '<button type="button" data-edit="reset"' + (custom ? '' : ' disabled') + '>Reset to default</button>' +
       '<button type="button" data-edit="done" class="primary">Done</button>';
   }
   function editAct(act, id) {
-    var c = ensureCustom(), layout = snap.layout, order = c.order.slice();
-    customPanels(layout).forEach(function (p) { if (order.indexOf(p.id) < 0) order.push(p.id); });
-    c.order = order;
-    var i = order.indexOf(id), sp = (c.span[id] || ((customPanels(layout).filter(function (p) { return p.id === id; })[0] || {}).span) || [1, 1]).slice();
+    var c = ensureCustom();
+    if (act === 'hide') {
+      // The others stay where they are; the hidden panel leaves a free gap.
+      var cells = readCells(gridGeom());
+      delete cells[id];
+      commitCells(cells);
+    }
     if (act === 'hide' && c.hidden.indexOf(id) < 0) c.hidden.push(id);
     if (act === 'show') c.hidden = c.hidden.filter(function (x) { return x !== id; });
-    if (act === 'earlier' && i > 0) { order.splice(i, 1); order.splice(i - 1, 0, id); }
-    if (act === 'later' && i < order.length - 1) { order.splice(i, 1); order.splice(i + 1, 0, id); }
-    if (act === 'w+') sp[0] = Math.min(layout.columns, sp[0] + 1);
-    if (act === 'w-') sp[0] = Math.max(1, sp[0] - 1);
-    if (act === 'h+') sp[1] = Math.min(layout.rows, sp[1] + 1);
-    if (act === 'h-') sp[1] = Math.max(1, sp[1] - 1);
-    if (/^[wh][+-]$/.test(act)) c.span[id] = sp;
     saveCustom(); drawGrid();
   }
   $('edit-btn').addEventListener('click', function () { editing = !editing; drawGrid(); });
@@ -1116,34 +1143,242 @@
     else if (act === 'reset') { resetCustom(); drawGrid(); }
     else editAct(act, b.getAttribute('data-id'));
   });
-  var dragId = null;
-  document.addEventListener('dragstart', function (e) {
-    var el = e.target.closest ? e.target.closest('.card[data-id]') : null;
-    if (!editing || !el) return;
-    dragId = el.getAttribute('data-id');
-    el.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move';
-    try { e.dataTransfer.setData('text/plain', dragId); } catch (x) {}
+  // ---- moving and resizing on the grid (mouse, pen and touch) -------------------
+
+  // In edit mode the grid is drawn behind the panels, cell by cell. A panel can be put on
+  // any free cell and be any size that fits; panels never overlap. The grid grows
+  // downwards (one extra row is always offered, up to MAX_ROWS), so a user who wants
+  // everything under each other can have that.
+  var gesture = null;
+
+  // Where the cells are on screen.
+  function gridGeom() {
+    var grid = $('grid'), layout = snap.layout, gr = grid.getBoundingClientRect(), cs = getComputedStyle(grid);
+    var pl = parseFloat(cs.paddingLeft) || 0, pr = parseFloat(cs.paddingRight) || 0;
+    var pt = parseFloat(cs.paddingTop) || 0, pb = parseFloat(cs.paddingBottom) || 0;
+    var gx = parseFloat(cs.columnGap) || 0, gy = parseFloat(cs.rowGap) || 0;
+    var cols = layout.columns, rows = layout.rows;
+    return {
+      x0: gr.left + pl, y0: gr.top + pt, gx: gx, gy: gy, cols: cols, rows: rows,
+      w: (grid.clientWidth - pl - pr - gx * (cols - 1)) / cols,
+      h: (grid.clientHeight - pt - pb - gy * (rows - 1)) / rows
+    };
+  }
+  function rectOfCell(g, c) {
+    return {
+      left: g.x0 + (c.col - 1) * (g.w + g.gx), top: g.y0 - $('grid').scrollTop + (c.row - 1) * (g.h + g.gy),
+      width: c.w * (g.w + g.gx) - g.gx, height: c.h * (g.h + g.gy) - g.gy
+    };
+  }
+  function cellOfRect(g, r) {
+    return {
+      col: Math.round((r.left - g.x0) / (g.w + g.gx)) + 1, row: Math.round((r.top - g.y0 + $('grid').scrollTop) / (g.h + g.gy)) + 1,
+      w: Math.max(1, Math.round((r.width + g.gx) / (g.w + g.gx))), h: Math.max(1, Math.round((r.height + g.gy) / (g.h + g.gy)))
+    };
+  }
+  // Every card's cell, read from where it is on screen (so it holds for panels that flow too).
+  function readCells(g) {
+    var cells = {};
+    [].forEach.call($('grid').querySelectorAll('.card[data-id]'), function (el) {
+      cells[el.getAttribute('data-id')] = cellOfRect(g, el.getBoundingClientRect());
+    });
+    return cells;
+  }
+  function fits(g, cells, id, c) {
+    if (c.col < 1 || c.row < 1 || c.col + c.w - 1 > g.cols || c.row + c.h - 1 > MAX_ROWS) return false;
+    return Object.keys(cells).every(function (o) {
+      if (o === id) return true;
+      var d = cells[o];
+      return c.col + c.w <= d.col || d.col + d.w <= c.col || c.row + c.h <= d.row || d.row + d.h <= c.row;
+    });
+  }
+  function bottomRow(cells) {
+    return Object.keys(cells).reduce(function (n, id) { return Math.max(n, cells[id].row + cells[id].h - 1); }, 0);
+  }
+
+  // The cells behind the panels, and the layer above them for the drop target.
+  var bgEl = null, fxEl = null;
+  function layer(cls) {
+    var el = document.createElement('div');
+    el.className = cls;
+    el.setAttribute('aria-hidden', 'true');
+    return el;
+  }
+  function placeIn(el, c) {
+    el.style.gridColumn = c.col + ' / span ' + c.w;
+    el.style.gridRow = c.row + ' / span ' + c.h;
+  }
+  function drawBackground(layout) {
+    var grid = $('grid'), low = 0;
+    customPanels(layout).forEach(function (p) { if (p.pos) low = Math.max(low, p.pos[1] + (p.span || [1, 1])[1] - 1); });
+    // Panels put below the last row make the grid longer: it scrolls, rows keep the size of the others.
+    grid.classList.toggle('tall', low > layout.rows || editing);
+    if (low > layout.rows || editing) grid.style.setProperty('--auto-row', gridGeom().h + 'px'); else grid.style.removeProperty('--auto-row');
+    if (!editing) {
+      if (bgEl) { bgEl.remove(); fxEl.remove(); bgEl = fxEl = null; }
+      return;
+    }
+    if (!bgEl) { bgEl = layer('grid-bg'); fxEl = layer('grid-fx'); }
+    grid.insertBefore(bgEl, grid.firstChild); grid.appendChild(fxEl);
+    var g = gridGeom(), cells = readCells(g);
+    var rows = Math.min(MAX_ROWS, Math.max(layout.rows, bottomRow(cells) + 1));   // one spare row below
+    bgEl.style.gridTemplateRows = 'repeat(' + rows + ', ' + g.h + 'px)';
+    fxEl.style.gridTemplateRows = bgEl.style.gridTemplateRows;
+    var used = {};
+    Object.keys(cells).forEach(function (id) {
+      var c = cells[id];
+      for (var i = 0; i < c.w; i++) for (var j = 0; j < c.h; j++) used[(c.col + i) + ',' + (c.row + j)] = true;
+    });
+    var html = '';
+    for (var r = 1; r <= rows; r++) for (var q = 1; q <= layout.columns; q++) {
+      html += '<div class="bg-cell' + (used[q + ',' + r] ? '' : ' free') + '" style="grid-column:' + q + ';grid-row:' + r + '"><span class="coord">' + q + ',' + r + '</span></div>';
+    }
+    bgEl.innerHTML = html;
+  }
+  // Show where the panel would land: blue when it fits, red when it does not.
+  function showTarget(c, ok, text) {
+    fxEl.innerHTML = '<div class="drop-target' + (ok ? '' : ' bad') + '"><span class="badge">' + esc(text) + '</span></div>';
+    placeIn(fxEl.firstChild, c);
+  }
+
+  // Remember every panel's place (and the new size of one), then save.
+  function commitCells(cells, sizedId) {
+    var c = ensureCustom();
+    var ids = Object.keys(cells).sort(function (a, b) { return cells[a].row - cells[b].row || cells[a].col - cells[b].col; });
+    ids.forEach(function (id) { c.pos[id] = [cells[id].col, cells[id].row]; });
+    if (sizedId) c.span[sizedId] = [cells[sizedId].w, cells[sizedId].h];
+    commitOrder(ids);
+  }
+  function commitOrder(ids) {
+    var c = ensureCustom();
+    c.order = ids.concat((c.order || []).filter(function (x) { return ids.indexOf(x) < 0; }));
+    saveCustom();
+  }
+  function panelIds() {
+    return customPanels(snap.layout).map(function (p) { return p.id; });
+  }
+  function endGesture(commit) {
+    var g = gesture;
+    if (!g) return;
+    gesture = null;
+    document.body.classList.remove('gesturing');
+    g.finish(commit);
+    drawGrid();
+  }
+
+  // Pin every card to its cell for the length of a gesture, so taking one out of the
+  // flow does not move the others. Gives back a function that undoes it.
+  function pin(g, cells) {
+    var undo = [];
+    [].forEach.call($('grid').querySelectorAll('.card[data-id]'), function (el) {
+      var c = cells[el.getAttribute('data-id')];
+      undo.push([el, el.style.gridColumn, el.style.gridRow]);
+      placeIn(el, c);
+    });
+    return function () { undo.forEach(function (u) { u[0].style.gridColumn = u[1]; u[0].style.gridRow = u[2]; }); };
+  }
+
+  // Move: the grabbed card floats with the pointer; the cells it would take light up.
+  function startMove(grip, e) {
+    var card = grip.closest('.card[data-id]');
+    if (!card) return;
+    var id = card.getAttribute('data-id'), g = gridGeom(), cells = readCells(g), mine = cells[id];
+    var r = card.getBoundingClientRect(), grabX = e.clientX - r.left, grabY = e.clientY - r.top;
+    var unpin = pin(g, cells), best = null;
+    card.classList.add('lifted');
+    card.style.width = r.width + 'px'; card.style.height = r.height + 'px';
+    function track(x, y) {
+      // Near the top or bottom edge of the grid, scroll it so rows below (or above) can be reached.
+      var gb = $('grid').getBoundingClientRect(), grid = $('grid');
+      if (y > gb.bottom - 60) grid.scrollTop += 14; else if (y < gb.top + 60) grid.scrollTop -= 14;
+      card.style.left = (x - grabX) + 'px'; card.style.top = (y - grabY) + 'px';
+      var c = cellOfRect(g, { left: x - grabX, top: y - grabY, width: r.width, height: r.height });
+      c.w = mine.w; c.h = mine.h;
+      c.col = Math.max(1, Math.min(c.col, g.cols - c.w + 1)); c.row = Math.max(1, Math.min(c.row, MAX_ROWS - c.h + 1));
+      var ok = fits(g, cells, id, c);
+      best = ok ? c : null;
+      showTarget(c, ok, 'col ' + c.col + ', row ' + c.row);
+    }
+    track(e.clientX, e.clientY);
+    gesture = { pointer: e.pointerId, move: function (ev) { track(ev.clientX, ev.clientY); }, finish: function (commit) {
+      grip.releasePointerCapture && grip.releasePointerCapture(e.pointerId);
+      card.classList.remove('lifted');
+      card.style.width = card.style.height = card.style.left = card.style.top = '';
+      fxEl.innerHTML = '';
+      if (commit && best) { cells[id] = best; commitCells(cells); } else unpin();
+    } };
+    document.body.classList.add('gesturing');
+    grip.setPointerCapture && grip.setPointerCapture(e.pointerId);
+  }
+
+  // Resize: the corner follows the pointer and snaps to the cells; red when it would
+  // run into another panel. The panel itself changes when you let go.
+  function startResize(handle, e) {
+    var card = handle.closest('.card[data-id]');
+    if (!card) return;
+    var id = card.getAttribute('data-id'), g = gridGeom(), cells = readCells(g), mine = cells[id];
+    var r = card.getBoundingClientRect(), best = null;
+    handle.classList.add('on');
+    function track(x, y) {
+      var c = { col: mine.col, row: mine.row,
+        w: Math.max(1, Math.min(g.cols - mine.col + 1, Math.round((x - r.left + g.gx) / (g.w + g.gx)))),
+        h: Math.max(1, Math.min(MAX_ROWS - mine.row + 1, Math.round((y - r.top + g.gy) / (g.h + g.gy)))) };
+      var ok = fits(g, cells, id, c);
+      best = ok ? c : null;
+      showTarget(c, ok, c.w + ' × ' + c.h);
+    }
+    track(e.clientX, e.clientY);
+    gesture = { pointer: e.pointerId, move: function (ev) { track(ev.clientX, ev.clientY); }, finish: function (commit) {
+      handle.releasePointerCapture && handle.releasePointerCapture(e.pointerId);
+      handle.classList.remove('on');
+      fxEl.innerHTML = '';
+      if (commit && best && (best.w !== mine.w || best.h !== mine.h)) { cells[id] = best; commitCells(cells, id); }
+    } };
+    document.body.classList.add('gesturing');
+    handle.setPointerCapture && handle.setPointerCapture(e.pointerId);
+  }
+
+  document.addEventListener('pointerdown', function (e) {
+    if (!editing || gesture || (e.button && e.pointerType === 'mouse')) return;
+    var t = e.target.closest ? e.target : null;
+    var grip = t && t.closest('[data-grip]'), handle = t && t.closest('[data-resize]');
+    if (grip) { e.preventDefault(); startMove(grip, e); }
+    else if (handle) { e.preventDefault(); startResize(handle, e); }
   });
-  document.addEventListener('dragover', function (e) {
-    var el = e.target.closest ? e.target.closest('.card[data-id]') : null;
-    if (editing && dragId && el) { e.preventDefault(); }
+  document.addEventListener('pointermove', function (e) {
+    if (gesture && e.pointerId === gesture.pointer) { e.preventDefault(); gesture.move(e); }
   });
-  document.addEventListener('dragend', function () { dragId = null; var d = document.querySelector('.dragging'); if (d) d.classList.remove('dragging'); });
-  document.addEventListener('drop', function (e) {
-    var el = e.target.closest ? e.target.closest('.card[data-id]') : null;
-    if (!editing || !dragId || !el) return;
+  document.addEventListener('pointerup', function (e) { if (gesture && e.pointerId === gesture.pointer) endGesture(true); });
+  document.addEventListener('pointercancel', function (e) { if (gesture && e.pointerId === gesture.pointer) endGesture(false); });
+
+  // Keyboard: arrow keys on the grip move the panel one cell, on the handle they change its size.
+  document.addEventListener('keydown', function (e) {
+    if (gesture && e.key === 'Escape') { endGesture(false); return; }
+    if (!editing || !e.target.closest) return;
+    var grip = e.target.closest('[data-grip]'), handle = e.target.closest('[data-resize]');
+    var d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    if (!d || !(grip || handle)) return;
     e.preventDefault();
-    var c = ensureCustom(), target = el.getAttribute('data-id');
-    var order = customPanels(snap.layout).map(function (p) { return p.id; });
-    order.splice(order.indexOf(dragId), 1);
-    order.splice(order.indexOf(target) + (order.indexOf(target) < 0 ? 0 : 0), 0, dragId);
-    c.order = order; dragId = null; saveCustom(); drawGrid();
+    var id = (grip || handle).getAttribute(grip ? 'data-grip' : 'data-resize');
+    var g = gridGeom(), cells = readCells(g), c = cells[id];
+    if (!c) return;
+    var next = grip ? { col: c.col + d[0], row: c.row + d[1], w: c.w, h: c.h } : { col: c.col, row: c.row, w: c.w + d[0], h: c.h + d[1] };
+    if (next.w < 1 || next.h < 1 || !fits(g, cells, id, next)) return;
+    cells[id] = next;
+    commitCells(cells, handle ? id : null);
+    drawGrid();
+    var b = document.querySelector('[data-' + (grip ? 'grip' : 'resize') + '="' + id + '"]');
+    if (b) b.focus();
   });
 
   // The cards. Also redrawn every few seconds without a new snapshot, so a
   // "Done" job and a tinted row go away on time.
+  // The span and the place are in the key: a card is placed once, so a new size or place needs a new card.
+  function cardKey(panel) {
+    return panel.id + ':' + (panel.span || [1, 1]).join('x') + (panel.pos ? '@' + panel.pos.join(',') : '') + (editing ? ':e' : '');
+  }
   function drawGrid() {
+    if (gesture) return;
     var layout = snap.layout || { columns: 4, rows: 3, panels: [] };
     var grid = $('grid');
     grid.style.setProperty('--cols', layout.columns);
@@ -1153,19 +1388,20 @@
     grid.classList.toggle('editing', editing);
     shown.forEach(function (panel, i) {
       // The span is in the key: a card is placed once, so a new size needs a new card.
-      var key = panel.id + ':' + (panel.span || [1, 1]).join('x') + (editing ? ':e' : '');
+      var key = cardKey(panel);
       keep[key] = true;
       renderCard(key, panel, grid, i);
     });
     // Cards are placed in order, so the DOM order follows the layout.
     shown.forEach(function (panel) {
-      var entry = cards[panel.id + ':' + (panel.span || [1, 1]).join('x') + (editing ? ':e' : '')];
+      var entry = cards[cardKey(panel)];
       if (entry) grid.appendChild(entry.el);
     });
-    renderEditBar(layout);
     Object.keys(cards).forEach(function (key) {
       if (!keep[key]) { grid.removeChild(cards[key].el); delete cards[key]; }
     });
+    drawBackground(layout);
+    renderEditBar(layout);
   }
 
   // The sources bar: every source with its mark and state. Running jobs count
