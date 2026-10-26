@@ -467,6 +467,21 @@ fn every_default_query_covers_linux_and_windows() {
 }
 
 #[test]
+fn default_temperature_and_gpu_read_the_right_parts() {
+    let q = Queries::new(&config());
+    // The CPU sensor first, the hottest sensor only when there is none.
+    let (cpu, fallback) = q.cpu_temp_c.split_once(" or ").unwrap();
+    assert!(cpu.contains("chip_name=~\"coretemp|k10temp|zenpower|cpu_thermal\""));
+    assert!(cpu.contains("sensor=\"temp1\""));
+    assert_eq!(
+        fallback.trim(),
+        "max by (instance) (node_hwmon_temp_celsius)"
+    );
+    // Video encode/decode counts as GPU use, not only the shader cores.
+    assert!(q.gpu_pct.contains("DCGM_FI_DEV_(GPU|ENC|DEC)_UTIL"));
+}
+
+#[test]
 fn windows_host_reads_the_same_fields() {
     let host: HostConfig = toml::from_str("instance = \"win-a:9182\"").unwrap();
     let win = |v: f64| vec![sample(&[("instance", "win-a:9182")], v)];

@@ -75,6 +75,11 @@ const BACKOFF: [Duration; 3] = [
 /// virtual interfaces containers and VMs create.
 const VIRTUAL_NET_DEVICES: &str = "lo|veth.*|docker.*|br-.*|virbr.*|cni.*|flannel.*";
 
+/// hwmon drivers that measure the CPU itself: Intel `coretemp`, AMD
+/// `k10temp`/`zenpower` and Raspberry Pi `cpu_thermal`. Their `temp1` is the
+/// package (Intel) or Tctl (AMD) reading.
+const CPU_HWMON_CHIPS: &str = "coretemp|k10temp|zenpower|cpu_thermal";
+
 // ---------------------------------------------------------------------------
 // The source task
 // ---------------------------------------------------------------------------
@@ -203,10 +208,16 @@ impl Queries {
                  or 100 * (1 - avg by (instance) (rate(windows_cpu_time_total{mode=\"idle\"}[1m])))"
                     .into(),
             ),
-            // windows_exporter has no temperature sensor.
+            // The CPU sensor when the host has one; the hottest sensor only
+            // as a fallback, since that is often an NVMe drive, a GPU or a
+            // board sensor reporting junk. windows_exporter has no temperature sensor.
             cpu_temp_c: pick(
                 "cpu_temp_c",
-                "max by (instance) (node_hwmon_temp_celsius)".into(),
+                format!(
+                    "max by (instance) (node_hwmon_temp_celsius{{sensor=\"temp1\"}} \
+                     * on (instance, chip) group_left () node_hwmon_chip_names{{chip_name=~\"{CPU_HWMON_CHIPS}\"}}) \
+                     or max by (instance) (node_hwmon_temp_celsius)"
+                ),
             ),
             ram_pct: pick(
                 "ram_pct",
@@ -223,7 +234,12 @@ impl Queries {
                      / windows_logical_disk_size_bytes{{volume=\"{volume}\"}}))"
                 ),
             ),
-            gpu_pct: pick("gpu_pct", "max by (instance) (DCGM_FI_DEV_GPU_UTIL)".into()),
+            // The busiest engine: GPU_UTIL only counts the shader cores, so a
+            // GPU transcoding video on NVENC/NVDEC would read close to 0 %.
+            gpu_pct: pick(
+                "gpu_pct",
+                "max by (instance) ({__name__=~\"DCGM_FI_DEV_(GPU|ENC|DEC)_UTIL\"})".into(),
+            ),
             gpu_mem_pct: pick(
                 "gpu_mem_pct",
                 "100 * max by (instance) (DCGM_FI_DEV_FB_USED / (DCGM_FI_DEV_FB_USED + DCGM_FI_DEV_FB_FREE))"

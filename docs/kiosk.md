@@ -57,8 +57,9 @@ shows the newest items again.
 
 A host that reports a GPU gets **GPU** and **VRAM** bars and a **GPU temp** line on its card; hosts without a GPU show
 nothing extra. A GPU above 95 % puts the host in the "needs a look" group. Prometheus hosts read the figures from the
-NVIDIA DCGM exporter by default; `gpu_pct`, `gpu_mem_pct` and `gpu_temp_c` can be replaced per host under `queries`
-([install.md](install.md#prometheus-host-stats-and-containers)). Not yet tried on a real GPU.
+NVIDIA DCGM exporter by default; **GPU** is the busiest of the shader cores and the video encoder and decoder, so a
+host transcoding video shows as busy. `gpu_pct`, `gpu_mem_pct` and `gpu_temp_c` can be replaced per host under `queries`
+([install.md](install.md#prometheus-host-stats-and-containers)).
 
 ### Hosts: detailed or compact
 

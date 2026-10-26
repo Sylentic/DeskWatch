@@ -41,7 +41,7 @@ host shows everything it reports.
 | CPU, memory | yes | yes |
 | Disk | the `disk_mountpoint` (`/` by default) | the `C:` drive |
 | Uptime, network in and out | yes | yes |
-| Temperature | yes, when the machine has sensors | no, windows_exporter has none |
+| Temperature | the CPU sensor (`coretemp`, `k10temp`, `zenpower`, `cpu_thermal`), else the hottest sensor | no, windows_exporter has none |
 | Updates, restart needed | yes, see below | yes, see below |
 
 The PromQL for each field can be changed per source with `queries = { ... }`; the names are `cpu_pct`, `cpu_temp_c`, `ram_pct`,
