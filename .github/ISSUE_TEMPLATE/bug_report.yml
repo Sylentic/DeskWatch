@@ -17,7 +17,7 @@ body:
     id: version
     attributes:
       label: DeskWatch version
-      description: "The release you downloaded or the Docker image tag, for example 1.0.5."
+      description: "The release you downloaded or the Docker image tag, for example 1.0.6."
     validations:
       required: true
   - type: dropdown
