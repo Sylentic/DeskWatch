@@ -15,7 +15,7 @@ services:
     # The published image. `latest` is the newest release (never a
     # pre-release), so `docker compose pull` updates it; read the CHANGELOG
     # first. To stay on one version, put its number here instead, for
-    # example 1.0.7 (docs/docker.md, section 10).
+    # example 1.0.8 (docs/docker.md, section 10).
     image: ghcr.io/sylentic/deskwatch-bridge:latest
     #
     # To build from the source instead (for your own changes), replace the
