@@ -9,6 +9,14 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ### Fixed
 
+- **CPU temperature is the CPU again on Prometheus hosts.** The default query took the hottest sensor of the machine,
+  which is often an NVMe drive or a board sensor reporting junk (one showed 216 °C). It now reads the CPU's own sensor
+  (`coretemp`, `k10temp`, `zenpower` or `cpu_thermal`, `temp1`), like the bridge's own host card did before 1.0.7, and
+  only falls back to the hottest sensor on a host without one.
+- **GPU usage includes video encoding and decoding.** `DCGM_FI_DEV_GPU_UTIL` only counts the shader cores, so a GPU
+  transcoding on NVENC/NVDEC read about 4 % with its encoder at 100 %. The default `gpu_pct` is now the busiest of the
+  GPU, encoder and decoder.
+
 - **A red "not reachable" badge now says why, and a passing test clears it.** A single failed request (a timeout, a
   rate limit) turned a GitHub source red until its next poll, which after a failure is delayed by the backoff, even
   when Test connection already said ok. Setup now shows the last error under the badge (and as its tooltip), and a

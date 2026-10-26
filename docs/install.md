@@ -298,8 +298,11 @@ hosts = [
 so only names in `expect_containers` can be reported, and they must match the container name exactly. Each host
 gets a card on the dashboard and what is down is listed there. Hosts and containers that are down appear in the Containers list. GPU usage, VRAM and GPU temperature show on
 the card of any host that reports them: by default they are read from the NVIDIA DCGM exporter
-(`DCGM_FI_DEV_GPU_UTIL`, framebuffer used and free, `DCGM_FI_DEV_GPU_TEMP`), so add that exporter as a Prometheus
-target; otherwise replace `gpu_pct`, `gpu_mem_pct` and `gpu_temp_c` under `queries`. Not yet tried on a real GPU.
+(usage is the busiest of `DCGM_FI_DEV_GPU_UTIL`, `DCGM_FI_DEV_ENC_UTIL` and `DCGM_FI_DEV_DEC_UTIL`, so video
+transcoding counts; framebuffer used and free; `DCGM_FI_DEV_GPU_TEMP`), so add that exporter as a Prometheus
+target; otherwise replace `gpu_pct`, `gpu_mem_pct` and `gpu_temp_c` under `queries`. Tested on a GeForce card, where
+these basic DCGM fields work. The temperature is the CPU's own sensor (`coretemp`, `k10temp`, `zenpower` or
+`cpu_thermal`), or the hottest sensor on a host without one.
 The PromQL for each field is in `bridge/src/prometheus/mod.rs` and can be replaced per field
 with `queries`.
 
