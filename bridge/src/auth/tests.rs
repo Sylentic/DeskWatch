@@ -548,7 +548,7 @@ async fn each_user_keeps_their_own_layout() {
         .ok()
         .unwrap()
         .1;
-    let mine = r#"{"order":["jobs#1","hosts#1"],"hidden":["alerts#1"],"span":{"hosts#1":[1,2]}}"#;
+    let mine = r#"{"order":["jobs#1","hosts#1"],"hidden":["alerts#1"],"span":{"hosts#1":[1,2]},"pos":{"hosts#1":[3,2]}}"#;
 
     // Nothing saved yet.
     let (s, j) = layout_call(&auth, "GET", "/api/auth/layout", &vera, None).await;
@@ -569,8 +569,12 @@ async fn each_user_keeps_their_own_layout() {
         .1;
     let (_, j) = layout_call(&again, "GET", "/api/auth/layout", &token, None).await;
     assert_eq!(j["layout"]["span"]["hosts#1"][1], 2);
+    assert_eq!(j["layout"]["pos"]["hosts#1"][0], 3);
     // Sizes out of range are refused; reset gives the default back.
     let bad = r#"{"span":{"hosts#1":[0,99]}}"#;
+    let (s, _) = layout_call(&auth, "PUT", "/api/auth/layout", &vera, Some(bad)).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let bad = r#"{"pos":{"hosts#1":[1,13]}}"#;
     let (s, _) = layout_call(&auth, "PUT", "/api/auth/layout", &vera, Some(bad)).await;
     assert_eq!(s, StatusCode::BAD_REQUEST);
     let (s, _) = layout_call(&auth, "POST", "/api/auth/layout/reset", &vera, None).await;

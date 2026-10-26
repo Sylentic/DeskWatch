@@ -568,6 +568,7 @@ a.link:active { background: rgba(255, 255, 255, .08); }
 .edit-bar[hidden] { display: none; }
 .edit-bar .t { font-weight: 600; }
 .edit-bar .hint { color: var(--dim); font-size: 0.85rem; }
+.edit-bar .hint .warn { color: var(--amber); font-weight: 600; }
 .edit-bar .cells { margin-left: auto; font-family: var(--mono); font-size: 0.8rem; color: var(--dim); }
 .edit-bar .cells.over { color: var(--amber); }
 .edit-bar button { font: inherit; font-size: 0.85rem; color: var(--text); background: transparent; border: 1px solid var(--track); border-radius: 0.5rem; padding: 0.35rem 0.8rem; cursor: pointer; }
@@ -587,10 +588,23 @@ body.gesturing { user-select: none; -webkit-user-select: none; }
 body.gesturing, body.gesturing * { cursor: grabbing !important; }
 .grid.editing .card.lifted { position: fixed; z-index: 30; margin: 0; pointer-events: none; transform: rotate(-1.5deg) scale(1.02);
   box-shadow: 0 1.2rem 2.5rem rgba(0, 0, 0, .55); outline: 2px solid #5aa9ff; }
-.drop-slot { border: 2px dashed #5aa9ff; border-radius: 1rem; background: color-mix(in srgb, #5aa9ff 12%, transparent); display: grid; place-items: center;
-  color: #5aa9ff; font-family: var(--mono); letter-spacing: 0.1em; text-transform: uppercase; min-height: 0; }
-.resize-ghost { position: fixed; z-index: 29; pointer-events: none; border: 2px dashed #5aa9ff; border-radius: 1rem; background: color-mix(in srgb, #5aa9ff 14%, transparent); transition: width .08s, height .08s; }
-.resize-ghost .badge { position: absolute; right: 0.8rem; bottom: 0.8rem; padding: 0.3rem 0.7rem; border-radius: 2rem; background: #5aa9ff; color: #0b1220; font-family: var(--mono); font-weight: 700; }
+.grid.editing { position: relative; }
+.grid.tall { overflow-y: auto; scrollbar-width: none; grid-template-rows: repeat(var(--rows, 3), var(--auto-row, 14rem)); grid-auto-rows: var(--auto-row, 14rem); }
+.grid.tall::-webkit-scrollbar { display: none; }
+.grid-bg, .grid-fx { position: absolute; inset: 0; display: grid; padding: inherit; gap: inherit; pointer-events: none;
+  grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); grid-template-rows: repeat(var(--rows, 3), minmax(0, 1fr)); }
+.grid-bg { z-index: 0; }
+.grid-fx { z-index: 5; }
+.bg-cell { position: relative; border: 1px dashed color-mix(in srgb, var(--text) 22%, transparent); border-radius: 0.9rem;
+  background: color-mix(in srgb, var(--text) 3%, transparent); display: grid; place-items: center; }
+.bg-cell .coord { position: absolute; left: 0.6rem; top: 0.45rem; color: var(--dim); opacity: .7; font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.08em; }
+.bg-cell.free { border-color: color-mix(in srgb, var(--text) 35%, transparent); }
+.bg-cell.free::after { content: "+"; font-size: 1.6rem; color: var(--dim); }
+.drop-target { position: relative; border: 2px solid #5aa9ff; border-radius: 1rem; background: color-mix(in srgb, #5aa9ff 16%, transparent); }
+.drop-target.bad { border-color: #ff6b6b; background: color-mix(in srgb, #ff6b6b 16%, transparent); }
+.drop-target .badge { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 0.3rem 0.8rem; border-radius: 2rem;
+  background: #5aa9ff; color: #0b1220; font-family: var(--mono); font-weight: 700; white-space: nowrap; }
+.drop-target.bad .badge { background: #ff6b6b; }
 .edit-veil { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.6rem;
   background: color-mix(in srgb, var(--card) 80%, transparent); color: var(--dim); font-family: var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
 .edit-veil button { font: inherit; color: var(--text); background: transparent; border: 1px solid var(--track); border-radius: 0.5rem; padding: 0.35rem 0.9rem; cursor: pointer; }
