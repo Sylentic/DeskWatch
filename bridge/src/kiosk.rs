@@ -108,7 +108,7 @@ impl Kiosk {
     pub fn new(config: &KioskConfig) -> Self {
         let layout = layout_json(config);
         let first =
-            json!({ "v": SNAPSHOT_VERSION, "build": env!("CARGO_PKG_VERSION"), "layout": layout });
+            json!({ "v": SNAPSHOT_VERSION, "build": crate::build_label(), "layout": layout });
         let (tx, _) = watch::channel(Frame::from(first.to_string()));
         Self {
             layout,
@@ -154,7 +154,7 @@ impl Kiosk {
     /// Send the layout again as the first snapshot (before any real one).
     fn send_layout(&self) {
         let first = json!({
-            "v": SNAPSHOT_VERSION, "build": env!("CARGO_PKG_VERSION"), "layout": self.layout
+            "v": SNAPSHOT_VERSION, "build": crate::build_label(), "layout": self.layout
         });
         self.tx.send_replace(Frame::from(first.to_string()));
     }
@@ -446,7 +446,7 @@ pub fn snapshot(
 
     let mut out = Map::new();
     out.insert("v".into(), json!(SNAPSHOT_VERSION));
-    out.insert("build".into(), json!(env!("CARGO_PKG_VERSION")));
+    out.insert("build".into(), json!(crate::build_label()));
     out.insert("layout".into(), layout.clone());
     out.insert("screen".into(), screen);
     out.insert("badges".into(), json!(badges.items));

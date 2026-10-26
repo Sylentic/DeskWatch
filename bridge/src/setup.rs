@@ -1242,7 +1242,7 @@ pub fn describe(config: &Config) -> Value {
     };
     json!({
         "v": 1,
-        "build": env!("CARGO_PKG_VERSION"),
+        "build": crate::build_label(),
         "data_folder": config.data_dir().map(|d| d.display().to_string()),
         "http_listen": config.http.listen.to_string(),
         "mqtt": {

@@ -64,8 +64,11 @@ RUN printf '%s\n' \
 COPY bridge ./bridge
 # Copied files can be older than the stand-in build, and cargo decides what to
 # rebuild by modification time, so touch them to make the real code recompile.
+# Only the `:dev` image passes a commit here (a release build leaves it empty),
+# and the version shown in the app then reads e.g. `1.0.5-dev (abc1234)`.
+ARG DESKWATCH_DEV_BUILD=""
 RUN find bridge/src -name '*.rs' -exec touch {} + \
-    && /build.sh \
+    && DESKWATCH_DEV_BUILD="$DESKWATCH_DEV_BUILD" /build.sh \
     && cp "target/$(cat /rust-target)/release/deskwatch-bridge" /deskwatch-bridge
 
 # The runtime image's user entry (uid 10001, no shell, no home).
