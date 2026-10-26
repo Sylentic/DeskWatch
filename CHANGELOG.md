@@ -14,6 +14,10 @@ All notable changes to DeskWatch are listed here. The format follows
 - **Stay signed in for 30 days.** A box under the password on the sign-in page (off by default, also for GitHub and
   Microsoft sign-in) makes that session last 30 days from the sign-in, whatever the idle time. Use it only on your own
   devices; **Sign out everywhere** on My account ends it.
+- **Security updates next to pending updates.** A host card shows `21 (13 security)` and turns amber when at least one
+  is a security update. It reads the origins of apt's `node_apt_upgrades_pending` or the new optional
+  `deskwatch_updates_security` metric; the Windows and Fedora scripts in docs/hosts.md write it. Without it the card
+  shows just the total. The Setup host list shows it too.
 
 ### Fixed
 

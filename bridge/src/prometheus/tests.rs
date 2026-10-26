@@ -64,6 +64,10 @@ async fn mock_prometheus(queries: &Queries, mock: Arc<Mock>) -> String {
             include_str!("testdata/updates.json"),
         ),
         (
+            queries.updates_security.clone(),
+            include_str!("testdata/updates_security.json"),
+        ),
+        (
             queries.reboot_needed.clone(),
             include_str!("testdata/reboot_needed.json"),
         ),
@@ -164,6 +168,7 @@ async fn collects_stats_for_every_host() {
     assert_eq!(stats.gpu_temp_c, Some(66.4));
     assert_eq!(stats.uptime_s, Some(1_234_567));
     assert_eq!(stats.updates, Some(12));
+    assert_eq!(stats.updates_security, Some(5));
     assert_eq!(stats.reboot_needed, Some(true));
     let net = stats.net.as_ref().unwrap();
     assert_eq!(net.iface, "eth0", "the busiest device wins");
@@ -175,10 +180,17 @@ async fn collects_stats_for_every_host() {
     assert!(!nas.up);
     assert_eq!(nas.stats.cpu_pct, None);
     assert_eq!(nas.stats.net, None);
-    assert_eq!((nas.stats.updates, nas.stats.reboot_needed), (None, None));
+    assert_eq!(
+        (
+            nas.stats.updates,
+            nas.stats.updates_security,
+            nas.stats.reboot_needed
+        ),
+        (None, None, None)
+    );
 
     // One query per field, not per host, and the token went with each.
-    assert_eq!(mock.queries.lock().unwrap().len(), 14);
+    assert_eq!(mock.queries.lock().unwrap().len(), 15);
     assert!(
         mock.auth
             .lock()
@@ -312,7 +324,7 @@ async fn skips_container_query_without_expectations() {
     let report = collect(&api, &queries, &config.hosts, &mut Slow::default())
         .await
         .unwrap();
-    assert_eq!(mock.queries.lock().unwrap().len(), 13);
+    assert_eq!(mock.queries.lock().unwrap().len(), 14);
     // Only the dead host is down.
     assert_eq!(report.down.len(), 1);
     assert!(mock.auth.lock().unwrap().iter().all(Option::is_none));
@@ -482,6 +494,16 @@ fn default_temperature_and_gpu_read_the_right_parts() {
 }
 
 #[test]
+fn default_security_updates_read_apt_origins_and_the_textfile() {
+    let q = Queries::new(&config());
+    assert!(
+        q.updates_security
+            .contains("node_apt_upgrades_pending{origin=~")
+    );
+    assert!(q.updates_security.contains("deskwatch_updates_security"));
+}
+
+#[test]
 fn windows_host_reads_the_same_fields() {
     let host: HostConfig = toml::from_str("instance = \"win-a:9182\"").unwrap();
     let win = |v: f64| vec![sample(&[("instance", "win-a:9182")], v)];
@@ -490,6 +512,7 @@ fn windows_host_reads_the_same_fields() {
         cpu_pct: win(20.0),
         ram_pct: win(55.5),
         updates: win(3.0),
+        updates_security: win(1.0),
         reboot_needed: win(0.0),
         ..Answers::default()
     };
@@ -497,6 +520,7 @@ fn windows_host_reads_the_same_fields() {
     assert_eq!(stats.cpu_pct, Some(20.0));
     assert_eq!(stats.ram_pct, Some(55.5));
     assert_eq!(stats.updates, Some(3));
+    assert_eq!(stats.updates_security, Some(1));
     assert_eq!(stats.reboot_needed, Some(false));
     assert_eq!(
         stats.cpu_temp_c, None,
@@ -515,13 +539,14 @@ async fn updates_are_asked_rarely() {
     collect(&api, &queries, &config.hosts, &mut slow)
         .await
         .unwrap();
-    assert_eq!(mock.queries.lock().unwrap().len(), 14);
+    assert_eq!(mock.queries.lock().unwrap().len(), 15);
     // The next round skips both update queries but still reports the numbers.
     let report = collect(&api, &queries, &config.hosts, &mut slow)
         .await
         .unwrap();
-    assert_eq!(mock.queries.lock().unwrap().len(), 14 + 12);
+    assert_eq!(mock.queries.lock().unwrap().len(), 15 + 12);
     assert_eq!(report.hosts[0].stats.updates, Some(12));
+    assert_eq!(report.hosts[0].stats.updates_security, Some(5));
 }
 
 #[test]
@@ -538,6 +563,10 @@ fn discovery_lists_linux_and_windows_machines_only() {
         (
             "updates",
             vec![sample(&[("instance", "office-pc:9182")], 3.0)],
+        ),
+        (
+            "updates_security",
+            vec![sample(&[("instance", "office-pc:9182")], 2.0)],
         ),
         (
             "reboot",
@@ -560,6 +589,8 @@ fn discovery_lists_linux_and_windows_machines_only() {
     assert_eq!(found[0].updates, None);
     assert_eq!(found[1].kind, "windows");
     assert_eq!(found[1].updates, Some(3));
+    assert_eq!(found[1].updates_security, Some(2));
+    assert_eq!(found[0].updates_security, None);
     assert_eq!(found[1].reboot_needed, Some(true));
 }
 
@@ -574,12 +605,14 @@ fn a_host_card_leaves_out_what_the_host_does_not_show() {
         ram_pct: at(50.0),
         disk_pct: at(60.0),
         updates: at(4.0),
+        updates_security: at(2.0),
         reboot_needed: at(1.0),
         ..Answers::default()
     };
     let stats = host_stats(&host, &answers);
     assert_eq!(stats.cpu_pct, Some(20.0));
     assert_eq!(stats.updates, Some(4));
+    assert_eq!(stats.updates_security, Some(2));
     assert_eq!((stats.ram_pct, stats.disk_pct), (None, None));
     assert_eq!(stats.reboot_needed, None);
     assert!(stats.hide.contains(&"memory".to_string()));

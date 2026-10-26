@@ -108,6 +108,7 @@ fn fake_fleet(composer: &mut Composer, now: u64) {
             ram_pct: Some(ram.round()),
             disk_pct: Some(disk),
             updates: Some(updates),
+            updates_security: Some(updates / 2),
             reboot_needed: Some(updates > 10),
             ..Default::default()
         },
@@ -185,6 +186,7 @@ pub fn stats(now: u64) -> StatsData {
             tx_bps: Some((8_000.0 + 120_000.0 * wave(11.0, 0.5)) as u64),
         }),
         updates: Some(7),
+        updates_security: None,
         reboot_needed: Some(false),
         hide: Vec::new(),
     }
