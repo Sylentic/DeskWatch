@@ -723,7 +723,7 @@ async fn save_kiosk(
     );
     json_response(
         StatusCode::OK,
-        json!({ "saved": true, "id": "kiosk", "restart_needed": true }),
+        json!({ "saved": true, "id": "kiosk", "applied": true, "restart_needed": true }),
     )
 }
 

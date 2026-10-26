@@ -13,6 +13,12 @@ All notable changes to DeskWatch are listed here. The format follows
   stats** switch under **Dashboard hosts** on the setup page (it applies after a restart). For a bridge in Docker
   whose Prometheus source already covers the machine, so the container's own numbers no longer show as a second host.
 - **A red GPU line on the CPU graph** of a host that reports a GPU, on the same 0 to 100 % scale.
+### Fixed
+
+- **Setup no longer shows an error after saving the Dashboard hosts view.** Changing Detailed to Compact (or back)
+  was saved correctly, but the page said "Saved, but kiosk could not be started" because the answer did not say it
+  was applied. It now shows the normal "Restart now" notice; the restart itself is expected, as the layout is built
+  at startup.
 
 ## [1.0.5]
 

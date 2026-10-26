@@ -352,7 +352,8 @@
 
   // What to tell after a save: it runs now, or it is saved but could not start.
   function applyNotice(j) {
-    if (j.applied) return null;
+    // Only a save that reports applied: false failed; settings that wait for a restart say nothing.
+    if (j.applied !== false) return null;
     return 'Saved, but ' + j.id + ' could not be started: ' + (j.apply_error || 'unknown reason') + '. Restart the bridge to try again.';
   }
 
