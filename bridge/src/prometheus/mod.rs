@@ -468,5 +468,5 @@ fn percent(value: f64) -> f32 {
 }
 
 fn round1(value: f64) -> f32 {
-    crate::stats::round1(value)
+    ((value * 10.0).round() / 10.0) as f32
 }

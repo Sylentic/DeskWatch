@@ -6,7 +6,6 @@
 //!
 //! - every second, and after every event, the kiosk page gets a fresh snapshot
 //!   of what the composer knows;
-//! - every `server.interval_s` the local stats are sampled;
 //! - each `[[source.*]]` block runs as its own task and sends fact updates
 //!   and its health as `SourceMsg`s;
 //! - alerts arrive from the MQTT task and `POST /api/alert` as `Inbound`s.
@@ -32,7 +31,6 @@ use deskwatch_bridge::kiosk::Kiosk;
 use deskwatch_bridge::mqtt::{self, Inbound};
 use deskwatch_bridge::setup::Setup;
 use deskwatch_bridge::source::unix_now;
-use deskwatch_bridge::stats::StatsCollector;
 use deskwatch_bridge::store::Store;
 use deskwatch_bridge::supervisor::Supervisor;
 
@@ -332,7 +330,9 @@ async fn main() -> Result<()> {
         None
     };
 
-    let mut collector = StatsCollector::new(&config.server);
+    if config.server.enabled {
+        warn!("[server] enabled = true does nothing any more: the bridge no longer reads its own machine. Add it as a Prometheus host (docs/hosts.md)");
+    }
     let mut composer;
     let mut demo = None;
     if args.demo {
@@ -344,7 +344,6 @@ async fn main() -> Result<()> {
         composer.alerts = Alerts::new(config.alerts.clone());
     }
 
-    let mut stats_ticker = tokio::time::interval(Duration::from_secs(config.server.interval_s));
     let mut compose_ticker = tokio::time::interval(COMPOSE_INTERVAL);
     let mut shutdown = Shutdown::new()?;
     // The setup page's restart button (only when `[setup] allow_restart`).
@@ -352,7 +351,6 @@ async fn main() -> Result<()> {
     let mut restarting = false;
     loop {
         tokio::select! {
-            _ = stats_ticker.tick(), if demo.is_none() && config.server.enabled => composer.set_stats(collector.collect()),
             _ = compose_ticker.tick() => {}
             Some(msg) = source_rx.recv() => composer.apply(msg, unix_now()),
             Some(msg) = inbound_rx.recv() => match msg {

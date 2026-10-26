@@ -654,24 +654,3 @@ fn github_switches_between_token_and_app() {
     assert!(plan2.text.contains("token_file"));
     assert!(!plan2.text.contains("app_id") && !plan2.text.contains("private_key_file"));
 }
-
-#[test]
-fn the_local_host_switch_is_saved_and_the_config_accepts_it() {
-    let text = set_server("", false).unwrap();
-    assert!(
-        text.contains("[server]") && text.contains("enabled = false"),
-        "{text}"
-    );
-    let config = crate::config::Config::from_toml("")
-        .unwrap()
-        .with_overlay(&text)
-        .unwrap();
-    assert!(!config.server.enabled);
-    // It keeps what else the file holds, and turning it on again just flips the key.
-    let both = set_server(&set_updates("", false).unwrap(), false).unwrap();
-    let again = set_server(&both, true).unwrap();
-    assert!(
-        again.contains("check = false") && again.contains("enabled = true"),
-        "{again}"
-    );
-}
