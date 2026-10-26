@@ -5,6 +5,13 @@ All notable changes to DeskWatch are listed here. The format follows
 [Semantic Versioning](https://semver.org/). From 1.0.0 on, a change that breaks an existing bridge config file or the
 `POST /api/alert` format needs a new major version.
 
+## [Unreleased]
+
+### Changed
+
+- **Passed and skipped stages clean up.** In Running now, a stage of a run that is still going disappears 30 seconds
+  after it passed or was skipped, so running and failed stages stand out.
+
 ## [1.0.7]
 
 **Heads up:** the bridge no longer reads its own machine. If you relied on that and have no Prometheus, the host card

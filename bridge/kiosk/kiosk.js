@@ -508,6 +508,18 @@
     return '';
   }
 
+  // A passed or skipped job of a run that is still going leaves the list DONE_S
+  // after it ended, so the running and failed ones stand out. Skipped jobs often
+  // have no end time, so the first time this page saw the job ended counts then.
+  var laneSeen = {};
+  function laneGone(group, l) {
+    var st = runStatus(l.status);
+    if (st !== 'ok' && st !== 'neutral') return false;
+    var key = group + '\n' + l.name, now = nowS();
+    if (laneSeen[key] === undefined) laneSeen[key] = l.finished || now;
+    return now - laneSeen[key] >= DONE_S;
+  }
+
   function runGroup(g) {
     var j = g.jobs[0];
     var started = Math.min.apply(null, g.jobs.map(function (x) { return x.started; }));
@@ -517,7 +529,7 @@
     if (g.lanes && g.lanes.length) {
       var finished = g.lanes.filter(function (l) { return l.status === 'success' || l.status === 'failed' || l.status === 'neutral'; }).length;
       sum = (g.lanes.length > 1 ? finished + ' of ' + g.lanes.length + ' done &middot; ' : '') + since;
-      rows = g.lanes.map(function (l) {
+      rows = g.lanes.filter(function (l) { return !laneGone(j.group, l); }).map(function (l) {
         var st = runStatus(l.status);
         var bar = st !== 'running' ? '' : l.progress == null ? '<span class="pbar spin"><i></i></span>' :
           '<span class="pbar"><i style="--p:' + Math.round(l.progress * 100) + '%"></i></span>';
