@@ -9,6 +9,8 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ### Added
 
+- **The `:dev` image shows it is a dev build.** The version on the setup page now reads e.g. `1.0.5-dev (abc1234)`
+  instead of the plain number. Release images are unchanged.
 - **Smoother customizing.** Moving a panel now shows a floating panel and a dashed drop slot while the others make
   room, and resizing is done by dragging a corner handle that snaps to the grid and shows the size. Both work with the
   mouse and with touch, and from the keyboard. This replaces the small W, H and arrow buttons (#165).
