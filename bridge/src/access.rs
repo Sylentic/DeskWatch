@@ -11,7 +11,8 @@
 //! carries forwarding headers is judged by the address the proxy saw: the
 //! last entry of `X-Forwarded-For`, which is the one the nearest proxy added
 //! (entries before it can be made up by the client). A forwarding header that
-//! cannot be read is refused.
+//! cannot be read is refused. Forwarding headers are only read from a peer
+//! that is itself local: a public peer is judged by its own address.
 
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
@@ -70,7 +71,14 @@ pub fn is_local(ip: IpAddr) -> bool {
 
 /// The address the request came from, looking through one proxy. `None` when
 /// a forwarding header is present but cannot be read.
+///
+/// Only a peer on the local network counts as a proxy. A public peer is the
+/// client itself, whatever it puts in `X-Forwarded-For`: otherwise a bridge
+/// reachable without a proxy would take a made-up LAN address at its word.
 pub(crate) fn client_ip(peer: IpAddr, headers: &HeaderMap) -> Option<IpAddr> {
+    if !is_local(peer) {
+        return Some(peer);
+    }
     if let Some(value) = headers.get("x-forwarded-for") {
         let last = value.to_str().ok()?.rsplit(',').next()?.trim();
         return last.parse::<IpAddr>().ok();

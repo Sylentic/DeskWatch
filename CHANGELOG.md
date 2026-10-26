@@ -5,6 +5,15 @@ All notable changes to DeskWatch are listed here. The format follows
 [Semantic Versioning](https://semver.org/). From 1.0.0 on, a change that breaks an existing bridge config file or the
 `POST /api/alert` format needs a new major version.
 
+## [Unreleased]
+
+### Security
+
+- **A forwarded address only counts from a proxy on the local network.** The bridge read `X-Forwarded-For` from any
+  client, so a bridge reachable without a proxy took a made-up LAN address at its word: such a client could open the
+  setup page and `POST /api/alert`, set the first-run password and get round the per-address limit on wrong passwords.
+  A public client is now judged by its own address. Behind a proxy on the local network nothing changes.
+
 ## [1.0.7]
 
 **Heads up:** the bridge no longer reads its own machine. If you relied on that and have no Prometheus, the host card
