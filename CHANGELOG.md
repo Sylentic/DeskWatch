@@ -5,7 +5,10 @@ All notable changes to DeskWatch are listed here. The format follows
 [Semantic Versioning](https://semver.org/). From 1.0.0 on, a change that breaks an existing bridge config file or the
 `POST /api/alert` format needs a new major version.
 
-## [Unreleased]
+## [1.0.7]
+
+**Heads up:** the bridge no longer reads its own machine. If you relied on that and have no Prometheus, the host card
+is gone after this update; see "Changed" below.
 
 ### Added
 
