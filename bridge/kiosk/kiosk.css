@@ -573,17 +573,24 @@ a.link:active { background: rgba(255, 255, 255, .08); }
 .edit-bar button { font: inherit; font-size: 0.85rem; color: var(--text); background: transparent; border: 1px solid var(--track); border-radius: 0.5rem; padding: 0.35rem 0.8rem; cursor: pointer; }
 .edit-bar button:disabled { opacity: .4; cursor: default; }
 .edit-bar button.primary { background: var(--text); color: var(--card); border-color: var(--text); }
-.grid.editing .card { position: relative; outline: 1px dashed var(--track); outline-offset: -1px; cursor: grab; }
-.grid.editing .card.dragging { opacity: .4; }
+.grid.editing .card { position: relative; outline: 1px dashed var(--track); outline-offset: -1px; }
 .grid.editing .card .body { pointer-events: none; opacity: .55; }
-.edit-tools { position: absolute; left: 0.6rem; right: 0.6rem; bottom: 0.6rem; display: flex; align-items: center; gap: 0.3rem; padding: 0.35rem 0.5rem;
-  background: var(--card-hi); border: 1px solid var(--track); border-radius: 0.6rem; font-family: var(--mono); font-size: 0.75rem; flex-wrap: wrap; }
-.edit-tools .grip { color: var(--dim); font-size: 1rem; margin-right: 0.2rem; }
-.edit-tools .gap { flex: 1; }
-.edit-tools .sz { color: var(--dim); margin-left: 0.3rem; }
-.edit-tools .n { min-width: 0.9rem; text-align: center; }
-.edit-tools button { min-width: 1.7rem; height: 1.7rem; font: inherit; color: var(--text); background: transparent; border: 1px solid var(--track); border-radius: 0.4rem; cursor: pointer; }
-.edit-tools button:hover { background: var(--card); }
+.edit-grip, .edit-x, .edit-resize { position: absolute; z-index: 3; font: inherit; color: var(--dim); background: var(--card-hi); border: 1px solid var(--track); cursor: pointer; touch-action: none; }
+.edit-grip { top: 0.5rem; left: 50%; transform: translateX(-50%); padding: 0.25rem 0.8rem; border-radius: 2rem; font-family: var(--mono); font-size: 0.75rem; cursor: grab; white-space: nowrap; }
+.edit-x { top: 0.5rem; right: 0.5rem; width: 1.9rem; height: 1.9rem; border-radius: 0.55rem; color: var(--text); }
+.edit-resize { right: 0.55rem; bottom: 0.55rem; width: 1.9rem; height: 1.9rem; border-radius: 0.55rem; display: grid; place-items: center; cursor: nwse-resize; }
+.edit-resize svg { width: 0.95rem; height: 0.95rem; }
+.edit-grip:hover, .edit-x:hover, .edit-resize:hover { color: var(--text); }
+.edit-grip:focus-visible, .edit-x:focus-visible, .edit-resize:focus-visible { outline: 2px solid #5aa9ff; outline-offset: 2px; }
+.edit-resize.on { background: #5aa9ff; border-color: #5aa9ff; color: #0b1220; box-shadow: 0 0 0 4px color-mix(in srgb, #5aa9ff 25%, transparent); }
+body.gesturing { user-select: none; -webkit-user-select: none; }
+body.gesturing, body.gesturing * { cursor: grabbing !important; }
+.grid.editing .card.lifted { position: fixed; z-index: 30; margin: 0; pointer-events: none; transform: rotate(-1.5deg) scale(1.02);
+  box-shadow: 0 1.2rem 2.5rem rgba(0, 0, 0, .55); outline: 2px solid #5aa9ff; }
+.drop-slot { border: 2px dashed #5aa9ff; border-radius: 1rem; background: color-mix(in srgb, #5aa9ff 12%, transparent); display: grid; place-items: center;
+  color: #5aa9ff; font-family: var(--mono); letter-spacing: 0.1em; text-transform: uppercase; min-height: 0; }
+.resize-ghost { position: fixed; z-index: 29; pointer-events: none; border: 2px dashed #5aa9ff; border-radius: 1rem; background: color-mix(in srgb, #5aa9ff 14%, transparent); transition: width .08s, height .08s; }
+.resize-ghost .badge { position: absolute; right: 0.8rem; bottom: 0.8rem; padding: 0.3rem 0.7rem; border-radius: 2rem; background: #5aa9ff; color: #0b1220; font-family: var(--mono); font-weight: 700; }
 .edit-veil { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.6rem;
   background: color-mix(in srgb, var(--card) 80%, transparent); color: var(--dim); font-family: var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
 .edit-veil button { font: inherit; color: var(--text); background: transparent; border: 1px solid var(--track); border-radius: 0.5rem; padding: 0.35rem 0.9rem; cursor: pointer; }

@@ -127,11 +127,18 @@ changeable on the [setup page](setup-page.md#alerts).
 
 ### Customize your own dashboard
 
-The grid icon in the header (next to the cogwheel for Setup) starts **edit mode**. Every panel gets a strip with a drag
-handle, arrows (move earlier or later, for touch screens), **W** and **H** (width and height in grid cells, up to the
-size of the grid) and an x to hide it. A hidden panel leaves the grid and waits under **Hidden panels** in the bar on top;
-click it there to bring it back. The bar counts the cells in use (`10 of 12`) and has **Reset to default**. **Done**
-leaves edit mode.
+The grid icon in the header (next to the cogwheel for Setup) starts **edit mode**. Every panel gets a **Drag to move**
+grip on top, an x to hide it and a resize handle in the bottom right corner.
+
+- **Move:** drag the grip with the mouse or a finger. The panel floats with the pointer, a dashed **Drop here** slot shows
+  where it lands and the other panels make room as you go. Esc cancels.
+- **Resize:** drag the corner handle. A dashed outline snaps to the grid cells and shows the size (`2 × 1`); the panel
+  changes when you let go. A panel can be as large as the grid.
+- **Keyboard:** focus the grip and use the arrow keys to move the panel earlier or later; focus the handle and use the
+  arrow keys to change its width and height.
+
+A hidden panel leaves the grid and waits under **Hidden panels** in the bar on top; click it there to bring it back. The
+bar counts the cells in use (`10 of 12`) and has **Reset to default**. **Done** leaves edit mode.
 
 The administrator's layout (the built-in one or your `[[kiosk.panel]]` blocks) stays the default. A user only stores the
 difference, so a panel the administrator adds later still shows up (at the end). Panels flow in order on the grid, so
