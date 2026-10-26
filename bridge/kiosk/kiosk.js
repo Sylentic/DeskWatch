@@ -559,7 +559,6 @@
       var el = document.createElement('section');
       el.setAttribute('data-key', key);
       el.setAttribute('data-id', panel.id);
-      if (editing) el.setAttribute('draggable', 'true');
       var span = panel.span || [1, 1];
       el.style.gridColumn = 'span ' + span[0];
       el.style.gridRow = 'span ' + span[1];
@@ -1078,15 +1077,15 @@
     return customPanels(layout).filter(function (p) { return !p.hidden; })
       .reduce(function (n, p) { var s = p.span || [1, 1]; return n + s[0] * s[1]; }, 0);
   }
-  function editControls(panel, pos) {
-    var s = panel.span || [1, 1];
-    var b = function (act, label, title) { return '<button type="button" data-edit="' + act + '" data-id="' + esc(panel.id) + '" title="' + title + '" aria-label="' + title + '">' + label + '</button>'; };
-    return '<div class="edit-tools"><span class="grip" title="Drag to move">&#10303;</span>' +
-      b('earlier', '&lsaquo;', 'Move earlier') + b('later', '&rsaquo;', 'Move later') +
-      '<span class="gap"></span>' +
-      '<span class="sz">W</span>' + b('w-', '&minus;', 'Narrower') + '<span class="n">' + s[0] + '</span>' + b('w+', '+', 'Wider') +
-      '<span class="sz">H</span>' + b('h-', '&minus;', 'Shorter') + '<span class="n">' + s[1] + '</span>' + b('h+', '+', 'Taller') +
-      '<span class="gap"></span>' + b('hide', '&times;', 'Hide this panel') + '</div>';
+  // Each panel in edit mode: a grip on top to move it, a cross to hide it and a
+  // handle in the corner to resize it. Both gestures also work from the keyboard
+  // (arrow keys on the grip and on the handle).
+  var RESIZE_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M13 5L5 13M13 9L9 13"/></svg>';
+  function editControls(panel) {
+    var id = esc(panel.id);
+    return '<button type="button" class="edit-grip" data-grip="' + id + '" title="Drag to move (arrow keys too)" aria-label="Move this panel">&#10303; Drag to move</button>' +
+      '<button type="button" class="edit-x" data-edit="hide" data-id="' + id + '" title="Hide this panel" aria-label="Hide this panel">&times;</button>' +
+      '<button type="button" class="edit-resize" data-resize="' + id + '" title="Drag to resize (arrow keys too)" aria-label="Resize this panel">' + RESIZE_ICON + '</button>';
   }
   function renderEditBar(layout) {
     var bar = $('edit-bar');
@@ -1099,7 +1098,7 @@
       return '<button type="button" class="add" data-edit="show" data-id="' + esc(p.id) + '" title="Show this panel again">+ ' + esc(p.title || TITLES[p.widget] || p.widget) + '</button>';
     }).join('') : '<span class="none">none</span>';
     bar.innerHTML = '<span class="t">Customize</span>' +
-      '<span class="hint">Drag a panel or use the arrows to move it. W and H set its size. Saved ' + (onServer ? 'for your account.' : 'in this browser.') + '</span>' +
+      '<span class="hint">Drag a panel by its handle to move it, drag the corner to resize it. Saved ' + (onServer ? 'for your account.' : 'in this browser.') + '</span>' +
       '<span class="tray"><span class="lbl">Hidden panels</span>' + tray + '</span>' +
       '<span class="cells' + (used > cap ? ' over' : '') + '">' + used + ' of ' + cap + ' cells' + (used > cap ? ' &middot; too big, the grid will scroll' : '') + '</span>' +
       '<button type="button" data-edit="reset"' + (custom ? '' : ' disabled') + '>Reset to default</button>' +
@@ -1130,34 +1129,154 @@
     else if (act === 'reset') { resetCustom(); drawGrid(); }
     else editAct(act, b.getAttribute('data-id'));
   });
-  var dragId = null;
-  document.addEventListener('dragstart', function (e) {
-    var el = e.target.closest ? e.target.closest('.card[data-id]') : null;
-    if (!editing || !el) return;
-    dragId = el.getAttribute('data-id');
-    el.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move';
-    try { e.dataTransfer.setData('text/plain', dragId); } catch (x) {}
+  // ---- moving and resizing with the pointer (mouse, pen and touch) -------------
+
+  // While a gesture runs the grid is not redrawn (a redraw would replace the
+  // cards under the finger); it catches up when the gesture ends.
+  var gesture = null;
+
+  function panelIds() {
+    return customPanels(snap.layout).map(function (p) { return p.id; });
+  }
+  // Order for the saved layout: the shown panels as given, then the hidden ones as before.
+  function commitOrder(ids) {
+    var c = ensureCustom();
+    c.order = ids.concat((c.order || []).filter(function (x) { return ids.indexOf(x) < 0; }));
+    saveCustom();
+  }
+  function commitSpan(id, sp) {
+    var c = ensureCustom();
+    commitOrder(panelIds());
+    c.span[id] = sp;
+    saveCustom();
+  }
+  function endGesture(commit) {
+    var g = gesture;
+    if (!g) return;
+    gesture = null;
+    document.body.classList.remove('gesturing');
+    g.finish(commit);
+    drawGrid();
+  }
+
+  // Move: the grabbed card floats with the pointer, a dashed slot shows where it
+  // lands and the other cards make room while you drag.
+  function startMove(grip, e) {
+    var card = grip.closest('.card[data-id]'), grid = $('grid');
+    if (!card) return;
+    var r = card.getBoundingClientRect();
+    var slot = document.createElement('div');
+    slot.className = 'drop-slot';
+    slot.style.gridColumn = card.style.gridColumn; slot.style.gridRow = card.style.gridRow;
+    slot.innerHTML = '<span>Drop here</span>';
+    grid.insertBefore(slot, card);
+    var grabX = e.clientX - r.left, grabY = e.clientY - r.top;
+    card.classList.add('lifted');
+    card.style.width = r.width + 'px'; card.style.height = r.height + 'px';
+    function place(x, y) { card.style.left = (x - grabX) + 'px'; card.style.top = (y - grabY) + 'px'; }
+    place(e.clientX, e.clientY);
+    gesture = { pointer: e.pointerId, finish: function (commit) {
+      grip.releasePointerCapture && grip.releasePointerCapture(e.pointerId);
+      var ids = [];
+      [].forEach.call(grid.children, function (el) {
+        if (el === slot) ids.push(card.getAttribute('data-id'));
+        else if (el !== card && el.getAttribute && el.getAttribute('data-id')) ids.push(el.getAttribute('data-id'));
+      });
+      slot.remove();
+      card.classList.remove('lifted');
+      card.style.width = card.style.height = card.style.left = card.style.top = '';
+      if (commit) commitOrder(ids);
+    }, move: function (ev) {
+      place(ev.clientX, ev.clientY);
+      // Which card is under the pointer? (The floating card ignores the pointer.)
+      var over = document.elementFromPoint(ev.clientX, ev.clientY);
+      var target = over && over.closest ? over.closest('.card[data-id]') : null;
+      if (!target || target === card || target.parentNode !== grid) return;
+      var tr = target.getBoundingClientRect();
+      // Cross the middle of a card to take its place.
+      var after = slot.compareDocumentPosition(target) & Node.DOCUMENT_POSITION_FOLLOWING;
+      var past = after ? (ev.clientX > tr.left + tr.width / 2 || ev.clientY > tr.top + tr.height / 2)
+                       : (ev.clientX < tr.left + tr.width / 2 || ev.clientY < tr.top + tr.height / 2);
+      if (!past) return;
+      grid.insertBefore(slot, after ? target.nextSibling : target);
+    } };
+    document.body.classList.add('gesturing');
+    grip.setPointerCapture && grip.setPointerCapture(e.pointerId);
+  }
+
+  // Resize: a dashed outline snaps to the grid cells and says how big the panel
+  // will be; the panel itself changes when you let go.
+  function startResize(handle, e) {
+    var card = handle.closest('.card[data-id]'), grid = $('grid'), layout = snap.layout;
+    if (!card) return;
+    var id = card.getAttribute('data-id');
+    var r = card.getBoundingClientRect(), cs = getComputedStyle(grid);
+    var gapX = parseFloat(cs.columnGap) || 0, gapY = parseFloat(cs.rowGap) || 0;
+    var span = (customPanels(layout).filter(function (p) { return p.id === id; })[0] || {}).span || [1, 1];
+    var unitW = (r.width + gapX) / span[0], unitH = (r.height + gapY) / span[1];
+    var ghost = document.createElement('div');
+    ghost.className = 'resize-ghost';
+    ghost.innerHTML = '<span class="badge"></span>';
+    document.body.appendChild(ghost);
+    handle.classList.add('on');
+    var want = span.slice();
+    function show(w, h) {
+      want = [w, h];
+      ghost.style.left = r.left + 'px'; ghost.style.top = r.top + 'px';
+      ghost.style.width = (w * unitW - gapX) + 'px'; ghost.style.height = (h * unitH - gapY) + 'px';
+      ghost.firstChild.textContent = w + ' × ' + h;
+    }
+    show(span[0], span[1]);
+    gesture = { pointer: e.pointerId, finish: function (commit) {
+      handle.releasePointerCapture && handle.releasePointerCapture(e.pointerId);
+      handle.classList.remove('on');
+      ghost.remove();
+      if (commit && (want[0] !== span[0] || want[1] !== span[1])) commitSpan(id, want);
+    }, move: function (ev) {
+      var w = Math.round((ev.clientX - r.left + gapX) / unitW), h = Math.round((ev.clientY - r.top + gapY) / unitH);
+      show(Math.max(1, Math.min(layout.columns, w)), Math.max(1, Math.min(layout.rows, h)));
+    } };
+    document.body.classList.add('gesturing');
+    handle.setPointerCapture && handle.setPointerCapture(e.pointerId);
+  }
+
+  document.addEventListener('pointerdown', function (e) {
+    if (!editing || gesture || (e.button && e.pointerType === 'mouse')) return;
+    var t = e.target.closest ? e.target : null;
+    var grip = t && t.closest('[data-grip]'), handle = t && t.closest('[data-resize]');
+    if (grip) { e.preventDefault(); startMove(grip, e); }
+    else if (handle) { e.preventDefault(); startResize(handle, e); }
   });
-  document.addEventListener('dragover', function (e) {
-    var el = e.target.closest ? e.target.closest('.card[data-id]') : null;
-    if (editing && dragId && el) { e.preventDefault(); }
+  document.addEventListener('pointermove', function (e) {
+    if (gesture && e.pointerId === gesture.pointer) { e.preventDefault(); gesture.move(e); }
   });
-  document.addEventListener('dragend', function () { dragId = null; var d = document.querySelector('.dragging'); if (d) d.classList.remove('dragging'); });
-  document.addEventListener('drop', function (e) {
-    var el = e.target.closest ? e.target.closest('.card[data-id]') : null;
-    if (!editing || !dragId || !el) return;
-    e.preventDefault();
-    var c = ensureCustom(), target = el.getAttribute('data-id');
-    var order = customPanels(snap.layout).map(function (p) { return p.id; });
-    order.splice(order.indexOf(dragId), 1);
-    order.splice(order.indexOf(target) + (order.indexOf(target) < 0 ? 0 : 0), 0, dragId);
-    c.order = order; dragId = null; saveCustom(); drawGrid();
+  document.addEventListener('pointerup', function (e) { if (gesture && e.pointerId === gesture.pointer) endGesture(true); });
+  document.addEventListener('pointercancel', function (e) { if (gesture && e.pointerId === gesture.pointer) endGesture(false); });
+  document.addEventListener('keydown', function (e) {
+    if (gesture && e.key === 'Escape') { endGesture(false); return; }
+    if (!editing || e.target.closest === undefined) return;
+    var grip = e.target.closest('[data-grip]'), handle = e.target.closest('[data-resize]');
+    var k = e.key;
+    if (grip) {
+      var id = grip.getAttribute('data-grip');
+      if (k === 'ArrowLeft' || k === 'ArrowUp') { e.preventDefault(); editAct('earlier', id); focusTool('grip', id); }
+      if (k === 'ArrowRight' || k === 'ArrowDown') { e.preventDefault(); editAct('later', id); focusTool('grip', id); }
+    } else if (handle) {
+      var rid = handle.getAttribute('data-resize');
+      var act = { ArrowRight: 'w+', ArrowLeft: 'w-', ArrowDown: 'h+', ArrowUp: 'h-' }[k];
+      if (act) { e.preventDefault(); editAct(act, rid); focusTool('resize', rid); }
+    }
   });
+  // A redraw replaces the buttons; give the focus back to the same one.
+  function focusTool(kind, id) {
+    var b = document.querySelector('[data-' + kind + '="' + id + '"]');
+    if (b) b.focus();
+  }
 
   // The cards. Also redrawn every few seconds without a new snapshot, so a
   // "Done" job and a tinted row go away on time.
   function drawGrid() {
+    if (gesture) return;
     var layout = snap.layout || { columns: 4, rows: 3, panels: [] };
     var grid = $('grid');
     grid.style.setProperty('--cols', layout.columns);
