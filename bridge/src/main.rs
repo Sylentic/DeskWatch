@@ -386,6 +386,12 @@ async fn main() -> Result<()> {
                     .iter()
                     .map(|(id, health)| (id.to_string(), health.name())),
             );
+            setup.update_reasons(
+                composer
+                    .health
+                    .reasons()
+                    .map(|(id, why)| (id.to_string(), why.to_string())),
+            );
         }
     }
 

@@ -37,6 +37,7 @@ impl Composer {
                 self.health.set(&msg.source, health);
                 self.fleet.set_source_ok(&msg.source, health == Health::Ok);
             }
+            SourceBody::Reason(reason) => self.health.set_reason(&msg.source, reason),
             SourceBody::Forget => {
                 self.ci.forget(&format!("{}:", msg.source));
                 self.fleet.forget(&msg.source);

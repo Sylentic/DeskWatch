@@ -160,11 +160,13 @@ impl Source for Github {
             if !sink.facts(updates).await {
                 break; // main loop has stopped
             }
-            if let Some(health) = state.health()
-                && reported != Some(health)
-            {
-                reported = Some(health);
-                sink.health(health).await;
+            if let Some(health) = state.health() {
+                let reason = state.reason();
+                if reported.as_ref() != Some(&(health, reason.clone())) {
+                    sink.health(health).await;
+                    sink.reason(reason.clone()).await;
+                    reported = Some((health, reason));
+                }
             }
         }
         Ok(())
@@ -191,7 +193,7 @@ async fn poll_repo(api: &HttpApi, state: &mut GithubState, repo: &str) -> Vec<Up
         Ok(pulls) => pulls,
         Err(err) => {
             warn!(%repo, "cannot poll GitHub: {err:#}");
-            state.set_health(repo, Health::from_error(&err));
+            state.set_failure(repo, &err);
             return out;
         }
     };
@@ -211,7 +213,7 @@ async fn poll_repo(api: &HttpApi, state: &mut GithubState, repo: &str) -> Vec<Up
         Ok(runs) => runs,
         Err(err) => {
             warn!(%repo, "cannot poll GitHub runs: {err:#}");
-            state.set_health(repo, Health::from_error(&err));
+            state.set_failure(repo, &err);
             return out;
         }
     };
@@ -346,6 +348,8 @@ pub struct GithubState {
     web: String,
     /// Result of the last poll per repository.
     health: BTreeMap<String, Health>,
+    /// The last error per repository that is failing now.
+    errors: BTreeMap<String, String>,
 }
 
 impl GithubState {
@@ -371,6 +375,7 @@ impl GithubState {
             failed_steps: HashMap::new(),
             web: String::new(),
             health: BTreeMap::new(),
+            errors: BTreeMap::new(),
         }
     }
 
@@ -426,6 +431,24 @@ impl GithubState {
 
     pub fn set_health(&mut self, repo: &str, health: Health) {
         self.health.insert(repo.to_string(), health);
+        if health == Health::Ok {
+            self.errors.remove(repo);
+        }
+    }
+
+    /// A failed poll: the health plus what went wrong, for the Setup page.
+    pub fn set_failure(&mut self, repo: &str, err: &anyhow::Error) {
+        self.set_health(repo, Health::from_error(err));
+        self.errors
+            .insert(repo.to_string(), format!("{repo}: {err:#}"));
+    }
+
+    /// What is failing now, one line per repository; `None` when all work.
+    pub fn reason(&self) -> Option<String> {
+        if self.errors.is_empty() {
+            return None;
+        }
+        Some(self.errors.values().cloned().collect::<Vec<_>>().join("; "))
     }
 
     /// Runs whose jobs to poll, in a stable order.

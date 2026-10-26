@@ -481,6 +481,7 @@ async fn source_polls_a_mock_bitbucket() {
         match msg.body {
             SourceBody::Health(h) => health = Some(h),
             SourceBody::Forget => panic!("a source never forgets itself"),
+            SourceBody::Reason(_) => {}
             SourceBody::Facts(updates) => {
                 for update in updates {
                     match update {
@@ -600,6 +601,7 @@ async fn refused_runner_list_does_not_hurt_source_health() {
             }
             SourceBody::Stats(_) => panic!("Bitbucket sends no host stats"),
             SourceBody::Forget => panic!("a source never forgets itself"),
+            SourceBody::Reason(_) => {}
         }
     }
     assert_eq!(healths, [Health::Ok]);
