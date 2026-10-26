@@ -561,11 +561,15 @@
     if (MARK[s.kind]) h.appendChild(el('span', 'mark ' + s.kind, MARK[s.kind]));
     h.appendChild(document.createTextNode((KIND[s.kind] || s.kind) + ': ' + s.name + ' '));
     var hs = HEALTH[s.health] || (s.hidden ? ['switched off', 'muted'] : [s.health, 'warn']);
-    h.appendChild(pill(hs[0], hs[1]));
+    var hp = pill(hs[0], hs[1]);
+    if (s.health_reason) hp.title = s.health_reason;
+    h.appendChild(hp);
     head.appendChild(h);
     var acts = el('div', 'rowacts');
     head.appendChild(acts);
     card.appendChild(head);
+    // Say why, so a red badge is never a mystery.
+    if (s.health_reason) card.appendChild(el('p', 'err', 'Last error: ' + s.health_reason));
     var dl = el('dl');
     row(dl, 'Address', s.address);
     if (s.repos && s.repos.length) row(dl, s.kind === 'prometheus' ? 'Hosts' : (s.kind === 'azure_devops' || s.kind === 'gitlab') ? 'Projects' : 'Repositories', s.repos.join(', '));

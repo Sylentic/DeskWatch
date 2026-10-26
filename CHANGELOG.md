@@ -7,6 +7,13 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **A red "not reachable" badge now says why, and a passing test clears it.** A single failed request (a timeout, a
+  rate limit) turned a GitHub source red until its next poll, which after a failure is delayed by the backoff, even
+  when Test connection already said ok. Setup now shows the last error under the badge (and as its tooltip), and a
+  Test connection that passes restarts a source that is shown as failing, so it polls again right away.
+
 ### Changed
 
 - **Passed and skipped stages clean up.** In Running now, a stage of a run that is still going disappears 30 seconds

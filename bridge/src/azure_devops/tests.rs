@@ -608,6 +608,7 @@ async fn source_polls_a_mock_service() {
         match msg.body {
             SourceBody::Health(h) => health = Some(h),
             SourceBody::Forget => panic!("a source never forgets itself"),
+            SourceBody::Reason(_) => {}
             SourceBody::Facts(updates) => {
                 for update in updates {
                     match update {
@@ -797,6 +798,7 @@ async fn refused_pool_list_does_not_hurt_source_health() {
         match msg.body {
             SourceBody::Health(h) => health = Some(h),
             SourceBody::Forget => panic!("a source never forgets itself"),
+            SourceBody::Reason(_) => {}
             SourceBody::Facts(updates) => {
                 assert!(
                     !updates

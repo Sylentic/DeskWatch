@@ -90,6 +90,8 @@ struct Shared {
     update: crate::update::UpdateNotice,
     /// Source id (`github:main`) to health name, kept current by the main loop.
     health: Mutex<BTreeMap<String, &'static str>>,
+    /// Source id to the error behind a health that is not `ok`.
+    reasons: Mutex<BTreeMap<String, String>>,
 }
 
 impl Setup {
@@ -121,6 +123,7 @@ impl Setup {
                 alert_tx: None,
                 update: crate::update::UpdateNotice::default(),
                 health: Mutex::new(BTreeMap::new()),
+                reasons: Mutex::new(BTreeMap::new()),
             }),
         }
     }
@@ -152,6 +155,17 @@ impl Setup {
         let mut map = self.shared.health.lock().unwrap_or_else(|e| e.into_inner());
         map.clear();
         map.extend(health);
+    }
+
+    /// Record why each failing source is failing. Called every main loop turn.
+    pub fn update_reasons<'a>(&self, reasons: impl Iterator<Item = (String, String)> + 'a) {
+        let mut map = self
+            .shared
+            .reasons
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        map.clear();
+        map.extend(reasons);
     }
 
     pub fn router(&self) -> Router {
@@ -195,6 +209,11 @@ async fn status(State(shared): State<Arc<Shared>>) -> Response {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clone();
+    let reasons = shared
+        .reasons
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
     // What is saved on disk, which can be ahead of what runs.
     let effective = effective_config(&shared);
     let mut out = describe(&effective);
@@ -207,6 +226,9 @@ async fn status(State(shared): State<Arc<Shared>>) -> Response {
         for source in sources {
             let id = source["id"].as_str().unwrap_or_default().to_string();
             source["health"] = json!(health.get(&id).copied().unwrap_or("unknown"));
+            if let Some(why) = reasons.get(&id) {
+                source["health_reason"] = json!(why);
+            }
             source["running"] = json!(running.contains(&id));
             source["editable"] = json!(can_edit && source["origin"] == "data_folder");
         }
@@ -370,6 +392,21 @@ async fn test(
         Err(_) => return (StatusCode::GATEWAY_TIMEOUT, "the test took too long").into_response(),
     };
     tracing::info!(?id, ok = report.ok, "setup: connection test done");
+    // A source that shows a problem although the test now passes is held
+    // back by its poll backoff: restart it so it polls again right away.
+    if report.ok && id != "mqtt" {
+        let failing = shared
+            .health
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&id)
+            .is_some_and(|h| *h != "ok");
+        if failing && let Some(supervisor) = &shared.supervisor {
+            supervisor
+                .reconcile(&effective_config(&shared), std::slice::from_ref(&id))
+                .await;
+        }
+    }
     let mut response = json!({ "id": id, "ok": report.ok, "checks": report.checks })
         .to_string()
         .into_response();

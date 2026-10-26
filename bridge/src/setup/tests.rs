@@ -111,6 +111,21 @@ async fn health_and_mqtt_state_are_live() {
     link.set(true);
     let after = get().await;
     assert_eq!(health_of(&after, "github:main"), "auth_failed");
+    let reason_of = |v: &Value| {
+        v["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["id"] == "github:main")
+            .unwrap()["health_reason"]
+            .clone()
+    };
+    assert!(
+        reason_of(&after).is_null(),
+        "no reason until one is reported"
+    );
+    setup.update_reasons([("github:main".to_string(), "me/a: timed out".to_string())].into_iter());
+    assert_eq!(reason_of(&get().await), "me/a: timed out");
     assert_eq!(after["mqtt"]["connected"], true);
 }
 #[test]
