@@ -477,6 +477,11 @@ async fn the_host_view_is_saved_and_needs_a_restart() {
     let compact = json!({ "host_view": "compact" }).to_string();
     let (status, _, text) = send(&router, "POST", "/api/setup/kiosk", &[], &compact).await;
     assert_eq!(status, StatusCode::OK, "{text}");
+    // The page shows "Saved, but ... could not be started" unless `applied` is
+    // true, which made a good save look like an error.
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["applied"], true, "{text}");
+    assert_eq!(v["restart_needed"], true, "{text}");
     let saved = std::fs::read_to_string(temp.0.join("data/sources.toml")).unwrap();
     assert!(saved.contains("host_view = \"compact\""), "{saved}");
     let (_, _, text) = send(&router, "GET", "/api/setup/status", &[], "").await;
