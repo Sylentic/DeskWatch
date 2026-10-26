@@ -48,7 +48,7 @@ aarch64, the Raspberry Pi, see [raspberry-pi.md](raspberry-pi.md)) and a checksu
 file (the Windows zip is covered in [windows.md](windows.md)). It is built on Ubuntu 22.04, so it runs on Debian 12 and newer. It needs nothing but the system C library.
 
 ```sh
-VERSION=v1.0.7       # the release you want
+VERSION=v1.0.8       # the release you want
 cd "$(mktemp -d)"
 curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-x86_64-linux.tar.gz"
 curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-x86_64-linux.tar.gz.sha256"
@@ -72,7 +72,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 git clone https://github.com/Sylentic/DeskWatch.git
 cd DeskWatch
-git checkout v1.0.7             # or dev for the newest code that is not released yet
+git checkout v1.0.8             # or dev for the newest code that is not released yet
 cargo build --release --locked -p deskwatch-bridge
 ```
 
@@ -298,8 +298,11 @@ hosts = [
 so only names in `expect_containers` can be reported, and they must match the container name exactly. Each host
 gets a card on the dashboard and what is down is listed there. Hosts and containers that are down appear in the Containers list. GPU usage, VRAM and GPU temperature show on
 the card of any host that reports them: by default they are read from the NVIDIA DCGM exporter
-(`DCGM_FI_DEV_GPU_UTIL`, framebuffer used and free, `DCGM_FI_DEV_GPU_TEMP`), so add that exporter as a Prometheus
-target; otherwise replace `gpu_pct`, `gpu_mem_pct` and `gpu_temp_c` under `queries`. Not yet tried on a real GPU.
+(usage is the busiest of `DCGM_FI_DEV_GPU_UTIL`, `DCGM_FI_DEV_ENC_UTIL` and `DCGM_FI_DEV_DEC_UTIL`, so video
+transcoding counts; framebuffer used and free; `DCGM_FI_DEV_GPU_TEMP`), so add that exporter as a Prometheus
+target; otherwise replace `gpu_pct`, `gpu_mem_pct` and `gpu_temp_c` under `queries`. Tested on a GeForce card, where
+these basic DCGM fields work. The temperature is the CPU's own sensor (`coretemp`, `k10temp`, `zenpower` or
+`cpu_thermal`), or the hottest sensor on a host without one.
 The PromQL for each field is in `bridge/src/prometheus/mod.rs` and can be replaced per field
 with `queries`.
 

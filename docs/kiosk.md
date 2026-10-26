@@ -57,8 +57,9 @@ shows the newest items again.
 
 A host that reports a GPU gets **GPU** and **VRAM** bars and a **GPU temp** line on its card; hosts without a GPU show
 nothing extra. A GPU above 95 % puts the host in the "needs a look" group. Prometheus hosts read the figures from the
-NVIDIA DCGM exporter by default; `gpu_pct`, `gpu_mem_pct` and `gpu_temp_c` can be replaced per host under `queries`
-([install.md](install.md#prometheus-host-stats-and-containers)). Not yet tried on a real GPU.
+NVIDIA DCGM exporter by default; **GPU** is the busiest of the shader cores and the video encoder and decoder, so a
+host transcoding video shows as busy. `gpu_pct`, `gpu_mem_pct` and `gpu_temp_c` can be replaced per host under `queries`
+([install.md](install.md#prometheus-host-stats-and-containers)).
 
 ### Hosts: detailed or compact
 
@@ -178,7 +179,7 @@ the page shows the winner as a coloured **pill in the header**:
 - **NOTICE** (blue).
 
 While a job runs, a thin orange progress line under the header follows it. A run that finished well stays in Running
-now for 30 seconds as **Done**, and a row in Pipelines that just finished is tinted red or green for 30 seconds. An
+now for 30 seconds as **Done**. In a run that is still going, a stage that passed or was skipped leaves the list 30 seconds after it ended, so running and failed stages stand out. A a row in Pipelines that just finished is tinted red or green for 30 seconds. An
 open PR younger than an hour carries **NEW**.
 
 The size follows the screen width, so the same layout is readable on 1080p and 4K and on a small 1280x720 screen.

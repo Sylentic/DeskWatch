@@ -204,7 +204,8 @@ restart once by hand (`docker compose restart deskwatch-bridge`). It needs the s
 - **Local network only by default.** The page and its `/api/setup/*` routes answer only loopback, private
   (10/8, 172.16/12, 192.168/16), link-local, IPv6 unique-local and the Tailscale/CGNAT range (100.64/10) addresses; any
   other client gets a `403`. Behind a reverse proxy the client is the last `X-Forwarded-For` entry (the one the proxy
-  added), so a public visitor behind a LAN proxy is refused too. `[http] allow_public = true` lifts this; do that only
+  added), so a public visitor behind a LAN proxy is refused too. Forwarding headers only count when the proxy itself is
+  on the local network: a public client cannot claim a LAN address with them. `[http] allow_public = true` lifts this; do that only
   with TLS and a proxy that has a login. The bridge warns at startup when it is on without TLS.
 - **A login is available** ([auth.md](auth.md)): set an administrator password under **Access** and the page, the
   dashboard and every change need a sign-in; the address rule above then steps aside. Until you do, there is no login.

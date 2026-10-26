@@ -41,7 +41,7 @@ use api::{HttpApi, Sample};
 pub const KIND: &str = "prometheus";
 
 /// Stats fields whose PromQL can be replaced in the config (`queries = { ... }`).
-pub const QUERY_KEYS: [&str; 10] = [
+pub const QUERY_KEYS: [&str; 11] = [
     "cpu_pct",
     "cpu_temp_c",
     "ram_pct",
@@ -51,6 +51,7 @@ pub const QUERY_KEYS: [&str; 10] = [
     "gpu_temp_c",
     "uptime_s",
     "updates",
+    "updates_security",
     "reboot_needed",
 ];
 
@@ -74,6 +75,11 @@ const BACKOFF: [Duration; 3] = [
 /// Network devices that are never "the" link: loopback, bridges and the
 /// virtual interfaces containers and VMs create.
 const VIRTUAL_NET_DEVICES: &str = "lo|veth.*|docker.*|br-.*|virbr.*|cni.*|flannel.*";
+
+/// hwmon drivers that measure the CPU itself: Intel `coretemp`, AMD
+/// `k10temp`/`zenpower` and Raspberry Pi `cpu_thermal`. Their `temp1` is the
+/// package (Intel) or Tctl (AMD) reading.
+const CPU_HWMON_CHIPS: &str = "coretemp|k10temp|zenpower|cpu_thermal";
 
 // ---------------------------------------------------------------------------
 // The source task
@@ -174,6 +180,8 @@ pub struct Queries {
     pub gpu_temp_c: String,
     pub uptime_s: String,
     pub updates: String,
+    /// How many of the pending updates are security updates.
+    pub updates_security: String,
     pub reboot_needed: String,
     pub net_rx: String,
     pub net_tx: String,
@@ -203,10 +211,16 @@ impl Queries {
                  or 100 * (1 - avg by (instance) (rate(windows_cpu_time_total{mode=\"idle\"}[1m])))"
                     .into(),
             ),
-            // windows_exporter has no temperature sensor.
+            // The CPU sensor when the host has one; the hottest sensor only
+            // as a fallback, since that is often an NVMe drive, a GPU or a
+            // board sensor reporting junk. windows_exporter has no temperature sensor.
             cpu_temp_c: pick(
                 "cpu_temp_c",
-                "max by (instance) (node_hwmon_temp_celsius)".into(),
+                format!(
+                    "max by (instance) (node_hwmon_temp_celsius{{sensor=\"temp1\"}} \
+                     * on (instance, chip) group_left () node_hwmon_chip_names{{chip_name=~\"{CPU_HWMON_CHIPS}\"}}) \
+                     or max by (instance) (node_hwmon_temp_celsius)"
+                ),
             ),
             ram_pct: pick(
                 "ram_pct",
@@ -223,7 +237,12 @@ impl Queries {
                      / windows_logical_disk_size_bytes{{volume=\"{volume}\"}}))"
                 ),
             ),
-            gpu_pct: pick("gpu_pct", "max by (instance) (DCGM_FI_DEV_GPU_UTIL)".into()),
+            // The busiest engine: GPU_UTIL only counts the shader cores, so a
+            // GPU transcoding video on NVENC/NVDEC would read close to 0 %.
+            gpu_pct: pick(
+                "gpu_pct",
+                "max by (instance) ({__name__=~\"DCGM_FI_DEV_(GPU|ENC|DEC)_UTIL\"})".into(),
+            ),
             gpu_mem_pct: pick(
                 "gpu_mem_pct",
                 "100 * max by (instance) (DCGM_FI_DEV_FB_USED / (DCGM_FI_DEV_FB_USED + DCGM_FI_DEV_FB_FREE))"
@@ -245,6 +264,14 @@ impl Queries {
                 "updates",
                 "max by (instance) (node_apt_upgrades_pending) \
                  or max by (instance) (deskwatch_updates_pending)"
+                    .into(),
+            ),
+            // apt's script labels each count with its origin, so the
+            // security part is the origins that say "security".
+            updates_security: pick(
+                "updates_security",
+                "sum by (instance) (node_apt_upgrades_pending{origin=~\"(?i).*security.*\"}) \
+                 or max by (instance) (deskwatch_updates_security)"
                     .into(),
             ),
             reboot_needed: pick(
@@ -279,6 +306,7 @@ pub struct Answers {
     pub gpu_temp_c: Vec<Sample>,
     pub uptime_s: Vec<Sample>,
     pub updates: Vec<Sample>,
+    pub updates_security: Vec<Sample>,
     pub reboot_needed: Vec<Sample>,
     pub net_rx: Vec<Sample>,
     pub net_tx: Vec<Sample>,
@@ -291,6 +319,7 @@ pub struct Answers {
 pub struct Slow {
     at: Option<Instant>,
     updates: Vec<Sample>,
+    updates_security: Vec<Sample>,
     reboot_needed: Vec<Sample>,
 }
 
@@ -330,15 +359,18 @@ pub async fn collect(
         net_rx: ask("net_rx", &queries.net_rx).await?,
         net_tx: ask("net_tx", &queries.net_tx).await?,
         updates: Vec::new(),
+        updates_security: Vec::new(),
         reboot_needed: Vec::new(),
         container_age: Vec::new(),
     };
     if slow.due() {
         slow.updates = ask("updates", &queries.updates).await?;
+        slow.updates_security = ask("updates_security", &queries.updates_security).await?;
         slow.reboot_needed = ask("reboot_needed", &queries.reboot_needed).await?;
         slow.at = Some(Instant::now());
     }
     answers.updates = slow.updates.clone();
+    answers.updates_security = slow.updates_security.clone();
     answers.reboot_needed = slow.reboot_needed.clone();
     if hosts.iter().any(|h| !h.expect_containers.is_empty()) {
         answers.container_age = ask("container_age", &queries.container_age).await?;
@@ -362,6 +394,8 @@ pub struct Found {
     /// The `config::HOST_SHOW` parts this machine has numbers for.
     pub reports: Vec<&'static str>,
     pub updates: Option<u32>,
+    /// Of `updates`, the security ones, when the host says.
+    pub updates_security: Option<u32>,
     pub reboot_needed: Option<bool>,
 }
 
@@ -384,13 +418,17 @@ pub async fn discover(api: &HttpApi, queries: &Queries) -> Result<Vec<Found>> {
         "max by (instance) (windows_cs_physical_memory_bytes)",
     )
     .await?;
-    let parts: [(&'static str, Vec<Sample>); 9] = [
+    let parts: [(&'static str, Vec<Sample>); 10] = [
         ("cpu", ask("cpu_pct", &queries.cpu_pct).await?),
         ("memory", ask("ram_pct", &queries.ram_pct).await?),
         ("disk", ask("disk_pct", &queries.disk_pct).await?),
         ("uptime", ask("uptime_s", &queries.uptime_s).await?),
         ("network", ask("net_rx", &queries.net_rx).await?),
         ("updates", ask("updates", &queries.updates).await?),
+        (
+            "updates_security",
+            ask("updates_security", &queries.updates_security).await?,
+        ),
         (
             "reboot",
             ask("reboot_needed", &queries.reboot_needed).await?,
@@ -437,10 +475,12 @@ pub fn build_found(
             up: is_up(up, instance),
             reports: parts
                 .iter()
-                .filter(|(_, samples)| has(samples))
+                .filter(|(key, samples)| *key != "updates_security" && has(samples))
                 .map(|(key, _)| *key)
                 .collect(),
             updates: first_value(part("updates"), instance).map(|n| n.max(0.0).round() as u32),
+            updates_security: first_value(part("updates_security"), instance)
+                .map(|n| n.max(0.0).round() as u32),
             reboot_needed: first_value(part("reboot"), instance).map(|n| n >= 1.0),
         });
     }
@@ -527,6 +567,10 @@ fn host_stats(host: &HostConfig, answers: &Answers) -> StatsData {
             .filter(|_| shown("uptime")),
         net: net(&answers.net_rx, &answers.net_tx, instance).filter(|_| shown("network")),
         updates: value(&answers.updates)
+            .map(|n| n.max(0.0).round() as u32)
+            .filter(|_| shown("updates")),
+        // Only shown next to the total, so it hides with it.
+        updates_security: value(&answers.updates_security)
             .map(|n| n.max(0.0).round() as u32)
             .filter(|_| shown("updates")),
         reboot_needed: value(&answers.reboot_needed)

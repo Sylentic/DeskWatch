@@ -5,6 +5,53 @@ All notable changes to DeskWatch are listed here. The format follows
 [Semantic Versioning](https://semver.org/). From 1.0.0 on, a change that breaks an existing bridge config file or the
 `POST /api/alert` format needs a new major version.
 
+## [Unreleased]
+
+## [1.0.8]
+
+### Added
+
+- **Stay signed in for 30 days.** A box under the password on the sign-in page (off by default, also for GitHub and
+  Microsoft sign-in) makes that session last 30 days from the sign-in, whatever the idle time. Use it only on your own
+  devices; **Sign out everywhere** on My account ends it.
+- **Security updates next to pending updates.** A host card shows `21 (13 security)` and turns amber when at least one
+  is a security update. It reads the origins of apt's `node_apt_upgrades_pending` or the new optional
+  `deskwatch_updates_security` metric; the Windows and Fedora scripts in docs/hosts.md write it. Without it the card
+  shows just the total. The Setup host list shows it too.
+
+### Fixed
+
+- **A restart no longer signs everyone out.** Sessions are saved in `sessions.json` in the data folder (mode 0600, only
+  a hash of each session id), so an update or restart keeps you signed in. A missing or broken file just means signing
+  in again.
+- **CPU temperature is the CPU again on Prometheus hosts.** The default query took the hottest sensor of the machine,
+  which is often an NVMe drive or a board sensor reporting junk (one showed 216 °C). It now reads the CPU's own sensor
+  (`coretemp`, `k10temp`, `zenpower` or `cpu_thermal`, `temp1`), like the bridge's own host card did before 1.0.7, and
+  only falls back to the hottest sensor on a host without one.
+- **GPU usage includes video encoding and decoding.** `DCGM_FI_DEV_GPU_UTIL` only counts the shader cores, so a GPU
+  transcoding on NVENC/NVDEC read about 4 % with its encoder at 100 %. The default `gpu_pct` is now the busiest of the
+  GPU, encoder and decoder.
+- **A red "not reachable" badge now says why, and a passing test clears it.** A single failed request (a timeout, a
+  rate limit) turned a GitHub source red until its next poll, which after a failure is delayed by the backoff, even
+  when Test connection already said ok. Setup now shows the last error under the badge (and as its tooltip), and a
+  Test connection that passes restarts a source that is shown as failing, so it polls again right away.
+- **Dismissed failed runs stay dismissed after a restart.** They are kept in `dismissed.json` in the data folder (a new
+  failure of the same pipeline still shows). Without a data folder they are still forgotten on restart.
+- **The failed pill opens the run.** The pipeline name in the red pill is now a link to the failed run (it opens in the
+  source's Firefox container when one is set), not only the Open button.
+
+### Changed
+
+- **Passed and skipped stages clean up.** In Running now, a stage of a run that is still going disappears 30 seconds
+  after it passed or was skipped, so running and failed stages stand out.
+
+### Security
+
+- **A forwarded address only counts from a proxy on the local network.** The bridge read `X-Forwarded-For` from any
+  client, so a bridge reachable without a proxy took a made-up LAN address at its word: such a client could open the
+  setup page and `POST /api/alert`, set the first-run password and get round the per-address limit on wrong passwords.
+  A public client is now judged by its own address. Behind a proxy on the local network nothing changes.
+
 ## [1.0.7]
 
 **Heads up:** the bridge no longer reads its own machine. If you relied on that and have no Prometheus, the host card

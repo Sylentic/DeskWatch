@@ -76,6 +76,20 @@ fn proxy_headers_decide_the_client() {
     );
 }
 
+#[test]
+fn a_public_peer_cannot_claim_a_forwarded_address() {
+    // No proxy in front: the peer is the client, its headers are its own claim.
+    let public = ip("203.0.113.9");
+    for hdrs in [
+        [("x-forwarded-for", "192.168.1.5")],
+        [("x-forwarded-for", "nope")],
+        [("forwarded", "for=10.0.0.1")],
+        [("x-real-ip", "127.0.0.1")],
+    ] {
+        assert_eq!(client_ip(public, &headers(&hdrs)), Some(public), "{hdrs:?}");
+    }
+}
+
 async fn call(allow_public: bool, peer: Option<&str>, hdrs: &[(&str, &str)]) -> StatusCode {
     let app = Router::new()
         .route("/x", get(|| async { "ok" }))
@@ -104,6 +118,12 @@ async fn middleware_allows_local_and_refuses_the_rest() {
     let public = [("x-forwarded-for", "203.0.113.9")];
     assert_eq!(
         call(false, Some("192.168.1.2"), &public).await,
+        StatusCode::FORBIDDEN
+    );
+    // A public client with no proxy in front, claiming a LAN address.
+    let claim = [("x-forwarded-for", "192.168.1.5")];
+    assert_eq!(
+        call(false, Some("203.0.113.9"), &claim).await,
         StatusCode::FORBIDDEN
     );
     // No peer address at all: refused (fail closed).

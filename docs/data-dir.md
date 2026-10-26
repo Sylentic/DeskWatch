@@ -12,6 +12,8 @@ variable. The bridge creates the folder and stops at startup, with the reason, i
   sources.toml          [[source.*]] blocks, same format as in bridge.toml
   credentials/<name>    one secret per file, mode 0600, folder mode 0700
   auth.toml             login: password hashes and API key hashes, mode 0600 (auth.md)
+  sessions.json         signed-in sessions, by hash of the id, mode 0600 (auth.md)
+  dismissed.json        failed runs dismissed on the kiosk, so they stay away after a restart
   layouts.json          each signed-in user's own dashboard layout, mode 0600 (kiosk.md)
   oauth.toml            GitHub/Microsoft sign-in rules, no secrets (auth.md)
 ```

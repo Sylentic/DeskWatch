@@ -235,7 +235,11 @@ async fn main() -> Result<()> {
                 config.http.listen
             );
         }
-        let built = Kiosk::new(&config.kiosk)
+        let mut built = Kiosk::new(&config.kiosk);
+        if let Some(dir) = config.data_dir() {
+            built = built.with_data_dir(&dir);
+        }
+        let built = built
             .with_setup_link(config.setup.is_on())
             .with_alerts(&config.alerts, inbound_tx.clone())
             .with_containers(supervisor.containers())
@@ -381,6 +385,12 @@ async fn main() -> Result<()> {
                     .health
                     .iter()
                     .map(|(id, health)| (id.to_string(), health.name())),
+            );
+            setup.update_reasons(
+                composer
+                    .health
+                    .reasons()
+                    .map(|(id, why)| (id.to_string(), why.to_string())),
             );
         }
     }

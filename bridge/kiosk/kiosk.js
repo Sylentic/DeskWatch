@@ -182,7 +182,8 @@
       (show('network') ? '<div><span class="l">Net in</span><span>' + (s.net ? rate(s.net.rx_bps) : '--') + '</span></div>' +
         '<div><span class="l">Net out</span><span>' + (s.net ? rate(s.net.tx_bps) : '--') + '</span></div>' : '') +
       // Only for hosts that report them (see docs/hosts.md).
-      (s.updates == null ? '' : '<div><span class="l">Pending updates</span><span>' + s.updates + '</span></div>') +
+      (s.updates == null ? '' : '<div><span class="l">Pending updates</span><span' + (s.updates_security > 0 ? ' class="warn-text"' : '') + '>' + s.updates +
+        (s.updates_security == null ? '' : ' (' + s.updates_security + ' security)') + '</span></div>') +
       (s.reboot_needed ? '<div><span class="l">Restart</span><span class="warn-text">needed</span></div>' : '');
     return (gauges ? '<div class="gauges">' + gauges + '</div>' : '') +
       (cells ? '<div class="stat-grid">' + cells + '</div>' : '') +
@@ -508,6 +509,18 @@
     return '';
   }
 
+  // A passed or skipped job of a run that is still going leaves the list DONE_S
+  // after it ended, so the running and failed ones stand out. Skipped jobs often
+  // have no end time, so the first time this page saw the job ended counts then.
+  var laneSeen = {};
+  function laneGone(group, l) {
+    var st = runStatus(l.status);
+    if (st !== 'ok' && st !== 'neutral') return false;
+    var key = group + '\n' + l.name, now = nowS();
+    if (laneSeen[key] === undefined) laneSeen[key] = l.finished || now;
+    return now - laneSeen[key] >= DONE_S;
+  }
+
   function runGroup(g) {
     var j = g.jobs[0];
     var started = Math.min.apply(null, g.jobs.map(function (x) { return x.started; }));
@@ -517,7 +530,7 @@
     if (g.lanes && g.lanes.length) {
       var finished = g.lanes.filter(function (l) { return l.status === 'success' || l.status === 'failed' || l.status === 'neutral'; }).length;
       sum = (g.lanes.length > 1 ? finished + ' of ' + g.lanes.length + ' done &middot; ' : '') + since;
-      rows = g.lanes.map(function (l) {
+      rows = g.lanes.filter(function (l) { return !laneGone(j.group, l); }).map(function (l) {
         var st = runStatus(l.status);
         var bar = st !== 'running' ? '' : l.progress == null ? '<span class="pbar spin"><i></i></span>' :
           '<span class="pbar"><i style="--p:' + Math.round(l.progress * 100) + '%"></i></span>';
@@ -896,7 +909,8 @@
       var fmsg = [f.step ? 'step ' + f.step : '', f.finished ? ago(nowS() - f.finished) : ''].filter(Boolean).join(' · ');
       cls = '';
       html = '<span class="tag">Failed</span>' + src(f.source) +
-        '<span>' + esc((f.project || '') + (f.pipeline ? ' · ' + f.pipeline : '')) + '</span>' +
+        (fh ? '<a class="name link" ' + linkAttrs(fh, f.source) + ' title="Open this run">' : '<span>') +
+        esc((f.project || '') + (f.pipeline ? ' · ' + f.pipeline : '')) + (fh ? '</a>' : '</span>') +
         (fmsg ? '<span class="msg">' + esc(fmsg) + '</span>' : '') +
         (failed.length > 1 ? '<span class="meta">+' + (failed.length - 1) + '</span>' : '') +
         (fh ? '<a class="act" ' + linkAttrs(fh, f.source) + '>Open</a>' : '') +
@@ -910,7 +924,7 @@
     if (el.innerHTML !== html) el.innerHTML = html;
   }
   var bannerSeen = '';
-  // The failed pill: x dismisses that run, Open opens it, the rest of the pill
+  // The failed pill: x dismisses that run, the pipeline name and Open open it, the rest of the pill
   // opens the list of failed runs.
   $('banner').addEventListener('click', function (e) {
     var x = e.target.closest ? e.target.closest('[data-dismiss]') : null;

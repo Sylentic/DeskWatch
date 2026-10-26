@@ -8,8 +8,9 @@
 //! API keys instead of a password. Webhooks keep their own signature check and
 //! `/healthz` stays open.
 //!
-//! Sessions live in memory (a restart signs everyone out) and idle out after
-//! seven days. The cookie is HttpOnly, SameSite=Lax and, over HTTPS, Secure.
+//! Sessions are kept in memory and in `sessions.json` (only a hash of each
+//! session id, so a restart does not sign anyone out). They idle out after seven
+//! days, or last 30 days when "Stay signed in" was ticked. The cookie is HttpOnly, SameSite=Lax and, over HTTPS, Secure.
 //! Every write also needs the header `X-DeskWatch: 1`, which a page on another
 //! site cannot send without a CORS preflight the bridge never allows; the
 //! `Origin` check stays too. Wrong passwords are rate limited per client
@@ -47,7 +48,12 @@ pub mod oauth;
 
 const AUTH_FILE: &str = "auth.toml";
 const COOKIE: &str = "dw_session";
+const SESSIONS_FILE: &str = "sessions.json";
 const SESSION_IDLE: Duration = Duration::from_secs(7 * 24 * 3600);
+/// "Stay signed in": the session and its cookie end 30 days after the sign-in.
+const REMEMBER: Duration = Duration::from_secs(30 * 24 * 3600);
+/// A used session's time is saved to disk at most this often.
+const SAVE_SEEN_EVERY: u64 = 3600;
 const MIN_PASSWORD: usize = 12;
 const MAX_PASSWORD: usize = 256;
 const MAX_TRIES: u32 = 5;
@@ -180,14 +186,35 @@ struct Key {
     created: u64,
 }
 
+/// A sign-in. Times are unix seconds so they survive a restart.
+#[derive(Clone, Serialize, Deserialize)]
 struct Session {
     role: Role,
     /// The local account, if this is not a provider sign-in.
     user: Option<String>,
-    seen: Instant,
+    seen: u64,
     /// Shown in the page header (the name at the provider), if not a local account.
     label: Option<String>,
-    idle: Duration,
+    /// Seconds without use after which the session ends.
+    idle: u64,
+    /// Hard end (unix seconds), for a "stay signed in" session; 0 for none.
+    until: u64,
+    /// The `seen` value last written to disk (not saved itself).
+    #[serde(skip)]
+    saved: u64,
+}
+
+impl Session {
+    fn alive(&self, now: u64) -> bool {
+        now.saturating_sub(self.seen) < self.idle && (self.until == 0 || now < self.until)
+    }
+}
+
+/// `sessions.json`: the sessions by the SHA-256 of their id.
+#[derive(Default, Serialize, Deserialize)]
+struct SessionFile {
+    #[serde(default)]
+    sessions: HashMap<String, Session>,
 }
 
 struct Lock {
@@ -200,7 +227,10 @@ struct Inner {
     path: Option<PathBuf>,
     state: RwLock<Persist>,
     enabled: Arc<AtomicBool>,
+    /// By the SHA-256 of the session id, never the id itself.
     sessions: Mutex<HashMap<String, Session>>,
+    /// Where sessions are saved; held while writing so snapshots land in order.
+    sessions_path: Mutex<Option<PathBuf>>,
     locks: Mutex<HashMap<IpAddr, Lock>>,
     oauth: oauth::OAuth,
     layouts: layouts::Layouts,
@@ -293,6 +323,36 @@ fn now_secs() -> u64 {
     crate::source::unix_now()
 }
 
+/// The saved sessions that are still alive. A missing or broken file means
+/// everyone signs in again, which is safe.
+fn load_sessions(dir: Option<&Path>) -> HashMap<String, Session> {
+    let Some(path) = dir.map(|d| d.join(SESSIONS_FILE)) else {
+        return HashMap::new();
+    };
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return HashMap::new();
+    };
+    let now = now_secs();
+    match serde_json::from_str::<SessionFile>(&text) {
+        Ok(file) => file
+            .sessions
+            .into_iter()
+            .filter(|(_, s)| s.alive(now))
+            .map(|(k, mut s)| {
+                s.saved = s.seen;
+                (k, s)
+            })
+            .collect(),
+        Err(e) => {
+            warn!(
+                "{} is not valid, everyone signs in again: {e}",
+                path.display()
+            );
+            HashMap::new()
+        }
+    }
+}
+
 impl Auth {
     /// Read `auth.toml` from the data folder. Without a folder login cannot
     /// be saved, so it stays off.
@@ -315,7 +375,8 @@ impl Auth {
             path,
             state: RwLock::new(state),
             enabled,
-            sessions: Mutex::default(),
+            sessions: Mutex::new(load_sessions(dir)),
+            sessions_path: Mutex::new(dir.map(|d| d.join(SESSIONS_FILE))),
             locks: Mutex::default(),
             oauth: oauth::OAuth::open(dir)?,
             layouts: layouts::Layouts::open(dir),
@@ -569,6 +630,17 @@ impl Auth {
         username: &str,
         password: &str,
     ) -> Result<(Role, String), LoginError> {
+        self.login_with(ip, username, password, false)
+    }
+
+    /// Like `login`; `remember` is "stay signed in for 30 days".
+    pub fn login_with(
+        &self,
+        ip: IpAddr,
+        username: &str,
+        password: &str,
+        remember: bool,
+    ) -> Result<(Role, String), LoginError> {
         if let Some(left) = self.lock_left(ip) {
             return Err(LoginError::Locked(left));
         }
@@ -594,7 +666,7 @@ impl Auth {
                 info!(client = %ip, role = role.name(), "signed in");
                 Ok((
                     role,
-                    self.new_local_session(role, name.expect("found with the role")),
+                    self.new_local_session(role, name.expect("found with the role"), remember),
                 ))
             }
             None => {
@@ -605,35 +677,85 @@ impl Auth {
     }
 
     fn new_session(&self, role: Role) -> String {
-        self.new_session_with(role, None, None, SESSION_IDLE)
+        self.new_session_with(role, None, None, SESSION_IDLE, false)
     }
 
-    fn new_local_session(&self, role: Role, user: String) -> String {
-        self.new_session_with(role, Some(user), None, SESSION_IDLE)
+    fn new_local_session(&self, role: Role, user: String, remember: bool) -> String {
+        self.new_session_with(role, Some(user), None, SESSION_IDLE, remember)
     }
 
+    /// Start a session. With `remember` it lasts 30 days from now, whatever
+    /// `idle` says.
     fn new_session_with(
         &self,
         role: Role,
         user: Option<String>,
         label: Option<String>,
         idle: Duration,
+        remember: bool,
     ) -> String {
         let token = random_hex(32);
-        let mut sessions = self.0.sessions.lock().unwrap_or_else(|e| e.into_inner());
-        let now = Instant::now();
-        sessions.retain(|_, s| now.duration_since(s.seen) < s.idle);
-        sessions.insert(
-            token.clone(),
-            Session {
-                role,
-                user,
-                seen: now,
-                label,
-                idle,
-            },
-        );
+        let now = now_secs();
+        let (idle, until) = if remember {
+            (REMEMBER.as_secs(), now + REMEMBER.as_secs())
+        } else {
+            (idle.as_secs(), 0)
+        };
+        {
+            let mut sessions = self.0.sessions.lock().unwrap_or_else(|e| e.into_inner());
+            sessions.retain(|_, s| s.alive(now));
+            sessions.insert(
+                sha256_hex(&token),
+                Session {
+                    role,
+                    user,
+                    seen: now,
+                    label,
+                    idle,
+                    until,
+                    saved: now,
+                },
+            );
+        }
+        self.save_sessions();
         token
+    }
+
+    /// Write the live sessions to `sessions.json` (0600). Best effort: the
+    /// sessions still work in memory if the disk refuses.
+    fn save_sessions(&self) {
+        let path = self
+            .0
+            .sessions_path
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let Some(path) = path.as_ref() else {
+            return;
+        };
+        let now = now_secs();
+        let file = {
+            let mut sessions = self.0.sessions.lock().unwrap_or_else(|e| e.into_inner());
+            for s in sessions.values_mut() {
+                s.saved = s.seen;
+            }
+            SessionFile {
+                sessions: sessions
+                    .iter()
+                    .filter(|(_, s)| s.alive(now))
+                    .map(|(k, s)| (k.clone(), s.clone()))
+                    .collect(),
+            }
+        };
+        let text = match serde_json::to_string(&file) {
+            Ok(t) => t,
+            Err(e) => {
+                warn!("cannot save the sessions: {e}");
+                return;
+            }
+        };
+        if let Err(e) = crate::store::write_atomic(path, text.as_bytes(), 0o600) {
+            warn!("cannot save the sessions: {e:#}");
+        }
     }
 
     /// The sign-in providers (GitHub, Microsoft).
@@ -643,20 +765,32 @@ impl Auth {
 
     fn session_label(&self, token: &str) -> Option<String> {
         let sessions = self.0.sessions.lock().unwrap_or_else(|e| e.into_inner());
-        sessions.get(token)?.label.clone()
+        sessions.get(&sha256_hex(token))?.label.clone()
     }
 
     /// The role of a live session, refreshing its idle timer.
     pub fn session_role(&self, token: &str) -> Option<Role> {
-        let mut sessions = self.0.sessions.lock().unwrap_or_else(|e| e.into_inner());
-        let session = sessions.get_mut(token)?;
-        let now = Instant::now();
-        if now.duration_since(session.seen) >= session.idle {
-            sessions.remove(token);
-            return None;
+        let key = sha256_hex(token);
+        let (role, ended, stale) = {
+            let mut sessions = self.0.sessions.lock().unwrap_or_else(|e| e.into_inner());
+            let session = sessions.get_mut(&key)?;
+            let now = now_secs();
+            if !session.alive(now) {
+                sessions.remove(&key);
+                (None, true, false)
+            } else {
+                session.seen = now;
+                (
+                    Some(session.role),
+                    false,
+                    now.saturating_sub(session.saved) >= SAVE_SEEN_EVERY,
+                )
+            }
+        };
+        if ended || stale {
+            self.save_sessions();
         }
-        session.seen = now;
-        Some(session.role)
+        role
     }
 
     fn end_session(&self, token: &str) {
@@ -664,7 +798,8 @@ impl Auth {
             .sessions
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .remove(token);
+            .remove(&sha256_hex(token));
+        self.save_sessions();
     }
 
     fn end_sessions_of(&self, user: &str) {
@@ -673,6 +808,7 @@ impl Auth {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .retain(|_, s| s.user.as_deref() != Some(user));
+        self.save_sessions();
     }
 
     /// The local account behind a session and whether it must change its
@@ -683,7 +819,7 @@ impl Auth {
             .sessions
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .get(token)?
+            .get(&sha256_hex(token))?
             .user
             .clone()?;
         let must = self.read().find(&name).is_some_and(|u| u.must_change);
@@ -694,6 +830,8 @@ impl Auth {
         let mut sessions = self.0.sessions.lock().unwrap_or_else(|e| e.into_inner());
         let n = sessions.len();
         sessions.clear();
+        drop(sessions);
+        self.save_sessions();
         n
     }
 
@@ -998,6 +1136,9 @@ const ACCOUNT_JS: &str = include_str!("../auth/account.js");
 struct Credentials {
     username: String,
     password: String,
+    /// "Stay signed in for 30 days" (the sign-in form only).
+    #[serde(default)]
+    remember: bool,
 }
 
 fn client(request_peer: Option<SocketAddr>, headers: &HeaderMap) -> Option<IpAddr> {
@@ -1055,12 +1196,14 @@ fn started(
     token: &str,
     headers: &HeaderMap,
     must_change: bool,
+    remember: bool,
 ) -> Response {
+    let max_age = if remember { REMEMBER } else { SESSION_IDLE }.as_secs();
     let mut response = Json(json!({ "ok": true, "role": role.name(), "must_change": must_change }))
         .into_response();
     response.headers_mut().append(
         header::SET_COOKIE,
-        session_cookie(token, auth.secure_cookie(headers), 7 * 24 * 3600),
+        session_cookie(token, auth.secure_cookie(headers), max_age),
     );
     response
 }
@@ -1093,7 +1236,7 @@ async fn setup_admin(
         Ok(()) => {
             info!("administrator password set from the browser");
             let token = auth.new_session(Role::Admin);
-            started(&auth, Role::Admin, &token, &headers, false)
+            started(&auth, Role::Admin, &token, &headers, false, false)
         }
         Err(e) => text(StatusCode::BAD_REQUEST, format!("{e:#}")),
     }
@@ -1148,11 +1291,12 @@ async fn login(
         return text(StatusCode::CONFLICT, "no password is set yet");
     }
     let a = auth.clone();
-    let result = blocking(move || a.login(ip, &body.username, &body.password)).await;
+    let remember = body.remember;
+    let result = blocking(move || a.login_with(ip, &body.username, &body.password, remember)).await;
     match result {
         Ok((role, token)) => {
             let must = auth.session_user(&token).is_some_and(|(_, m)| m);
-            started(&auth, role, &token, &headers, must)
+            started(&auth, role, &token, &headers, must, remember)
         }
         Err(LoginError::Locked(wait)) => {
             let mins = wait.as_secs().div_ceil(60).max(1);
@@ -1338,6 +1482,8 @@ async fn delete_key(State(auth): State<Auth>, Json(body): Json<NameBody>) -> Res
 // ---- sign in with GitHub or Microsoft ----------------------------------------
 
 const OAUTH_COOKIE: &str = "dw_oauth";
+/// Set when the sign-in page's "stay signed in" box was ticked before going to the provider.
+const REMEMBER_COOKIE: &str = "dw_remember";
 const OAUTH_IDLE: Duration = Duration::from_secs(24 * 3600);
 
 /// A path on this site, never an address on another one.
@@ -1351,9 +1497,13 @@ fn safe_next(next: Option<&str>) -> String {
 }
 
 fn oauth_cookie(value: &str, secure: bool, max_age: u64) -> HeaderValue {
+    oauth_cookie_named(OAUTH_COOKIE, value, secure, max_age)
+}
+
+fn oauth_cookie_named(name: &str, value: &str, secure: bool, max_age: u64) -> HeaderValue {
     let secure = if secure { "; Secure" } else { "" };
     HeaderValue::from_str(&format!(
-        "{OAUTH_COOKIE}={value}; Path=/auth; HttpOnly; SameSite=Lax; Max-Age={max_age}{secure}"
+        "{name}={value}; Path=/auth; HttpOnly; SameSite=Lax; Max-Age={max_age}{secure}"
     ))
     .expect("cookie is ascii")
 }
@@ -1389,9 +1539,14 @@ async fn oauth_start(
     match auth.oauth().begin(provider, &next) {
         Ok((url, state)) => {
             let mut response = Redirect::to(&url).into_response();
+            let secure = auth.secure_cookie(&headers);
+            response
+                .headers_mut()
+                .append(header::SET_COOKIE, oauth_cookie(&state, secure, 600));
+            let wanted = query.get("remember").is_some_and(|v| v == "1");
             response.headers_mut().append(
                 header::SET_COOKIE,
-                oauth_cookie(&state, auth.secure_cookie(&headers), 600),
+                oauth_cookie_named(REMEMBER_COOKIE, if wanted { "1" } else { "" }, secure, 600),
             );
             response
         }
@@ -1426,11 +1581,17 @@ async fn oauth_callback(
                 {
                     Ok((role, label, next)) => {
                         info!(provider = provider.id(), %label, role = role.name(), "signed in with a provider");
-                        let token = auth.new_session_with(role, None, Some(label), OAUTH_IDLE);
+                        let remember =
+                            cookie_named(&headers, REMEMBER_COOKIE).as_deref() == Some("1");
+                        let token =
+                            auth.new_session_with(role, None, Some(label), OAUTH_IDLE, remember);
+                        let max_age = if remember { REMEMBER } else { OAUTH_IDLE }.as_secs();
                         let mut r = Redirect::to(&next).into_response();
+                        r.headers_mut()
+                            .append(header::SET_COOKIE, session_cookie(&token, secure, max_age));
                         r.headers_mut().append(
                             header::SET_COOKIE,
-                            session_cookie(&token, secure, OAUTH_IDLE.as_secs()),
+                            oauth_cookie_named(REMEMBER_COOKIE, "", secure, 0),
                         );
                         r
                     }

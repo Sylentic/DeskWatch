@@ -149,6 +149,9 @@ pub struct StatsData {
     /// them (a Prometheus host with the update metrics).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updates: Option<u32>,
+    /// How many of `updates` are security updates, when the host says.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updates_security: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reboot_needed: Option<bool>,
     /// Parts of the host card the setup page switched off for this host

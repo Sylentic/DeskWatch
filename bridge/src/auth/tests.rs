@@ -658,3 +658,72 @@ async fn without_a_data_folder_nothing_is_redirected() {
     let r = send(&app_for(&auth), "GET", "/", &[("accept", "text/html")]).await;
     assert_eq!(r.status(), StatusCode::OK);
 }
+
+#[test]
+fn sessions_survive_a_restart_and_only_a_hash_is_saved() {
+    let (d, auth) = fresh();
+    auth.setup_admin("admin", PW).unwrap();
+    let (_, token) = auth.login(ip("10.0.0.2"), "admin", PW).ok().unwrap();
+    let saved = std::fs::read_to_string(d.0.join("sessions.json")).unwrap();
+    assert!(
+        !saved.contains(&token),
+        "the session id must not be on disk"
+    );
+    let again = Auth::open(Some(&d.0), false).unwrap();
+    assert_eq!(again.session_role(&token), Some(Role::Admin));
+    // Signing out is saved too.
+    again.end_session(&token);
+    let third = Auth::open(Some(&d.0), false).unwrap();
+    assert_eq!(third.session_role(&token), None);
+}
+
+#[test]
+fn stay_signed_in_lasts_thirty_days_and_a_plain_session_seven() {
+    let (d, auth) = fresh();
+    auth.setup_admin("admin", PW).unwrap();
+    let (_, plain) = auth.login(ip("10.0.0.2"), "admin", PW).ok().unwrap();
+    let (_, kept) = auth
+        .login_with(ip("10.0.0.2"), "admin", PW, true)
+        .ok()
+        .unwrap();
+    // Eight days later only the remembered one is alive.
+    let eight_days = 8 * 24 * 3600;
+    for s in auth.0.sessions.lock().unwrap().values_mut() {
+        s.seen -= eight_days;
+        if s.until != 0 {
+            s.until -= eight_days;
+        }
+    }
+    assert_eq!(auth.session_role(&plain), None);
+    assert_eq!(auth.session_role(&kept), Some(Role::Admin));
+    // 31 days after sign-in it ends, even though it was in use.
+    for s in auth.0.sessions.lock().unwrap().values_mut() {
+        s.until = now_secs() - 1;
+    }
+    assert_eq!(auth.session_role(&kept), None);
+    drop(d);
+}
+
+#[test]
+fn expired_sessions_are_not_loaded_and_a_password_change_ends_saved_ones() {
+    let (d, auth) = fresh();
+    auth.setup_admin("admin", PW).unwrap();
+    let (_, token) = auth
+        .login_with(ip("10.0.0.2"), "admin", PW, true)
+        .ok()
+        .unwrap();
+    auth.end_all_sessions();
+    assert_eq!(
+        Auth::open(Some(&d.0), false).unwrap().session_role(&token),
+        None
+    );
+    let (_, token) = auth.login(ip("10.0.0.2"), "admin", PW).ok().unwrap();
+    for s in auth.0.sessions.lock().unwrap().values_mut() {
+        s.seen -= 8 * 24 * 3600;
+    }
+    auth.save_sessions();
+    assert_eq!(
+        Auth::open(Some(&d.0), false).unwrap().session_role(&token),
+        None
+    );
+}
