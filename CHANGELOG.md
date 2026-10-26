@@ -18,6 +18,11 @@ All notable changes to DeskWatch are listed here. The format follows
 - **A red GPU line on the CPU graph** of a host that reports a GPU, on the same 0 to 100 % scale.
 ### Fixed
 
+- **Customized layouts are saved more reliably.** A change the bridge could not store (for example a lost session or no
+  writable data folder) used to be dropped without a word and was gone after a reload; the Customize bar now says so.
+  Saves are sent one after the other, a late answer from the bridge no longer overwrites a change you just made, and
+  the layout calls use relative addresses like the rest of the page, so they also work behind a proxy under a sub path.
+
 - **Setup no longer shows an error after saving the Dashboard hosts view.** Changing Detailed to Compact (or back)
   was saved correctly, but the page said "Saved, but kiosk could not be started" because the answer did not say it
   was applied. It now shows the normal "Restart now" notice; the restart itself is expected, as the layout is built

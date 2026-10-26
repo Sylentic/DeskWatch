@@ -1016,7 +1016,7 @@
   // the bridge refuses them anyway, this only keeps buttons that do nothing
   // off the page.
   var myRole = null;
-  fetch('/api/auth/status').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+  fetch('api/auth/status').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
     myRole = (j && j.state === 'signed_in' && j.role) || null;
     document.documentElement.classList.toggle('ro', myRole === 'viewer');
     if (snap) render(snap);
@@ -1025,10 +1025,12 @@
   try { custom = JSON.parse(localStorage.getItem(CUSTOM_KEY) || 'null'); } catch (e) { custom = null; }
   // A signed-in person's layout lives on the bridge. Without a login, or with a
   // screen key, the answer is an error and the layout stays in this browser.
-  fetch('/api/auth/layout').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+  // (Relative addresses, like the other calls, so a proxy under a sub path works.)
+  var edited = false;          // the person changed the layout here before the bridge's copy arrived
+  fetch('api/auth/layout').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
     if (!j) return;
     onServer = true;
-    custom = j.layout || null;
+    if (!edited) custom = j.layout || null;
     if (snap) drawGrid();
   }).catch(function () {});
 
@@ -1056,16 +1058,28 @@
       return p;
     });
   }
-  function saveCustom() {
-    if (onServer) {
-      fetch('/api/auth/layout', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(custom) }).catch(function () {});
-      return;
-    }
+  // Saves go one after the other, so an older answer can never overwrite a newer one.
+  // When the bridge cannot keep it (signed out, no data folder) the bar says so; before, the
+  // change was lost on the next reload without a word.
+  var saveChain = Promise.resolve(), saveNote = '';
+  function saveLocal() {
     try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); } catch (e) {}
+  }
+  function saveCustom() {
+    edited = true;
+    if (!onServer) { saveLocal(); return; }
+    var body = JSON.stringify(custom);
+    saveChain = saveChain.then(function () {
+      return fetch('api/auth/layout', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: body })
+        .then(function (r) { if (!r.ok) throw new Error(String(r.status)); saveNote = ''; })
+        .catch(function () { saveNote = 'Could not save to your account. Sign in again and retry.'; })
+        .then(function () { if (snap && editing && !gesture) renderEditBar(snap.layout); });
+    });
   }
   function resetCustom() {
     custom = null;
-    if (onServer) fetch('/api/auth/layout/reset', { method: 'POST' }).catch(function () {});
+    edited = true;
+    if (onServer) saveChain = saveChain.then(function () { return fetch('api/auth/layout/reset', { method: 'POST' }); }).catch(function () {});
     else try { localStorage.removeItem(CUSTOM_KEY); } catch (x) {}
   }
   function ensureCustom() {
@@ -1098,7 +1112,7 @@
       return '<button type="button" class="add" data-edit="show" data-id="' + esc(p.id) + '" title="Show this panel again">+ ' + esc(p.title || TITLES[p.widget] || p.widget) + '</button>';
     }).join('') : '<span class="none">none</span>';
     bar.innerHTML = '<span class="t">Customize</span>' +
-      '<span class="hint">Drag a panel by its handle to move it, drag the corner to resize it. Saved ' + (onServer ? 'for your account.' : 'in this browser.') + '</span>' +
+      '<span class="hint">Drag a panel by its handle to move it, drag the corner to resize it.' + (saveNote ? ' <b class="warn">' + saveNote + '</b>' : ' Saved ' + (onServer ? 'for your account.' : 'in this browser.')) + '</span>' +
       '<span class="tray"><span class="lbl">Hidden panels</span>' + tray + '</span>' +
       '<span class="cells' + (used > cap ? ' over' : '') + '">' + used + ' of ' + cap + ' cells' + (used > cap ? ' &middot; too big, the grid will scroll' : '') + '</span>' +
       '<button type="button" data-edit="reset"' + (custom ? '' : ' disabled') + '>Reset to default</button>' +

@@ -568,6 +568,7 @@ a.link:active { background: rgba(255, 255, 255, .08); }
 .edit-bar[hidden] { display: none; }
 .edit-bar .t { font-weight: 600; }
 .edit-bar .hint { color: var(--dim); font-size: 0.85rem; }
+.edit-bar .hint .warn { color: var(--amber); font-weight: 600; }
 .edit-bar .cells { margin-left: auto; font-family: var(--mono); font-size: 0.8rem; color: var(--dim); }
 .edit-bar .cells.over { color: var(--amber); }
 .edit-bar button { font: inherit; font-size: 0.85rem; color: var(--text); background: transparent; border: 1px solid var(--track); border-radius: 0.5rem; padding: 0.35rem 0.8rem; cursor: pointer; }
