@@ -105,7 +105,7 @@ alerts sent over MQTT (Home Assistant). `[kiosk] enabled = true` serves the page
 layout and widgets are in [kiosk.md](kiosk.md#3-choose-the-widgets). To also take alerts from MQTT,
 set `enabled = true` (or delete the line) and give `[mqtt]` the broker's host, as in section 6.
 
-**Your own data.** Without any `[[source.*]]` block the page shows the container's own stats and nothing else. Add
+**Your own data.** Without any `[[source.*]]` block the page shows no hosts and nothing else. Add
 the sources you use (GitHub, Azure DevOps, Gitea, Prometheus) exactly as in
 [bridge/config.example.toml](../bridge/config.example.toml) and [install.md](install.md#5-sources), with their
 secrets in `dashboard/credentials/`, section 4 explains how. Only a Gitea source needs an incoming connection
@@ -413,8 +413,8 @@ The bridge machine's own host card reads `/proc` and `/sys`, and a container see
 - **CPU temperature:** often empty, because the thermal sensors are not always visible inside a container.
 
 If you want exact numbers for several machines, use a Prometheus source with node_exporter instead
-([install.md](install.md#prometheus-host-stats-and-containers)). Set `enabled = false` under `[server]` to hide the
-bridge's own card, so only the Prometheus hosts show.
+([install.md](install.md#prometheus-host-stats-and-containers)). The bridge's own card is off by default, so only the
+Prometheus hosts show; `enabled = true` under `[server]` brings it back.
 
 ## 9. Health and restarts
 

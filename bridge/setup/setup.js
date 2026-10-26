@@ -702,7 +702,7 @@
     // The bridge's own machine as a host next to the ones from Prometheus.
     var own = checkbox(d.server.enabled, !d.server.editable);
     card.appendChild(settingRow('Show this machine\'s own stats',
-      'The bridge reads its own /proc and /sys. Turn off when a Prometheus source already covers this machine, for instance in Docker, where the local numbers are the container\'s', own));
+      'The bridge reads its own /proc and /sys. Off by default: add this machine as a Prometheus host instead. Local numbers are rough, and in Docker they are the container\'s', own));
     if (d.server.editable) {
       var ownSave = el('button', 'secondary', 'Save');
       ownSave.type = 'button';

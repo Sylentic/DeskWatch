@@ -21,6 +21,13 @@ All notable changes to DeskWatch are listed here. The format follows
 - **Load and Cores** are gone from the host card and from the snapshot (`load` and `cpu_count`), and the `cpu_count`
   query key no longer exists. CPU % says the same thing.
 
+### Changed
+
+- **The bridge no longer shows its own machine by default.** Hosts come from Prometheus, which is exact (and right in
+  Docker, where the bridge only sees the container). To keep the old behaviour set `[server] enabled = true`, or use
+  **Show this machine's own stats** under **Dashboard hosts** on the setup page. Add the machine as a Prometheus host
+  instead ([docs/hosts.md](docs/hosts.md)).
+
 ## [1.0.6]
 
 ### Added

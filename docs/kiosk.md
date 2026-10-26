@@ -20,7 +20,7 @@ A grid of cards, 4 columns by 3 rows by default:
 | Widget | Shows |
 |---|---|
 | `stats` | One host in detail: CPU, RAM, disk bars with warning colours, GPU and VRAM bars and GPU temperature (only for a host that reports a GPU, see [GPU](#gpu-on-the-host-card)), temperature, network rates, uptime, pending updates and restart needed (for hosts that report them, see [hosts.md](hosts.md)), a CPU graph of the last few minutes |
-| `hosts` | Every host (the bridge's own machine and every host a Prometheus source reports): a list, or with `view = "detailed"` the chosen host in detail on top of the list |
+| `hosts` | Every host a Prometheus source reports (and the bridge's own machine with `[server] enabled = true`): a list, or with `view = "detailed"` the chosen host in detail on top of the list |
 | `jobs` | Running now: a heading per run, and under it a row per job (parallel jobs, GitLab jobs, Bitbucket steps, Azure DevOps jobs) with its status colour, step, progress bar and a live elapsed time |
 | `prs` | Open pull requests per repository, newest first, with the total |
 | `pipelines` | The latest run of every pipeline, one boxed row each, tinted by status (failed red, success green, running orange, waiting for approval amber), newest first across all sources (a running run counts from its start, a finished one from its end), so the top rows are always the most recent activity; in the default layout it is two cells wide and scrolls |
@@ -235,7 +235,7 @@ rows = 3
 
 [[kiosk.panel]]
 widget = "stats"
-host = "homeserver"  # which host; default is the first one (the bridge's own machine)
+host = "homeserver"  # which host; default is the first one
 
 [[kiosk.panel]]
 widget = "stats"

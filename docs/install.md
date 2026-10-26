@@ -26,7 +26,7 @@ What you need:
 - A Linux server that stays on, with `systemd` (Debian 12 or newer is what the steps are written for).
 - A Mosquitto broker the bridge can reach (often the same server).
 - At least one source: Gitea, GitHub or GitHub Enterprise, GitLab, Bitbucket Cloud, Azure DevOps, Prometheus, or only Home Assistant alerts. With no
-  source at all the bridge still shows the server's own stats.
+  source at all the Hosts panel is empty (set `[server] enabled = true` for the bridge's own stats).
 
 Contents: [1. Get the binary](#1-get-the-binary) · [2. Install it](#2-install-the-bridge) ·
 [3. Configure](#3-configure-the-bridge) · [4. Mosquitto](#4-mosquitto-logins) · [5. Sources](#5-sources) ·

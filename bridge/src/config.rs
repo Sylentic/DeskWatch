@@ -361,9 +361,9 @@ impl Default for MqttConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ServerConfig {
-    /// Report the machine the bridge runs on. Turn off when a Prometheus
-    /// source already covers it (for instance in Docker, where the bridge only
-    /// sees the container's network and sensors).
+    /// Report the machine the bridge runs on from its own /proc and /sys.
+    /// Off by default: hosts come from Prometheus, which is exact even in
+    /// Docker, where the bridge only sees the container's network and sensors.
     pub enabled: bool,
     /// Name shown on the stats page. Defaults to the system hostname.
     pub display_name: Option<String>,
@@ -378,7 +378,7 @@ pub struct ServerConfig {
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
+            enabled: false,
             display_name: None,
             interval_s: 5,
             net_iface: None,
@@ -1871,7 +1871,7 @@ mod tests {
         );
         assert_eq!(config.mqtt.topic_prefix, "deskpanel");
         assert_eq!(config.server.interval_s, 5);
-        assert!(config.server.enabled);
+        assert!(!config.server.enabled);
         assert!(config.rotation.is_none());
         assert!(config.source.gitea.is_empty());
         assert_eq!(config.http.listen.port(), 8787);
@@ -1927,20 +1927,20 @@ mod tests {
     }
 
     #[test]
-    fn the_data_folder_can_switch_the_local_host_off_and_back() {
+    fn the_data_folder_can_switch_the_local_host_on_and_back() {
         let config = Config::from_toml("").unwrap();
-        assert!(config.server.enabled);
+        assert!(!config.server.enabled, "off by default");
         let with = config
             .clone()
-            .with_overlay("[server]\nenabled = false\n")
+            .with_overlay("[server]\nenabled = true\n")
             .unwrap();
-        assert!(!with.server.enabled);
-        assert!(with.without_overlay().server.enabled);
-        // bridge.toml says off, the data folder turns it on again.
-        let off = Config::from_toml("[server]\nenabled = false\n").unwrap();
-        let on = off.with_overlay("[server]\nenabled = true\n").unwrap();
-        assert!(on.server.enabled);
-        assert!(!on.without_overlay().server.enabled);
+        assert!(with.server.enabled);
+        assert!(!with.without_overlay().server.enabled);
+        // bridge.toml says on, the data folder turns it off again.
+        let on = Config::from_toml("[server]\nenabled = true\n").unwrap();
+        let off = on.with_overlay("[server]\nenabled = false\n").unwrap();
+        assert!(!off.server.enabled);
+        assert!(off.without_overlay().server.enabled);
         assert!(
             Config::from_toml("")
                 .unwrap()

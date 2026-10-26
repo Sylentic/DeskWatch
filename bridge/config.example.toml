@@ -27,7 +27,7 @@ topic_prefix = "deskpanel"      # matches the schema, change only for testing
 keep_alive_s = 30
 
 [server]
-# enabled = false               # skip this machine's own stats, e.g. when a Prometheus source covers it
+# enabled = true                # also show this machine's own stats (read from /proc); off by default, hosts come from Prometheus
 # display_name = "homeserver"   # name on the stats page, defaults to the hostname
 interval_s = 5                  # stats sample and publish interval
 # net_iface = "eth0"            # defaults to the busiest non-loopback interface
@@ -145,7 +145,7 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 
 # Host stats and container health from a Prometheus server that scrapes
 # node_exporter or windows_exporter (and cAdvisor). Each host gets its own card on the kiosk page.
-# The bridge's own machine (read from /proc) keeps working without Prometheus.
+# The bridge's own machine is only shown with [server] enabled = true.
 # [[source.prometheus]]
 # name = "home"                 # required: used in logs
 # url = "http://prometheus.example.lan:9090"  # required
