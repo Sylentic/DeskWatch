@@ -20,7 +20,8 @@
 //! docs/kiosk.md). The WebSocket still refuses an `Origin` that is not this
 //! host, so a page on another site cannot read it through the browser.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -69,18 +70,65 @@ const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self' 'unsa
 type Frame = Arc<str>;
 
 /// What people clicked away on a screen. It is kept on the bridge, so a
-/// dismissal holds on every screen, and in memory only: a restart shows the
-/// failures again.
+/// dismissal holds on every screen. Dismissed failed runs are also written to
+/// `dismissed.json` in the data folder, so a restart does not bring them back;
+/// mutes end by themselves and stay in memory.
 #[derive(Default)]
 struct Clicked {
-    /// Failed runs (`key@started`) taken off the list and the badge.
-    failed: HashSet<String>,
+    /// Failed runs (`key@started`) taken off the list and the badge, with the
+    /// unix second they were dismissed.
+    failed: HashMap<String, u64>,
+    /// Where `failed` is kept, when there is a data folder.
+    path: Option<PathBuf>,
     /// Sources (id) whose "source down" pill is muted until they work again.
     muted: HashSet<String>,
 }
 
 /// More than this many ids in one set means something is wrong with the sender.
 const MAX_CLICKED: usize = 500;
+
+/// File in the data folder with the dismissed failed runs.
+const DISMISSED_FILE: &str = "dismissed.json";
+
+/// A dismissal whose run is no longer failed is forgotten after this long. It
+/// is not dropped at once, because after a restart the sources have not
+/// reported yet and no run looks failed.
+const DISMISSED_KEEP_S: u64 = 7 * 24 * 3600;
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+impl Clicked {
+    /// Read the dismissed failures from the data folder. A missing or broken
+    /// file means nothing is dismissed.
+    fn load(dir: &Path) -> Self {
+        let path = dir.join(DISMISSED_FILE);
+        let failed = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|text| serde_json::from_str::<HashMap<String, u64>>(&text).ok())
+            .unwrap_or_default();
+        Self {
+            failed,
+            path: Some(path),
+            ..Self::default()
+        }
+    }
+
+    /// Write the dismissed failures (0600). Best effort: the dismissal still
+    /// holds in memory if the disk refuses.
+    fn save(&self) {
+        let Some(path) = &self.path else { return };
+        let Ok(text) = serde_json::to_string(&self.failed) else {
+            return;
+        };
+        if let Err(e) = crate::store::write_atomic(path, text.as_bytes(), 0o600) {
+            tracing::warn!("cannot save the dismissed failures: {e:#}");
+        }
+    }
+}
 
 type SharedClicked = Arc<Mutex<Clicked>>;
 
@@ -121,6 +169,13 @@ impl Kiosk {
             clicked: SharedClicked::default(),
             containers: None,
         }
+    }
+
+    /// Keep dismissed failures in the data folder, so they stay dismissed after
+    /// a restart.
+    pub fn with_data_dir(mut self, dir: &Path) -> Self {
+        self.clicked = Arc::new(Mutex::new(Clicked::load(dir)));
+        self
     }
 
     /// Tell the page which Firefox container each source type opens its
@@ -242,8 +297,15 @@ impl Kiosk {
         if let Some(failed) = value["failed"].as_array_mut() {
             let id = |f: &Value| format!("{}@{}", f["key"].as_str().unwrap_or(""), f["started"]);
             let live: HashSet<String> = failed.iter().map(id).collect();
-            clicked.failed.retain(|x| live.contains(x));
-            failed.retain(|f| !clicked.failed.contains(&id(f)));
+            let now = unix_now();
+            let before = clicked.failed.len();
+            clicked
+                .failed
+                .retain(|x, at| live.contains(x) || now.saturating_sub(*at) < DISMISSED_KEEP_S);
+            if clicked.failed.len() != before {
+                clicked.save();
+            }
+            failed.retain(|f| !clicked.failed.contains_key(&id(f)));
             let left = failed.len();
             if let Some(badge) = value["badges"]
                 .as_array_mut()
@@ -501,7 +563,9 @@ async fn dismiss_failed_handler(
     if clicked.failed.len() + ids.len() > MAX_CLICKED {
         return (StatusCode::BAD_REQUEST, "too many ids").into_response();
     }
-    clicked.failed.extend(ids);
+    let now = unix_now();
+    clicked.failed.extend(ids.into_iter().map(|id| (id, now)));
+    clicked.save();
     StatusCode::NO_CONTENT.into_response()
 }
 

@@ -908,7 +908,8 @@
       var fmsg = [f.step ? 'step ' + f.step : '', f.finished ? ago(nowS() - f.finished) : ''].filter(Boolean).join(' · ');
       cls = '';
       html = '<span class="tag">Failed</span>' + src(f.source) +
-        '<span>' + esc((f.project || '') + (f.pipeline ? ' · ' + f.pipeline : '')) + '</span>' +
+        (fh ? '<a class="name link" ' + linkAttrs(fh, f.source) + ' title="Open this run">' : '<span>') +
+        esc((f.project || '') + (f.pipeline ? ' · ' + f.pipeline : '')) + (fh ? '</a>' : '</span>') +
         (fmsg ? '<span class="msg">' + esc(fmsg) + '</span>' : '') +
         (failed.length > 1 ? '<span class="meta">+' + (failed.length - 1) + '</span>' : '') +
         (fh ? '<a class="act" ' + linkAttrs(fh, f.source) + '>Open</a>' : '') +
@@ -922,7 +923,7 @@
     if (el.innerHTML !== html) el.innerHTML = html;
   }
   var bannerSeen = '';
-  // The failed pill: x dismisses that run, Open opens it, the rest of the pill
+  // The failed pill: x dismisses that run, the pipeline name and Open open it, the rest of the pill
   // opens the list of failed runs.
   $('banner').addEventListener('click', function (e) {
     var x = e.target.closest ? e.target.closest('[data-dismiss]') : null;

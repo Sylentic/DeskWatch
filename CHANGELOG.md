@@ -7,6 +7,13 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Dismissed failed runs stay dismissed after a restart.** They are kept in `dismissed.json` in the data folder (a new
+  failure of the same pipeline still shows). Without a data folder they are still forgotten on restart.
+- **The failed pill opens the run.** The pipeline name in the red pill is now a link to the failed run (it opens in the
+  source's Firefox container when one is set), not only the Open button.
+
 ### Changed
 
 - **Passed and skipped stages clean up.** In Running now, a stage of a run that is still going disappears 30 seconds
