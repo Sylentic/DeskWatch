@@ -179,7 +179,7 @@
       '<div><span class="l">Net in</span><span>' + (s.net ? rate(s.net.rx_bps) : '--') + '</span></div>' +
       '<div><span class="l">Net out</span><span>' + (s.net ? rate(s.net.tx_bps) : '--') + '</span></div>' +
       // Only for hosts that report them (see docs/hosts.md).
-      (s.updates == null ? '' : '<div><span class="l">Updates</span><span>' + s.updates + '</span></div>') +
+      (s.updates == null ? '' : '<div><span class="l">Pending updates</span><span>' + s.updates + '</span></div>') +
       (s.reboot_needed ? '<div><span class="l">Restart</span><span class="warn-text">needed</span></div>' : '') +
       '</div><div class="sparkhead"><span>CPU' + (gpuHistory[host.name] && gpuHistory[host.name].some(function (g) { return g != null; }) ? ' <span class="gpu-key">&amp; GPU</span>' : '') + ' &middot; ' + spanLabel(vals.length) + '</span><span>PEAK ' + peak + '</span></div>' +
       sparkline(vals, gpuHistory[host.name]);

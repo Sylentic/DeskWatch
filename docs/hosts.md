@@ -25,7 +25,7 @@ add Prometheus a scrape job for `win-host:9182`. Use that `win-host:9182` as the
 
 ## Pending updates and restart needed
 
-The host card shows **Updates** (how many are waiting) and, when the machine asks for it, **Restart needed**. A host
+The host card shows **Pending updates** (how many are waiting) and, when the machine asks for it, **Restart needed**. A host
 that needs a restart sorts to the top of the list with an amber pip. Nothing shows for a host that does not report
 them.
 
