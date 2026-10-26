@@ -44,3 +44,8 @@ button:disabled { opacity: .55; cursor: default; }
 
 /* "My account": a quiet button for signing out. */
 button.link { margin-top: 1rem; background: transparent; color: var(--fg); border: 1px solid var(--field-line); }
+
+/* "Stay signed in" under the password. */
+label.keep { flex-direction: row; align-items: center; gap: .6rem; color: var(--fg); font-size: .92rem; cursor: pointer; }
+label.keep input { width: 18px; height: 18px; padding: 0; accent-color: var(--fg); }
+.keephint { margin: -.55rem 0 0 1.65rem; font-size: .8rem; }

@@ -67,7 +67,7 @@
     if (!first && providers.length) {
       var box = el('div', { class: 'oauth' });
       providers.forEach(function (id) {
-        var a = el('a', { class: 'obtn', href: 'auth/login/' + id + '?next=' + encodeURIComponent(nextUrl()) },
+        var a = el('a', { class: 'obtn', 'data-provider': id, href: 'auth/login/' + id + '?next=' + encodeURIComponent(nextUrl()) },
           'Continue with ' + (NAMES[id] || id));
         box.appendChild(a);
       });
@@ -75,6 +75,7 @@
       card.appendChild(el('div', { class: 'sep' }, 'or use a local account'));
     }
     var form = el('form');
+    var keep = null;
     form.appendChild(field('Username', 'username', 'text', first ? 'admin' : '', 'username'));
     form.appendChild(field(first ? 'New password' : 'Password', 'password', 'password', '',
       first ? 'new-password' : 'current-password'));
@@ -82,6 +83,13 @@
       form.appendChild(el('span', { class: 'hint' },
         'At least ' + min + ' characters. A passphrase of a few words is fine.'));
       form.appendChild(field('Repeat password', 'repeat', 'password', '', 'new-password'));
+    }
+    if (!first) {
+      keep = el('label', { class: 'keep' });
+      keep.appendChild(el('input', { type: 'checkbox', name: 'remember' }));
+      keep.appendChild(el('span', {}, 'Stay signed in for 30 days'));
+      form.appendChild(keep);
+      form.appendChild(el('span', { class: 'hint keephint' }, 'Only on a device you trust. Not for shared screens.'));
     }
     var button = el('button', { type: 'submit' }, first ? 'Save and sign in' : 'Sign in');
     form.appendChild(button);
@@ -96,7 +104,7 @@
       }
       button.disabled = true;
       post(first ? 'api/auth/setup' : 'api/auth/login',
-        { username: data.get('username'), password: data.get('password') })
+        { username: data.get('username'), password: data.get('password'), remember: !first && !!data.get('remember') })
         .then(function (r) {
           var wanted = new URLSearchParams(location.search).get('next');
           // A new administrator lands on Setup to add sources.
@@ -109,6 +117,15 @@
         });
     });
     card.appendChild(form);
+    // The provider buttons leave the page, so they carry the choice in the link.
+    if (keep) {
+      keep.firstChild.addEventListener('change', function () {
+        card.querySelectorAll('a.obtn').forEach(function (a) {
+          var u = a.getAttribute('href').replace(/&remember=1/, '');
+          a.setAttribute('href', keep.firstChild.checked ? u + '&remember=1' : u);
+        });
+      });
+    }
     if (first) {
       card.appendChild(el('div', { class: 'msg warn' },
         'Until a password is set, the page only answers the local network.'));
