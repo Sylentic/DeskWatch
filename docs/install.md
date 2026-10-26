@@ -292,7 +292,7 @@ hosts = [
 
 ```
 
-`instance` is the label Prometheus gives the node_exporter target. A stopped container disappears from cAdvisor,
+`instance` is the label Prometheus gives the node_exporter (or, for Windows, windows_exporter) target; [hosts.md](hosts.md) covers Windows and pending updates. A stopped container disappears from cAdvisor,
 so only names in `expect_containers` can be reported, and they must match the container name exactly. Each host
 gets a card on the dashboard and what is down is listed there. Hosts and containers that are down appear in the Containers list. GPU usage, VRAM and GPU temperature show on
 the card of any host that reports them: by default they are read from the NVIDIA DCGM exporter

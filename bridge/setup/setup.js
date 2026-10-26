@@ -268,7 +268,7 @@
     },
     prometheus: {
       strings: [['url', 'Prometheus address', 'http://prometheus.example.lan:9090']],
-      lists: [['hosts', 'Hosts, one per line (the node_exporter instance, such as node-exporter:9100)']],
+      lists: [['hosts', 'Hosts, one per line (the exporter instance, such as node-exporter:9100 for Linux or win-pc:9182 for Windows)']],
       secrets: [['token', 'Bearer token (only behind a proxy)', false]]
     }
   };

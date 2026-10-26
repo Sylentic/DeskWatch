@@ -75,8 +75,6 @@ impl StatsCollector {
             host: self.host.clone(),
             cpu_pct,
             cpu_temp_c: read_cpu_temp_c(),
-            load: read("/proc/loadavg").as_deref().and_then(parse_loadavg),
-            cpu_count: proc_stat.as_deref().and_then(parse_cpu_count),
             ram_pct: read("/proc/meminfo").as_deref().and_then(parse_ram_pct),
             disk_pct: disk_used_pct(&self.disk_path),
             gpu_pct: gpu.pct,
@@ -84,6 +82,9 @@ impl StatsCollector {
             gpu_temp_c: gpu.temp_c,
             uptime_s: read("/proc/uptime").as_deref().and_then(parse_uptime),
             net: self.sample_net(),
+            // The machine's own /proc says nothing about updates.
+            updates: None,
+            reboot_needed: None,
         }
     }
 
@@ -162,15 +163,6 @@ pub fn parse_cpu_times(proc_stat: &str) -> Option<CpuTimes> {
     Some(CpuTimes { idle, total })
 }
 
-/// Number of `cpuN` lines in `/proc/stat`.
-pub fn parse_cpu_count(proc_stat: &str) -> Option<u32> {
-    let count = proc_stat
-        .lines()
-        .filter(|l| l.starts_with("cpu") && l.as_bytes().get(3).is_some_and(u8::is_ascii_digit))
-        .count();
-    (count > 0).then(|| u32::try_from(count).unwrap_or(u32::MAX))
-}
-
 /// Busy percentage between two `CpuTimes` samples.
 pub fn cpu_usage_pct(prev: CpuTimes, now: CpuTimes) -> Option<f32> {
     let total = now.total.checked_sub(prev.total)?;
@@ -180,12 +172,6 @@ pub fn cpu_usage_pct(prev: CpuTimes, now: CpuTimes) -> Option<f32> {
     }
     let busy = total.saturating_sub(idle) as f64 / total as f64 * 100.0;
     Some(round1(busy))
-}
-
-/// The three load averages from `/proc/loadavg`.
-pub fn parse_loadavg(text: &str) -> Option<[f32; 3]> {
-    let mut parts = text.split_whitespace().map(|p| p.parse::<f32>().ok());
-    Some([parts.next()??, parts.next()??, parts.next()??])
 }
 
 /// Used memory percentage from `/proc/meminfo`, based on `MemAvailable`.
@@ -411,21 +397,6 @@ Inter-|   Receive                                                |  Transmit
     }
 
     #[test]
-    fn cpu_count_counts_numbered_lines() {
-        assert_eq!(parse_cpu_count(PROC_STAT), Some(2));
-        assert_eq!(parse_cpu_count("cpu  1 2 3\n"), None);
-    }
-
-    #[test]
-    fn loadavg() {
-        assert_eq!(
-            parse_loadavg("0.42 0.38 0.30 1/234 5678\n"),
-            Some([0.42, 0.38, 0.30])
-        );
-        assert_eq!(parse_loadavg("0.42 junk"), None);
-    }
-
-    #[test]
     fn ram_uses_mem_available() {
         let meminfo =
             "MemTotal:       16000000 kB\nMemFree:  1000000 kB\nMemAvailable:    4000000 kB\n";
@@ -479,7 +450,6 @@ Inter-|   Receive                                                |  Transmit
         let second = collector.collect();
         if cfg!(target_os = "linux") {
             assert!(second.uptime_s.is_some());
-            assert!(second.load.is_some());
         }
     }
 }

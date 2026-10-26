@@ -4,7 +4,11 @@
 //!
 //! Every `interval_s` the source runs a handful of instant queries (one per
 //! stats field, covering all hosts at once) and sends the answer to the main
-//! loop as a `StatsReport`:
+//! loop as a `StatsReport`. Linux hosts (node_exporter) and Windows hosts
+//! (windows_exporter) are told apart by the metrics they have: every default
+//! query is "the Linux metric `or` the Windows metric", so a host simply
+//! answers with whichever exists and no per-host setting is needed. Pending
+//! updates change slowly, so those two queries run every `UPDATES_EVERY` only.
 //!
 //! - one `stats:<name>` page per configured host;
 //! - a list of what is down: expected containers that cAdvisor no longer
@@ -22,7 +26,7 @@ pub mod api;
 #[cfg(test)]
 mod tests;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use tracing::{info, warn};
@@ -37,17 +41,23 @@ use api::{HttpApi, Sample};
 pub const KIND: &str = "prometheus";
 
 /// Stats fields whose PromQL can be replaced in the config (`queries = { ... }`).
-pub const QUERY_KEYS: [&str; 9] = [
+pub const QUERY_KEYS: [&str; 10] = [
     "cpu_pct",
     "cpu_temp_c",
-    "cpu_count",
     "ram_pct",
     "disk_pct",
     "gpu_pct",
     "gpu_mem_pct",
     "gpu_temp_c",
     "uptime_s",
+    "updates",
+    "reboot_needed",
 ];
+
+/// Pending updates and "restart needed" are asked this often, not on every
+/// round: they change a few times a day, and on a failed round the last
+/// answer stays.
+const UPDATES_EVERY: Duration = Duration::from_secs(15 * 60);
 
 /// A container counts as down when cAdvisor has not seen it for this long.
 /// A stopped container keeps showing up in cAdvisor for a while, with an
@@ -107,9 +117,10 @@ impl Source for Prometheus {
         let interval = Duration::from_secs(config.interval_s);
 
         let mut failures = 0;
+        let mut slow = Slow::default();
         let mut reported = None;
         loop {
-            let health = match collect(&api, &queries, &config.hosts).await {
+            let health = match collect(&api, &queries, &config.hosts, &mut slow).await {
                 Ok(report) => {
                     failures = 0;
                     if !sink.stats(report).await {
@@ -154,8 +165,6 @@ pub struct Queries {
     pub up: String,
     pub cpu_pct: String,
     pub cpu_temp_c: String,
-    pub cpu_count: String,
-    pub load: String,
     pub ram_pct: String,
     pub disk_pct: String,
     /// GPU queries default to the NVIDIA DCGM exporter; hosts without it
@@ -164,6 +173,8 @@ pub struct Queries {
     pub gpu_mem_pct: String,
     pub gpu_temp_c: String,
     pub uptime_s: String,
+    pub updates: String,
+    pub reboot_needed: String,
     pub net_rx: String,
     pub net_tx: String,
     /// Seconds since cAdvisor last saw each named container.
@@ -174,37 +185,42 @@ impl Queries {
     pub fn new(config: &PrometheusConfig) -> Self {
         let pick = |key: &str, default: String| config.queries.get(key).cloned().unwrap_or(default);
         let mount = &config.disk_mountpoint;
+        // Windows has drive letters, not mount points: the system drive.
+        let volume = "C:";
         // Without `net_device`, take every real device and let the report
         // pick the busiest one.
         let device = match &config.net_device {
             Some(device) => format!("device=\"{device}\""),
             None => format!("device!~\"{VIRTUAL_NET_DEVICES}\""),
         };
+        // Each default is the Linux query `or` the Windows one. A host has
+        // only one kind of exporter, so only one half ever answers for it.
         Self {
             up: "up".into(),
             cpu_pct: pick(
                 "cpu_pct",
-                "100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[1m])))"
+                "100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[1m]))) \
+                 or 100 * (1 - avg by (instance) (rate(windows_cpu_time_total{mode=\"idle\"}[1m])))"
                     .into(),
             ),
+            // windows_exporter has no temperature sensor.
             cpu_temp_c: pick(
                 "cpu_temp_c",
                 "max by (instance) (node_hwmon_temp_celsius)".into(),
             ),
-            cpu_count: pick(
-                "cpu_count",
-                "count by (instance) (node_cpu_seconds_total{mode=\"idle\"})".into(),
-            ),
-            load: "{__name__=~\"node_load1|node_load5|node_load15\"}".into(),
             ram_pct: pick(
                 "ram_pct",
-                "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)".into(),
+                "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) \
+                 or 100 * (1 - windows_memory_available_bytes / windows_cs_physical_memory_bytes)"
+                    .into(),
             ),
             disk_pct: pick(
                 "disk_pct",
                 format!(
                     "100 * (1 - max by (instance) (node_filesystem_avail_bytes{{mountpoint=\"{mount}\"}} \
-                     / node_filesystem_size_bytes{{mountpoint=\"{mount}\"}}))"
+                     / node_filesystem_size_bytes{{mountpoint=\"{mount}\"}})) \
+                     or 100 * (1 - max by (instance) (windows_logical_disk_free_bytes{{volume=\"{volume}\"}} \
+                     / windows_logical_disk_size_bytes{{volume=\"{volume}\"}}))"
                 ),
             ),
             gpu_pct: pick("gpu_pct", "max by (instance) (DCGM_FI_DEV_GPU_UTIL)".into()),
@@ -217,12 +233,33 @@ impl Queries {
                 "gpu_temp_c",
                 "max by (instance) (DCGM_FI_DEV_GPU_TEMP)".into(),
             ),
-            uptime_s: pick("uptime_s", "time() - node_boot_time_seconds".into()),
+            uptime_s: pick(
+                "uptime_s",
+                "time() - node_boot_time_seconds \
+                 or time() - windows_system_boot_time_timestamp_seconds"
+                    .into(),
+            ),
+            // Pending updates come from a text file the host writes (apt's
+            // own node_exporter script, or the scripts in docs/hosts.md).
+            updates: pick(
+                "updates",
+                "max by (instance) (node_apt_upgrades_pending) \
+                 or max by (instance) (deskwatch_updates_pending)"
+                    .into(),
+            ),
+            reboot_needed: pick(
+                "reboot_needed",
+                "max by (instance) (node_reboot_required) \
+                 or max by (instance) (deskwatch_reboot_required)"
+                    .into(),
+            ),
             net_rx: format!(
-                "sum by (instance, device) (rate(node_network_receive_bytes_total{{{device}}}[1m]))"
+                "sum by (instance, device) (rate(node_network_receive_bytes_total{{{device}}}[1m])) \
+                 or sum by (instance, device) (label_replace(rate(windows_net_bytes_received_total[1m]), \"device\", \"$1\", \"nic\", \"(.*)\"))"
             ),
             net_tx: format!(
-                "sum by (instance, device) (rate(node_network_transmit_bytes_total{{{device}}}[1m]))"
+                "sum by (instance, device) (rate(node_network_transmit_bytes_total{{{device}}}[1m])) \
+                 or sum by (instance, device) (label_replace(rate(windows_net_bytes_sent_total[1m]), \"device\", \"$1\", \"nic\", \"(.*)\"))"
             ),
             container_age: "time() - container_last_seen{name!=\"\"}".into(),
         }
@@ -235,18 +272,32 @@ pub struct Answers {
     pub up: Vec<Sample>,
     pub cpu_pct: Vec<Sample>,
     pub cpu_temp_c: Vec<Sample>,
-    pub cpu_count: Vec<Sample>,
-    pub load: Vec<Sample>,
     pub ram_pct: Vec<Sample>,
     pub disk_pct: Vec<Sample>,
     pub gpu_pct: Vec<Sample>,
     pub gpu_mem_pct: Vec<Sample>,
     pub gpu_temp_c: Vec<Sample>,
     pub uptime_s: Vec<Sample>,
+    pub updates: Vec<Sample>,
+    pub reboot_needed: Vec<Sample>,
     pub net_rx: Vec<Sample>,
     pub net_tx: Vec<Sample>,
     /// Empty unless a host lists `expect_containers`.
     pub container_age: Vec<Sample>,
+}
+
+/// The answers that are only refreshed every `UPDATES_EVERY`.
+#[derive(Debug, Default)]
+pub struct Slow {
+    at: Option<Instant>,
+    updates: Vec<Sample>,
+    reboot_needed: Vec<Sample>,
+}
+
+impl Slow {
+    fn due(&self) -> bool {
+        self.at.is_none_or(|at| at.elapsed() >= UPDATES_EVERY)
+    }
 }
 
 /// Run one round of queries and turn the answers into a report. The first
@@ -256,6 +307,7 @@ pub async fn collect(
     api: &HttpApi,
     queries: &Queries,
     hosts: &[HostConfig],
+    slow: &mut Slow,
 ) -> Result<StatsReport> {
     let ask = |name: &'static str, promql: &str| {
         let promql = promql.to_string();
@@ -269,8 +321,6 @@ pub async fn collect(
         up: ask("up", &queries.up).await?,
         cpu_pct: ask("cpu_pct", &queries.cpu_pct).await?,
         cpu_temp_c: ask("cpu_temp_c", &queries.cpu_temp_c).await?,
-        cpu_count: ask("cpu_count", &queries.cpu_count).await?,
-        load: ask("load", &queries.load).await?,
         ram_pct: ask("ram_pct", &queries.ram_pct).await?,
         disk_pct: ask("disk_pct", &queries.disk_pct).await?,
         gpu_pct: ask("gpu_pct", &queries.gpu_pct).await?,
@@ -279,8 +329,17 @@ pub async fn collect(
         uptime_s: ask("uptime_s", &queries.uptime_s).await?,
         net_rx: ask("net_rx", &queries.net_rx).await?,
         net_tx: ask("net_tx", &queries.net_tx).await?,
+        updates: Vec::new(),
+        reboot_needed: Vec::new(),
         container_age: Vec::new(),
     };
+    if slow.due() {
+        slow.updates = ask("updates", &queries.updates).await?;
+        slow.reboot_needed = ask("reboot_needed", &queries.reboot_needed).await?;
+        slow.at = Some(Instant::now());
+    }
+    answers.updates = slow.updates.clone();
+    answers.reboot_needed = slow.reboot_needed.clone();
     if hosts.iter().any(|h| !h.expect_containers.is_empty()) {
         answers.container_age = ask("container_age", &queries.container_age).await?;
     }
@@ -323,8 +382,6 @@ fn host_stats(host: &HostConfig, answers: &Answers) -> StatsData {
         host: host.name.clone(),
         cpu_pct: value(&answers.cpu_pct).map(percent),
         cpu_temp_c: value(&answers.cpu_temp_c).map(round1),
-        load: load(&answers.load, instance),
-        cpu_count: value(&answers.cpu_count).map(|c| c.max(0.0).round() as u32),
         ram_pct: value(&answers.ram_pct).map(percent),
         disk_pct: value(&answers.disk_pct).map(percent),
         gpu_pct: value(&answers.gpu_pct).map(percent),
@@ -332,6 +389,8 @@ fn host_stats(host: &HostConfig, answers: &Answers) -> StatsData {
         gpu_temp_c: value(&answers.gpu_temp_c).map(round1),
         uptime_s: value(&answers.uptime_s).map(|s| s.max(0.0) as u64),
         net: net(&answers.net_rx, &answers.net_tx, instance),
+        updates: value(&answers.updates).map(|n| n.max(0.0).round() as u32),
+        reboot_needed: value(&answers.reboot_needed).map(|n| n >= 1.0),
     }
 }
 
@@ -348,17 +407,6 @@ fn first_value(samples: &[Sample], instance: &str) -> Option<f64> {
         .iter()
         .find(|s| s.label("instance") == Some(instance))
         .map(|s| s.value)
-}
-
-/// Load averages, only when all three series are there.
-fn load(samples: &[Sample], instance: &str) -> Option<[f32; 3]> {
-    let get = |name: &str| {
-        samples
-            .iter()
-            .find(|s| s.label("instance") == Some(instance) && s.label("__name__") == Some(name))
-            .map(|s| round2(s.value))
-    };
-    Some([get("node_load1")?, get("node_load5")?, get("node_load15")?])
 }
 
 /// Receive and transmit rates of the busiest device (the one with the most
@@ -421,8 +469,4 @@ fn percent(value: f64) -> f32 {
 
 fn round1(value: f64) -> f32 {
     crate::stats::round1(value)
-}
-
-fn round2(value: f64) -> f32 {
-    ((value * 100.0).round() / 100.0) as f32
 }

@@ -165,7 +165,6 @@
   var REBOOT_S = 3600;
   function hostBody(host) {
     var s = host.stats || {};
-    var load = s.load ? s.load.map(function (x) { return x.toFixed(1); }).join(' ') : '--';
     var vals = history[host.name] || [];
     var peak = vals.length ? Math.round(Math.max.apply(null, vals)) + '%' : '--';
     var fresh = s.uptime_s != null && s.uptime_s < REBOOT_S;
@@ -177,10 +176,11 @@
       '<div><span class="l">Uptime</span><span' + (fresh ? ' class="warn-text"' : '') + '>' + uptime(s.uptime_s) + '</span></div>' +
       '<div><span class="l">Temp</span><span>' + (s.cpu_temp_c == null ? '--' : Math.round(s.cpu_temp_c) + ' &deg;C') + '</span></div>' +
       (s.gpu_temp_c == null ? '' : '<div><span class="l">GPU temp</span><span>' + Math.round(s.gpu_temp_c) + ' &deg;C</span></div>') +
-      '<div><span class="l">Load</span><span>' + load + '</span></div>' +
       '<div><span class="l">Net in</span><span>' + (s.net ? rate(s.net.rx_bps) : '--') + '</span></div>' +
       '<div><span class="l">Net out</span><span>' + (s.net ? rate(s.net.tx_bps) : '--') + '</span></div>' +
-      '<div><span class="l">Cores</span><span>' + (s.cpu_count == null ? '--' : s.cpu_count) + '</span></div>' +
+      // Only for hosts that report them (see docs/hosts.md).
+      (s.updates == null ? '' : '<div><span class="l">Updates</span><span>' + s.updates + '</span></div>') +
+      (s.reboot_needed ? '<div><span class="l">Restart</span><span class="warn-text">needed</span></div>' : '') +
       '</div><div class="sparkhead"><span>CPU' + (gpuHistory[host.name] && gpuHistory[host.name].some(function (g) { return g != null; }) ? ' <span class="gpu-key">&amp; GPU</span>' : '') + ' &middot; ' + spanLabel(vals.length) + '</span><span>PEAK ' + peak + '</span></div>' +
       sparkline(vals, gpuHistory[host.name]);
   }
@@ -197,6 +197,7 @@
     if (!h.up) return 'off';
     if (s.cpu_pct >= 70 || s.ram_pct >= 80 || s.disk_pct >= 80 || s.gpu_pct >= 95) return 'look';
     if (s.uptime_s != null && s.uptime_s < REBOOT_S) return 'look';
+    if (s.reboot_needed) return 'look';
     return '';
   }
   // The highest of CPU, MEM and DISK, as "DISK 88", for the host list.

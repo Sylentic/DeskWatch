@@ -99,7 +99,7 @@ impl Demo {
 /// stay as the script left them.
 fn fake_fleet(composer: &mut Composer, now: u64) {
     let wave = |period: f32, phase: f32| ((now as f32 / period + phase).sin() + 1.0) / 2.0;
-    let host = |name: &str, cpu: f32, ram: f32, disk: f32| HostFacts {
+    let host = |name: &str, cpu: f32, ram: f32, disk: f32, updates: u32| HostFacts {
         name: name.into(),
         up: true,
         stats: StatsData {
@@ -107,6 +107,8 @@ fn fake_fleet(composer: &mut Composer, now: u64) {
             cpu_pct: Some(cpu.round()),
             ram_pct: Some(ram.round()),
             disk_pct: Some(disk),
+            updates: Some(updates),
+            reboot_needed: Some(updates > 10),
             ..Default::default()
         },
     };
@@ -115,8 +117,8 @@ fn fake_fleet(composer: &mut Composer, now: u64) {
         &id,
         StatsReport {
             hosts: vec![
-                host("demo-nas", 4.0 + 12.0 * wave(17.0, 1.0), 41.0, 82.0),
-                host("demo-agent", 10.0 + 70.0 * wave(31.0, 2.0), 55.0, 47.0),
+                host("demo-nas", 4.0 + 12.0 * wave(17.0, 1.0), 41.0, 82.0, 14),
+                host("demo-agent", 10.0 + 70.0 * wave(31.0, 2.0), 55.0, 47.0, 0),
             ],
             down: Vec::new(),
         },
@@ -171,8 +173,6 @@ pub fn stats(now: u64) -> StatsData {
         host: "demo-server".into(),
         cpu_pct: Some(cpu),
         cpu_temp_c: Some(round(42.0 + cpu / 4.0)),
-        load: Some([round(cpu / 25.0), round(cpu / 30.0), 0.6]),
-        cpu_count: Some(4),
         ram_pct: Some(round(38.0 + 20.0 * wave(23.0, 1.0))),
         disk_pct: Some(63.0),
         gpu_pct: Some(round(5.0 + 70.0 * wave(13.0, 0.7))),
@@ -184,6 +184,8 @@ pub fn stats(now: u64) -> StatsData {
             rx_bps: Some((40_000.0 + 900_000.0 * wave(7.0, 2.0)) as u64),
             tx_bps: Some((8_000.0 + 120_000.0 * wave(11.0, 0.5)) as u64),
         }),
+        updates: Some(7),
+        reboot_needed: Some(false),
     }
 }
 

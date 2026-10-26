@@ -134,8 +134,6 @@ pub struct StatsData {
     pub host: String,
     pub cpu_pct: Option<f32>,
     pub cpu_temp_c: Option<f32>,
-    pub load: Option<[f32; 3]>,
-    pub cpu_count: Option<u32>,
     pub ram_pct: Option<f32>,
     pub disk_pct: Option<f32>,
     /// GPU figures are left out of the snapshot when unknown.
@@ -147,6 +145,12 @@ pub struct StatsData {
     pub gpu_temp_c: Option<f32>,
     pub uptime_s: Option<u64>,
     pub net: Option<NetData>,
+    /// Pending OS updates and a pending restart, only for hosts that report
+    /// them (a Prometheus host with the update metrics).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updates: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reboot_needed: Option<bool>,
 }
 
 /// Network part of the stats, rates in bytes per second.

@@ -19,7 +19,7 @@ A grid of cards, 4 columns by 3 rows by default:
 
 | Widget | Shows |
 |---|---|
-| `stats` | One host in detail: CPU, RAM, disk bars with warning colours, GPU and VRAM bars and GPU temperature (only for a host that reports a GPU, see [GPU](#gpu-on-the-host-card)), temperature, load, network rates, uptime, a CPU graph of the last few minutes |
+| `stats` | One host in detail: CPU, RAM, disk bars with warning colours, GPU and VRAM bars and GPU temperature (only for a host that reports a GPU, see [GPU](#gpu-on-the-host-card)), temperature, network rates, uptime, pending updates and restart needed (for hosts that report them, see [hosts.md](hosts.md)), a CPU graph of the last few minutes |
 | `hosts` | Every host (the bridge's own machine and every host a Prometheus source reports): a list, or with `view = "detailed"` the chosen host in detail on top of the list |
 | `jobs` | Running now: a heading per run, and under it a row per job (parallel jobs, GitLab jobs, Bitbucket steps, Azure DevOps jobs) with its status colour, step, progress bar and a live elapsed time |
 | `prs` | Open pull requests per repository, newest first, with the total |
@@ -65,7 +65,7 @@ Intel and NVIDIA GPUs on the bridge machine need a Prometheus host. Not yet trie
 
 The built-in layout has one **Hosts** panel, two cells wide and two tall. In the `detailed` view (the default) a list
 of every host sits on the left and the host you chose is shown in detail next to it (CPU, memory and disk bars, uptime,
-temperature, load, network, cores and a CPU graph). Each line in the list shows the host's highest value (`DISK 88`);
+temperature, network, pending updates and a CPU graph). Each line in the list shows the host's highest value (`DISK 88`);
 hosts that need a look (down, over a warning line, or started less than an hour ago) come first, with an amber or red
 pip. Tap or click a host to show it in detail; the choice is kept in the browser (localStorage), so a reload keeps it,
 and a host that has disappeared falls back to the first one. The chosen host never changes by itself. When the panel is

@@ -7,6 +7,20 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Windows hosts in the Hosts panel.** A host running windows_exporter works like a node_exporter host: CPU, memory,
+  the `C:` drive, uptime and network. The bundled queries cover both, so nothing needs to be set per host
+  ([docs/hosts.md](docs/hosts.md)).
+- **Pending updates and restart needed** on the host card, for hosts that report them (apt's node_exporter script, or a
+  small text file; examples for Debian, Windows and Fedora in the docs). They are asked every 15 minutes. A host that
+  needs a restart gets an amber pip in the list. New `updates` and `reboot_needed` query keys.
+
+### Removed
+
+- **Load and Cores** are gone from the host card and from the snapshot (`load` and `cpu_count`), and the `cpu_count`
+  query key no longer exists. CPU % says the same thing.
+
 ## [1.0.6]
 
 ### Added

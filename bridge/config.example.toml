@@ -144,7 +144,7 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 # critical_ids = ["leak", "smoke"]  # only these ids may be critical, others become warnings
 
 # Host stats and container health from a Prometheus server that scrapes
-# node_exporter (and cAdvisor). Each host gets its own card on the kiosk page.
+# node_exporter or windows_exporter (and cAdvisor). Each host gets its own card on the kiosk page.
 # The bridge's own machine (read from /proc) keeps working without Prometheus.
 # [[source.prometheus]]
 # name = "home"                 # required: used in logs
@@ -163,7 +163,7 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 #   "nas.example.lan:9100",
 # ]
 # # Replace the PromQL of a field; it must return one value per `instance`.
-# # Fields: cpu_pct, cpu_temp_c, cpu_count, ram_pct, disk_pct, gpu_pct, gpu_mem_pct, gpu_temp_c, uptime_s.
+# # Fields: cpu_pct, cpu_temp_c, ram_pct, disk_pct, gpu_pct, gpu_mem_pct, gpu_temp_c, uptime_s, updates, reboot_needed.
 # # GPU figures default to the NVIDIA DCGM exporter and only show when it returns data.
 # # queries = { cpu_temp_c = 'max by (instance) (node_thermal_zone_temp)' }
 
