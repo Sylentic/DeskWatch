@@ -697,6 +697,21 @@
     }
     card.appendChild(el('p', 'muted', 'Only for the built-in layout; panels set in bridge.toml stay as they are. '
       + (d.host_view_editable ? 'Needs a restart of the bridge.' : 'Give the bridge a data folder to change it here.')));
+
+    // The bridge's own machine as a host next to the ones from Prometheus.
+    var own = checkbox(d.server.enabled, !d.server.editable);
+    card.appendChild(settingRow('Show this machine\'s own stats',
+      'The bridge reads its own /proc and /sys. Turn off when a Prometheus source already covers this machine, for instance in Docker, where the local numbers are the container\'s', own));
+    if (d.server.editable) {
+      var ownSave = el('button', 'secondary', 'Save');
+      ownSave.type = 'button';
+      ownSave.addEventListener('click', function () {
+        post('api/setup/server', { enabled: own.checked }).then(function (j) { notice = (j && j.error) || null; load(); });
+      });
+      var ownLine = el('div', 'buttons'); ownLine.appendChild(ownSave); card.appendChild(ownLine);
+    }
+    card.appendChild(el('p', 'muted', d.server.editable ? 'Needs a restart of the bridge.'
+      : 'Give the bridge a data folder to change this here, or set enabled = false under [server] in bridge.toml.'));
     return card;
   }
 

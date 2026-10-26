@@ -352,7 +352,7 @@ async fn main() -> Result<()> {
     let mut restarting = false;
     loop {
         tokio::select! {
-            _ = stats_ticker.tick(), if demo.is_none() => composer.set_stats(collector.collect()),
+            _ = stats_ticker.tick(), if demo.is_none() && config.server.enabled => composer.set_stats(collector.collect()),
             _ = compose_ticker.tick() => {}
             Some(msg) = source_rx.recv() => composer.apply(msg, unix_now()),
             Some(msg) = inbound_rx.recv() => match msg {

@@ -7,6 +7,12 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`[server] enabled = false` hides the bridge's own machine** from the dashboard, with a **Show this machine's own
+  stats** switch under **Dashboard hosts** on the setup page (it applies after a restart). For a bridge in Docker
+  whose Prometheus source already covers the machine, so the container's own numbers no longer show as a second host.
+
 ## [1.0.5]
 
 ### Added

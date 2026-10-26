@@ -413,7 +413,8 @@ The bridge machine's own host card reads `/proc` and `/sys`, and a container see
 - **CPU temperature:** often empty, because the thermal sensors are not always visible inside a container.
 
 If you want exact numbers for several machines, use a Prometheus source with node_exporter instead
-([install.md](install.md#prometheus-host-stats-and-containers)) and leave the local card as is.
+([install.md](install.md#prometheus-host-stats-and-containers)). Set `enabled = false` under `[server]` to hide the
+bridge's own card, so only the Prometheus hosts show.
 
 ## 9. Health and restarts
 
