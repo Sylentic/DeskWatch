@@ -24,6 +24,8 @@ pub struct UserLayout {
     pub order: Vec<String>,
     pub hidden: Vec<String>,
     pub span: BTreeMap<String, [u8; 2]>,
+    /// Where a panel sits on the grid: column and row, counted from 1.
+    pub pos: BTreeMap<String, [u8; 2]>,
 }
 
 impl UserLayout {
@@ -32,7 +34,8 @@ impl UserLayout {
             .order
             .iter()
             .chain(self.hidden.iter())
-            .chain(self.span.keys());
+            .chain(self.span.keys())
+            .chain(self.pos.keys());
         for id in ids {
             if id.is_empty() || id.len() > MAX_ID || id.chars().any(char::is_control) {
                 bail!("a panel id is not valid");
@@ -41,15 +44,17 @@ impl UserLayout {
         if self.order.len() > MAX_PANELS
             || self.hidden.len() > MAX_PANELS
             || self.span.len() > MAX_PANELS
+            || self.pos.len() > MAX_PANELS
         {
             bail!("too many panels");
         }
         if self
             .span
             .values()
+            .chain(self.pos.values())
             .any(|s| s.iter().any(|n| !(1..=12).contains(n)))
         {
-            bail!("a panel size is out of range");
+            bail!("a panel size or place is out of range");
         }
         Ok(())
     }
