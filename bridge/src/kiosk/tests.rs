@@ -1137,3 +1137,54 @@ fn a_newer_release_travels_in_the_snapshot_only_when_found() {
     assert_eq!(json_of(&kiosk)["update"]["version"], "0.9.20");
     assert!(KIOSK_JS.contains("renderUpdate"));
 }
+
+#[tokio::test]
+async fn a_dismissed_failure_stays_dismissed_after_a_restart() {
+    let dir = std::env::temp_dir().join(format!("deskwatch-dismissed-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut c = composer();
+    c.ci.apply(
+        Update::Run {
+            key: "a".into(),
+            run: run("deploy.yml", RunStatus::Failed),
+        },
+        NOW,
+    );
+
+    let mut first = kiosk().with_data_dir(&dir);
+    let router = first.router();
+    first.update(&mut c, NOW);
+    let id = format!("a@{}", json_of(&first)["failed"][0]["started"]);
+    let body = format!(r#"{{"ids":["{id}"]}}"#);
+    let (status, _) = send(&router, "POST", "/api/kiosk/failed/dismiss", &[], &body).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    // A new bridge process reads the same folder: the run is still dismissed,
+    // even before any source reported (nothing looks failed yet).
+    let mut second = kiosk().with_data_dir(&dir);
+    second.update(&mut Composer::default(), NOW);
+    second.update(&mut c, NOW + 1);
+    let value = json_of(&second);
+    assert_eq!(value["failed"].as_array().unwrap().len(), 0);
+    assert_eq!(value["badges"][0]["count"], 0);
+
+    // The same pipeline failing again is not hidden.
+    let mut again = run("deploy.yml", RunStatus::Failed);
+    again.started += 500;
+    c.ci.apply(
+        Update::Run {
+            key: "a".into(),
+            run: again,
+        },
+        NOW + 2,
+    );
+    second.update(&mut c, NOW + 2);
+    assert_eq!(json_of(&second)["failed"].as_array().unwrap().len(), 1);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn page_opens_the_failed_run_from_the_pill() {
+    let js = include_str!("../../kiosk/kiosk.js");
+    assert!(js.contains("class=\"name link\""));
+}
