@@ -182,7 +182,8 @@
       (show('network') ? '<div><span class="l">Net in</span><span>' + (s.net ? rate(s.net.rx_bps) : '--') + '</span></div>' +
         '<div><span class="l">Net out</span><span>' + (s.net ? rate(s.net.tx_bps) : '--') + '</span></div>' : '') +
       // Only for hosts that report them (see docs/hosts.md).
-      (s.updates == null ? '' : '<div><span class="l">Pending updates</span><span>' + s.updates + '</span></div>') +
+      (s.updates == null ? '' : '<div><span class="l">Pending updates</span><span' + (s.updates_security > 0 ? ' class="warn-text"' : '') + '>' + s.updates +
+        (s.updates_security == null ? '' : ' (' + s.updates_security + ' security)') + '</span></div>') +
       (s.reboot_needed ? '<div><span class="l">Restart</span><span class="warn-text">needed</span></div>' : '');
     return (gauges ? '<div class="gauges">' + gauges + '</div>' : '') +
       (cells ? '<div class="stat-grid">' + cells + '</div>' : '') +

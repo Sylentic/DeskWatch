@@ -41,7 +41,7 @@ use api::{HttpApi, Sample};
 pub const KIND: &str = "prometheus";
 
 /// Stats fields whose PromQL can be replaced in the config (`queries = { ... }`).
-pub const QUERY_KEYS: [&str; 10] = [
+pub const QUERY_KEYS: [&str; 11] = [
     "cpu_pct",
     "cpu_temp_c",
     "ram_pct",
@@ -51,6 +51,7 @@ pub const QUERY_KEYS: [&str; 10] = [
     "gpu_temp_c",
     "uptime_s",
     "updates",
+    "updates_security",
     "reboot_needed",
 ];
 
@@ -179,6 +180,8 @@ pub struct Queries {
     pub gpu_temp_c: String,
     pub uptime_s: String,
     pub updates: String,
+    /// How many of the pending updates are security updates.
+    pub updates_security: String,
     pub reboot_needed: String,
     pub net_rx: String,
     pub net_tx: String,
@@ -263,6 +266,14 @@ impl Queries {
                  or max by (instance) (deskwatch_updates_pending)"
                     .into(),
             ),
+            // apt's script labels each count with its origin, so the
+            // security part is the origins that say "security".
+            updates_security: pick(
+                "updates_security",
+                "sum by (instance) (node_apt_upgrades_pending{origin=~\"(?i).*security.*\"}) \
+                 or max by (instance) (deskwatch_updates_security)"
+                    .into(),
+            ),
             reboot_needed: pick(
                 "reboot_needed",
                 "max by (instance) (node_reboot_required) \
@@ -295,6 +306,7 @@ pub struct Answers {
     pub gpu_temp_c: Vec<Sample>,
     pub uptime_s: Vec<Sample>,
     pub updates: Vec<Sample>,
+    pub updates_security: Vec<Sample>,
     pub reboot_needed: Vec<Sample>,
     pub net_rx: Vec<Sample>,
     pub net_tx: Vec<Sample>,
@@ -307,6 +319,7 @@ pub struct Answers {
 pub struct Slow {
     at: Option<Instant>,
     updates: Vec<Sample>,
+    updates_security: Vec<Sample>,
     reboot_needed: Vec<Sample>,
 }
 
@@ -346,15 +359,18 @@ pub async fn collect(
         net_rx: ask("net_rx", &queries.net_rx).await?,
         net_tx: ask("net_tx", &queries.net_tx).await?,
         updates: Vec::new(),
+        updates_security: Vec::new(),
         reboot_needed: Vec::new(),
         container_age: Vec::new(),
     };
     if slow.due() {
         slow.updates = ask("updates", &queries.updates).await?;
+        slow.updates_security = ask("updates_security", &queries.updates_security).await?;
         slow.reboot_needed = ask("reboot_needed", &queries.reboot_needed).await?;
         slow.at = Some(Instant::now());
     }
     answers.updates = slow.updates.clone();
+    answers.updates_security = slow.updates_security.clone();
     answers.reboot_needed = slow.reboot_needed.clone();
     if hosts.iter().any(|h| !h.expect_containers.is_empty()) {
         answers.container_age = ask("container_age", &queries.container_age).await?;
@@ -378,6 +394,8 @@ pub struct Found {
     /// The `config::HOST_SHOW` parts this machine has numbers for.
     pub reports: Vec<&'static str>,
     pub updates: Option<u32>,
+    /// Of `updates`, the security ones, when the host says.
+    pub updates_security: Option<u32>,
     pub reboot_needed: Option<bool>,
 }
 
@@ -400,13 +418,17 @@ pub async fn discover(api: &HttpApi, queries: &Queries) -> Result<Vec<Found>> {
         "max by (instance) (windows_cs_physical_memory_bytes)",
     )
     .await?;
-    let parts: [(&'static str, Vec<Sample>); 9] = [
+    let parts: [(&'static str, Vec<Sample>); 10] = [
         ("cpu", ask("cpu_pct", &queries.cpu_pct).await?),
         ("memory", ask("ram_pct", &queries.ram_pct).await?),
         ("disk", ask("disk_pct", &queries.disk_pct).await?),
         ("uptime", ask("uptime_s", &queries.uptime_s).await?),
         ("network", ask("net_rx", &queries.net_rx).await?),
         ("updates", ask("updates", &queries.updates).await?),
+        (
+            "updates_security",
+            ask("updates_security", &queries.updates_security).await?,
+        ),
         (
             "reboot",
             ask("reboot_needed", &queries.reboot_needed).await?,
@@ -453,10 +475,12 @@ pub fn build_found(
             up: is_up(up, instance),
             reports: parts
                 .iter()
-                .filter(|(_, samples)| has(samples))
+                .filter(|(key, samples)| *key != "updates_security" && has(samples))
                 .map(|(key, _)| *key)
                 .collect(),
             updates: first_value(part("updates"), instance).map(|n| n.max(0.0).round() as u32),
+            updates_security: first_value(part("updates_security"), instance)
+                .map(|n| n.max(0.0).round() as u32),
             reboot_needed: first_value(part("reboot"), instance).map(|n| n >= 1.0),
         });
     }
@@ -543,6 +567,10 @@ fn host_stats(host: &HostConfig, answers: &Answers) -> StatsData {
             .filter(|_| shown("uptime")),
         net: net(&answers.net_rx, &answers.net_tx, instance).filter(|_| shown("network")),
         updates: value(&answers.updates)
+            .map(|n| n.max(0.0).round() as u32)
+            .filter(|_| shown("updates")),
+        // Only shown next to the total, so it hides with it.
+        updates_security: value(&answers.updates_security)
             .map(|n| n.max(0.0).round() as u32)
             .filter(|_| shown("updates")),
         reboot_needed: value(&answers.reboot_needed)

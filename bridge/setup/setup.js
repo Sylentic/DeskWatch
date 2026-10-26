@@ -719,7 +719,7 @@
       title.appendChild(f ? pill(f.up ? 'up' : 'not answering', f.up ? 'ok' : 'bad') : pill('not answering', 'bad'));
       text.appendChild(title);
       var bits = [f ? (f.kind === 'windows' ? 'Windows' : 'Linux') : null, instance];
-      if (f && f.updates != null) bits.push(f.updates + ' pending update' + (f.updates === 1 ? '' : 's'));
+      if (f && f.updates != null) bits.push(f.updates + ' pending update' + (f.updates === 1 ? '' : 's') + (f.updates_security != null ? ' (' + f.updates_security + ' security)' : ''));
       else if (f && f.up) bits.push('no updates data');
       if (f && f.reboot_needed) bits.push('restart needed');
       text.appendChild(el('p', 'muted', bits.filter(Boolean).join(' · ')));
