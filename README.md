@@ -68,8 +68,7 @@ page and `POST /api/alert` only answer the local network.
 | Azure DevOps Services | Polling: runs with stages, approvals, PRs, PR comments, agent pools; sign in with a PAT or a Microsoft Entra service principal ([guide](docs/azure-devops.md)) | On a real organisation |
 | GitLab (gitlab.com and self-managed) | Polling: merge requests, pipelines, runners ([guide](docs/gitlab.md)) | Against mock answers only |
 | Bitbucket Cloud | Polling: PRs, pipelines, runners ([guide](docs/bitbucket.md)) | Against mock answers only |
-| Prometheus | node_exporter and cAdvisor through the HTTP API | On a real server |
-| The bridge machine | `/proc` and `/sys` (Linux only for now) | Yes |
+| Prometheus | node_exporter (Linux), windows_exporter (Windows) and cAdvisor through the HTTP API; machines are found and chosen on the Hosts page | On a real server |
 | Home Assistant, scripts | Alerts over MQTT or `POST /api/alert` ([guide](docs/home-assistant.md)) | Yes |
 
 Forgejo and Codeberg are not tested; what they and the others need is in [docs/git-hosts.md](docs/git-hosts.md). Gitea,

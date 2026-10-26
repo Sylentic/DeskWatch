@@ -5,7 +5,37 @@ All notable changes to DeskWatch are listed here. The format follows
 [Semantic Versioning](https://semver.org/). From 1.0.0 on, a change that breaks an existing bridge config file or the
 `POST /api/alert` format needs a new major version.
 
-## [Unreleased]
+## [1.0.7]
+
+**Heads up:** the bridge no longer reads its own machine. If you relied on that and have no Prometheus, the host card
+is gone after this update; see "Changed" below.
+
+### Added
+
+- **A Hosts page in Setup.** DeskWatch asks Prometheus which machines it collects from (Linux or Windows, up or not
+  answering, pending updates) and you tick the ones to show. **Edit** opens a pop-up to rename a host and choose which
+  parts of its card to show (`show` in the config); parts the machine does not report are greyed out.
+- **Windows hosts in the Hosts panel.** A host running windows_exporter works like a node_exporter host: CPU, memory,
+  the `C:` drive, uptime and network. The bundled queries cover both, so nothing needs to be set per host
+  ([docs/hosts.md](docs/hosts.md)).
+- **Pending updates and restart needed** on the host card, for hosts that report them (apt's node_exporter script, or a
+  small text file; examples for Debian, Windows and Fedora in the docs). They are asked every 15 minutes. A host that
+  needs a restart gets an amber pip in the list. New `updates` and `reboot_needed` query keys.
+
+### Removed
+
+- **Load and Cores** are gone from the host card and from the snapshot (`load` and `cpu_count`), and the `cpu_count`
+  query key no longer exists. CPU % says the same thing.
+
+### Changed
+
+- **The Setup menu is grouped** under Connect, Display, Security and Maintenance, and **Sign-in providers** is now
+  **Sign-in options**.
+- **The bridge no longer reads its own machine.** Hosts come from Prometheus, which is exact (and right in Docker,
+  where the bridge only sees the container). This removes the bridge's own host card and the **Show this machine's own
+  stats** switch from 1.0.6; `[server]` in `bridge.toml` is still accepted but ignored (`enabled = true` logs a
+  warning). Add the machine as a Prometheus host instead ([docs/hosts.md](docs/hosts.md)).
+- **A Prometheus source no longer needs `hosts`.** The machines are chosen on the new Hosts page.
 
 ## [1.0.6]
 

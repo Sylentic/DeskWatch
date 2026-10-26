@@ -60,10 +60,13 @@ async fn mock_prometheus(queries: &Queries, mock: Arc<Mock>) -> String {
             include_str!("testdata/cpu_temp_c.json"),
         ),
         (
-            queries.cpu_count.clone(),
-            include_str!("testdata/cpu_count.json"),
+            queries.updates.clone(),
+            include_str!("testdata/updates.json"),
         ),
-        (queries.load.clone(), include_str!("testdata/load.json")),
+        (
+            queries.reboot_needed.clone(),
+            include_str!("testdata/reboot_needed.json"),
+        ),
         (
             queries.ram_pct.clone(),
             include_str!("testdata/ram_pct.json"),
@@ -136,7 +139,9 @@ async fn collect_from_mock() -> (StatsReport, Arc<Mock>) {
     let mock = Arc::new(Mock::default());
     let url = mock_prometheus(&queries, mock.clone()).await;
     let api = HttpApi::new(&url, Some(source::Secret::new("test-token"))).unwrap();
-    let report = collect(&api, &queries, &config.hosts).await.unwrap();
+    let report = collect(&api, &queries, &config.hosts, &mut Slow::default())
+        .await
+        .unwrap();
     (report, mock)
 }
 
@@ -152,14 +157,14 @@ async fn collects_stats_for_every_host() {
     assert_eq!(stats.host, "home");
     assert_eq!(stats.cpu_pct, Some(37.5));
     assert_eq!(stats.cpu_temp_c, Some(51.0));
-    assert_eq!(stats.cpu_count, Some(8));
-    assert_eq!(stats.load, Some([0.42, 0.38, 0.3]));
     assert_eq!(stats.ram_pct, Some(62.3));
     assert_eq!(stats.disk_pct, Some(41.8));
     assert_eq!(stats.gpu_pct, Some(73.0));
     assert_eq!(stats.gpu_mem_pct, Some(41.3));
     assert_eq!(stats.gpu_temp_c, Some(66.4));
     assert_eq!(stats.uptime_s, Some(1_234_567));
+    assert_eq!(stats.updates, Some(12));
+    assert_eq!(stats.reboot_needed, Some(true));
     let net = stats.net.as_ref().unwrap();
     assert_eq!(net.iface, "eth0", "the busiest device wins");
     assert_eq!((net.rx_bps, net.tx_bps), (Some(5000), Some(1200)));
@@ -170,6 +175,7 @@ async fn collects_stats_for_every_host() {
     assert!(!nas.up);
     assert_eq!(nas.stats.cpu_pct, None);
     assert_eq!(nas.stats.net, None);
+    assert_eq!((nas.stats.updates, nas.stats.reboot_needed), (None, None));
 
     // One query per field, not per host, and the token went with each.
     assert_eq!(mock.queries.lock().unwrap().len(), 14);
@@ -219,28 +225,17 @@ fn down_cadvisor_hides_container_rows() {
 }
 
 #[test]
-fn partial_load_is_unknown_and_values_are_clamped() {
+fn values_are_clamped() {
     let config = config();
     let host = &config.hosts[0];
     let answers = Answers {
         up: vec![sample(&[("instance", "node-a:9100")], 1.0)],
-        load: vec![
-            sample(
-                &[("instance", "node-a:9100"), ("__name__", "node_load1")],
-                1.0,
-            ),
-            sample(
-                &[("instance", "node-a:9100"), ("__name__", "node_load5")],
-                1.0,
-            ),
-        ],
         // Rate maths can overshoot a little.
         cpu_pct: vec![sample(&[("instance", "node-a:9100")], 100.0004)],
         ram_pct: vec![sample(&[("instance", "node-a:9100")], -0.0002)],
         ..Answers::default()
     };
     let stats = host_stats(host, &answers);
-    assert_eq!(stats.load, None);
     assert_eq!(stats.cpu_pct, Some(100.0));
     assert_eq!(stats.ram_pct, Some(0.0));
 }
@@ -314,7 +309,9 @@ async fn skips_container_query_without_expectations() {
     let mock = Arc::new(Mock::default());
     let url = mock_prometheus(&queries, mock.clone()).await;
     let api = HttpApi::new(&url, None).unwrap();
-    let report = collect(&api, &queries, &config.hosts).await.unwrap();
+    let report = collect(&api, &queries, &config.hosts, &mut Slow::default())
+        .await
+        .unwrap();
     assert_eq!(mock.queries.lock().unwrap().len(), 13);
     // Only the dead host is down.
     assert_eq!(report.down.len(), 1);
@@ -450,4 +447,129 @@ async fn all_clear_means_nothing_is_down() {
     assert!(composer.fleet.down().is_empty());
     assert!(composer.badges().items.is_empty());
     assert!(composer.screen(10).is_none());
+}
+
+#[test]
+fn every_default_query_covers_linux_and_windows() {
+    let q = Queries::new(&config());
+    for (name, promql) in [
+        ("cpu_pct", &q.cpu_pct),
+        ("ram_pct", &q.ram_pct),
+        ("disk_pct", &q.disk_pct),
+        ("uptime_s", &q.uptime_s),
+        ("net_rx", &q.net_rx),
+        ("net_tx", &q.net_tx),
+    ] {
+        assert!(promql.contains("node_"), "{name} has no Linux half");
+        assert!(promql.contains("windows_"), "{name} has no Windows half");
+    }
+    assert!(q.disk_pct.contains("volume=\"C:\""));
+}
+
+#[test]
+fn windows_host_reads_the_same_fields() {
+    let host: HostConfig = toml::from_str("instance = \"win-a:9182\"").unwrap();
+    let win = |v: f64| vec![sample(&[("instance", "win-a:9182")], v)];
+    let answers = Answers {
+        up: win(1.0),
+        cpu_pct: win(20.0),
+        ram_pct: win(55.5),
+        updates: win(3.0),
+        reboot_needed: win(0.0),
+        ..Answers::default()
+    };
+    let stats = host_stats(&host, &answers);
+    assert_eq!(stats.cpu_pct, Some(20.0));
+    assert_eq!(stats.ram_pct, Some(55.5));
+    assert_eq!(stats.updates, Some(3));
+    assert_eq!(stats.reboot_needed, Some(false));
+    assert_eq!(
+        stats.cpu_temp_c, None,
+        "windows_exporter has no temperature"
+    );
+}
+
+#[tokio::test]
+async fn updates_are_asked_rarely() {
+    let config = config();
+    let queries = Queries::new(&config);
+    let mock = Arc::new(Mock::default());
+    let url = mock_prometheus(&queries, mock.clone()).await;
+    let api = HttpApi::new(&url, None).unwrap();
+    let mut slow = Slow::default();
+    collect(&api, &queries, &config.hosts, &mut slow)
+        .await
+        .unwrap();
+    assert_eq!(mock.queries.lock().unwrap().len(), 14);
+    // The next round skips both update queries but still reports the numbers.
+    let report = collect(&api, &queries, &config.hosts, &mut slow)
+        .await
+        .unwrap();
+    assert_eq!(mock.queries.lock().unwrap().len(), 14 + 12);
+    assert_eq!(report.hosts[0].stats.updates, Some(12));
+}
+
+#[test]
+fn discovery_lists_linux_and_windows_machines_only() {
+    let at = |instance: &str| sample(&[("instance", instance)], 1.0);
+    let up = vec![
+        at("nas:9100"),
+        at("office-pc:9182"),
+        at("cadvisor:8080"),
+        sample(&[("instance", "old-box:9100")], 0.0),
+    ];
+    let parts = vec![
+        ("cpu", vec![at("nas:9100"), at("office-pc:9182")]),
+        (
+            "updates",
+            vec![sample(&[("instance", "office-pc:9182")], 3.0)],
+        ),
+        (
+            "reboot",
+            vec![sample(&[("instance", "office-pc:9182")], 1.0)],
+        ),
+        ("temperature", vec![at("nas:9100")]),
+    ];
+    let found = build_found(&up, &[at("nas:9100")], &[at("office-pc:9182")], &parts);
+    // cAdvisor is not a machine, and a machine that is down has no metrics to
+    // recognise it by.
+    assert_eq!(
+        found
+            .iter()
+            .map(|f| f.instance.as_str())
+            .collect::<Vec<_>>(),
+        ["nas:9100", "office-pc:9182"]
+    );
+    assert_eq!(found[0].kind, "linux");
+    assert_eq!(found[0].reports, ["cpu", "temperature"]);
+    assert_eq!(found[0].updates, None);
+    assert_eq!(found[1].kind, "windows");
+    assert_eq!(found[1].updates, Some(3));
+    assert_eq!(found[1].reboot_needed, Some(true));
+}
+
+#[test]
+fn a_host_card_leaves_out_what_the_host_does_not_show() {
+    let mut host: HostConfig = toml::from_str("instance = \"node-a:9100\"").unwrap();
+    host.show = Some(vec!["cpu".into(), "updates".into()]);
+    let at = |v: f64| vec![sample(&[("instance", "node-a:9100")], v)];
+    let answers = Answers {
+        up: at(1.0),
+        cpu_pct: at(20.0),
+        ram_pct: at(50.0),
+        disk_pct: at(60.0),
+        updates: at(4.0),
+        reboot_needed: at(1.0),
+        ..Answers::default()
+    };
+    let stats = host_stats(&host, &answers);
+    assert_eq!(stats.cpu_pct, Some(20.0));
+    assert_eq!(stats.updates, Some(4));
+    assert_eq!((stats.ram_pct, stats.disk_pct), (None, None));
+    assert_eq!(stats.reboot_needed, None);
+    assert!(stats.hide.contains(&"memory".to_string()));
+    assert!(!stats.hide.contains(&"cpu".to_string()));
+    // Without a list everything is shown.
+    host.show = None;
+    assert!(host_stats(&host, &answers).hide.is_empty());
 }

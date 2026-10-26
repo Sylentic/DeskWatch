@@ -65,8 +65,10 @@ struct Overlay {
     /// Update check setting the setup page changed.
     #[serde(default)]
     updates: Option<UpdatesPatch>,
-    /// Whether to report the bridge's own machine, as the setup page set it.
+    /// Written by 1.0.6 when the setup page had a switch for the bridge's own
+    /// machine. Still accepted so that an old file loads; it does nothing.
     #[serde(default)]
+    #[allow(dead_code)]
     server: Option<ServerPatch>,
     /// `kind:name` of `bridge.toml` sources the setup page switched off.
     /// `bridge.toml` itself is never edited; the source is just left out.
@@ -82,11 +84,11 @@ struct KioskPatch {
     host_view: Option<HostView>,
 }
 
-/// The `[server]` key the setup page can change: whether the bridge reports
-/// its own machine next to the hosts of the sources.
+/// The `[server]` key an older setup page wrote. Ignored.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ServerPatch {
+    #[allow(dead_code)]
     enabled: Option<bool>,
 }
 
@@ -277,9 +279,6 @@ pub struct Config {
     /// `updates.check` as `bridge.toml` had it, when the data folder changed it.
     #[serde(skip)]
     pub update_check_before_overlay: Option<bool>,
-    /// `server.enabled` as `bridge.toml` had it, when the data folder changed it.
-    #[serde(skip)]
-    pub server_enabled_before_overlay: Option<bool>,
     /// `kind:name` of the `bridge.toml` sources the data folder switched off.
     /// Filled by `with_overlay`.
     #[serde(skip)]
@@ -357,34 +356,17 @@ impl Default for MqttConfig {
     }
 }
 
-/// The local `server` source: stats about the machine the bridge runs on.
-#[derive(Debug, Clone, Deserialize)]
+/// The old `[server]` block. The bridge no longer reads its own machine (hosts
+/// come from Prometheus), so these keys are only accepted so that an existing
+/// config still loads. `enabled = true` logs a warning at startup.
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ServerConfig {
-    /// Report the machine the bridge runs on. Turn off when a Prometheus
-    /// source already covers it (for instance in Docker, where the bridge only
-    /// sees the container's network and sensors).
     pub enabled: bool,
-    /// Name shown on the stats page. Defaults to the system hostname.
     pub display_name: Option<String>,
-    /// Seconds between stats samples and publishes (5 s in the schema).
-    pub interval_s: u64,
-    /// Network interface to report. Defaults to the busiest non-loopback one.
+    pub interval_s: Option<u64>,
     pub net_iface: Option<String>,
-    /// Filesystem used for `disk_pct`.
-    pub disk_path: PathBuf,
-}
-
-impl Default for ServerConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            display_name: None,
-            interval_s: 5,
-            net_iface: None,
-            disk_path: PathBuf::from("/"),
-        }
-    }
+    pub disk_path: Option<PathBuf>,
 }
 
 /// The shared HTTP listener for webhooks.
@@ -1212,6 +1194,7 @@ pub struct PrometheusConfig {
     /// The machines to show, each on its own `stats:<name>` page. An entry is
     /// the node_exporter `instance` label (`"node-exporter:9100"`), or a table
     /// with `instance`, `name`, `cadvisor` and `expect_containers`.
+    #[serde(default)]
     pub hosts: Vec<HostConfig>,
     /// Seconds between queries.
     #[serde(default = "default_prometheus_interval_s")]
@@ -1250,7 +1233,23 @@ pub struct HostConfig {
     /// Containers that must be running. A stopped container vanishes from
     /// cAdvisor, so only listed names can be reported as down.
     pub expect_containers: Vec<String>,
+    /// What the host card shows, from `HOST_SHOW`. `None`: everything the
+    /// host reports.
+    pub show: Option<Vec<String>>,
 }
+
+/// The parts of a host card the setup page can switch off per host.
+pub const HOST_SHOW: [&str; 9] = [
+    "cpu",
+    "memory",
+    "disk",
+    "uptime",
+    "network",
+    "updates",
+    "reboot",
+    "temperature",
+    "gpu",
+];
 
 /// The two ways to write a host in the config.
 #[derive(Deserialize)]
@@ -1268,6 +1267,7 @@ struct HostTable {
     cadvisor: Option<String>,
     #[serde(default)]
     expect_containers: Vec<String>,
+    show: Option<Vec<String>>,
 }
 
 impl From<HostSpec> for HostConfig {
@@ -1278,6 +1278,7 @@ impl From<HostSpec> for HostConfig {
                 name: None,
                 cadvisor: None,
                 expect_containers: Vec::new(),
+                show: None,
             },
             HostSpec::Table(table) => table,
         };
@@ -1289,13 +1290,20 @@ impl From<HostSpec> for HostConfig {
             name,
             cadvisor: table.cadvisor,
             expect_containers: table.expect_containers,
+            show: table.show,
         }
     }
 }
 
+/// A host name as shown on the dashboard: plain text, 1 to 40 characters.
+pub fn valid_host_name(name: &str) -> bool {
+    let count = name.chars().count();
+    (1..=40).contains(&count) && name.trim() == name && !name.chars().any(char::is_control)
+}
+
 /// `node-exporter:9100` becomes `node-exporter`; anything that cannot be in
 /// a page name turns into `-`.
-fn default_host_name(instance: &str) -> String {
+pub fn default_host_name(instance: &str) -> String {
     let host = instance.rsplit_once(':').map_or(instance, |(host, _)| host);
     host.chars()
         .map(|c| if valid_name(&c.to_string()) { c } else { '-' })
@@ -1440,7 +1448,7 @@ impl Config {
             kiosk,
             alerts,
             updates,
-            server,
+            server: _,
             hidden,
         } = toml::from_str(overlay).context("invalid sources overlay")?;
         if !hidden.is_empty() {
@@ -1469,10 +1477,6 @@ impl Config {
         if let Some(view) = kiosk.and_then(|k| k.host_view) {
             self.host_view_before_overlay = Some(self.kiosk.host_view);
             self.kiosk.host_view = view;
-        }
-        if let Some(enabled) = server.and_then(|s| s.enabled) {
-            self.server_enabled_before_overlay = Some(self.server.enabled);
-            self.server.enabled = enabled;
         }
         if let Some(check) = updates.and_then(|u| u.check) {
             self.update_check_before_overlay = Some(self.updates.check);
@@ -1542,9 +1546,6 @@ impl Config {
         if let Some(original) = base.update_check_before_overlay.take() {
             base.updates.check = original;
         }
-        if let Some(original) = base.server_enabled_before_overlay.take() {
-            base.server.enabled = original;
-        }
         base
     }
 
@@ -1559,10 +1560,6 @@ impl Config {
         anyhow::ensure!(
             (1..=MAX_ACTIVE_ALERTS).contains(&self.alerts.max_active),
             "alerts.max_active must be between 1 and {MAX_ACTIVE_ALERTS}"
-        );
-        anyhow::ensure!(
-            self.server.interval_s > 0,
-            "server.interval_s must be above 0"
         );
         let mqtt = &self.mqtt;
         anyhow::ensure!(
@@ -1789,10 +1786,6 @@ impl Config {
                 prom.interval_s > 0,
                 "source.prometheus {name}: interval_s must be above 0"
             );
-            anyhow::ensure!(
-                !prom.hosts.is_empty(),
-                "source.prometheus {name}: hosts needs at least one entry"
-            );
             // The mount point and device go into PromQL label matchers.
             for (key, value) in [
                 ("disk_mountpoint", Some(&prom.disk_mountpoint)),
@@ -1806,12 +1799,20 @@ impl Config {
             let mut pages = HashSet::new();
             for host in &prom.hosts {
                 anyhow::ensure!(
-                    valid_name(&host.name),
-                    "source.prometheus {name}: host name {:?} may only use letters, digits, - and _ \
-                     (set `name` for instance {:?})",
+                    valid_host_name(&host.name),
+                    "source.prometheus {name}: host name {:?} must be 1 to 40 characters without \
+                     control characters or spaces at the ends (set `name` for instance {:?})",
                     host.name,
                     host.instance
                 );
+                for item in host.show.iter().flatten() {
+                    anyhow::ensure!(
+                        HOST_SHOW.contains(&item.as_str()),
+                        "source.prometheus {name}: host {} cannot show {item:?} (known: {})",
+                        host.name,
+                        HOST_SHOW.join(", ")
+                    );
+                }
                 anyhow::ensure!(
                     pages.insert(&host.name),
                     "source.prometheus {name}: two hosts are named {:?}",
@@ -1870,8 +1871,7 @@ mod tests {
                 .enabled
         );
         assert_eq!(config.mqtt.topic_prefix, "deskpanel");
-        assert_eq!(config.server.interval_s, 5);
-        assert!(config.server.enabled);
+        assert!(!config.server.enabled);
         assert!(config.rotation.is_none());
         assert!(config.source.gitea.is_empty());
         assert_eq!(config.http.listen.port(), 8787);
@@ -1927,25 +1927,31 @@ mod tests {
     }
 
     #[test]
-    fn the_data_folder_can_switch_the_local_host_off_and_back() {
-        let config = Config::from_toml("").unwrap();
+    fn a_host_has_a_free_name_and_a_checked_show_list() {
+        let text = |host: &str| {
+            format!("[[source.prometheus]]\nname = \"p\"\nurl = \"http://p\"\nhosts = [{host}]\n")
+        };
+        let config = Config::from_toml(&text(
+            "{ instance = \"a:9100\", name = \"Office PC\", show = [\"cpu\", \"updates\"] }",
+        ))
+        .unwrap();
+        let host = &config.source.prometheus[0].hosts[0];
+        assert_eq!(host.name, "Office PC");
+        assert_eq!(host.show.as_ref().unwrap().len(), 2);
+        assert!(Config::from_toml(&text("{ instance = \"a:9100\", show = [\"fans\"] }")).is_err());
+        assert!(Config::from_toml(&text("{ instance = \"a:9100\", name = \" x\" }")).is_err());
+    }
+
+    #[test]
+    fn an_old_server_block_still_loads() {
+        // 1.0.6 wrote `[server] enabled` from the setup page; it is ignored now.
+        let config = Config::from_toml("[server]\nenabled = true\ninterval_s = 5\n").unwrap();
         assert!(config.server.enabled);
-        let with = config
-            .clone()
-            .with_overlay("[server]\nenabled = false\n")
-            .unwrap();
-        assert!(!with.server.enabled);
-        assert!(with.without_overlay().server.enabled);
-        // bridge.toml says off, the data folder turns it on again.
-        let off = Config::from_toml("[server]\nenabled = false\n").unwrap();
-        let on = off.with_overlay("[server]\nenabled = true\n").unwrap();
-        assert!(on.server.enabled);
-        assert!(!on.without_overlay().server.enabled);
         assert!(
             Config::from_toml("")
                 .unwrap()
-                .with_overlay("[server]\nother = 1\n")
-                .is_err()
+                .with_overlay("[server]\nenabled = false\n")
+                .is_ok()
         );
     }
 
@@ -2408,8 +2414,15 @@ mod tests {
         assert!(
             Config::from_toml(&block("").replace("http://prom.local:9090", "prom.local")).is_err()
         );
+        // No hosts yet is fine: they are chosen on the setup page's Hosts page.
+        let bare = "[[source.prometheus]]\nname = \"p\"\nurl = \"http://prom.local:9090\"\n";
+        assert!(
+            Config::from_toml(bare).unwrap().source.prometheus[0]
+                .hosts
+                .is_empty()
+        );
         let no_hosts = block("").replace("[\"node-exporter:9100\"]", "[]");
-        assert!(Config::from_toml(&no_hosts).is_err());
+        assert!(Config::from_toml(&no_hosts).is_ok());
         // Containers need a cAdvisor instance to be looked up on.
         let orphan = block("").replace(
             "[\"node-exporter:9100\"]",
@@ -2433,11 +2446,6 @@ mod tests {
                 .server
                 .enabled
         );
-    }
-
-    #[test]
-    fn zero_interval_is_rejected() {
-        assert!(Config::from_toml("[server]\ninterval_s = 0\n").is_err());
     }
 
     #[test]

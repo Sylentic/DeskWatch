@@ -83,7 +83,7 @@ Setup, Access, **API keys** creates a key (shown once, only its hash is stored).
 
 ## Sign in with GitHub or Microsoft
 
-Optional, on top of the local password. Set it up on the setup page under **Sign-in providers** (needs the login to be
+Optional, on top of the local password. Set it up on the setup page under **Sign-in options** (needs the login to be
 on, and a public address that starts with `https://`; plain `http://` only works for `localhost`). The settings go in
 `oauth.toml` in the data folder (no secrets), the client secrets in `credentials/oauth-github` and
 `credentials/oauth-microsoft`. The local admin account always keeps working, so a wrong rule never locks you out.

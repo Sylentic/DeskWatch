@@ -28,7 +28,7 @@ Each release has `deskwatch-bridge-<version>-aarch64-linux.tar.gz` next to the x
 [install.md](install.md#option-a-download-a-release) (take the aarch64 file), then follow the same systemd steps. The
 unit file is the same one. Building from source on a Pi works but is slow; prefer the binary or the image.
 
-The bridge's own host card (CPU, memory, disk, temperature) works on the Pi because it reads `/proc` and `/sys`.
+To see the Pi's own CPU, memory, disk and temperature, run node_exporter on it and add it as a host ([hosts.md](hosts.md)).
 
 ## Showing the dashboard
 

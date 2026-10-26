@@ -1085,3 +1085,104 @@ async fn backup_export_and_import_over_http() {
     assert!(restored.read_sources().unwrap().contains("prom.example"));
     assert_eq!(restored.read_secret("tok").unwrap(), "VERY-SECRET-VALUE");
 }
+
+/// A Prometheus that knows one Linux and one Windows machine, and cAdvisor.
+fn prometheus_mock() -> Router {
+    use axum::extract::Query;
+    use axum::routing::get;
+    async fn query(Query(q): Query<std::collections::HashMap<String, String>>) -> String {
+        let promql = q.get("query").map(String::as_str).unwrap_or_default();
+        let series = |items: &[(&str, f64)]| {
+            let result: Vec<Value> = items
+                .iter()
+                .map(|(i, v)| json!({ "metric": { "instance": i }, "value": [1.0, v.to_string()] }))
+                .collect();
+            json!({ "status": "success", "data": { "resultType": "vector", "result": result } })
+                .to_string()
+        };
+        match promql {
+            "up" => series(&[
+                ("nas:9100", 1.0),
+                ("office-pc:9182", 1.0),
+                ("cadvisor:8080", 1.0),
+            ]),
+            "max by (instance) (node_memory_MemTotal_bytes)" => series(&[("nas:9100", 1.0)]),
+            "max by (instance) (windows_cs_physical_memory_bytes)" => {
+                series(&[("office-pc:9182", 1.0)])
+            }
+            p if p.contains("node_cpu_seconds_total") => {
+                series(&[("nas:9100", 12.0), ("office-pc:9182", 30.0)])
+            }
+            p if p.contains("node_apt_upgrades_pending") => series(&[("office-pc:9182", 3.0)]),
+            _ => series(&[]),
+        }
+    }
+    Router::new().route("/api/v1/query", get(query))
+}
+
+#[tokio::test]
+async fn hosts_are_discovered_chosen_renamed_and_saved() {
+    use crate::probe::tests::serve;
+    let (router, temp) = with_data("hosts").await;
+    let base = serve(prometheus_mock()).await;
+    let add = json!({
+        "kind": "prometheus", "name": "home", "create": true,
+        "fields": { "url": base, "hosts": [] },
+    })
+    .to_string();
+    let (_, _, text) = send(&router, "POST", "/api/setup/source", &[], &add).await;
+    assert!(text.contains("\"saved\":true"), "{text}");
+
+    // Discovery lists machines, not cAdvisor, and what each one reports.
+    let (status, _, text) = send(&router, "GET", "/api/setup/hosts", &[], "").await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    let v: Value = serde_json::from_str(&text).unwrap();
+    let source = &v["sources"][0];
+    assert_eq!(source["name"], "home");
+    assert_eq!(source["editable"], true);
+    let found = source["found"].as_array().unwrap();
+    assert_eq!(found.len(), 2, "{text}");
+    assert_eq!(found[0]["instance"], "nas:9100");
+    assert_eq!(found[0]["kind"], "linux");
+    assert_eq!(found[1]["kind"], "windows");
+    assert_eq!(found[1]["reports"], json!(["cpu", "updates"]));
+    assert_eq!(source["configured"], json!([]));
+
+    // Choose one, rename it and show two parts.
+    let save = json!({
+        "source": "home",
+        "hosts": [{ "instance": "office-pc:9182", "name": "Office PC", "show": ["cpu", "updates"] }],
+    })
+    .to_string();
+    let evil = [("host", "b.lan"), ("origin", "http://evil.example")];
+    let (status, ..) = send(&router, "POST", "/api/setup/hosts", &evil, &save).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _, text) = send(&router, "POST", "/api/setup/hosts", &[], &save).await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    let saved = std::fs::read_to_string(temp.0.join("data/sources.toml")).unwrap();
+    assert!(
+        saved.contains("Office PC") && saved.contains("updates"),
+        "{saved}"
+    );
+
+    let (_, _, text) = send(&router, "GET", "/api/setup/hosts", &[], "").await;
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        v["sources"][0]["configured"][0],
+        json!({ "instance": "office-pc:9182", "name": "Office PC", "show": ["cpu", "updates"] })
+    );
+
+    // A bad name or an unknown part is refused and nothing changes.
+    for bad in [
+        json!({ "source": "home", "hosts": [{ "instance": "a", "name": "" }] }),
+        json!({ "source": "home", "hosts": [{ "instance": "a", "name": "a", "show": ["fans"] }] }),
+        json!({ "source": "nope", "hosts": [] }),
+    ] {
+        let (status, ..) = send(&router, "POST", "/api/setup/hosts", &[], &bad.to_string()).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
+    }
+    assert_eq!(
+        std::fs::read_to_string(temp.0.join("data/sources.toml")).unwrap(),
+        saved
+    );
+}

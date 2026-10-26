@@ -32,7 +32,7 @@ a `.sha256` file next to it. The zip holds `deskwatch-bridge.exe`, the example c
 `deploy/`, `homeassistant/`, `docs/` and the licenses.
 
 ```powershell
-$Version = "v1.0.6"       # the release you want
+$Version = "v1.0.7"       # the release you want
 $Name = "deskwatch-$Version-x86_64-windows"
 cd $env:TEMP
 $Base = "https://github.com/Sylentic/DeskWatch/releases/download/$Version"
@@ -58,7 +58,7 @@ Studio Build Tools ("Desktop development with C++"),, plus [Git](https://git-scm
 ```powershell
 git clone https://github.com/Sylentic/DeskWatch.git
 cd DeskWatch
-git checkout v1.0.6             # or dev for the newest code that is not released yet
+git checkout v1.0.7             # or dev for the newest code that is not released yet
 cargo build --release --locked -p deskwatch-bridge
 ```
 
@@ -261,13 +261,9 @@ To rehearse alerts from Home Assistant or a script with your real bridge:
 
 ## 7. What differs from Linux
 
-- **Local server stats.** The bridge machine's own host card (the `[server]` stats) reads `/proc` and `/sys`, which Windows does not
-  have. On Windows the bridge runs fine, but it knows only the machine name (from `COMPUTERNAME`, or
-  `server.display_name`); CPU, load, memory, disk, uptime and network show as unknown (dashes). To see a Windows
-  PC's numbers, run [windows_exporter](https://github.com/prometheus-community/windows_exporter) on it and add a
-  Prometheus source; the bundled queries are written for node_exporter, so which Windows figures appear depends
-  on the metric names, and that mapping is not done yet. Real local stats for Windows (CPU, memory, disk through
-  the Windows API) are planned work.
+- **Host stats.** The bridge does not measure its own machine, on any system. To see a Windows PC's numbers, run
+  [windows_exporter](https://github.com/prometheus-community/windows_exporter) on it and add a Prometheus source
+  ([hosts.md](hosts.md)); the bundled queries cover it.
 - **Source guides.** [azure-devops.md](azure-devops.md) and the other source docs show Linux commands for the token
   files; on Windows create the same file in `C:\ProgramData\DeskWatch\credentials\` as in section 4 and use the
   plain name in the config.

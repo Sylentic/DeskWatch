@@ -93,6 +93,8 @@ button.danger:hover { background: var(--bad-bg); }
 .sidebar { display: grid; grid-template-columns: 15rem minmax(0, 1fr); gap: 1.5rem; align-items: start; }
 nav.side { display: grid; gap: .15rem; align-content: start; position: sticky; top: 1rem; }
 nav.side a { padding: .55rem .75rem; border-radius: 8px; color: var(--soft); text-decoration: none; display: flex; justify-content: space-between; gap: .5rem; font-size: .93rem; }
+nav.side .group { margin: .9rem .75rem .2rem; font-family: var(--mono); font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+nav.side .group:first-child { margin-top: 0; }
 nav.side a:hover { background: var(--card); }
 nav.side a.on { background: var(--card-hi); color: var(--fg); font-weight: 600; }
 nav.side .n { color: var(--muted); font-family: var(--mono); font-size: .8rem; font-weight: 400; }
@@ -237,3 +239,13 @@ code.onekey { display: block; padding: .7rem .8rem; background: var(--field); bo
 .authbox { display: contents; }
 .authhelp { margin: -.3rem 0 0; }
 .secret-area { font-family: "Geist Mono", monospace; font-size: .8rem; }
+
+/* Hosts: one row per machine, a box to tick, the name and details, Edit */
+.hostrow { display: flex; align-items: center; gap: .9rem; padding: .45rem 0; cursor: pointer; }
+.hostrow input[type="checkbox"], .part input[type="checkbox"] { width: 1.1rem; height: 1.1rem; flex: none; margin: 0; }
+.hostrow .hosttext { flex: 1; min-width: 0; }
+.hostrow h2 { margin: 0; font-size: 1rem; }
+.hostrow p { margin: .1rem 0 0; font-size: .85rem; }
+.partgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem 1.5rem; margin: .5rem 0; }
+.part { display: flex; align-items: center; gap: .6rem; }
+@media (max-width: 560px) { .partgrid { grid-template-columns: minmax(0, 1fr); } }
