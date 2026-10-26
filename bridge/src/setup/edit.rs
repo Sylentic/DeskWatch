@@ -457,6 +457,18 @@ pub fn set_updates(current: &str, check: bool) -> Result<String> {
     toml::to_string(&root).context("cannot write sources.toml")
 }
 
+/// Set `[server] enabled` in `sources.toml`: report the bridge's own machine or not.
+pub fn set_server(current: &str, enabled: bool) -> Result<String> {
+    let mut root = parse(current)?;
+    let table = root
+        .entry("server")
+        .or_insert_with(|| toml::Value::Table(Table::new()))
+        .as_table_mut()
+        .context("`server` in sources.toml is not a table")?;
+    table.insert("enabled".into(), toml::Value::Boolean(enabled));
+    toml::to_string(&root).context("cannot write sources.toml")
+}
+
 /// Switch a `bridge.toml` source off (`hide`) or on again. The source stays in
 /// `bridge.toml`; `sources.toml` only lists its id under `hidden`.
 pub fn set_hidden(current: &str, kind: &str, name: &str, hide: bool) -> Result<String> {

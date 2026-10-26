@@ -40,6 +40,7 @@
   var skew = 0;                // server clock minus client clock, in seconds
   var build = null;            // bridge version, to reload the page after an upgrade
   var history = {};            // host name -> recent CPU readings
+  var gpuHistory = {};         // host name -> recent GPU readings, same timing as `history`
   var historyAt = {};          // host name -> client time of the last reading
   var cards = {};              // card key -> { el, html }
   var problem = null;          // why no data arrives, see describe(); null when all is well
@@ -180,8 +181,8 @@
       '<div><span class="l">Net in</span><span>' + (s.net ? rate(s.net.rx_bps) : '--') + '</span></div>' +
       '<div><span class="l">Net out</span><span>' + (s.net ? rate(s.net.tx_bps) : '--') + '</span></div>' +
       '<div><span class="l">Cores</span><span>' + (s.cpu_count == null ? '--' : s.cpu_count) + '</span></div>' +
-      '</div><div class="sparkhead"><span>CPU &middot; ' + spanLabel(vals.length) + '</span><span>PEAK ' + peak + '</span></div>' +
-      sparkline(vals);
+      '</div><div class="sparkhead"><span>CPU' + (gpuHistory[host.name] && gpuHistory[host.name].some(function (g) { return g != null; }) ? ' <span class="gpu-key">&amp; GPU</span>' : '') + ' &middot; ' + spanLabel(vals.length) + '</span><span>PEAK ' + peak + '</span></div>' +
+      sparkline(vals, gpuHistory[host.name]);
   }
 
   // How much time the graph covers: one reading per 5 s, at most HISTORY.
@@ -249,18 +250,26 @@
       '<span class="v">' + pct(value) + '</span></div>';
   }
 
-  function sparkline(values) {
+  function sparkline(values, gpuValues) {
     if (!values || values.length < 2) return '<svg class="spark"></svg>';
     // The readings so far fill the whole width, so the graph is not a small
     // line at the right edge for the first minutes after a reload.
     var w = 100, h = 30;
     var step = w / (values.length - 1), off = 0;
+    var y = function (v) { return (h - Math.max(0, Math.min(100, v)) / 100 * h).toFixed(1); };
     var pts = values.map(function (v, i) {
-      return (off + i * step).toFixed(1) + ',' + (h - Math.max(0, Math.min(100, v)) / 100 * h).toFixed(1);
+      return (off + i * step).toFixed(1) + ',' + y(v);
     });
+    // A red GPU line on the same scale, when the host reports a GPU.
+    var gpuLine = '';
+    if (gpuValues && gpuValues.length === values.length && gpuValues.some(function (g) { return g != null; })) {
+      var gpts = [];
+      gpuValues.forEach(function (g, i) { if (g != null) gpts.push((off + i * step).toFixed(1) + ',' + y(g)); });
+      if (gpts.length > 1) gpuLine = '<polyline class="gpu" points="' + gpts.join(' ') + '"/>';
+    }
     return '<svg class="spark" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
       '<path d="M' + pts.join(' L') + ' L' + (off + (values.length - 1) * step).toFixed(1) + ',' + h + ' L' + off.toFixed(1) + ',' + h + ' Z"/>' +
-      '<polyline points="' + pts.join(' ') + '"/></svg>';
+      '<polyline points="' + pts.join(' ') + '"/>' + gpuLine + '</svg>';
   }
 
   // ---- filters ------------------------------------------------------------
@@ -967,6 +976,11 @@
       var list = history[h.name] = history[h.name] || [];
       list.push(v);
       if (list.length > HISTORY) list.shift();
+      // GPU line, only for hosts that report a GPU. Pad with nulls so both lines stay aligned.
+      var g = h.stats.gpu_pct;
+      var glist = gpuHistory[h.name] = gpuHistory[h.name] || [];
+      glist.push(g == null ? null : g);
+      if (glist.length > HISTORY) glist.shift();
     });
 
     var layout = snap.layout || { columns: 4, rows: 3, panels: [] };

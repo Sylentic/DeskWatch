@@ -65,6 +65,9 @@ struct Overlay {
     /// Update check setting the setup page changed.
     #[serde(default)]
     updates: Option<UpdatesPatch>,
+    /// Whether to report the bridge's own machine, as the setup page set it.
+    #[serde(default)]
+    server: Option<ServerPatch>,
     /// `kind:name` of `bridge.toml` sources the setup page switched off.
     /// `bridge.toml` itself is never edited; the source is just left out.
     #[serde(default)]
@@ -77,6 +80,14 @@ struct Overlay {
 #[serde(deny_unknown_fields)]
 struct KioskPatch {
     host_view: Option<HostView>,
+}
+
+/// The `[server]` key the setup page can change: whether the bridge reports
+/// its own machine next to the hosts of the sources.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ServerPatch {
+    enabled: Option<bool>,
 }
 
 /// The `[updates]` key the setup page can change.
@@ -266,6 +277,9 @@ pub struct Config {
     /// `updates.check` as `bridge.toml` had it, when the data folder changed it.
     #[serde(skip)]
     pub update_check_before_overlay: Option<bool>,
+    /// `server.enabled` as `bridge.toml` had it, when the data folder changed it.
+    #[serde(skip)]
+    pub server_enabled_before_overlay: Option<bool>,
     /// `kind:name` of the `bridge.toml` sources the data folder switched off.
     /// Filled by `with_overlay`.
     #[serde(skip)]
@@ -347,6 +361,10 @@ impl Default for MqttConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ServerConfig {
+    /// Report the machine the bridge runs on. Turn off when a Prometheus
+    /// source already covers it (for instance in Docker, where the bridge only
+    /// sees the container's network and sensors).
+    pub enabled: bool,
     /// Name shown on the stats page. Defaults to the system hostname.
     pub display_name: Option<String>,
     /// Seconds between stats samples and publishes (5 s in the schema).
@@ -360,6 +378,7 @@ pub struct ServerConfig {
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
+            enabled: true,
             display_name: None,
             interval_s: 5,
             net_iface: None,
@@ -1421,6 +1440,7 @@ impl Config {
             kiosk,
             alerts,
             updates,
+            server,
             hidden,
         } = toml::from_str(overlay).context("invalid sources overlay")?;
         if !hidden.is_empty() {
@@ -1449,6 +1469,10 @@ impl Config {
         if let Some(view) = kiosk.and_then(|k| k.host_view) {
             self.host_view_before_overlay = Some(self.kiosk.host_view);
             self.kiosk.host_view = view;
+        }
+        if let Some(enabled) = server.and_then(|s| s.enabled) {
+            self.server_enabled_before_overlay = Some(self.server.enabled);
+            self.server.enabled = enabled;
         }
         if let Some(check) = updates.and_then(|u| u.check) {
             self.update_check_before_overlay = Some(self.updates.check);
@@ -1517,6 +1541,9 @@ impl Config {
         }
         if let Some(original) = base.update_check_before_overlay.take() {
             base.updates.check = original;
+        }
+        if let Some(original) = base.server_enabled_before_overlay.take() {
+            base.server.enabled = original;
         }
         base
     }
@@ -1844,6 +1871,7 @@ mod tests {
         );
         assert_eq!(config.mqtt.topic_prefix, "deskpanel");
         assert_eq!(config.server.interval_s, 5);
+        assert!(config.server.enabled);
         assert!(config.rotation.is_none());
         assert!(config.source.gitea.is_empty());
         assert_eq!(config.http.listen.port(), 8787);
@@ -1896,6 +1924,29 @@ mod tests {
         assert!(!with.updates.check);
         assert!(with.without_overlay().updates.check);
         assert!(Config::from_toml("[updates]\nother = 1\n").is_err());
+    }
+
+    #[test]
+    fn the_data_folder_can_switch_the_local_host_off_and_back() {
+        let config = Config::from_toml("").unwrap();
+        assert!(config.server.enabled);
+        let with = config
+            .clone()
+            .with_overlay("[server]\nenabled = false\n")
+            .unwrap();
+        assert!(!with.server.enabled);
+        assert!(with.without_overlay().server.enabled);
+        // bridge.toml says off, the data folder turns it on again.
+        let off = Config::from_toml("[server]\nenabled = false\n").unwrap();
+        let on = off.with_overlay("[server]\nenabled = true\n").unwrap();
+        assert!(on.server.enabled);
+        assert!(!on.without_overlay().server.enabled);
+        assert!(
+            Config::from_toml("")
+                .unwrap()
+                .with_overlay("[server]\nother = 1\n")
+                .is_err()
+        );
     }
 
     #[test]
@@ -2376,6 +2427,12 @@ mod tests {
     fn unknown_keys_are_rejected() {
         // Catches typos such as `intervall_s` instead of silently using a default.
         assert!(Config::from_toml("[server]\nintervall_s = 5\n").is_err());
+        assert!(
+            !Config::from_toml("[server]\nenabled = false\n")
+                .unwrap()
+                .server
+                .enabled
+        );
     }
 
     #[test]

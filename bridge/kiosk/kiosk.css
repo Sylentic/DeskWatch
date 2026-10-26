@@ -379,6 +379,8 @@ body.lost .grid { opacity: .45; filter: grayscale(.7); }
 .hostdetail .sparkhead { margin-top: 0.9rem; }
 .hostdetail .spark { margin-top: 0; flex: 1 1 3rem; height: auto; min-height: 3rem; max-height: 14rem; }
 .spark polyline { fill: none; stroke: var(--blue); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.spark polyline.gpu { stroke: var(--red); stroke-width: 1.5; }
+.sparkhead .gpu-key { color: var(--red); }
 .spark path { fill: color-mix(in srgb, var(--blue) 14%, transparent); stroke: none; }
 .sparkhead { display: flex; margin-top: 0.65rem; font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.08em; color: var(--dim); }
 .sparkhead span:last-child { margin-left: auto; }

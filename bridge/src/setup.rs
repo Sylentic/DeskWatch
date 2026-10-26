@@ -180,6 +180,7 @@ impl Setup {
             .route("/api/setup/alerts", post(save_alerts))
             .route("/api/setup/alerts/test", post(test_alert))
             .route("/api/setup/updates", post(save_updates))
+            .route("/api/setup/server", post(save_server))
             .route("/api/setup/restart", post(restart))
             .route("/api/setup/export", get(export_plain).post(export_locked))
             .route("/api/setup/import/check", post(import_check))
@@ -269,6 +270,7 @@ async fn status(State(shared): State<Arc<Shared>>) -> Response {
     });
     out["update"] = json!(shared.update.get());
     out["updates"] = json!({ "editable": can_edit, "check": effective.updates.check });
+    out["server"] = json!({ "editable": can_edit, "enabled": effective.server.enabled });
     out["mqtt"]["connected"] = json!(shared.mqtt_enabled && shared.mqtt.is_up());
     let mut response = out.to_string().into_response();
     let h = response.headers_mut();
@@ -765,6 +767,50 @@ async fn save_alerts(
 
 /// Save the update check switch (`{"check": true|false}`). The check starts
 /// with the bridge, so it applies after a restart.
+/// Save whether the bridge reports its own machine. The stats loop reads the
+/// setting at startup, so it applies after a restart.
+async fn save_server(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let request = match change_request(&shared, &headers, &body) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    let Some(enabled) = request.get("enabled").and_then(Value::as_bool) else {
+        return refuse(
+            StatusCode::BAD_REQUEST,
+            "expected {\"enabled\": true or false}",
+        );
+    };
+    let store = shared.store.as_ref().expect("checked above");
+    let _saving = shared.saving.lock().await;
+    let current = match store.read_sources() {
+        Ok(current) => current,
+        Err(err) => return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}")),
+    };
+    let text = match edit::set_server(&current, enabled) {
+        Ok(text) => text,
+        Err(err) => return refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
+    };
+    if let Err(err) = shared.base.clone().with_overlay(&text) {
+        return refuse(StatusCode::BAD_REQUEST, format!("{err:#}"));
+    }
+    if let Err(err) = store.write_sources(&text) {
+        return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}"));
+    }
+    shared.changed.store(true, Ordering::Relaxed);
+    tracing::info!(
+        enabled,
+        "setup: local host stats saved (apply after a restart)"
+    );
+    json_response(
+        StatusCode::OK,
+        json!({ "saved": true, "id": "server", "restart_needed": true }),
+    )
+}
+
 async fn save_updates(
     State(shared): State<Arc<Shared>>,
     headers: HeaderMap,
