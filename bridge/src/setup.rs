@@ -173,6 +173,7 @@ impl Setup {
             .route("/api/setup/source", post(save_source))
             .route("/api/setup/source/delete", post(delete_source))
             .route("/api/setup/source/hide", post(hide_source))
+            .route("/api/setup/hosts", get(hosts).post(save_hosts))
             .route("/api/setup/mqtt", post(save_mqtt))
             .route("/api/setup/mqtt/delete", post(delete_mqtt))
             .route("/api/setup/secret/delete", post(delete_secret))
@@ -180,7 +181,6 @@ impl Setup {
             .route("/api/setup/alerts", post(save_alerts))
             .route("/api/setup/alerts/test", post(test_alert))
             .route("/api/setup/updates", post(save_updates))
-            .route("/api/setup/server", post(save_server))
             .route("/api/setup/restart", post(restart))
             .route("/api/setup/export", get(export_plain).post(export_locked))
             .route("/api/setup/import/check", post(import_check))
@@ -270,7 +270,6 @@ async fn status(State(shared): State<Arc<Shared>>) -> Response {
     });
     out["update"] = json!(shared.update.get());
     out["updates"] = json!({ "editable": can_edit, "check": effective.updates.check });
-    out["server"] = json!({ "editable": can_edit, "enabled": effective.server.enabled });
     out["mqtt"]["connected"] = json!(shared.mqtt_enabled && shared.mqtt.is_up());
     let mut response = out.to_string().into_response();
     let h = response.headers_mut();
@@ -430,6 +429,147 @@ fn change_request_up_to(
         return Err(refuse(StatusCode::PAYLOAD_TOO_LARGE, "request too large"));
     }
     serde_json::from_slice(body).map_err(|_| refuse(StatusCode::BAD_REQUEST, "expected JSON"))
+}
+
+/// The longest asking one Prometheus what it collects from may take.
+const DISCOVER_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// The Hosts page: for every Prometheus source, what it collects from and
+/// which of those machines the dashboard shows. Asked when the page opens and
+/// on Refresh, not with the status that is polled every few seconds.
+async fn hosts(State(shared): State<Arc<Shared>>, headers: HeaderMap) -> Response {
+    if !origin::same_origin(&headers) {
+        return refuse(StatusCode::FORBIDDEN, "cross-origin request refused");
+    }
+    let effective = effective_config(&shared);
+    let can_edit = shared.store.is_some();
+    let mut sources = Vec::new();
+    for config in &effective.source.prometheus {
+        let id = format!("prometheus:{}", config.name);
+        if effective.hidden_sources.contains(&id) {
+            continue;
+        }
+        let found = match tokio::time::timeout(
+            DISCOVER_TIMEOUT,
+            crate::prometheus::discover_source(config),
+        )
+        .await
+        {
+            Ok(Ok(found)) => Ok(found),
+            Ok(Err(err)) => Err(format!("{err:#}")),
+            Err(_) => Err("Prometheus took too long to answer".to_string()),
+        };
+        let (found, error) = match found {
+            Ok(found) => (found, None),
+            Err(error) => (Vec::new(), Some(error)),
+        };
+        // From bridge.toml: shown, but changed in that file.
+        let in_data_folder = !shared
+            .base
+            .source
+            .prometheus
+            .iter()
+            .any(|c| c.name == config.name);
+        sources.push(json!({
+            "name": config.name,
+            "editable": can_edit && in_data_folder,
+            "error": error,
+            "found": found,
+            "configured": config.hosts.iter().map(|h| json!({
+                "instance": h.instance,
+                "name": h.name,
+                "show": h.show,
+            })).collect::<Vec<_>>(),
+        }));
+    }
+    let mut response = json!({ "sources": sources, "show": crate::config::HOST_SHOW })
+        .to_string()
+        .into_response();
+    let h = response.headers_mut();
+    h.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
+/// Save which machines the dashboard shows from one Prometheus source, and
+/// their names and parts: `{"source": "home", "hosts": [{"instance": "...",
+/// "name": "...", "show": ["cpu", ...] or null}]}`.
+async fn save_hosts(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let request = match change_request(&shared, &headers, &body) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    let store = shared.store.as_ref().expect("checked above");
+    let Some(name) = request.get("source").and_then(Value::as_str) else {
+        return refuse(StatusCode::BAD_REQUEST, "expected a \"source\"");
+    };
+    let Some(list) = request.get("hosts").and_then(Value::as_array) else {
+        return refuse(StatusCode::BAD_REQUEST, "expected a list of \"hosts\"");
+    };
+    let mut edits = Vec::new();
+    for item in list {
+        let text = |key: &str| item.get(key).and_then(Value::as_str).map(str::to_string);
+        let (Some(instance), Some(host_name)) = (text("instance"), text("name")) else {
+            return refuse(
+                StatusCode::BAD_REQUEST,
+                "every host needs an instance and a name",
+            );
+        };
+        let show = match item.get("show") {
+            None | Some(Value::Null) => None,
+            Some(Value::Array(parts)) => Some(
+                parts
+                    .iter()
+                    .filter_map(|p| p.as_str().map(str::to_string))
+                    .collect(),
+            ),
+            Some(_) => return refuse(StatusCode::BAD_REQUEST, "show must be a list or null"),
+        };
+        edits.push(edit::HostEdit {
+            instance,
+            name: host_name,
+            show,
+        });
+    }
+    let _saving = shared.saving.lock().await;
+    let current = match store.read_sources() {
+        Ok(current) => current,
+        Err(err) => return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}")),
+    };
+    let text = match edit::set_hosts(&current, name, &edits) {
+        Ok(text) => text,
+        Err(err) => return refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
+    };
+    let candidate = match shared.base.clone().with_overlay(&text) {
+        Ok(candidate) => candidate,
+        Err(err) => return refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
+    };
+    if let Err(err) = store.write_sources(&text) {
+        return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}"));
+    }
+    let id = format!("prometheus:{name}");
+    let applied = apply(&shared, &candidate, &id).await;
+    tracing::info!(
+        ?id,
+        hosts = edits.len(),
+        applied = applied.is_ok(),
+        "setup: hosts saved"
+    );
+    json_response(
+        StatusCode::OK,
+        json!({
+            "saved": true, "id": id,
+            "applied": applied.is_ok(), "apply_error": applied.err(),
+            "restart_needed": shared.changed.load(Ordering::Relaxed),
+        }),
+    )
 }
 
 async fn save_source(
@@ -767,50 +907,6 @@ async fn save_alerts(
 
 /// Save the update check switch (`{"check": true|false}`). The check starts
 /// with the bridge, so it applies after a restart.
-/// Save whether the bridge reports its own machine. The stats loop reads the
-/// setting at startup, so it applies after a restart.
-async fn save_server(
-    State(shared): State<Arc<Shared>>,
-    headers: HeaderMap,
-    body: axum::body::Bytes,
-) -> Response {
-    let request = match change_request(&shared, &headers, &body) {
-        Ok(request) => request,
-        Err(response) => return response,
-    };
-    let Some(enabled) = request.get("enabled").and_then(Value::as_bool) else {
-        return refuse(
-            StatusCode::BAD_REQUEST,
-            "expected {\"enabled\": true or false}",
-        );
-    };
-    let store = shared.store.as_ref().expect("checked above");
-    let _saving = shared.saving.lock().await;
-    let current = match store.read_sources() {
-        Ok(current) => current,
-        Err(err) => return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}")),
-    };
-    let text = match edit::set_server(&current, enabled) {
-        Ok(text) => text,
-        Err(err) => return refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
-    };
-    if let Err(err) = shared.base.clone().with_overlay(&text) {
-        return refuse(StatusCode::BAD_REQUEST, format!("{err:#}"));
-    }
-    if let Err(err) = store.write_sources(&text) {
-        return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}"));
-    }
-    shared.changed.store(true, Ordering::Relaxed);
-    tracing::info!(
-        enabled,
-        "setup: local host stats saved (apply after a restart)"
-    );
-    json_response(
-        StatusCode::OK,
-        json!({ "saved": true, "id": "server", "restart_needed": true }),
-    )
-}
-
 async fn save_updates(
     State(shared): State<Arc<Shared>>,
     headers: HeaderMap,
@@ -1225,12 +1321,6 @@ pub fn describe(config: &Config) -> Value {
             "credentials": creds,
             "fields": {
                 "url": s.url,
-                "hosts": s.hosts.iter().map(|h| h.instance.clone()).collect::<Vec<_>>(),
-                // A host with its own settings cannot be edited as a plain list.
-                "hosts_advanced": s.hosts.iter().any(|h| {
-                    h.cadvisor.is_some() || !h.expect_containers.is_empty()
-                        || h.name != h.instance.rsplit_once(':').map_or(h.instance.as_str(), |(host, _)| host)
-                }),
             },
         }));
     }

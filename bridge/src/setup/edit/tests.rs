@@ -656,22 +656,55 @@ fn github_switches_between_token_and_app() {
 }
 
 #[test]
-fn the_local_host_switch_is_saved_and_the_config_accepts_it() {
-    let text = set_server("", false).unwrap();
-    assert!(
-        text.contains("[server]") && text.contains("enabled = false"),
-        "{text}"
-    );
+fn hosts_are_replaced_and_what_the_page_does_not_know_is_kept() {
+    let current = "[[source.prometheus]]\nname = \"home\"\nurl = \"http://p:9090\"\n\
+                   hosts = [{ instance = \"a:9100\", cadvisor = \"c:8080\", expect_containers = [\"db\"] }, \"b:9100\"]\n";
+    let host = |instance: &str, name: &str, show: Option<&[&str]>| HostEdit {
+        instance: instance.into(),
+        name: name.into(),
+        show: show.map(|s| s.iter().map(|x| x.to_string()).collect()),
+    };
+    let text = set_hosts(
+        current,
+        "home",
+        &[
+            host("a:9100", "Server", Some(&["cpu", "updates"])),
+            host("b:9100", "b", None),
+            host("c:9182", "Office PC", None),
+        ],
+    )
+    .unwrap();
     let config = crate::config::Config::from_toml("")
         .unwrap()
         .with_overlay(&text)
         .unwrap();
-    assert!(!config.server.enabled);
-    // It keeps what else the file holds, and turning it on again just flips the key.
-    let both = set_server(&set_updates("", false).unwrap(), false).unwrap();
-    let again = set_server(&both, true).unwrap();
-    assert!(
-        again.contains("check = false") && again.contains("enabled = true"),
-        "{again}"
+    let hosts = &config.source.prometheus[0].hosts;
+    assert_eq!(hosts[0].name, "Server");
+    assert_eq!(hosts[0].cadvisor.as_deref(), Some("c:8080"), "{text}");
+    assert_eq!(hosts[0].expect_containers, ["db"]);
+    assert_eq!(
+        hosts[0].show.as_deref(),
+        Some(&["cpu".to_string(), "updates".to_string()][..])
     );
+    assert_eq!(hosts[1].name, "b");
+    assert_eq!(hosts[2].name, "Office PC");
+    // A host with nothing special is written as a plain instance.
+    assert!(text.contains("\"b:9100\""), "{text}");
+    assert!(!text.contains("name = \"b\""), "{text}");
+}
+
+#[test]
+fn bad_hosts_are_refused() {
+    let current = "[[source.prometheus]]\nname = \"home\"\nurl = \"http://p\"\n";
+    let host = |name: &str, show: Option<Vec<String>>| HostEdit {
+        instance: "a:9100".into(),
+        name: name.into(),
+        show,
+    };
+    assert!(set_hosts(current, "home", &[host("", None)]).is_err());
+    assert!(set_hosts(current, "home", &[host(" padded", None)]).is_err());
+    assert!(set_hosts(current, "home", &[host(&"x".repeat(41), None)]).is_err());
+    assert!(set_hosts(current, "home", &[host("ok", Some(vec!["fans".into()]))]).is_err());
+    assert!(set_hosts(current, "nope", &[host("ok", None)]).is_err());
+    assert!(set_hosts(current, "home", &[host("Office PC", None)]).is_ok());
 }

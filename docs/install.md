@@ -26,7 +26,7 @@ What you need:
 - A Linux server that stays on, with `systemd` (Debian 12 or newer is what the steps are written for).
 - A Mosquitto broker the bridge can reach (often the same server).
 - At least one source: Gitea, GitHub or GitHub Enterprise, GitLab, Bitbucket Cloud, Azure DevOps, Prometheus, or only Home Assistant alerts. With no
-  source at all the bridge still shows the server's own stats.
+  source at all the Hosts panel is empty: hosts come from a Prometheus source.
 
 Contents: [1. Get the binary](#1-get-the-binary) · [2. Install it](#2-install-the-bridge) ·
 [3. Configure](#3-configure-the-bridge) · [4. Mosquitto](#4-mosquitto-logins) · [5. Sources](#5-sources) ·
@@ -109,7 +109,7 @@ key; every key is optional. Unknown keys are an error, so a typo stops the bridg
 ignored. The parts you will touch:
 
 - `[mqtt]`: `host` and `port` of your broker. `username` and `password_file` once you turn on broker logins (step 4).
-- `[server]`: the name shown on the host card and which network interface and disk to report.
+- `[server]`: no longer used. The bridge does not read its own machine; add it as a host under Prometheus ([hosts.md](hosts.md)).
 - `[http]`: the address webhooks arrive on (default `0.0.0.0:8787`). It also serves the dashboard, the setup page and the health check, so it is open whenever MQTT is on, and
   that is the case by default. If the server has a firewall, allow this port from the Gitea host only. Behind a reverse proxy, set
   `listen = "127.0.0.1:8787"`.
@@ -277,9 +277,10 @@ token_file = "azdo-work"
 
 ### Prometheus (host stats and containers)
 
-The built-in host card shows the machine the bridge runs on, read from `/proc`. If you run Prometheus with
-node_exporter (and cAdvisor for containers), a `[[source.prometheus]]` block adds a host card per
-machine and a list of expected containers that stopped. The bridge only reads, over the HTTP
+Host stats come from Prometheus. If you run it with
+node_exporter or windows_exporter (and cAdvisor for containers), a `[[source.prometheus]]` block adds a host card per
+machine you choose and a list of expected containers that stopped. On the setup page, add the source under **Sources**
+and tick the machines under **Hosts**; the file below is the same thing by hand. The bridge only reads, over the HTTP
 API. A bearer token (`token_file`) is only needed behind a reverse proxy.
 
 ```toml
@@ -287,18 +288,18 @@ API. A bearer token (`token_file`) is only needed behind a reverse proxy.
 name = "home"
 url = "http://prometheus.example.lan:9090"
 hosts = [
-  { instance = "node-exporter:9100", name = "home", cadvisor = "cadvisor:8080", expect_containers = ["db", "web"] },
+  { instance = "node-exporter:9100", name = "Home server", cadvisor = "cadvisor:8080", expect_containers = ["db", "web"] },
+  # show = ["cpu", "memory", "updates"] limits what the card shows, see hosts.md
 ]
 
 ```
 
-`instance` is the label Prometheus gives the node_exporter target. A stopped container disappears from cAdvisor,
+`instance` is the label Prometheus gives the node_exporter (or, for Windows, windows_exporter) target; [hosts.md](hosts.md) covers Windows and pending updates. A stopped container disappears from cAdvisor,
 so only names in `expect_containers` can be reported, and they must match the container name exactly. Each host
 gets a card on the dashboard and what is down is listed there. Hosts and containers that are down appear in the Containers list. GPU usage, VRAM and GPU temperature show on
 the card of any host that reports them: by default they are read from the NVIDIA DCGM exporter
 (`DCGM_FI_DEV_GPU_UTIL`, framebuffer used and free, `DCGM_FI_DEV_GPU_TEMP`), so add that exporter as a Prometheus
-target; otherwise replace `gpu_pct`, `gpu_mem_pct` and `gpu_temp_c` under `queries`. The bridge machine itself reads
-AMD GPUs from sysfs; Intel and NVIDIA GPUs on the bridge machine need a Prometheus host. Not yet tried on a real GPU.
+target; otherwise replace `gpu_pct`, `gpu_mem_pct` and `gpu_temp_c` under `queries`. Not yet tried on a real GPU.
 The PromQL for each field is in `bridge/src/prometheus/mod.rs` and can be replaced per field
 with `queries`.
 

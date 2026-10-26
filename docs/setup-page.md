@@ -19,8 +19,8 @@ reachable from the network without one. **Never expose the port to the internet*
 shows a secret (only whether a credential exists), token fields are write-only, and a page from another website cannot
 make changes in your browser (the `Origin` check, below).
 
-The page uses the whole screen: a menu on the left (**Sources**, **MQTT broker**, **Dashboard**, **Alerts**,
-**Access**, **Sign-in providers**, **Bridge and restart**, **Stored secrets**) and the chosen section next to it, in several columns on a wide screen and one column on
+The page uses the whole screen: a menu on the left, in four groups: Connect (**Sources**, **Hosts**, **MQTT broker**), Display (**Dashboard**,
+**Alerts**), Security (**Access**, **Sign-in options**, **Stored secrets**) and Maintenance (**Backup**, **Bridge and restart**) and the chosen section next to it, in several columns on a wide screen and one column on
 a phone. **Add source** sits next to the title of the first section. The menu entry is kept in the address
 (`/setup#mqtt`), so a link opens that section.
 
@@ -103,9 +103,15 @@ With a data folder, the **Dashboard hosts** card chooses how the built-in dashbo
 applies after a restart, like the broker settings. Panels set with `[[kiosk.panel]]` in `bridge.toml` are not
 touched. See [kiosk.md](kiosk.md#hosts-detailed-or-compact).
 
-The card also has a **Show this machine's own stats** switch. Turn it off when a Prometheus source already covers the
-machine the bridge runs on, so the bridge's own card (in Docker: the container's network and sensors) is not shown as a
-second host. It needs a restart and is the same as `enabled = false` under `[server]`.
+## Hosts
+
+The **Hosts** section lists the machines your Prometheus collects from (node_exporter on Linux, windows_exporter on
+Windows), found automatically, with Linux or Windows, up or not answering, and pending updates when the machine reports
+them. Tick the machines to show on the dashboard and press **Save**. **Edit** opens a pop-up where you change the name
+shown on the dashboard and choose which parts to show (CPU, memory, disk, uptime, network, pending updates, restart
+needed, temperature, GPU); parts Prometheus does not report for that machine are greyed out. **Refresh** asks
+Prometheus again. Only sources saved on the setup page can be changed here; a Prometheus source from `bridge.toml`
+is listed but its hosts are set in that file. See [hosts.md](hosts.md).
 
 ## Alerts
 

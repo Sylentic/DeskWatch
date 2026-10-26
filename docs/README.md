@@ -8,6 +8,7 @@ Start with the [project README](../README.md) for what DeskWatch is, a quick dem
 - [install.md](install.md): the whole setup on a Linux server with systemd
 - [raspberry-pi.md](raspberry-pi.md): a Pi with a monitor or TV as a wall display
 - [windows.md](windows.md): the release zip, Mosquitto
+- [hosts.md](hosts.md): Linux and Windows hosts through Prometheus, pending updates
 - [updates.md](updates.md): the quiet "update available" notice
 
 ## Using the dashboard

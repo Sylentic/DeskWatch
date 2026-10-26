@@ -8,9 +8,6 @@
 [mqtt]
 enabled = false
 
-[server]
-display_name = "homeserver"     # name on the stats page; in a container the default is the container id
-
 # Inside a container 0.0.0.0 is right: it is the port you publish in the
 # Compose file that decides who can reach the page.
 [http]

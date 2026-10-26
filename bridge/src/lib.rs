@@ -43,7 +43,6 @@ pub mod probe;
 pub mod prometheus;
 pub mod setup;
 pub mod source;
-pub mod stats;
 pub mod store;
 pub mod supervisor;
 pub mod update;
