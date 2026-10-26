@@ -980,7 +980,7 @@
     row(dl, 'Sources', total ? total + ' (' + s.sources.map(function (x) { return x[1] + ' ' + (KIND[x[0]] || x[0]); }).join(', ') + ')' : 'none');
     row(dl, 'MQTT broker', s.mqtt ? 'yes' : 'no');
     row(dl, 'Alerts and dashboard', (s.alerts || s.dashboard ? 'yes' : 'no') + (s.layouts != null ? ' · ' + s.layouts + ' personal layout' + (s.layouts === 1 ? '' : 's') : ''));
-    row(dl, 'Sign-in providers', s.providers.length ? s.providers.length + ' (' + s.providers.join(', ') + ')' : 'none');
+    row(dl, 'Sign-in options', s.providers.length ? s.providers.length + ' (' + s.providers.join(', ') + ')' : 'none');
     row(dl, 'Secrets', s.secrets ? s.secrets + ' (tokens and client secrets)' : 'none in this file');
     m.body.appendChild(dl);
     m.body.appendChild(el('p', 'warn-note', 'This replaces your current sources, alerts and layouts. Passwords and API keys stay as they are.'
@@ -1542,7 +1542,7 @@
     });
   }
 
-  var TITLES = { sources: 'Sources', mqtt: 'MQTT broker', dashboard: 'Dashboard', alerts: 'Alerts', access: 'Access', signin: 'Sign-in providers', backup: 'Backup', bridge: 'Bridge and restart', secrets: 'Stored secrets' };
+  var TITLES = { sources: 'Sources', mqtt: 'MQTT broker', dashboard: 'Dashboard', alerts: 'Alerts', access: 'Access', signin: 'Sign-in options', backup: 'Backup', bridge: 'Bridge and restart', secrets: 'Stored secrets' };
 
   function currentSection() {
     var id = (location.hash || '').replace('#', '');
@@ -1599,14 +1599,21 @@
     var layout = el('div', 'sidebar');
     var nav = el('nav', 'side');
     nav.setAttribute('aria-label', 'sections');
-    SECTIONS.forEach(function (id) {
+    // Grouped by what you do there, so the nine sections are easier to scan.
+    var GROUPS = [['Connect', ['sources', 'mqtt']], ['Display', ['dashboard', 'alerts']],
+                  ['Security', ['access', 'signin', 'secrets']], ['Maintenance', ['backup', 'bridge']]];
+    GROUPS.forEach(function (g) {
+      nav.appendChild(el('div', 'group', g[0]));
+      g[1].forEach(addLink);
+    });
+    function addLink(id) {
       var a = el('a', id === section ? 'on' : null, TITLES[id]);
       a.href = '#' + id;
       var count = id === 'sources' ? d.sources.length : id === 'secrets' && d.can_edit ? d.secrets.length : null;
       if (count != null) a.appendChild(el('span', 'n', String(count)));
       if (id === section) a.setAttribute('aria-current', 'page');
       nav.appendChild(a);
-    });
+    }
     layout.appendChild(nav);
     var content = el('div', 'content');
     var head = el('div', 'sectionhead');

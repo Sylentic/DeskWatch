@@ -19,8 +19,8 @@ reachable from the network without one. **Never expose the port to the internet*
 shows a secret (only whether a credential exists), token fields are write-only, and a page from another website cannot
 make changes in your browser (the `Origin` check, below).
 
-The page uses the whole screen: a menu on the left (**Sources**, **MQTT broker**, **Dashboard**, **Alerts**,
-**Access**, **Sign-in providers**, **Bridge and restart**, **Stored secrets**) and the chosen section next to it, in several columns on a wide screen and one column on
+The page uses the whole screen: a menu on the left, in four groups: Connect (**Sources**, **MQTT broker**), Display (**Dashboard**,
+**Alerts**), Security (**Access**, **Sign-in options**, **Stored secrets**) and Maintenance (**Backup**, **Bridge and restart**) and the chosen section next to it, in several columns on a wide screen and one column on
 a phone. **Add source** sits next to the title of the first section. The menu entry is kept in the address
 (`/setup#mqtt`), so a link opens that section.
 

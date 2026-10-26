@@ -16,6 +16,11 @@ All notable changes to DeskWatch are listed here. The format follows
   small text file; examples for Debian, Windows and Fedora in the docs). They are asked every 15 minutes. A host that
   needs a restart gets an amber pip in the list. New `updates` and `reboot_needed` query keys.
 
+### Changed (Setup menu)
+
+- **The Setup menu is grouped** under Connect, Display, Security and Maintenance, and **Sign-in providers** is now
+  **Sign-in options**.
+
 ### Removed
 
 - **Load and Cores** are gone from the host card and from the snapshot (`load` and `cpu_count`), and the `cpu_count`
