@@ -11,6 +11,12 @@ All notable changes to DeskWatch are listed here. The format follows
 
 - **Passed and skipped stages clean up.** In Running now, a stage of a run that is still going disappears 30 seconds
   after it passed or was skipped, so running and failed stages stand out.
+### Security
+
+- **A forwarded address only counts from a proxy on the local network.** The bridge read `X-Forwarded-For` from any
+  client, so a bridge reachable without a proxy took a made-up LAN address at its word: such a client could open the
+  setup page and `POST /api/alert`, set the first-run password and get round the per-address limit on wrong passwords.
+  A public client is now judged by its own address. Behind a proxy on the local network nothing changes.
 
 ## [1.0.7]
 
