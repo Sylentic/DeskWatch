@@ -8,6 +8,56 @@ A host is a Linux machine running [node_exporter](https://github.com/prometheus/
 running [windows_exporter](https://github.com/prometheus-community/windows_exporter), collected by one Prometheus
 server. DeskWatch only talks to that Prometheus.
 
+## Add a new machine
+
+Do this when a machine is missing from the **Hosts** page. Prometheus is a small monitoring service: it asks every
+machine you list for its numbers (CPU, memory, disk and so on) every few seconds. DeskWatch only reads from Prometheus,
+so a machine has to be known to Prometheus first.
+
+**1. Install the helper program on the machine.**
+
+Linux, Debian or Ubuntu (listens on port 9100):
+
+```sh
+sudo apt update && sudo apt install prometheus-node-exporter
+sudo systemctl enable --now prometheus-node-exporter
+```
+
+Other Linux: download node_exporter from its [releases page](https://github.com/prometheus/node_exporter/releases)
+and run it as a service.
+
+Windows (listens on port 9182): download the `.msi` from the
+[windows_exporter releases page](https://github.com/prometheus-community/windows_exporter/releases), run it and accept
+the defaults. In PowerShell as administrator, you can check that it runs with `Get-Service windows_exporter`.
+
+Open the port in the machine's firewall for the Prometheus server if it is blocked.
+
+**2. Tell Prometheus about the machine.**
+
+Open `prometheus.yml` on the Prometheus server and add the machine under `scrape_configs`. Use the machine's name or IP
+address; put Linux machines on port 9100 and Windows machines on port 9182:
+
+```yaml
+scrape_configs:
+  - job_name: my-machines
+    static_configs:
+      - targets: ["my-linux-box:9100", "my-windows-pc:9182"]
+```
+
+Then reload Prometheus (`sudo systemctl reload prometheus`, or `docker restart prometheus` when it runs in Docker).
+
+**3. Check that Prometheus sees it.**
+
+Open Prometheus in a browser (`http://your-prometheus:9090`), go to **Status > Targets** and look for the machine. Its
+state must be **UP**. If it says **DOWN**, the address or port is wrong, or a firewall blocks it; the error next to it
+says which.
+
+**4. Refresh DeskWatch.**
+
+Wait a minute, open **Setup > Hosts**, press **Refresh**, tick the new machine and press **Save**.
+
+Want GPU numbers too? See [GPU](#gpu) below.
+
 ## Choosing hosts on the setup page
 
 1. Under **Sources**, add your Prometheus (its address, for example `http://your-server:9090`).

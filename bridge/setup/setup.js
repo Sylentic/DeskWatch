@@ -665,6 +665,38 @@
     });
   }
 
+  var helpOpen = false;
+  var HOSTS_GUIDE = 'https://github.com/Sylentic/DeskWatch/blob/main/docs/hosts.md#add-a-new-machine';
+
+  // Collapsible help for a machine that is not in the list yet.
+  function addMachineHelp() {
+    var d = el('details', 'card helpbox');
+    // The page is redrawn every few seconds; remember whether it was opened.
+    d.open = helpOpen;
+    d.addEventListener('toggle', function () { helpOpen = d.open; });
+    d.appendChild(el('summary', null, 'A machine is missing? How do I add one?'));
+    d.appendChild(el('p', 'muted', 'DeskWatch only shows machines that your Prometheus already collects from. Prometheus is a small monitoring service that asks every machine for its numbers. To add a machine:'));
+    var ol = el('ol', 'helpsteps');
+    var s1 = el('li');
+    s1.appendChild(el('strong', null, 'Install a small helper program on that machine. '));
+    s1.appendChild(document.createTextNode('Use node_exporter on Linux (it listens on port 9100) or windows_exporter on Windows (port 9182).'));
+    var s2 = el('li');
+    s2.appendChild(el('strong', null, 'Tell Prometheus about it. '));
+    s2.appendChild(document.createTextNode('Add the machine to the scrape list in prometheus.yml, then reload Prometheus:'));
+    s2.appendChild(el('pre', null, 'scrape_configs:\n  - job_name: my-machines\n    static_configs:\n      - targets: ["my-machine:9100"]   # Windows: "my-pc:9182"'));
+    var s3 = el('li');
+    s3.appendChild(el('strong', null, 'Wait a minute, then press Refresh '));
+    s3.appendChild(document.createTextNode('on this page. The machine appears in the list; tick it and press Save.'));
+    ol.appendChild(s1); ol.appendChild(s2); ol.appendChild(s3);
+    d.appendChild(ol);
+    var more = el('p', 'muted');
+    var a = el('a', null, 'Read the full step-by-step guide');
+    a.href = HOSTS_GUIDE; a.target = '_blank'; a.rel = 'noopener';
+    more.appendChild(a);
+    d.appendChild(more);
+    return d;
+  }
+
   function hostsSection(d) {
     var box = el('div');
     if (!hostsState.loaded && !hostsState.loading) fetchHosts();
@@ -681,10 +713,7 @@
     box.appendChild(el('p', 'muted', 'DeskWatch asks your Prometheus which machines it collects from. Tick the ones to show on the dashboard.'));
     if (hostsState.message) box.appendChild(el('p', hostsState.message.bad ? 'err' : 'muted', hostsState.message.text));
     sources.forEach(function (s) { box.appendChild(hostsCard(s, d)); });
-    var tip = el('section', 'card');
-    tip.appendChild(el('h2', null, 'A machine is missing?'));
-    tip.appendChild(el('p', 'muted', 'Prometheus only lists machines it already collects from. Install node_exporter (Linux) or windows_exporter (Windows) on it, add it to Prometheus, then press Refresh. Step by step: docs/hosts.md.'));
-    box.appendChild(tip);
+    box.appendChild(addMachineHelp());
     return box;
   }
 
@@ -732,7 +761,10 @@
       card.appendChild(line);
     });
     if (!s.editable) {
-      card.appendChild(el('p', 'muted', 'This source is set in bridge.toml, so its hosts are changed there (see docs/hosts.md).'));
+      var cfg = el('p', 'muted', 'This source is set in bridge.toml, so its hosts are changed there (see the ');
+      var cl = el('a', null, 'hosts guide'); cl.href = HOSTS_GUIDE; cl.target = '_blank'; cl.rel = 'noopener';
+      cfg.appendChild(cl); cfg.appendChild(document.createTextNode(').'));
+      card.appendChild(cfg);
     } else if (instances.length) {
       var save = el('button', null, hostsState.saving ? 'Saving...' : 'Save'); save.type = 'button'; save.disabled = hostsState.saving;
       save.addEventListener('click', function () { saveHosts(s); });

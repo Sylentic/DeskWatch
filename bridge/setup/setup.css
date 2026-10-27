@@ -249,3 +249,10 @@ code.onekey { display: block; padding: .7rem .8rem; background: var(--field); bo
 .partgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem 1.5rem; margin: .5rem 0; }
 .part { display: flex; align-items: center; gap: .6rem; }
 @media (max-width: 560px) { .partgrid { grid-template-columns: minmax(0, 1fr); } }
+
+/* Hosts: collapsible "A machine is missing?" help */
+.helpbox summary { cursor: pointer; font-weight: 600; }
+.helpbox[open] summary { margin-bottom: .6rem; }
+.helpsteps { margin: .5rem 0; padding-left: 1.3rem; }
+.helpsteps li { margin: .5rem 0; }
+.helpsteps pre { margin: .5rem 0 0; padding: .7rem .8rem; background: var(--field); border: 1px solid var(--field-line); border-radius: 8px; font-family: var(--mono); font-size: .85em; overflow-x: auto; }
