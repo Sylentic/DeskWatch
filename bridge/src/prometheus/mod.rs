@@ -260,9 +260,10 @@ impl Queries {
             ),
             // Pending updates come from a text file the host writes (apt's
             // own node_exporter script, or the scripts in docs/hosts.md).
+            // apt's script writes one count per origin and arch, so add them up.
             updates: pick(
                 "updates",
-                "max by (instance) (node_apt_upgrades_pending) \
+                "sum by (instance) (node_apt_upgrades_pending) \
                  or max by (instance) (deskwatch_updates_pending)"
                     .into(),
             ),
