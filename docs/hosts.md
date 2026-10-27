@@ -47,6 +47,62 @@ host shows everything it reports.
 The PromQL for each field can be changed per source with `queries = { ... }`; the names are `cpu_pct`, `cpu_temp_c`, `ram_pct`,
 `disk_pct`, `gpu_pct`, `gpu_mem_pct`, `gpu_temp_c`, `uptime_s`, `updates` and `reboot_needed`.
 
+## GPU
+
+GPU figures (GPU %, VRAM, GPU temperature) only show up when Prometheus has GPU metrics for the host. A normal
+node_exporter or windows_exporter does not report an NVIDIA GPU, so you need one extra exporter on the machine with the
+GPU. Without it the GPU lines stay hidden. This is the usual reason for "no GPU stats".
+
+**NVIDIA (default).** DeskWatch expects the [DCGM exporter](https://github.com/NVIDIA/dcgm-exporter). It needs the
+NVIDIA driver and the NVIDIA Container Toolkit on the host. GPU % is the busiest of the shader, encoder and decoder
+engines, so a video encode on NVENC shows up.
+
+```yaml
+# docker-compose.yml on the GPU machine
+services:
+  dcgm-exporter:
+    image: nvidia/dcgm-exporter:latest
+    restart: unless-stopped
+    cap_add: [SYS_ADMIN]
+    ports: ["9400:9400"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+```
+
+```yaml
+# prometheus.yml, under scrape_configs. Use the same host:port style as for node_exporter, but keep the
+# instance label equal to the node_exporter one so the GPU lands on the same host card.
+  - job_name: dcgm
+    static_configs:
+      - targets: ["gpu-host:9400"]
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: "([^:]+):.*"
+        target_label: instance
+        replacement: "${1}:9100"
+```
+
+Check in Prometheus (`http://your-prometheus:9090`, Graph tab) that `DCGM_FI_DEV_GPU_UTIL` returns a line. If it does
+not, DeskWatch cannot show it either.
+
+**Other exporters.** Point the queries at your metrics with `queries` on the Prometheus source. The result must have an
+`instance` label that matches the host. Examples:
+
+```toml
+[[source.prometheus]]
+name = "home"
+url = "http://prometheus.example.lan:9090"
+# utkuozdemir/nvidia_gpu_exporter (nvidia-smi based)
+queries = { gpu_pct = "100 * max by (instance) (nvidia_smi_utilization_gpu_ratio)", gpu_mem_pct = "100 * max by (instance) (nvidia_smi_memory_used_bytes / nvidia_smi_memory_total_bytes)", gpu_temp_c = "max by (instance) (nvidia_smi_temperature_gpu)" }
+# AMD with node_exporter's drm collector (start node_exporter with --collector.drm):
+# queries = { gpu_pct = "max by (instance) (node_drm_gpu_busy_percent)", gpu_mem_pct = "100 * max by (instance) (node_drm_memory_vram_used_bytes / node_drm_memory_vram_size_bytes)" }
+```
+
 ## Windows
 
 Install windows_exporter on the PC or server (the MSI from its releases page; the default collectors are enough) and
