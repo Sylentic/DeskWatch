@@ -7,6 +7,11 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Pending updates shows the total for apt hosts.** apt's textfile script writes one count per origin (for example
+  stable and security), and the host card showed only the largest of them. It now adds them up.
+
 ## [1.0.8]
 
 ### Added
