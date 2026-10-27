@@ -7,6 +7,11 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Clearer help for a missing machine.** On Setup > Hosts the help is now a collapsible "A machine is missing? How do I
+  add one?" box with three plain steps, a scrape example and a link to the guide. docs/hosts.md has a beginner
+  "Add a new machine" section to match.
 ### Fixed
 
 - **Pending updates shows the total for apt hosts.** apt's textfile script writes one count per origin (for example
