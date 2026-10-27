@@ -198,6 +198,9 @@
   }
 
   // Does a host need a look: down, a value over its warning line, or rebooted.
+  // Pending security updates: a small amber shield takes the place of the dot in the host list.
+  var SHIELD = '<svg class="shield" viewBox="0 0 16 16" role="img" aria-label="Security updates pending"><title>Security updates pending</title>' +
+    '<path d="M8 1 2.5 3v4.2c0 3.4 2.3 6 5.5 7.8 3.2-1.8 5.5-4.4 5.5-7.8V3z" fill="currentColor"/></svg>';
   function hostLook(h) {
     var s = h.stats || {};
     if (!h.up) return 'off';
@@ -231,7 +234,7 @@
       var h = o.h, look = hostLook(h);
       list += '<button type="button" role="option" class="hostrow' + (h === host ? ' sel' : '') + (look ? ' ' + look : '') +
         '" data-host-pick="' + esc(h.name) + '" aria-selected="' + (h === host ? 'true' : 'false') + '">' +
-        '<span class="pip"></span><span class="n">' + esc(h.name) + '</span>' + (h.up ? hostKey(h) : '<span class="k crit-text">down</span>') + '</button>';
+        (h.up && h.stats && h.stats.updates_security > 0 ? SHIELD : '<span class="pip"></span>') + '<span class="n">' + esc(h.name) + '</span>' + (h.up ? hostKey(h) : '<span class="k crit-text">down</span>') + '</button>';
     });
     list += '</div>';
     var down = hosts.filter(function (h) { return !h.up; }).length;
