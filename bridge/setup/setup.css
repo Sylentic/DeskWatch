@@ -246,6 +246,21 @@ code.onekey { display: block; padding: .7rem .8rem; background: var(--field); bo
 .hostrow .hosttext { flex: 1; min-width: 0; }
 .hostrow h2 { margin: 0; font-size: 1rem; }
 .hostrow p { margin: .1rem 0 0; font-size: .85rem; }
+/* Hosts: the handle to drag a row, and where the dragged row will land */
+.hostrow { position: relative; }
+.grip { flex: none; align-self: stretch; width: 14px; padding: 0; margin-right: -.4rem; background: none; border: 0; border-radius: 4px; cursor: grab; color: var(--muted); opacity: .35; }
+.grip::before { content: ""; display: block; width: 6px; height: 10px; margin: auto; background: radial-gradient(circle, currentColor 1px, transparent 1.3px) 0 0 / 3px 3.5px; }
+.grip:hover, .grip:focus-visible, .hostrow:hover .grip { opacity: 1; }
+.hostrow.dragged { opacity: .4; }
+.hostrow.dropbefore { box-shadow: 0 -2px 0 0 var(--accent); }
+.hostrow.dropafter { box-shadow: 0 2px 0 0 var(--accent); }
 .partgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem 1.5rem; margin: .5rem 0; }
 .part { display: flex; align-items: center; gap: .6rem; }
 @media (max-width: 560px) { .partgrid { grid-template-columns: minmax(0, 1fr); } }
+
+/* Hosts: collapsible "A machine is missing?" help */
+.helpbox summary { cursor: pointer; font-weight: 600; }
+.helpbox[open] summary { margin-bottom: .6rem; }
+.helpsteps { margin: .5rem 0; padding-left: 1.3rem; }
+.helpsteps li { margin: .5rem 0; }
+.helpsteps pre { margin: .5rem 0 0; padding: .7rem .8rem; background: var(--field); border: 1px solid var(--field-line); border-radius: 8px; font-family: var(--mono); font-size: .85em; overflow-x: auto; }

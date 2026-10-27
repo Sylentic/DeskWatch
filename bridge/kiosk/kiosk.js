@@ -198,6 +198,9 @@
   }
 
   // Does a host need a look: down, a value over its warning line, or rebooted.
+  // Pending security updates: a small amber shield takes the place of the dot in the host list.
+  var SHIELD = '<svg class="shield" viewBox="0 0 16 16" role="img" aria-label="Security updates pending"><title>Security updates pending</title>' +
+    '<path d="M8 1 2.5 3v4.2c0 3.4 2.3 6 5.5 7.8 3.2-1.8 5.5-4.4 5.5-7.8V3z" fill="currentColor"/></svg>';
   function hostLook(h) {
     var s = h.stats || {};
     if (!h.up) return 'off';
@@ -218,20 +221,18 @@
   }
 
   // The detailed hosts panel: a list to pick from next to the chosen host (the
-  // host above the list when the card is narrow). Hosts that need a look come
-  // first. Tapping a host chooses it, kept in this browser. The chosen host
+  // host above the list when the card is narrow), in the order chosen on the
+  // Hosts page of Setup. Tapping a host chooses it, kept in this browser. The chosen host
   // never changes by itself: a host going down gets a red pip in the list.
   function hostsDetailed(hosts) {
     var host = findHost(chosenHost()) || hosts[0];
-    var rank = { off: 0, look: 1, '': 2 };
-    var order = hosts.map(function (h, i) { return { h: h, i: i, r: rank[hostLook(h)] }; })
-      .sort(function (a, b) { return a.r - b.r || a.i - b.i; });
+    var order = hosts.map(function (h) { return { h: h }; });
     var list = '<div class="hostlist" role="listbox" aria-label="Hosts">';
     order.forEach(function (o) {
       var h = o.h, look = hostLook(h);
       list += '<button type="button" role="option" class="hostrow' + (h === host ? ' sel' : '') + (look ? ' ' + look : '') +
         '" data-host-pick="' + esc(h.name) + '" aria-selected="' + (h === host ? 'true' : 'false') + '">' +
-        '<span class="pip"></span><span class="n">' + esc(h.name) + '</span>' + (h.up ? hostKey(h) : '<span class="k crit-text">down</span>') + '</button>';
+        (h.up && h.stats && h.stats.updates_security > 0 ? SHIELD : '<span class="pip"></span>') + '<span class="n">' + esc(h.name) + '</span>' + (h.up ? hostKey(h) : '<span class="k crit-text">down</span>') + '</button>';
     });
     list += '</div>';
     var down = hosts.filter(function (h) { return !h.up; }).length;
@@ -326,10 +327,8 @@
       var html;
       if (!hosts.length) html = '<div class="empty">No hosts</div>';
       else {
-        // Hosts that need a look come first, like in the detailed view.
-        var rank = { off: 0, look: 1, '': 2 };
-        var order = hosts.map(function (h, i) { return { h: h, i: i, r: rank[hostLook(h)] }; })
-          .sort(function (a, b) { return a.r - b.r || a.i - b.i; }).map(function (o) { return o.h; });
+        // In the order chosen on the Hosts page of Setup.
+        var order = hosts;
         html = '<div class="hosts' + (wide ? ' wide' : '') + '"><span class="h">Host</span><span class="h">Uptime</span><span class="h">CPU</span><span class="h">Mem</span><span class="h">Disk</span>' +
           (wide ? '<span class="h">&darr; In</span><span class="h">&uarr; Out</span>' : '');
         order.forEach(function (h) {
@@ -532,7 +531,7 @@
       sum = (g.lanes.length > 1 ? finished + ' of ' + g.lanes.length + ' done &middot; ' : '') + since;
       rows = g.lanes.filter(function (l) { return !laneGone(j.group, l); }).map(function (l) {
         var st = runStatus(l.status);
-        var bar = st !== 'running' ? '' : l.progress == null ? '<span class="pbar spin"><i></i></span>' :
+        var bar = st !== 'running' ? '' : l.progress == null ? '<span class="pbar spin"><i style="animation-delay:-' + (Date.now() % 3600) + 'ms"></i></span>' :
           '<span class="pbar"><i style="--p:' + Math.round(l.progress * 100) + '%"></i></span>';
         return jobRow(l.url || j.url, st, l.name, laneText(l), bar, laneTime(l), j.source);
       });
@@ -541,7 +540,7 @@
       sum = since;
       rows = g.jobs.map(function (x) {
         var text = esc(x.step || 'Starting') + (x.step_no && x.step_count ? ' &middot; step ' + x.step_no + ' of ' + x.step_count : '');
-        var bar = x.progress == null ? '<span class="pbar spin"><i></i></span>' :
+        var bar = x.progress == null ? '<span class="pbar spin"><i style="animation-delay:-' + (Date.now() % 3600) + 'ms"></i></span>' :
           '<span class="pbar"><i style="--p:' + Math.round(x.progress * 100) + '%"></i></span>';
         return jobRow(x.url, 'running', x.kind, text, bar, '<span data-since="' + x.started + '">' + clock(nowS() - x.started) + '</span>', x.source);
       });
@@ -592,7 +591,17 @@
     if (entry.html !== html && Date.now() - entry.touched >= HOLD_MS) {
       var old = entry.el.querySelector('.body');
       var top = old ? old.scrollTop : 0;
+      // Progress bars are rebuilt too; remember where each one was so it can
+      // grow from there instead of jumping.
+      var was = [].map.call(entry.el.querySelectorAll('.pbar:not(.spin) i'), function (i) { return i.style.getPropertyValue('--p'); });
       entry.el.innerHTML = html;
+      [].forEach.call(entry.el.querySelectorAll('.pbar:not(.spin) i'), function (i, n) {
+        var to = i.style.getPropertyValue('--p');
+        if (!was[n] || was[n] === to) return;
+        i.style.setProperty('--p', was[n]);
+        void i.offsetWidth;
+        i.style.setProperty('--p', to);
+      });
       entry.html = html;
       var fresh = entry.el.querySelector('.body');
       if (fresh && top) fresh.scrollTop = top;

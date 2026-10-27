@@ -7,6 +7,30 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.0.9]
+
+### Added
+
+- **Choose the order of your hosts.** On Setup > Hosts, drag a machine by its small dot grip (or focus the grip and
+  press the up or down arrow) and press Save. The dashboard shows the hosts in that order; a machine ticked later is
+  added at the end. The order is per Prometheus source.
+
+### Changed
+
+- **Hosts keep your order on the dashboard.** Hosts that need a look are no longer moved to the top of the Hosts panel;
+  their amber or red pip still marks them.
+- **Shield for security updates in the host list.** A host with pending security updates shows a small amber shield
+  where the dot would be. A host that is down keeps its red dot.
+- **Clearer help for a missing machine.** On Setup > Hosts the help is now a collapsible "A machine is missing? How do I
+  add one?" box with three plain steps, a scrape example and a link to the guide. docs/hosts.md has a beginner
+  "Add a new machine" section to match.
+
+### Fixed
+
+- The orange progress bar of a running job no longer jumps back to the start on every refresh: the sweep keeps its place and a bar with known progress grows from where it was.
+- **Pending updates shows the total for apt hosts.** apt's textfile script writes one count per origin (for example
+  stable and security), and the host card showed only the largest of them. It now adds them up.
+
 ## [1.0.8]
 
 ### Added
