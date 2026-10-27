@@ -17,7 +17,8 @@ All notable changes to DeskWatch are listed here. The format follows
 
 - **Hosts keep your order on the dashboard.** Hosts that need a look are no longer moved to the top of the Hosts panel;
   their amber or red pip still marks them.
-
+- **Shield for security updates in the host list.** A host with pending security updates shows a small amber shield
+  where the dot would be. A host that is down keeps its red dot.
 - **Clearer help for a missing machine.** On Setup > Hosts the help is now a collapsible "A machine is missing? How do I
   add one?" box with three plain steps, a scrape example and a link to the guide. docs/hosts.md has a beginner
   "Add a new machine" section to match.
