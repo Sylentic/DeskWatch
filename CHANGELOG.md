@@ -7,6 +7,10 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The orange progress bar of a running job no longer jumps back to the start on every refresh: the sweep keeps its place and a bar with known progress grows from where it was.
+
 ## [1.0.9]
 
 ### Added
