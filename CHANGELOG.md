@@ -7,10 +7,6 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
-### Fixed
-
-- The orange progress bar of a running job no longer jumps back to the start on every refresh: the sweep keeps its place and a bar with known progress grows from where it was.
-
 ## [1.0.9]
 
 ### Added
@@ -31,6 +27,7 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ### Fixed
 
+- The orange progress bar of a running job no longer jumps back to the start on every refresh: the sweep keeps its place and a bar with known progress grows from where it was.
 - **Pending updates shows the total for apt hosts.** apt's textfile script writes one count per origin (for example
   stable and security), and the host card showed only the largest of them. It now adds them up.
 
