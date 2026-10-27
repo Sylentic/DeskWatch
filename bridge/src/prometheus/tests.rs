@@ -504,6 +504,16 @@ fn default_security_updates_read_apt_origins_and_the_textfile() {
 }
 
 #[test]
+fn default_updates_add_up_the_apt_origins() {
+    let q = Queries::new(&config());
+    assert!(
+        q.updates
+            .starts_with("sum by (instance) (node_apt_upgrades_pending)")
+    );
+    assert!(q.updates.contains("deskwatch_updates_pending"));
+}
+
+#[test]
 fn windows_host_reads_the_same_fields() {
     let host: HostConfig = toml::from_str("instance = \"win-a:9182\"").unwrap();
     let win = |v: f64| vec![sample(&[("instance", "win-a:9182")], v)];

@@ -168,8 +168,9 @@ them.
 Both come from a small text file that the host's exporter reads (the "textfile collector"). They are asked from
 Prometheus every 15 minutes, not every few seconds, because they change a few times a day.
 
-- **Debian and Ubuntu:** node_exporter ships `apt.sh` in its `text_collector_examples` folder. Run it from cron or a
-  systemd timer, write its output to the textfile directory, and the metrics `node_apt_upgrades_pending` and
+- **Debian and Ubuntu:** use `apt_info.py` (older versions: `apt.sh`) from
+  [node-exporter-textfile-collector-scripts](https://github.com/prometheus-community/node-exporter-textfile-collector-scripts).
+  Run it from cron or a systemd timer, write its output to the textfile directory, and the metrics `node_apt_upgrades_pending` and
   `node_reboot_required` are picked up as they are. The script labels each count with its origin, so the origins
   with "security" in their name (for example `Debian-Security`) are added up as the security count.
 - **Other Linux and Windows:** write a file with the metrics below. DeskWatch reads them under these names.
@@ -214,6 +215,85 @@ needs-restarting -r >/dev/null 2>&1; reboot=$?
 printf 'deskwatch_updates_pending %s\ndeskwatch_updates_security %s\ndeskwatch_reboot_required %s\n' \
   "$total" "$security" "$reboot" > "$out.tmp" && mv "$out.tmp" "$out"
 ```
+
+### Turn on the textfile collector
+
+The file only counts when the exporter reads it. That is the step most often missed.
+
+- **node_exporter** reads a folder only when it is started with `--collector.textfile.directory=<folder>`. Packages
+  often set this already (Debian's `prometheus-node-exporter` reads `/var/lib/prometheus/node-exporter`); a plain
+  binary or the Docker image does not.
+- **windows_exporter** reads `textfile_inputs` next to the exe by default. The file needs the `.prom` extension and
+  must be plain ASCII or UTF-8 without a BOM, or the exporter skips it.
+
+Nothing changes in `prometheus.yml`: the metrics come in with the normal node_exporter or windows_exporter scrape, so
+they already carry that host's `instance` label.
+
+### node_exporter in Docker
+
+When node_exporter runs as a container, give it a volume for the text file and let a small second container write
+into it. The one below looks at the host's own package lists through read-only mounts, so it needs no root on the
+host and installs nothing. The host keeps its package lists fresh itself (`apt-daily.timer` does this on Debian and
+Ubuntu). Restart needed is `/run/reboot-required`, or a newer kernel in `/boot` than the one running.
+
+```yaml
+# docker-compose.yml on a Debian or Ubuntu host
+services:
+  node-exporter:
+    image: prom/node-exporter:latest
+    restart: unless-stopped
+    network_mode: host        # so the network figures are the real network card, not the container's
+    pid: host
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --collector.textfile.directory=/textfile
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro,rslave
+      - textfile:/textfile:ro
+
+  host-updates:
+    image: debian:stable-slim
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          n=$$(apt-get -s -o Debug::NoLocking=1 dist-upgrade 2>/dev/null | grep -c '^Inst ')
+          newest=$$(ls /host/boot/vmlinuz-* 2>/dev/null | sed 's,.*/vmlinuz-,,' | sort -V | tail -n1)
+          r=0
+          { [ -e /host/run/reboot-required ] || { [ -n "$$newest" ] && [ "$$newest" != "$$(uname -r)" ]; }; } && r=1
+          printf 'node_apt_upgrades_pending %s\nnode_reboot_required %s\n' "$$n" "$$r" > /textfile/updates.prom.tmp
+          mv /textfile/updates.prom.tmp /textfile/updates.prom
+          sleep 900
+        done
+    volumes:
+      - /etc/apt:/etc/apt:ro
+      - /var/lib/apt/lists:/var/lib/apt/lists:ro
+      - /var/lib/dpkg:/var/lib/dpkg:ro
+      - /boot:/host/boot:ro
+      - /run:/host/run:ro
+      - textfile:/textfile
+
+volumes:
+  textfile:
+```
+
+The `$$` is how Compose writes a single `$`. Writing to a `.tmp` file and then moving it keeps the exporter from
+reading a half-written file. This sidecar gives only the total, no security count.
+
+### Check it
+
+1. On the host: `curl -s http://localhost:9100/metrics | grep -E 'apt_upgrades|reboot_required|deskwatch_'`
+   (Windows: port 9182). No lines means the exporter does not read the file; see above.
+2. In Prometheus (Graph tab): `node_apt_upgrades_pending` or `deskwatch_updates_pending`. The `instance` label must be
+   the one you chose as the host in DeskWatch. If it is different, the scrape job for the exporter has another
+   address or label than the host.
+3. In DeskWatch: **Hosts**, then **Refresh**. Tick **Pending updates** and **Restart needed** under **Edit** if they
+   are not ticked. The card can take up to 15 minutes to show the first number.
 
 The queries can be changed per field under `queries` (`updates_security` next to `updates`), like the others.
 
