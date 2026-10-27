@@ -7,7 +7,16 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Choose the order of your hosts.** On Setup > Hosts, drag a machine by its small dot grip (or focus the grip and
+  press the up or down arrow) and press Save. The dashboard shows the hosts in that order; a machine ticked later is
+  added at the end. The order is per Prometheus source.
+
 ### Changed
+
+- **Hosts keep your order on the dashboard.** Hosts that need a look are no longer moved to the top of the Hosts panel;
+  their amber or red pip still marks them.
 
 - **Clearer help for a missing machine.** On Setup > Hosts the help is now a collapsible "A machine is missing? How do I
   add one?" box with three plain steps, a scrape example and a link to the guide. docs/hosts.md has a beginner

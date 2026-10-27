@@ -694,6 +694,34 @@ fn hosts_are_replaced_and_what_the_page_does_not_know_is_kept() {
 }
 
 #[test]
+fn hosts_are_written_in_the_order_the_page_sends() {
+    // The order on the Hosts page is the order on the dashboard.
+    let current = "[[source.prometheus]]\nname = \"home\"\nurl = \"http://p\"\n\
+                   hosts = [\"homelab:9100\", \"rpi:9100\", \"p1:9182\"]\n";
+    let host = |instance: &str| HostEdit {
+        instance: instance.into(),
+        name: crate::config::default_host_name(instance),
+        show: None,
+    };
+    let text = set_hosts(
+        current,
+        "home",
+        &[host("rpi:9100"), host("homelab:9100"), host("p1:9182")],
+    )
+    .unwrap();
+    let config = crate::config::Config::from_toml("")
+        .unwrap()
+        .with_overlay(&text)
+        .unwrap();
+    let names: Vec<_> = config.source.prometheus[0]
+        .hosts
+        .iter()
+        .map(|h| h.name.as_str())
+        .collect();
+    assert_eq!(names, ["rpi", "homelab", "p1"], "{text}");
+}
+
+#[test]
 fn bad_hosts_are_refused() {
     let current = "[[source.prometheus]]\nname = \"home\"\nurl = \"http://p\"\n";
     let host = |name: &str, show: Option<Vec<String>>| HostEdit {

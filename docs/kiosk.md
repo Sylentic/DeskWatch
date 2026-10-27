@@ -56,7 +56,7 @@ shows the newest items again.
 ### GPU on the host card
 
 A host that reports a GPU gets **GPU** and **VRAM** bars and a **GPU temp** line on its card; hosts without a GPU show
-nothing extra. A GPU above 95 % puts the host in the "needs a look" group. Prometheus hosts read the figures from the
+nothing extra. A GPU above 95 % marks the host as "needs a look". Prometheus hosts read the figures from the
 NVIDIA DCGM exporter by default; **GPU** is the busiest of the shader cores and the video encoder and decoder, so a
 host transcoding video shows as busy. `gpu_pct`, `gpu_mem_pct` and `gpu_temp_c` can be replaced per host under `queries`
 ([install.md](install.md#prometheus-host-stats-and-containers)).
@@ -65,9 +65,9 @@ host transcoding video shows as busy. `gpu_pct`, `gpu_mem_pct` and `gpu_temp_c` 
 
 The built-in layout has one **Hosts** panel, two cells wide and two tall. In the `detailed` view (the default) a list
 of every host sits on the left and the host you chose is shown in detail next to it (CPU, memory and disk bars, uptime,
-temperature, network, pending updates and a CPU graph). Each line in the list shows the host's highest value (`DISK 88`);
-hosts that need a look (down, over a warning line, or started less than an hour ago) come first, with an amber or red
-pip. Tap or click a host to show it in detail; the choice is kept in the browser (localStorage), so a reload keeps it,
+temperature, network, pending updates and a CPU graph). Each line in the list shows the host's highest value (`DISK 88`).
+The hosts are in the order set on the Hosts page of Setup (drag to reorder); hosts that need a look (down, over a
+warning line, or started less than an hour ago) get an amber or red pip. Tap or click a host to show it in detail; the choice is kept in the browser (localStorage), so a reload keeps it,
 and a host that has disappeared falls back to the first one. The chosen host never changes by itself. When the panel is
 narrow (one cell wide) the chosen host is shown above the list instead. In the `compact` view the panel is only the
 table: uptime, CPU, memory and disk, and the download and upload rates (as columns when the panel is two cells wide,
