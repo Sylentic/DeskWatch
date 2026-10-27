@@ -531,7 +531,7 @@
       sum = (g.lanes.length > 1 ? finished + ' of ' + g.lanes.length + ' done &middot; ' : '') + since;
       rows = g.lanes.filter(function (l) { return !laneGone(j.group, l); }).map(function (l) {
         var st = runStatus(l.status);
-        var bar = st !== 'running' ? '' : l.progress == null ? '<span class="pbar spin"><i></i></span>' :
+        var bar = st !== 'running' ? '' : l.progress == null ? '<span class="pbar spin"><i style="animation-delay:-' + (Date.now() % 3600) + 'ms"></i></span>' :
           '<span class="pbar"><i style="--p:' + Math.round(l.progress * 100) + '%"></i></span>';
         return jobRow(l.url || j.url, st, l.name, laneText(l), bar, laneTime(l), j.source);
       });
@@ -540,7 +540,7 @@
       sum = since;
       rows = g.jobs.map(function (x) {
         var text = esc(x.step || 'Starting') + (x.step_no && x.step_count ? ' &middot; step ' + x.step_no + ' of ' + x.step_count : '');
-        var bar = x.progress == null ? '<span class="pbar spin"><i></i></span>' :
+        var bar = x.progress == null ? '<span class="pbar spin"><i style="animation-delay:-' + (Date.now() % 3600) + 'ms"></i></span>' :
           '<span class="pbar"><i style="--p:' + Math.round(x.progress * 100) + '%"></i></span>';
         return jobRow(x.url, 'running', x.kind, text, bar, '<span data-since="' + x.started + '">' + clock(nowS() - x.started) + '</span>', x.source);
       });
@@ -591,7 +591,17 @@
     if (entry.html !== html && Date.now() - entry.touched >= HOLD_MS) {
       var old = entry.el.querySelector('.body');
       var top = old ? old.scrollTop : 0;
+      // Progress bars are rebuilt too; remember where each one was so it can
+      // grow from there instead of jumping.
+      var was = [].map.call(entry.el.querySelectorAll('.pbar:not(.spin) i'), function (i) { return i.style.getPropertyValue('--p'); });
       entry.el.innerHTML = html;
+      [].forEach.call(entry.el.querySelectorAll('.pbar:not(.spin) i'), function (i, n) {
+        var to = i.style.getPropertyValue('--p');
+        if (!was[n] || was[n] === to) return;
+        i.style.setProperty('--p', was[n]);
+        void i.offsetWidth;
+        i.style.setProperty('--p', to);
+      });
       entry.html = html;
       var fresh = entry.el.querySelector('.body');
       if (fresh && top) fresh.scrollTop = top;
