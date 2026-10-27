@@ -635,7 +635,7 @@
   // holds the ticks and edits per source until they are saved.
   var HOST_PARTS = [['cpu', 'CPU'], ['memory', 'Memory'], ['disk', 'Disk'], ['uptime', 'Uptime'], ['network', 'Network in and out'],
                     ['updates', 'Pending updates'], ['reboot', 'Restart needed'], ['temperature', 'Temperature'], ['gpu', 'GPU and VRAM']];
-  var hostsState = { loaded: false, loading: false, data: null, error: null, draft: {}, saving: false, message: null };
+  var hostsState = { loaded: false, loading: false, data: null, error: null, draft: {}, order: {}, saving: false, message: null, dragging: null };
 
   function defaultHostName(instance) {
     var i = instance.lastIndexOf(':');
@@ -650,12 +650,17 @@
     }).then(function (j) {
       hostsState.data = j; hostsState.error = null;
       // Ticks and names from the config; everything else found starts off.
-      hostsState.draft = {};
+      hostsState.draft = {}; hostsState.order = {};
       j.sources.forEach(function (s) {
         var rows = {};
         s.found.forEach(function (f) { rows[f.instance] = { on: false, name: defaultHostName(f.instance), show: null }; });
         s.configured.forEach(function (c) { rows[c.instance] = { on: true, name: c.name, show: c.show }; });
         hostsState.draft[s.name] = rows;
+        // The saved order first (that is the order on the dashboard), then
+        // what is only found, so a machine ticked later lands at the end.
+        var order = s.configured.map(function (c) { return c.instance; });
+        s.found.forEach(function (f) { if (order.indexOf(f.instance) < 0) order.push(f.instance); });
+        hostsState.order[s.name] = order;
       });
     }).catch(function () {
       hostsState.error = 'Cannot read the hosts from the bridge.';
@@ -734,13 +739,54 @@
     var rows = hostsState.draft[s.name] || {};
     var byInstance = {};
     s.found.forEach(function (f) { byInstance[f.instance] = f; });
-    // Chosen hosts that Prometheus no longer lists (a machine that is down).
-    var instances = s.found.map(function (f) { return f.instance; });
-    s.configured.forEach(function (c) { if (!byInstance[c.instance]) instances.push(c.instance); });
+    // The order is the dashboard's order; it also holds chosen hosts that
+    // Prometheus no longer lists (a machine that is down).
+    var instances = hostsState.order[s.name] || [];
     if (!instances.length && !s.error) card.appendChild(el('p', 'muted', 'No node_exporter or windows_exporter targets found.'));
+    if (s.editable && instances.length > 1) card.appendChild(el('p', 'muted', 'Drag to set the order on the dashboard.'));
     instances.forEach(function (instance) {
       var f = byInstance[instance], row = rows[instance];
       var line = el('label', 'hostrow');
+      if (s.editable) {
+        var grip = el('button', 'grip'); grip.type = 'button'; grip.draggable = true;
+        grip.setAttribute('data-instance', instance);
+        grip.setAttribute('aria-label', 'Move ' + row.name + ' (drag, or use the up and down arrow keys)');
+        grip.addEventListener('click', function (e) { e.preventDefault(); });
+        grip.addEventListener('keydown', function (e) {
+          if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+          e.preventDefault();
+          var at = instances.indexOf(instance), to = at + (e.key === 'ArrowUp' ? -1 : 1);
+          if (to < 0 || to >= instances.length) return;
+          moveHost(s, instance, to, true);
+        });
+        grip.addEventListener('dragstart', function (e) {
+          hostsState.dragging = instance;
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', instance);
+          if (e.dataTransfer.setDragImage) e.dataTransfer.setDragImage(line, 20, 20);
+          line.classList.add('dragged');
+        });
+        grip.addEventListener('dragend', function () { hostsState.dragging = null; render(last); });
+        line.addEventListener('dragover', function (e) {
+          if (!hostsState.dragging || hostsState.dragging === instance) return;
+          e.preventDefault();
+          var box = line.getBoundingClientRect();
+          var after = e.clientY > box.top + box.height / 2;
+          line.classList.toggle('dropafter', after); line.classList.toggle('dropbefore', !after);
+        });
+        line.addEventListener('dragleave', function () { line.classList.remove('dropafter', 'dropbefore'); });
+        line.addEventListener('drop', function (e) {
+          if (!hostsState.dragging) return;
+          e.preventDefault();
+          var box = line.getBoundingClientRect(), after = e.clientY > box.top + box.height / 2;
+          var from = hostsState.dragging, list = hostsState.order[s.name];
+          var target = list.indexOf(instance) + (after ? 1 : 0);
+          if (list.indexOf(from) < target) target--;
+          hostsState.dragging = null;
+          moveHost(s, from, target, false);
+        });
+        line.appendChild(grip);
+      }
       var cb = checkbox(row.on, !s.editable);
       cb.addEventListener('change', function () { row.on = cb.checked; });
       var text = el('div', 'hosttext');
@@ -771,6 +817,19 @@
       var bar = el('div', 'buttons'); bar.appendChild(save); card.appendChild(bar);
     }
     return card;
+  }
+
+  // Put `instance` at position `to` in the order of source `s`. The page is
+  // drawn again; a key press keeps the focus on the handle that was moved.
+  function moveHost(s, instance, to, keepFocus) {
+    var list = hostsState.order[s.name];
+    list.splice(list.indexOf(instance), 1);
+    list.splice(to, 0, instance);
+    render(last);
+    if (keepFocus) {
+      var grips = document.querySelectorAll('.grip');
+      for (var i = 0; i < grips.length; i++) if (grips[i].getAttribute('data-instance') === instance) grips[i].focus();
+    }
   }
 
   // The pop-up of one host: its name on the dashboard and which parts to show.
@@ -809,7 +868,7 @@
 
   function saveHosts(s) {
     var rows = hostsState.draft[s.name], list = [];
-    Object.keys(rows).forEach(function (instance) {
+    (hostsState.order[s.name] || []).forEach(function (instance) {
       var r = rows[instance];
       if (r.on) list.push({ instance: instance, name: r.name, show: r.show });
     });
@@ -1823,7 +1882,7 @@
     // or close a drop-down that is open.
     var active = document.activeElement;
     var typing = active && app.contains(active) && ['INPUT', 'SELECT', 'TEXTAREA'].indexOf(active.tagName) >= 0;
-    if ((typing || form) && !(form && form.busy) && !restarting) { timer = setTimeout(load, REFRESH_MS); return Promise.resolve(); }
+    if ((typing || form || hostsState.dragging) && !(form && form.busy) && !restarting) { timer = setTimeout(load, REFRESH_MS); return Promise.resolve(); }
     return fetch('api/setup/status', { cache: 'no-store', credentials: 'same-origin' }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json().then(function (d) {

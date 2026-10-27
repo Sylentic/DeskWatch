@@ -221,14 +221,12 @@
   }
 
   // The detailed hosts panel: a list to pick from next to the chosen host (the
-  // host above the list when the card is narrow). Hosts that need a look come
-  // first. Tapping a host chooses it, kept in this browser. The chosen host
+  // host above the list when the card is narrow), in the order chosen on the
+  // Hosts page of Setup. Tapping a host chooses it, kept in this browser. The chosen host
   // never changes by itself: a host going down gets a red pip in the list.
   function hostsDetailed(hosts) {
     var host = findHost(chosenHost()) || hosts[0];
-    var rank = { off: 0, look: 1, '': 2 };
-    var order = hosts.map(function (h, i) { return { h: h, i: i, r: rank[hostLook(h)] }; })
-      .sort(function (a, b) { return a.r - b.r || a.i - b.i; });
+    var order = hosts.map(function (h) { return { h: h }; });
     var list = '<div class="hostlist" role="listbox" aria-label="Hosts">';
     order.forEach(function (o) {
       var h = o.h, look = hostLook(h);
@@ -329,10 +327,8 @@
       var html;
       if (!hosts.length) html = '<div class="empty">No hosts</div>';
       else {
-        // Hosts that need a look come first, like in the detailed view.
-        var rank = { off: 0, look: 1, '': 2 };
-        var order = hosts.map(function (h, i) { return { h: h, i: i, r: rank[hostLook(h)] }; })
-          .sort(function (a, b) { return a.r - b.r || a.i - b.i; }).map(function (o) { return o.h; });
+        // In the order chosen on the Hosts page of Setup.
+        var order = hosts;
         html = '<div class="hosts' + (wide ? ' wide' : '') + '"><span class="h">Host</span><span class="h">Uptime</span><span class="h">CPU</span><span class="h">Mem</span><span class="h">Disk</span>' +
           (wide ? '<span class="h">&darr; In</span><span class="h">&uarr; Out</span>' : '');
         order.forEach(function (h) {

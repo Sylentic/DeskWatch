@@ -107,7 +107,9 @@ touched. See [kiosk.md](kiosk.md#hosts-detailed-or-compact).
 
 The **Hosts** section lists the machines your Prometheus collects from (node_exporter on Linux, windows_exporter on
 Windows), found automatically, with Linux or Windows, up or not answering, and pending updates when the machine reports
-them. Tick the machines to show on the dashboard and press **Save**. **Edit** opens a pop-up where you change the name
+them. Tick the machines to show on the dashboard and press **Save**. The dashboard shows them in the order of this list:
+drag a machine by the small dot grip on its left (or focus the grip and press the up or down arrow) and press **Save**;
+a machine ticked later is added at the end. **Edit** opens a pop-up where you change the name
 shown on the dashboard and choose which parts to show (CPU, memory, disk, uptime, network, pending updates, restart
 needed, temperature, GPU); parts Prometheus does not report for that machine are greyed out. **Refresh** asks
 Prometheus again. Only sources saved on the setup page can be changed here; a Prometheus source from `bridge.toml`

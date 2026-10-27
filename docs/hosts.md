@@ -65,6 +65,9 @@ Want GPU numbers too? See [GPU](#gpu) below.
    and pending updates. Tick the ones to show and press **Save**.
 3. **Edit** changes the name shown on the dashboard and which parts to show. Only what Prometheus reports for that
    machine can be ticked. **Refresh** asks Prometheus again.
+4. To change the order on the dashboard, drag a machine by the small dot grip on its left (or focus the grip and press
+   the up or down arrow), then press **Save**. The order is saved with the hosts, so `hosts = [...]` in
+   `sources.toml` lists them in that order too.
 
 Linux and Windows are told apart by the metrics a machine has, so there is no setting for it. A machine that is down
 cannot be recognised until it answers again; one you have already chosen stays in the list as "not answering".
