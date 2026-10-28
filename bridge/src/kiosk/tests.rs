@@ -848,6 +848,8 @@ fn ticker_settings_travel_in_the_layout() {
     assert_eq!(layout["ticker"], true);
     assert_eq!(layout["show_source"], false);
     assert_eq!(layout["dismiss"], true);
+    assert_eq!(layout["failed_pill"], true);
+    assert_eq!(layout["failed_as_alerts"], false);
     assert!(layout["speed"].as_f64().unwrap() < 1.0);
 }
 

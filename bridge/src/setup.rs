@@ -287,6 +287,8 @@ async fn status(State(shared): State<Arc<Shared>>) -> Response {
         "show_source": effective.alerts.show_source,
         "dismiss": effective.alerts.dismiss,
         "http_input": effective.alerts.http_input,
+        "failed_pill": effective.alerts.failed_pill,
+        "failed_as_alerts": effective.alerts.failed_as_alerts,
         "max_active": effective.alerts.max_active,
         "enabled": effective.alerts.enabled,
     });

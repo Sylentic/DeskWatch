@@ -221,6 +221,9 @@ button.chip.failed.action:not(:disabled):hover, button.chip.failed.action[aria-e
   max-height: 70vh; overflow-y: auto; background: var(--card-hi); border: 1px solid #2e3440; border-radius: 0.8rem;
   box-shadow: 0 0.8rem 2rem rgba(0, 0, 0, .5); padding: 0.8rem 1rem; }
 .failed-pop[hidden] { display: none; }
+.failed-pop.from-banner { background: linear-gradient(var(--red-bg), var(--red-bg)), var(--card-hi); border-color: var(--red-edge); }
+.failed-pop.from-banner li { border-top-color: var(--red-edge); }
+.failed-pop .head span { display: inline-flex; gap: 0.4rem; }
 .failed-pop .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; font-size: 0.92rem; }
 .failed-pop ul { list-style: none; margin: 0; padding: 0; }
 .failed-pop li { display: flex; align-items: center; gap: 0.8rem; padding: 0.5rem 0; border-top: 1px solid var(--card-edge); }

@@ -423,7 +423,7 @@
     // Each alert is a tinted box (red, amber or blue) with a Dismiss button when
     // `[alerts] dismiss` allows it; dismissing clears it on every screen.
     alerts: function (p) {
-      var alerts = snap.alerts || [];
+      var alerts = alertList();
       var rows = alerts.map(function (a) {
         var sub = [a.message ? esc(a.message) : '', ago(nowS() - a.since)].filter(Boolean).join(' &middot; ');
         // An alert from a git source links to its issue or comment.
@@ -679,7 +679,8 @@
     var gone = e.target.closest ? e.target.closest('[data-dismiss-alert]') : null;
     if (gone) {
       var id = gone.getAttribute('data-dismiss-alert');
-      snap.alerts = alertList().filter(function (a) { return a.id !== id; });
+      snap.alerts = realAlerts().filter(function (a) { return a.id !== id; });
+      if (isFailedAlert(id)) dismissFailed(id.slice(FAILED_ALERT.length));
       Object.keys(cards).forEach(function (key) { cards[key].touched = 0; });
       drawGrid(); renderBadges(); renderTicker();
       dismissAlerts([id]);
@@ -692,7 +693,7 @@
   // screen at once (like an alert). The snapshot no longer lists it; until
   // the next snapshot arrives the page hides it itself. A new failure of the
   // same pipeline has another start time, so it shows up again.
-  var failedOpen = false;
+  var failedOpen = false, failedFrom = 'chip';
   function failId(f) { return f.key + '@' + f.started; }
   // A newer release is a quiet chip next to Setup. The x hides that version
   // in this browser only; the next release shows again.
@@ -715,7 +716,9 @@
   }
   function dismissFailed(id) {
     // id null: dismiss everything that is listed now.
-    var ids = id ? [id] : visibleFailed().map(failId);
+    dismissFailedRuns(id ? [id] : visibleFailed().map(failId));
+  }
+  function dismissFailedRuns(ids) {
     if (!ids.length) return;
     snap.failed = visibleFailed().filter(function (f) { return ids.indexOf(failId(f)) < 0; });
     renderBadges();
@@ -737,13 +740,24 @@
   function renderFailedPop() {
     var pop = $('failed-pop'), list = visibleFailed();
     if (!failedOpen || !list.length) { failedOpen = failedOpen && list.length > 0; pop.hidden = true; pop.innerHTML = ''; return; }
-    var html = '<div class="head"><b>Failed runs</b>' +
-      '<button type="button" class="x all" data-dismiss-all="1">Dismiss all</button></div><ul>' + list.map(failedRow).join('') + '</ul>' +
+    var fromBanner = failedFrom === 'banner' && !$('banner').hidden;
+    var html = '<div class="head"><b>' + (fromBanner ? list.length + ' runs failed' : 'Failed runs') + '</b>' +
+      '<span><button type="button" class="x all" data-dismiss-all="1">Dismiss all</button>' +
+      (fromBanner ? ' <button type="button" class="x" data-failed-close="1" aria-label="Collapse">&#9652;</button>' : '') + '</span></div><ul>' + list.map(failedRow).join('') + '</ul>' +
       '<div class="foot">Dismissing clears the run on every screen. A new failure shows up again.</div>';
     if (pop.innerHTML !== html) pop.innerHTML = html;
     pop.hidden = false;
+    pop.classList.toggle('from-banner', fromBanner);
     var chip = document.querySelector('[data-failed-toggle]');
-    if (chip) pop.style.left = Math.max(8, Math.min(chip.getBoundingClientRect().left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
+    if (fromBanner) {
+      // Under the red notice, with the same right edge.
+      var bb = $('banner').getBoundingClientRect();
+      pop.style.left = Math.max(8, Math.min(bb.right - pop.offsetWidth, window.innerWidth - pop.offsetWidth - 8)) + 'px';
+      pop.style.top = (bb.bottom + 6) + 'px';
+    } else {
+      pop.style.top = '';
+      if (chip) pop.style.left = Math.max(8, Math.min(chip.getBoundingClientRect().left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
+    }
   }
 
   // ---- alerts: badge, list and dismiss -------------------------------------
@@ -754,14 +768,36 @@
   // `[alerts] dismiss = false` the list is read-only.
   var alertsOpen = false;
   var SEV_NAME = { critical: 'Critical', warn: 'Warning', info: 'Info' };
-  function alertList() {
+  // Real alerts only: the ticker and the "is there a critical alert" check use these.
+  function realAlerts() {
     return snap.alerts || [];
+  }
+  // With `[alerts] failed_as_alerts` every failed run that is not dismissed is
+  // also a critical alert in the Alerts box and menu. Dismissing one dismisses
+  // the run itself (the same list as the Failed chip), so there is one list.
+  var FAILED_ALERT = 'failed:';
+  function isFailedAlert(id) { return String(id).indexOf(FAILED_ALERT) === 0; }
+  function failedAsAlert(f) {
+    return {
+      id: FAILED_ALERT + failId(f), severity: 'critical', source: f.source, url: f.url, since: f.finished || f.started || nowS(),
+      title: (f.project || '') + (f.pipeline ? ' · ' + f.pipeline : ''),
+      message: 'Failed' + (f.step ? ' at ' + f.step : '') + (f.ref ? ' on ' + f.ref : '')
+    };
+  }
+  function alertList() {
+    var cfg = (snap.layout && snap.layout.alerts) || {};
+    var runs = cfg.failed_as_alerts ? visibleFailed().map(failedAsAlert) : [];
+    return runs.concat(realAlerts());
   }
   function canDismiss() {
     var cfg = (snap.layout && snap.layout.alerts) || {};
     return !!cfg.dismiss && myRole !== 'viewer';
   }
   function dismissAlerts(ids) {
+    // A failed run shown as an alert is dismissed as a run.
+    var runs = ids.filter(isFailedAlert).map(function (id) { return id.slice(FAILED_ALERT.length); });
+    ids = ids.filter(function (id) { return !isFailedAlert(id); });
+    if (runs.length) { dismissFailedRuns(runs); }
     // One after the other, so the bridge never has more than one clear in flight.
     return ids.reduce(function (chain, id) {
       return chain.then(function () {
@@ -807,6 +843,8 @@
         // The count follows what is not dismissed; the chip opens the list and is gone at 0.
         var n = visibleFailed().length;
         if (!n) { failedOpen = false; return; }
+        // `[alerts] failed_pill = false` hides this chip; the red notice stays.
+        if (((snap.layout && snap.layout.alerts) || {}).failed_pill === false) return;
         html += '<button type="button" class="chip failed action" data-failed-toggle="1" aria-expanded="' + (failedOpen ? 'true' : 'false') +
           '" title="Show the failed runs">' + n + ' failed</button>';
         return;
@@ -827,7 +865,7 @@
 
   // One listener each: the badge row and the popover are rebuilt on every snapshot.
   $('badges').addEventListener('click', function (e) {
-    if (e.target.closest && e.target.closest('[data-failed-toggle]')) { failedOpen = !failedOpen; alertsOpen = false; renderBadges(); }
+    if (e.target.closest && e.target.closest('[data-failed-toggle]')) { failedFrom = 'chip'; failedOpen = !failedOpen; alertsOpen = false; renderBadges(); }
     if (e.target.closest && e.target.closest('[data-alerts-toggle]')) { alertsOpen = !alertsOpen; failedOpen = false; renderBadges(); }
   });
   $('alert-pill').addEventListener('click', function () { alertsOpen = !alertsOpen; failedOpen = false; renderBadges(); });
@@ -840,9 +878,10 @@
     var one = e.target.closest ? e.target.closest('[data-dismiss]') : null;
     if (one) { dismissFailed(one.getAttribute('data-dismiss')); return; }
     if (e.target.closest && e.target.closest('[data-dismiss-all]')) dismissFailed(null);
+    if (e.target.closest && e.target.closest('[data-failed-close]')) { failedOpen = false; renderBadges(); }
   });
   document.addEventListener('click', function (e) {
-    if (failedOpen && document.contains(e.target) && e.target.closest && !e.target.closest('#failed-pop') && !e.target.closest('[data-failed-toggle]')) {
+    if (failedOpen && document.contains(e.target) && e.target.closest && !e.target.closest('#failed-pop') && !e.target.closest('[data-failed-toggle]') && !e.target.closest('#banner')) {
       failedOpen = false; renderBadges();
     }
     if (alertsOpen && document.contains(e.target) && e.target.closest && !e.target.closest('#alerts-pop') && !e.target.closest('[data-alerts-toggle]') && !e.target.closest('#alert-pill')) {
@@ -862,7 +901,7 @@
   function renderTicker() {
     var el = $('alert-pill');
     var cfg = (snap.layout && snap.layout.alerts) || {};
-    var alerts = cfg.ticker === false ? [] : snap.alerts || [];
+    var alerts = cfg.ticker === false ? [] : realAlerts();
     var a = alerts[0];
     // The header shows one pill: a run result or notice wins over the alert pill.
     if (!$('banner').hidden) a = null;
@@ -911,7 +950,7 @@
     // (no `interrupt`) or a failure older than ten minutes all keep it. Only a
     // critical alert (the alert pill) comes before it.
     var cfg = (snap.layout && snap.layout.alerts) || {};
-    var critical = cfg.ticker !== false && alertList().some(function (a) { return a.severity === 'critical'; });
+    var critical = cfg.ticker !== false && realAlerts().some(function (a) { return a.severity === 'critical'; });
     var failed = visibleFailed().slice().sort(function (a, b) { return (b.finished || b.started || 0) - (a.finished || a.started || 0); });
     if (failed.length && !critical && !(s && s.level === 0)) {
       var f = failed[0], fh = href(f.url);
@@ -939,7 +978,8 @@
     var x = e.target.closest ? e.target.closest('[data-dismiss]') : null;
     if (x) { dismissFailed(x.getAttribute('data-dismiss')); renderBanner(); renderTicker(); return; }
     if (e.target.closest && e.target.closest('a')) return;
-    if (visibleFailed().length && $('banner').querySelector('[data-dismiss]')) { failedOpen = !failedOpen; alertsOpen = false; renderBadges(); }
+    // One failed run is a plain line; with more the notice unfolds as a window.
+    if (visibleFailed().length > 1 && $('banner').querySelector('[data-dismiss]')) { failedFrom = 'banner'; failedOpen = !failedOpen; alertsOpen = false; renderBadges(); }
   });
   // Pipelines that failed recently (project/pipeline -> true), so a success
   // that follows can say Fixed. Kept for a day.
