@@ -7,6 +7,11 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Header lines up in Safari on the Mac.** The badge bar now has the same fixed height as the pills and icon
+  buttons, and buttons use the same line height and margin as links, so the top bar no longer sits off-line in Safari.
+
 ## [1.0.9]
 
 ### Added
