@@ -198,6 +198,7 @@ impl Kiosk {
         self.layout["alerts"] = json!({
             "ticker": config.ticker, "speed": config.ticker_speed.factor(),
             "show_source": config.show_source, "dismiss": config.dismiss,
+            "failed_pill": config.failed_pill, "failed_as_alerts": config.failed_as_alerts,
         });
         if config.dismiss {
             self.alert_tx = Some(tx);

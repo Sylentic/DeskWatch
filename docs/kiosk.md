@@ -125,6 +125,12 @@ alert. Switch it off with `dismiss = false` in `[alerts]`.
 The header pill on or off and "via source" are `[alerts]` settings too (`ticker`, `show_source`), also
 changeable on the [setup page](setup-page.md#alerts).
 
+**Failed runs.** The red "N failed" chip is on by default; `failed_pill = false` hides it. The red notice for the latest
+failed run stays. When more than one run has failed, click the notice: it unfolds as a window with every failed run
+(each links to its pipeline, with a Dismiss button and **Dismiss all**). With `failed_as_alerts = true` every failed run
+that is not dismissed is also listed as a critical alert in the Alerts box and menu; dismissing it there dismisses the
+run. Both are `[alerts]` settings and are on the setup page (Alerts > Alerts in the header).
+
 ### Customize your own dashboard
 
 The grid icon in the header (next to the cogwheel for Setup) starts **edit mode**. The whole grid is drawn behind the
