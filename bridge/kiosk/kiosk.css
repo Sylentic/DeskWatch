@@ -181,7 +181,8 @@ body.idle, body.idle * { cursor: none !important; }
 
 /* The badges sit in one segmented bar. */
 .badges {
-  display: flex; flex: none; gap: 0.12rem; min-width: 0;
+  display: flex; flex: none; align-items: center; gap: 0.12rem; min-width: 0;
+  height: 2.4rem; box-sizing: border-box;
   background: var(--card); border: 1px solid var(--card-edge); border-radius: 0.65rem; padding: 0.2rem;
 }
 .badges:empty { display: none; }
@@ -189,7 +190,7 @@ body.idle, body.idle * { cursor: none !important; }
   display: inline-flex; align-items: center; gap: 0.45rem;
   padding: 0.35rem 0.7rem; border-radius: 0.45rem;
   background: transparent; border: 0;
-  font-family: var(--sans); font-size: 0.82rem; color: var(--dim); white-space: nowrap;
+  font-family: var(--sans); font-size: 0.82rem; line-height: 1.3; color: var(--dim); white-space: nowrap;
 }
 a.chip { text-decoration: none; }
 a.chip[href]:hover, a.chip[href]:focus-visible { color: var(--text); }
@@ -209,7 +210,9 @@ a.chip[href]:hover, a.chip[href]:focus-visible { color: var(--text); }
 .chip.update button { font: inherit; line-height: 1; color: var(--dim); background: none; border: 0; padding: 0 0.1rem; cursor: pointer; }
 .chip.update button:hover { color: var(--text); }
 /* The failed and alerts badges are buttons: they open the list under them. */
-button.chip { font-family: var(--sans); cursor: pointer; }
+/* Safari gives buttons their own line-height and margin; the chips must match the links. */
+button.chip { font-family: var(--sans); line-height: 1.3; margin: 0; cursor: pointer; }
+.banner.pill, .icon-btn { margin: 0; }
 button.chip:disabled { cursor: default; }
 button.chip.action:not(:disabled):hover, button.chip.action[aria-expanded="true"] { background: var(--card-hi); }
 button.chip.failed.action:not(:disabled):hover, button.chip.failed.action[aria-expanded="true"] { background: #3a1a1d; }
@@ -275,7 +278,7 @@ button.pill { font: inherit; font-size: 0.88rem; font-weight: 600; color: var(--
   color: var(--dim); background: transparent; border: 1px solid var(--card-edge); border-radius: 0.65rem; cursor: pointer; text-decoration: none; }
 .icon-btn:hover, .icon-btn:focus-visible, .icon-btn.on { color: var(--text); background: var(--card); }
 .icon-btn svg { width: 1.15rem; height: 1.15rem; flex: none; }
-.clock { display: flex; align-items: center; gap: 0.6rem; white-space: nowrap; }
+.clock { display: flex; align-items: center; gap: 0.6rem; white-space: nowrap; line-height: 1; }
 #time { order: 2; font-size: 1.65rem; font-weight: 600; letter-spacing: -0.02em; }
 #date { order: 1; font-size: 0.82rem; color: var(--dim); }
 .topbar { position: absolute; left: 0; right: 0; bottom: -1px; height: 0.2rem; background: var(--track); }
