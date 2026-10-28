@@ -7,6 +7,17 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Failed runs in the Alerts box (optional).** On Setup > Alerts you can now list failed pipeline runs as critical
+  alerts too (`failed_as_alerts`, off by default), and switch the "N failed" chip in the header off (`failed_pill`,
+  on by default). Dismissing a run in either place dismisses it everywhere.
+
+### Changed
+
+- **The red failed-run notice unfolds.** With more than one failed run, clicking the notice in the header opens a
+  window with all of them, each linking to its pipeline, with Dismiss and Dismiss all.
+
 ## [1.0.9]
 
 ### Added

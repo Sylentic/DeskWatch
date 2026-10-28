@@ -110,6 +110,8 @@ struct AlertsPatch {
     dismiss: Option<bool>,
     max_active: Option<usize>,
     http_input: Option<bool>,
+    failed_pill: Option<bool>,
+    failed_as_alerts: Option<bool>,
 }
 
 /// The `[mqtt]` keys the setup page can change (docs/setup-page.md). Anything
@@ -716,6 +718,12 @@ pub struct AlertsConfig {
     /// the same JSON as on MQTT. Off by default: like the dashboard it has no
     /// login, so it is for a trusted network only.
     pub http_input: bool,
+    /// Show the "N failed" chip in the kiosk header. On by default.
+    pub failed_pill: bool,
+    /// Also list failed pipeline runs in the Alerts box and the Alerts menu
+    /// (as critical alerts). Off by default; the Failed chip and the red
+    /// notice stay either way.
+    pub failed_as_alerts: bool,
 }
 
 /// How fast the header ticker moves.
@@ -754,6 +762,8 @@ impl Default for AlertsConfig {
             show_source: true,
             dismiss: true,
             http_input: false,
+            failed_pill: true,
+            failed_as_alerts: false,
         }
     }
 }
@@ -1491,6 +1501,8 @@ impl Config {
             a.dismiss = patch.dismiss.unwrap_or(a.dismiss);
             a.max_active = patch.max_active.unwrap_or(a.max_active);
             a.http_input = patch.http_input.unwrap_or(a.http_input);
+            a.failed_pill = patch.failed_pill.unwrap_or(a.failed_pill);
+            a.failed_as_alerts = patch.failed_as_alerts.unwrap_or(a.failed_as_alerts);
         }
         macro_rules! merge {
             ($($kind:ident),+) => {$(
@@ -1898,6 +1910,11 @@ mod tests {
         assert!(
             !a.http_input,
             "the web address is off until it is switched on"
+        );
+        assert!(a.failed_pill, "the Failed chip is on by default");
+        assert!(
+            !a.failed_as_alerts,
+            "failed runs are not alerts until asked"
         );
         assert_eq!(a.ticker_speed, TickerSpeed::Normal);
 

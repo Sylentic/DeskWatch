@@ -986,12 +986,15 @@
     card.appendChild(el('h2', null, 'Alerts in the header'));
     var ticker = checkbox(a.ticker, !a.editable), source = checkbox(a.show_source, !a.editable);
     var dismiss = checkbox(a.dismiss, !a.editable), httpInput = checkbox(a.http_input, !a.editable);
+    var failedPill = checkbox(a.failed_pill, !a.editable), failedAlerts = checkbox(a.failed_as_alerts, !a.editable);
     var max = el('input'); max.type = 'number'; max.min = '1'; max.max = '50'; max.value = String(a.max_active); max.disabled = !a.editable;
     max.className = 'narrow';
     card.appendChild(settingRow('Show the latest alert', 'The most urgent alert is a coloured pill in the header bar of the dashboard', ticker));
     card.appendChild(settingRow('Show the source', 'Adds "via homeassistant" behind each alert', source));
     card.appendChild(settingRow('Most alerts kept', 'When there are more, the least urgent and oldest drops first (1 to 50)', max));
     card.appendChild(settingRow('Dismiss on the dashboard', 'A Dismiss button per alert in the Alerts menu. It clears the alert on every screen', dismiss));
+    card.appendChild(settingRow('Show the Failed chip in the header', 'The red "N failed" chip next to Open PRs. The red notice for the latest failed run stays; with more than one run it unfolds into a list of them, each linking to its pipeline', failedPill));
+    card.appendChild(settingRow('Also show failed runs in the Alerts box', 'Each failed run that is not dismissed is listed as a critical alert, in the Alerts box and the Alerts menu. Dismissing it dismisses the run', failedAlerts));
     card.appendChild(settingRow('Accept alerts on the web address', 'POST /api/alert with the same JSON as MQTT. No login: for a trusted network only', httpInput));
     if (a.editable) {
       var save = el('button', null, 'Save');
@@ -999,7 +1002,8 @@
       save.addEventListener('click', function () {
         post('api/setup/alerts', {
           ticker: ticker.checked, show_source: source.checked,
-          dismiss: dismiss.checked, http_input: httpInput.checked, max_active: parseInt(max.value, 10) || 0
+          dismiss: dismiss.checked, http_input: httpInput.checked,
+          failed_pill: failedPill.checked, failed_as_alerts: failedAlerts.checked, max_active: parseInt(max.value, 10) || 0
         }).then(function (j) { notice = (j && j.error) || null; load(); });
       });
       var line = el('div', 'buttons'); line.appendChild(save); card.appendChild(line);
@@ -1042,7 +1046,7 @@
     row(dl, 'Web address', a.enabled ? pill(a.http_input ? 'on: POST /api/alert' : 'off', a.http_input ? 'ok' : 'muted') : pill('alerts off ([alerts] enabled in bridge.toml)', 'muted'));
     row(dl, 'Example', 'curl -X POST http://<bridge>:8787/api/alert -d \'{"v":2,"id":"x","severity":"warning","title":"Hello"}\' (see docs/home-assistant.md)');
     src.appendChild(dl);
-    src.appendChild(el('p', 'muted', 'Failed pipeline runs are not alerts: they count in the Failed badge.'));
+    src.appendChild(el('p', 'muted', 'Failed pipeline runs count in the Failed chip. Switch on "Also show failed runs in the Alerts box" above to list them as alerts too.'));
     box.appendChild(src);
     return box;
   }
