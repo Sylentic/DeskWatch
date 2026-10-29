@@ -1,0 +1,66 @@
+# After a release (dev merged into main with a merge commit), main is one commit
+# ahead of dev. This opens a pull request from main back into dev and turns on
+# auto-merge, so dev catches up once the pipeline is green. Nobody pushes to dev
+# directly (rulesets), so a pull request is the only way in.
+#
+# It needs a secret SYNC_TOKEN (a token that may write contents and pull
+# requests). Pull requests opened with the default GITHUB_TOKEN do not start the
+# pipeline, so the required checks would never report. See docs/releasing.md.
+# It is not a required check.
+name: Sync main into dev
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-main
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: sync main into dev
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN || github.token }}
+
+      - name: Open the pull request
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN || github.token }}
+          HAS_TOKEN: ${{ secrets.SYNC_TOKEN != '' }}
+          BRANCH: sync/main-to-dev
+        run: |
+          git fetch origin dev main
+          if git merge-base --is-ancestor origin/main origin/dev; then
+            echo "dev already contains main, nothing to sync."
+            exit 0
+          fi
+          if [ "$HAS_TOKEN" != "true" ]; then
+            echo "::warning::No SYNC_TOKEN secret. The pull request is opened, but the pipeline will not run on it, so it cannot merge. See docs/releasing.md."
+          fi
+
+          existing=$(gh pr list --repo "$GITHUB_REPOSITORY" --base dev --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          # Point the branch at the current main (also when an older sync pull request is still open).
+          git push --force origin "origin/main:refs/heads/$BRANCH"
+
+          if [ -n "$existing" ]; then
+            echo "Pull request #$existing is already open, branch updated."
+            pr=$existing
+          else
+            printf 'Brings dev level with main after a release: main has the merge commit of the release pull request that dev does not have yet. The content is the same, so only the history changes.\n\nOpened by the "Sync main into dev" workflow. Merge it with a merge commit (not squash or rebase).\n' > body.md
+            pr=$(gh pr create --repo "$GITHUB_REPOSITORY" --base dev --head "$BRANCH" \
+              --title "Sync main into dev" --body-file body.md)
+            echo "Opened $pr"
+          fi
+
+          # Merges by itself once the required checks are green.
+          gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --auto --merge \
+            || echo "::warning::Could not turn on auto-merge. Enable 'Allow auto-merge' in the repository settings, or merge the pull request by hand."
