@@ -26,11 +26,30 @@ the GitHub release. A merge into `main` without a new version releases nothing.
 2. Open the release pull request **from `dev` into `main`**, titled "Release x.y.z". Merge it with a merge commit
    once the pipeline is green (it also builds the image for both CPUs). The workflow `release-pr.yml` fills in the description from the
    CHANGELOG section when the pull request is opened, as long as nobody typed one yet.
-3. That is all. The run on `main` (Actions › Pipeline) tags the merge commit in its `release version` job and
+3. The run on `main` (Actions › Pipeline) tags the merge commit in its `release version` job and
    publishes the release a few minutes later. Check the release page and that the image pulls (below).
+4. Nothing else to do: the workflow `sync-main.yml` opens a pull request "Sync main into dev" (the merge commit of
+   the release is on `main` but not on `dev` yet) and turns on auto-merge, so `dev` catches up by itself once the
+   pipeline is green. See the next section for the one-time setup.
 
 A version tag pushed by hand still works too (for example to retry a release that never finished): the run checks
 that the tag matches the crate version at that commit, and refuses when it does not.
+
+## Keeping dev level with main
+
+Merging `dev` into `main` with a merge commit leaves `main` one commit ahead of `dev`. After every push to `main`,
+[`.github/workflows/sync-main.yml`](../.github/workflows/sync-main.yml) opens a pull request from `main` into `dev`
+(branch `sync/main-to-dev`) and turns on auto-merge. The content is identical, so only Markdown-level checks run and
+it merges within a few minutes. It does nothing when `dev` already has everything on `main`.
+
+One-time setup in the repository settings:
+
+- **Settings › General › Pull Requests › Allow auto-merge**: on.
+- **Settings › Secrets and variables › Actions › New repository secret**: name `SYNC_TOKEN`, a fine-grained personal
+  access token for this repository with *Contents: read and write* and *Pull requests: read and write*. A pull request
+  opened with the default token does not start the pipeline, so the required checks would never run.
+
+Without the secret the pull request is still opened, but it cannot merge; merge it by hand with a merge commit.
 
 ## A tag on the wrong commit
 
