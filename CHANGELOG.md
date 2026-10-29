@@ -11,13 +11,20 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ### Security
 
+This release closes two potential security holes. Both need specific conditions and no abuse is known, but update to
+1.0.11 to be safe.
+
 - **A website can no longer drive the setup page through DNS rebinding.** Without a login, the setup page and
   `POST /api/alert` checked the client address and the `Origin`, but not the `Host`. A site whose DNS name was pointed
-  at your LAN address passed both. They now also need a local `Host` (an IP address, `localhost`, a name without a
+  at your LAN address passed both, and could then change sources and make the bridge send a stored token to another
+  address. It needed a bridge without a login and you opening that site in a browser on the same network. They now
+  also need a local `Host` (an IP address, `localhost`, a name without a
   dot, or a name ending in `.lan`, `.local`, `.home.arpa` or `.internal`). If you reach the page by another name,
   list it in `[http] allowed_hosts`. With a login set, nothing changes.
 - **A backup can no longer name a credential file by path.** Importing a backup whose sources point at a path such as
   `/etc/...` is refused; only plain credential names are allowed in a backup (`bridge.toml` may still use paths).
+  Before, a crafted backup could make a source read any file the bridge can and send its content to the address of
+  that source. It needed you to import a backup from someone else.
 
 ### Fixed
 
