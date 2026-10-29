@@ -144,6 +144,20 @@ fn invalid_sources_are_caught_before_anything_is_written() {
 }
 
 #[test]
+fn a_credential_path_in_a_backup_is_refused() {
+    for path in ["/etc/passwd", "C:\\\\secret", "../x"] {
+        let backup = Backup {
+            sources: SOURCES.replace("gitea-token", path),
+            ..Backup::default()
+        };
+        assert!(
+            check(&backup, &Config::from_toml("").unwrap()).is_err(),
+            "{path}"
+        );
+    }
+}
+
+#[test]
 fn bad_secret_name_is_refused() {
     let mut backup = Backup {
         sources: SOURCES.into(),

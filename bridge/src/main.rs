@@ -215,7 +215,8 @@ async fn main() -> Result<()> {
     }
     let local_only = axum::middleware::from_fn_with_state(
         deskwatch_bridge::access::Access::new(config.http.allow_public)
-            .with_login_flag(auth.enabled_flag()),
+            .with_login_flag(auth.enabled_flag())
+            .with_allowed_hosts(config.http.allowed_hosts.clone()),
         deskwatch_bridge::access::require_local,
     );
     use deskwatch_bridge::auth::{Need, enforce};

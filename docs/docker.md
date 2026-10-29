@@ -237,7 +237,9 @@ dashboard.example.lan {
 
 **nginx.** Two things are needed for the WebSocket: HTTP/1.1 with the `Upgrade` headers, and a long `proxy_read_timeout`
 (the default 60 s closes a quiet socket; the bridge sends a frame every 5 s, but a long timeout also survives a
-stalled source):
+stalled source). Also pass the client address with `X-Forwarded-For`: nginx does not add it by itself, and without it
+the bridge sees only the proxy, which is on a local address, so its local-network check (see
+[setup-page.md](setup-page.md)) lets every client through:
 
 ```nginx
 # in the http block
@@ -259,6 +261,7 @@ server {
         proxy_pass http://127.0.0.1:8787;
         proxy_http_version 1.1;
         proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
         proxy_read_timeout 1h;
@@ -445,7 +448,7 @@ Every version tag (from 0.9.6 on, except 0.9.8, which was never built) is built 
 `publish image` job in [`pipeline.yml`](../.github/workflows/pipeline.yml) and pushed to GitHub's registry:
 
 ```sh
-docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 1.0.10; no "v"
+docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 1.0.11; no "v"
 docker run --rm -p 8787:8787 ghcr.io/sylentic/deskwatch-bridge:<version> --demo --kiosk --no-mqtt
 ```
 

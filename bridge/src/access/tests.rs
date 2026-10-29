@@ -106,6 +106,28 @@ async fn call(allow_public: bool, peer: Option<&str>, hdrs: &[(&str, &str)]) -> 
     app.oneshot(req).await.unwrap().status()
 }
 
+#[test]
+fn rebound_host_names_are_refused() {
+    for ok in [
+        "192.168.1.5:8787",
+        "[::1]:8787",
+        "localhost",
+        "deskwatch",
+        "desk.lan:8787",
+        "Desk.Local",
+        "",
+    ] {
+        assert!(host_is_ours(ok, &[]), "{ok}");
+    }
+    for bad in ["evil.example", "evil.example:8787", "a.lan.evil.com"] {
+        assert!(!host_is_ours(bad, &[]), "{bad}");
+    }
+    assert!(host_is_ours(
+        "Dash.example.com:443",
+        &["dash.example.com".into()]
+    ));
+}
+
 #[tokio::test]
 async fn middleware_allows_local_and_refuses_the_rest() {
     assert_eq!(call(false, Some("192.168.1.5"), &[]).await, StatusCode::OK);
@@ -138,4 +160,22 @@ fn allow_public_is_off_unless_set() {
     assert!(!Config::from_toml("").unwrap().http.allow_public);
     let on = Config::from_toml("[http]\nallow_public = true\n").unwrap();
     assert!(on.http.allow_public);
+}
+
+#[tokio::test]
+async fn a_local_client_with_a_public_host_name_is_refused() {
+    let local = Some("192.168.1.5");
+    assert_eq!(
+        call(false, local, &[("host", "evil.example")]).await,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(false, local, &[("host", "192.168.1.9:8787")]).await,
+        StatusCode::OK
+    );
+    // With `allow_public`, or once a login exists, the check steps aside.
+    assert_eq!(
+        call(true, local, &[("host", "evil.example")]).await,
+        StatusCode::OK
+    );
 }

@@ -217,6 +217,14 @@ struct SessionFile {
     sessions: HashMap<String, Session>,
 }
 
+/// Wrong passwords are counted per client address; an IPv6 client owns a whole /64, so that is the unit.
+fn lock_key(ip: IpAddr) -> IpAddr {
+    match ip.to_canonical() {
+        IpAddr::V6(v6) => IpAddr::V6((u128::from(v6) & (u128::MAX << 64)).into()),
+        v4 => v4,
+    }
+}
+
 struct Lock {
     fails: u32,
     until: Option<Instant>,
@@ -641,7 +649,8 @@ impl Auth {
         password: &str,
         remember: bool,
     ) -> Result<(Role, String), LoginError> {
-        if let Some(left) = self.lock_left(ip) {
+        let key = lock_key(ip);
+        if let Some(left) = self.lock_left(key) {
             return Err(LoginError::Locked(left));
         }
         let state = self.read();
@@ -662,7 +671,7 @@ impl Auth {
                     .locks
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
-                    .remove(&ip);
+                    .remove(&key);
                 info!(client = %ip, role = role.name(), "signed in");
                 Ok((
                     role,
@@ -671,7 +680,7 @@ impl Auth {
             }
             None => {
                 warn!(client = %ip, "failed sign-in");
-                Err(self.fail(ip))
+                Err(self.fail(key))
             }
         }
     }
