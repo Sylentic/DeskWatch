@@ -150,7 +150,10 @@ fn a_credential_path_in_a_backup_is_refused() {
             sources: SOURCES.replace("gitea-token", path),
             ..Backup::default()
         };
-        assert!(check(&backup, &Config::from_toml("").unwrap()).is_err(), "{path}");
+        assert!(
+            check(&backup, &Config::from_toml("").unwrap()).is_err(),
+            "{path}"
+        );
     }
 }
 
