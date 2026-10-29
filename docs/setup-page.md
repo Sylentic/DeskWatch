@@ -214,7 +214,10 @@ restart once by hand (`docker compose restart deskwatch-bridge`). It needs the s
   dashboard and every change need a sign-in; the address rule above then steps aside. Until you do, there is no login.
 - **No login until you set a password (default).** Anyone who can reach the port from the local network can open the page and, with a data folder, change sources and store
   tokens. Keep the port on a trusted network. A website you have open in your browser cannot use the page for you:
-  requests whose `Origin` is another site are refused.
+  requests whose `Origin` is another site are refused, and so are requests whose `Host` is a public name (a site
+  whose DNS name is pointed at your LAN address, "DNS rebinding"). Without a login the page answers to IP addresses,
+  `localhost`, names without a dot and names ending in `.lan`, `.local`, `.home.arpa` or `.internal`. For any other name
+  (for example a proxy at `dash.example.com`) list it in `[http] allowed_hosts = ["dash.example.com"]`.
 - Secrets never reach the browser, whatever the network.
 - **Removed: `[setup] token_file`.** A config that still sets it is refused at startup with a message that names the
   line to delete. Use the built-in login ([auth.md](auth.md)) or a proxy with one instead.
