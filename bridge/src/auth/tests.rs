@@ -121,7 +121,11 @@ fn lockout_counts_an_ipv6_slash_64_as_one_client() {
     let (_d, auth) = fresh();
     auth.setup_admin("admin", PW).unwrap();
     for n in 0..MAX_TRIES {
-        let _ = auth.login(ip(&format!("2001:db8:1:2::{n:x}")), "admin", "nope nope nope");
+        let _ = auth.login(
+            ip(&format!("2001:db8:1:2::{n:x}")),
+            "admin",
+            "nope nope nope",
+        );
     }
     // Same /64, new address: still locked. Another /64 is not.
     assert!(matches!(
