@@ -117,6 +117,21 @@ fn login_roles_and_lockout() {
 }
 
 #[test]
+fn lockout_counts_an_ipv6_slash_64_as_one_client() {
+    let (_d, auth) = fresh();
+    auth.setup_admin("admin", PW).unwrap();
+    for n in 0..MAX_TRIES {
+        let _ = auth.login(ip(&format!("2001:db8:1:2::{n:x}")), "admin", "nope nope nope");
+    }
+    // Same /64, new address: still locked. Another /64 is not.
+    assert!(matches!(
+        auth.login(ip("2001:db8:1:2:ffff::1"), "admin", PW),
+        Err(LoginError::Locked(_))
+    ));
+    assert!(auth.login(ip("2001:db8:1:3::1"), "admin", PW).is_ok());
+}
+
+#[test]
 fn sessions_end_and_reset_forgets_passwords_but_keeps_keys() {
     let (_d, auth) = fresh();
     auth.setup_admin("admin", PW).unwrap();
