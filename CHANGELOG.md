@@ -7,6 +7,8 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.0.10]
+
 ### Added
 
 - **Failed runs in the Alerts box (optional).** On Setup > Alerts you can now list failed pipeline runs as critical
