@@ -244,6 +244,19 @@ pub struct Summary {
     pub secrets: usize,
 }
 
+/// Is every `*_file` value a plain credential name? A path would make the bridge read any file it can
+/// and send its content as a token; `bridge.toml` may use paths, a backup may not.
+fn plain_credential_names(value: &toml::Value) -> bool {
+    match value {
+        toml::Value::Table(t) => t.iter().all(|(k, v)| match v.as_str() {
+            Some(s) if k.ends_with("_file") => !s.contains(['/', '\\', ':']),
+            _ => plain_credential_names(v),
+        }),
+        toml::Value::Array(a) => a.iter().all(plain_credential_names),
+        _ => true,
+    }
+}
+
 /// Check the backup against `base` (the config `bridge.toml` gives) and
 /// describe it.
 pub fn check(backup: &Backup, base: &crate::config::Config) -> Result<Summary> {
@@ -252,6 +265,10 @@ pub fn check(backup: &Backup, base: &crate::config::Config) -> Result<Summary> {
         .with_overlay(&backup.sources)
         .context("the sources in the backup are not valid")?;
     let table: toml::Table = toml::from_str(&backup.sources).context("sources are not valid")?;
+    ensure!(
+        plain_credential_names(&toml::Value::Table(table.clone())),
+        "the backup names a credential file by path; only plain names are allowed in a backup"
+    );
     let providers = match &backup.oauth {
         Some(text) => crate::auth::oauth::check_text(text)?,
         None => Vec::new(),
