@@ -384,6 +384,10 @@ pub struct HttpConfig {
     /// `POST /api/alert`. Off by default: both have no login yet, so they only
     /// answer loopback, private and similar addresses (see `access.rs`).
     pub allow_public: bool,
+    /// Extra host names the setup page and `POST /api/alert` answer to while there is no
+    /// login. IP addresses, `localhost`, names without a dot and `.lan`, `.local`,
+    /// `.home.arpa` and `.internal` always work (see `access.rs`).
+    pub allowed_hosts: Vec<String>,
 }
 
 impl Default for HttpConfig {
@@ -392,6 +396,7 @@ impl Default for HttpConfig {
             listen: SocketAddr::from(([0, 0, 0, 0], 8787)),
             tls: None,
             allow_public: false,
+            allowed_hosts: Vec::new(),
         }
     }
 }

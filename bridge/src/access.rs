@@ -32,12 +32,15 @@ pub struct Access {
     /// so the address check steps aside.
     login_on: Arc<AtomicBool>,
     logged: Arc<AtomicBool>,
+    /// `[http] allowed_hosts`: names besides the local ones that `Host` may carry.
+    allowed_hosts: Arc<Vec<String>>,
 }
 
 impl Access {
     pub fn new(allow_public: bool) -> Self {
         Self {
             allow_public,
+            allowed_hosts: Arc::default(),
             login_on: Arc::new(AtomicBool::new(false)),
             logged: Arc::new(AtomicBool::new(false)),
         }
@@ -48,6 +51,33 @@ impl Access {
         self.login_on = flag;
         self
     }
+}
+
+impl Access {
+    pub fn with_allowed_hosts(mut self, hosts: Vec<String>) -> Self {
+        self.allowed_hosts = Arc::new(hosts);
+        self
+    }
+}
+
+/// Is `Host` a name of this install? Without it a website whose DNS name is rebound to a LAN address
+/// would pass the `Origin` check, because it sends its own name in both headers. A local name is an IP
+/// address, `localhost`, a name without a dot or one ending in `.lan`, `.local`, `.home.arpa` or `.internal`.
+fn host_is_ours(host: &str, extra: &[String]) -> bool {
+    let host = host.trim().to_ascii_lowercase();
+    let name = match host.strip_prefix('[') {
+        Some(v6) => v6.split(']').next().unwrap_or_default(),
+        None => match host.rsplit_once(':') {
+            Some((name, port)) if port.bytes().all(|b| b.is_ascii_digit()) => name,
+            _ => &host,
+        },
+    };
+    name.parse::<IpAddr>().is_ok()
+        || !name.contains('.')
+        || [".lan", ".local", ".home.arpa", ".internal"]
+            .iter()
+            .any(|suffix| name.ends_with(suffix))
+        || extra.iter().any(|h| h.eq_ignore_ascii_case(name))
 }
 
 /// Is this a local address (see the module comment)?
@@ -102,19 +132,24 @@ pub async fn require_local(State(access): State<Access>, request: Request, next:
         .get::<ConnectInfo<SocketAddr>>()
         .map(|ConnectInfo(addr)| addr.ip());
     let client = peer.and_then(|ip| client_ip(ip, request.headers()));
-    if client.is_some_and(is_local) {
+    let host = request
+        .headers()
+        .get(axum::http::header::HOST)
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or_default();
+    if client.is_some_and(is_local) && host_is_ours(host, &access.allowed_hosts) {
         return next.run(request).await;
     }
     if !access.logged.swap(true, Ordering::Relaxed) {
         warn!(
-            "refused a request to {} from a client that is not on the local network. \
-             Set `[http] allow_public = true` only behind TLS and a proxy with a login",
+            "refused a request to {} from a client or host name that is not local. \
+             Set `[http] allow_public = true` (or `allowed_hosts` for a host name) only behind TLS and a proxy with a login",
             request.uri().path()
         );
     }
     (
         StatusCode::FORBIDDEN,
-        "this address only answers the local network (set [http] allow_public = true to change that)",
+        "this address only answers the local network and local host names (see [http] allow_public and allowed_hosts)",
     )
         .into_response()
 }
