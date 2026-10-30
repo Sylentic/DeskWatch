@@ -314,6 +314,25 @@ fn custom_gpu_names_replace_the_labels_and_detail_can_be_switched_off() {
 }
 
 #[test]
+fn a_custom_name_also_applies_to_a_single_gpu() {
+    let config = Config::from_toml(&CONFIG.replace(
+        "\"node-b:9100\",",
+        "{ instance = \"node-b:9100\", gpu_names = [\"3070\"] },",
+    ))
+    .unwrap()
+    .source
+    .prometheus
+    .remove(0);
+    let answers = Answers {
+        gpu_pct: vec![sample(&[("instance", "node-b:9100")], 50.0)],
+        ..Answers::default()
+    };
+    let stats = host_stats(&config.hosts[1], &answers);
+    assert!(stats.gpus.is_empty());
+    assert_eq!(stats.gpu_label.as_deref(), Some("3070"));
+}
+
+#[test]
 fn one_gpu_adds_no_list() {
     let config = config();
     let answers = Answers {

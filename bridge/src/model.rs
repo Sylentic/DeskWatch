@@ -171,6 +171,10 @@ pub struct StatsData {
     /// `true` when the host's setup says no line under each GPU bar.
     #[serde(skip_serializing_if = "is_false")]
     pub gpu_plain: bool,
+    /// Custom name (setup) of a host's only GPU; hosts with several GPUs
+    /// carry their names in `gpus` instead.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpu_label: Option<String>,
     pub uptime_s: Option<u64>,
     pub net: Option<NetData>,
     /// Pending OS updates and a pending restart, only for hosts that report

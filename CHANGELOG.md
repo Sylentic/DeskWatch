@@ -7,6 +7,11 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **A custom GPU name now also shows for a host with one GPU.** Before, the name from Setup (Hosts, Edit) only
+  appeared on hosts with two or more GPUs. With one GPU it now labels the GPU bar, its temperature and the graph key.
+
 ## [1.0.12]
 
 ### Changed
