@@ -51,7 +51,6 @@
   var running = {};      // source id -> true while its test runs
   var notice = null;     // message after the last save that could not be applied
   var form = null;       // the open add/edit form, or null (see openForm)
-  var confirming = null; // key of the action waiting for its confirm click, or null
   var restarting = null; // { boot, since } while the page waits for a restart to finish
   var SECTIONS = ['sources', 'hosts', 'mqtt', 'dashboard', 'alerts', 'access', 'signin', 'backup', 'bridge', 'secrets'];
   var oauth = null;      // last answer of api/auth/oauth (the Sign-in section)
@@ -68,6 +67,25 @@
   }
 
   function pill(text, cls) { return el('span', 'pill ' + cls, text); }
+
+  // Two columns of cards that each stack on their own, so a short card next
+  // to a tall one leaves no hole. One column on a narrow screen.
+  function columns(left, right) {
+    var box = el('div', 'cols');
+    [left, right].forEach(function (cards) {
+      var col = el('div', 'col');
+      cards.forEach(function (c) { if (c) col.appendChild(c); });
+      box.appendChild(col);
+    });
+    return box;
+  }
+
+  // A green line after something worked, a red one after it failed.
+  function note(n) {
+    var p = el('p', n.error ? 'note bad' : 'note ok', n.error || n.ok);
+    p.setAttribute('role', 'status');
+    return p;
+  }
 
   // Small line icons for buttons, as the shapes they are drawn from (the page
   // never parses markup, see the note at the top).
@@ -232,7 +250,7 @@
       auth: [
         ['token', 'Access token', 'A fine-grained token. Acts as the person who made it.',
          { strings: [], secrets: [['token', 'Token (read-only, fine-grained)', true]] }],
-        ['app', 'GitHub App', 'An app installed on your organisation. Not tied to a person.',
+        ['app', 'GitHub App', 'An app installed on your organization. Not tied to a person.',
          { strings: [['app_id', 'App id', ''], ['installation_id', 'Installation id', '']],
            secrets: [['private_key', 'Private key (the .pem file, pasted)', true]], multiline: ['private_key'] }]
       ]
@@ -254,14 +272,14 @@
                 ['webhook_secret', 'Webhook secret (the same text as in Gitea)', true]]
     },
     azure_devops: {
-      strings: [['organization', 'Organisation (the name after dev.azure.com/)', ''], ['base_url', 'Address (without the organisation)', 'https://dev.azure.com']],
+      strings: [['organization', 'Organization (the name after dev.azure.com/)', ''], ['base_url', 'Address (without the organization)', 'https://dev.azure.com']],
       lists: [['projects', 'Projects, one per line']],
       bools: [['pull_requests', 'Show open pull requests']],
       secrets: [],
       auth: [
         ['pat', 'Personal access token', 'Acts as the person who made the token and stops working when they leave.',
          { strings: [], secrets: [['token', 'Personal access token (read-only)', true]] }],
-        ['entra', 'Entra service principal', 'An app registration that is not tied to a person. Needs a Basic licence in the organisation.',
+        ['entra', 'Entra service principal', 'An app registration that is not tied to a person. Needs a Basic license in the organization.',
          { strings: [['tenant_id', 'Tenant (directory) id', ''], ['client_id', 'Application (client) id', '']],
            secrets: [['client_secret', 'Client secret', true]] }]
       ]
@@ -410,41 +428,47 @@
       mode.strings.forEach(function (x) { authBox.appendChild(textField(x)); });
       mode.secrets.forEach(function (x) { authBox.appendChild(secretField(x)); });
     }
-    spec.strings.forEach(function (x) {
-      if (x[0] === 'container' && authBox) { box.appendChild(authBox); authBox = null; }
-      var i = el('input'); i.value = form.values[x[0]];
-      i.addEventListener('input', function () { form.values[x[0]] = i.value; });
-      var lab = field(x[1], i);
-      if (x[0] === 'container') {
-        var help = el('span', 'muted');
-        help.appendChild(document.createTextNode('Firefox only. The links of this source type open in that container. Needs the add-on '));
-        var a = el('a', null, 'Open external links in a container');
-        a.href = 'https://addons.mozilla.org/firefox/addon/open-url-in-container/';
-        a.target = '_blank'; a.rel = 'noopener noreferrer';
-        help.appendChild(a);
-        help.appendChild(document.createTextNode('. Leave empty for normal links.'));
-        lab.appendChild(help);
-      }
-      box.appendChild(lab);
-    });
-    spec.lists.forEach(function (x) {
-      var t = el('textarea'); t.rows = 4; t.value = form.values[x[0]];
-      t.addEventListener('input', function () { form.values[x[0]] = t.value; });
-      var lab = field(x[1], t);
-      box.appendChild(lab);
-    });
-    (spec.bools || []).forEach(function (x) {
+    function boolField(x) {
       var c = el('input'); c.type = 'checkbox'; c.checked = !!form.values[x[0]];
       c.addEventListener('change', function () { form.values[x[0]] = c.checked; });
       var lab = el('label', 'check'); lab.appendChild(c); lab.appendChild(document.createTextNode(' ' + x[1]));
-      box.appendChild(lab);
+      return lab;
+    }
+    // The order of the form: the on/off switch of the broker first, then the
+    // address and sign-in, then what to watch, and optional extras last.
+    var bools = spec.bools || [];
+    var first = bools.filter(function (x) { return x[0] === 'enabled'; });
+    first.forEach(function (x) { box.appendChild(boolField(x)); });
+    var container = null;
+    spec.strings.forEach(function (x) {
+      if (x[0] === 'container') { container = x; return; }
+      box.appendChild(textField(x));
     });
+    if (authBox) box.appendChild(authBox);
+    spec.lists.forEach(function (x) {
+      var t = el('textarea'); t.rows = 4; t.value = form.values[x[0]];
+      t.addEventListener('input', function () { form.values[x[0]] = t.value; });
+      box.appendChild(field(x[1], t));
+    });
+    bools.forEach(function (x) { if (first.indexOf(x) < 0) box.appendChild(boolField(x)); });
     spec.secrets.forEach(function (x) {
       var i = el('input'); i.type = 'password'; i.autocomplete = 'new-password'; i.spellcheck = false;
       i.placeholder = form.mode === 'edit' ? 'leave empty to keep the current one' : (x[2] ? 'required' : 'optional');
       i.addEventListener('input', function () { form.secrets[x[0]] = i.value; });
       box.appendChild(field(x[1], i));
     });
+    if (container) {
+      var lab = textField(container);
+      var help = el('span', 'muted');
+      help.appendChild(document.createTextNode('Firefox only. The links of this source type open in that container. Needs the add-on '));
+      var a = el('a', null, 'Open external links in a container');
+      a.href = 'https://addons.mozilla.org/firefox/addon/open-url-in-container/';
+      a.target = '_blank'; a.rel = 'noopener noreferrer';
+      help.appendChild(a);
+      help.appendChild(document.createTextNode('. Leave empty for normal links.'));
+      lab.appendChild(help);
+      box.appendChild(lab);
+    }
     card.appendChild(box);
     if (form.result && !form.result.ok) {
       var force = el('button', 'secondary', 'Save anyway');
@@ -467,28 +491,6 @@
       card.appendChild(list);
       list.scrollIntoView({ block: 'nearest' });
     }
-  }
-
-  // ---- Confirm step: an inline box instead of a browser dialog ----
-
-  function ask(key) { confirming = key; if (last) render(last); }
-  function cancelAsk() { confirming = null; if (last) render(last); }
-
-  // A box with a question and Yes/Cancel, drawn in place of the action's button.
-  function confirmBox(key, question, detail, yes, onYes) {
-    var box = el('div', 'confirm');
-    box.setAttribute('role', 'alertdialog');
-    box.appendChild(el('b', null, question));
-    if (detail) box.appendChild(el('p', 'muted', detail));
-    var b = el('div', 'buttons');
-    var y = el('button', 'secondary danger', yes);
-    y.type = 'button';
-    y.addEventListener('click', function () { confirming = null; onYes(); });
-    var n = el('button', 'secondary', 'Cancel');
-    n.type = 'button'; n.addEventListener('click', cancelAsk);
-    b.appendChild(y); b.appendChild(n);
-    box.appendChild(b);
-    return box;
   }
 
   // Do a change on the bridge, show what went wrong, then reload the status.
@@ -520,10 +522,14 @@
     });
   }
 
+  function confirmRestart() {
+    confirmModal('Restart the bridge now?', 'The dashboard and the panel are offline for a few seconds.', 'Yes, restart', restartBridge);
+  }
+
   function restartButton(label) {
     var b = el('button', 'restart', label || 'Restart bridge');
     b.type = 'button';
-    b.addEventListener('click', function () { ask('restart'); });
+    b.addEventListener('click', confirmRestart);
     return b;
   }
 
@@ -576,16 +582,21 @@
     if (s.fields && s.fields.container) row(dl, 'Firefox container', s.fields.container);
     row(dl, 'Defined in', s.origin === 'data_folder' ? 'data folder (sources.toml)' : 'bridge.toml');
     s.credentials.forEach(function (c) {
-      var v = el('span');
+      // The file name only: a mounted credential can have a long path, which
+      // is in the tooltip.
+      var v = el('span', 'cred');
       v.appendChild(credState(c));
-      v.appendChild(document.createTextNode(' ' + c.name));
-      row(dl, c.label, v);
+      var file = el('code', null, c.name.split(/[\\/]/).pop());
+      file.title = c.name;
+      v.appendChild(file);
+      row(dl, c.label.charAt(0).toUpperCase() + c.label.slice(1), v);
     });
     card.appendChild(dl);
     if (s.hidden) {
       card.appendChild(el('p', 'muted', 'Switched off from this page. It is not running and not on the dashboard. bridge.toml is untouched.'));
     } else {
-      if (!s.running) card.appendChild(el('p', 'muted', 'Saved, but not running. Fix the details and save again, or restart the bridge.'));
+      if (!s.running) card.appendChild(el('p', 'muted', s.origin === 'data_folder' ? 'Saved, but not running. Fix the details and save again, or restart the bridge.'
+        : 'Not running. Check its block in bridge.toml, or restart the bridge.'));
       card.appendChild(testBlock(s.id));
     }
     if (s.editable) {
@@ -648,6 +659,7 @@
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
     }).then(function (j) {
+      var keep = hostsState.keep;
       hostsState.data = j; hostsState.error = null;
       // Ticks and names from the config; everything else found starts off.
       hostsState.draft = {}; hostsState.order = {};
@@ -655,13 +667,21 @@
         var rows = {};
         s.found.forEach(function (f) { rows[f.instance] = { on: false, name: defaultHostName(f.instance), show: null, gpu_names: [], gpu_detail: true }; });
         s.configured.forEach(function (c) { rows[c.instance] = { on: true, name: c.name, show: c.show, gpu_names: c.gpu_names || [], gpu_detail: c.gpu_detail !== false }; });
-        hostsState.draft[s.name] = rows;
         // The saved order first (that is the order on the dashboard), then
         // what is only found, so a machine ticked later lands at the end.
         var order = s.configured.map(function (c) { return c.instance; });
         s.found.forEach(function (f) { if (order.indexOf(f.instance) < 0) order.push(f.instance); });
+        // After the Save of one host's pop-up, the other rows keep what was
+        // changed on the page but not saved yet.
+        var k = keep && keep.rows && keep.order ? keep : null;
+        if (k && k.source === s.name) {
+          Object.keys(k.rows).forEach(function (i) { if (i !== k.only && rows[i]) rows[i] = k.rows[i]; });
+          order = k.order.filter(function (i) { return rows[i]; }).concat(order.filter(function (i) { return k.order.indexOf(i) < 0; }));
+        }
+        hostsState.draft[s.name] = rows;
         hostsState.order[s.name] = order;
       });
+      hostsState.keep = null;
     }).catch(function () {
       hostsState.error = 'Cannot read the hosts from the bridge.';
     }).then(function () {
@@ -879,21 +899,32 @@
       if (gpuDetail) { row.gpu_names = gpuNames.map(function (t) { return t.value.trim(); }); row.gpu_detail = gpuDetail.checked; }
       row.on = true;
       closeModal();
-      saveHosts(s);
+      saveHosts(s, instance);
     });
   }
 
-  function saveHosts(s) {
+  // Save the ticks, names and order of source `s`. With `only` (the Save of
+  // one host's pop-up) only that host changes: the other rows are sent as they
+  // are saved, and their unsaved ticks and order stay on the page.
+  function saveHosts(s, only) {
     var rows = hostsState.draft[s.name], list = [];
-    (hostsState.order[s.name] || []).forEach(function (instance) {
-      var r = rows[instance];
-      if (r.on) list.push({ instance: instance, name: r.name, show: r.show, gpu_names: r.gpu_names, gpu_detail: r.gpu_detail });
-    });
+    var item = function (instance, r) { return { instance: instance, name: r.name, show: r.show, gpu_names: r.gpu_names || [], gpu_detail: r.gpu_detail !== false }; };
+    var saved = (hostsState.data.sources.filter(function (x) { return x.name === s.name; })[0] || { configured: [] }).configured;
+    if (only) {
+      saved.forEach(function (c) { list.push(c.instance === only ? item(only, rows[only]) : item(c.instance, c)); });
+      if (!saved.some(function (c) { return c.instance === only; })) list.push(item(only, rows[only]));
+    } else {
+      (hostsState.order[s.name] || []).forEach(function (instance) {
+        if (rows[instance].on) list.push(item(instance, rows[instance]));
+      });
+    }
+    var keepDraft = only ? { source: s.name, rows: rows, order: hostsState.order[s.name].slice(), only: only } : null;
     hostsState.saving = true; hostsState.message = null; render(last);
     post('api/setup/hosts', { source: s.name, hosts: list }).then(function (j) {
       hostsState.saving = false;
       if (j && j.error) hostsState.message = { bad: true, text: j.error };
       else hostsState.message = { bad: false, text: j.applied ? 'Saved. The dashboard shows the change within a few seconds.' : 'Saved. ' + (applyNotice(j) || 'Restart the bridge to apply it.') };
+      hostsState.keep = keepDraft && !(j && j.error) ? keepDraft : null;
       hostsState.loaded = false;
       load();
     });
@@ -902,7 +933,7 @@
   function mqttSection(d) {
     var m = d.mqtt, box = el('div');
     var info = el('section', 'card');
-    var h = el('h2', null, 'MQTT broker ');
+    var h = el('h2', null, 'Connection ');
     if (m.enabled) h.appendChild(pill(m.connected ? 'connected' : 'not connected', m.connected ? 'ok' : 'bad'));
     else h.appendChild(pill('off', 'muted'));
     info.appendChild(h);
@@ -924,21 +955,21 @@
       b.appendChild(chg);
       if (d.mqtt.has_login) {
         var rl = el('button', 'secondary danger', 'Remove login');
-        rl.type = 'button'; rl.addEventListener('click', function () { ask('mqtt:login'); });
+        rl.type = 'button'; rl.addEventListener('click', function () {
+          confirmModal('Remove the broker login?', 'The login name is cleared and the password saved in the data folder is deleted. Applies after a restart.',
+            'Yes, remove login', function () { change('api/setup/mqtt/delete', { what: 'login' }); });
+        });
         b.appendChild(rl);
       }
       if (m.removable) {
         var rs = el('button', 'secondary danger', 'Reset to bridge.toml');
-        rs.type = 'button'; rs.addEventListener('click', function () { ask('mqtt:settings'); });
+        rs.type = 'button'; rs.addEventListener('click', function () {
+          confirmModal('Remove everything saved here for the broker?', 'Host, port, TLS, login and the saved password go; bridge.toml decides again. Applies after a restart.',
+            'Yes, reset', function () { change('api/setup/mqtt/delete', { what: 'settings' }); });
+        });
         b.appendChild(rs);
       }
       info.appendChild(b);
-      if (confirming === 'mqtt:login') info.appendChild(confirmBox('mqtt:login', 'Remove the broker login?',
-        'The login name is cleared and the password saved in the data folder is deleted. Applies after a restart.', 'Yes, remove login',
-        function () { change('api/setup/mqtt/delete', { what: 'login' }); }));
-      if (confirming === 'mqtt:settings') info.appendChild(confirmBox('mqtt:settings', 'Remove everything saved here for the broker?',
-        'Host, port, TLS, login and the saved password go; bridge.toml decides again. Applies after a restart.', 'Yes, reset',
-        function () { change('api/setup/mqtt/delete', { what: 'settings' }); }));
     } else {
       info.appendChild(el('p', 'muted', 'Give the bridge a data folder to change the broker settings here.'));
     }
@@ -946,33 +977,48 @@
     return box;
   }
 
-  // How the dashboard's built-in layout shows the hosts. Applies after a restart.
+  // How the dashboard's built-in layout shows the hosts, as two tiles to pick from.
+  var hostViewChoice = null; // the tile picked but not saved yet, kept across redraws
   function dashboardSection(d) {
     var card = el('section', 'card');
-    card.appendChild(el('h2', null, 'Dashboard hosts'));
+    var head = el('div', 'cardhead');
+    var t = el('div');
+    t.appendChild(el('h2', null, 'Host panel'));
+    t.appendChild(el('p', 'muted', 'How the built-in layout shows your hosts. Panels set in bridge.toml stay as they are.'));
+    head.appendChild(t);
+    card.appendChild(head);
     if (!d.kiosk) {
       card.appendChild(el('p', 'muted', 'The dashboard is off ([kiosk] enabled in bridge.toml).'));
       return card;
     }
-    var choice = el('select'); choice.dataset.keep = 'host-view';
-    [['detailed', 'Detailed: a list of hosts with the chosen host in detail next to it (tap a host to switch)'],
-     ['compact', 'Compact: one table of all hosts, with uptime and network rates']].forEach(function (o) {
-      var opt = el('option', null, o[1]);
-      opt.value = o[0];
-      opt.selected = d.host_view === o[0];
-      choice.appendChild(opt);
+    var picked = hostViewChoice || d.host_view;
+    var tiles = el('div', 'tiles');
+    [['detailed', 'Detailed', 'A list of hosts with the chosen host in detail next to it. Tap a host to switch.'],
+     ['compact', 'Compact', 'One table of all hosts, with uptime and network rates.']].forEach(function (o) {
+      var tile = el('label', 'tile' + (picked === o[0] ? ' on' : ''));
+      var r = el('input'); r.type = 'radio'; r.name = 'host-view'; r.value = o[0]; r.checked = picked === o[0];
+      r.disabled = !d.host_view_editable;
+      r.addEventListener('change', function () { hostViewChoice = o[0]; render(last); });
+      var text = el('span'); text.appendChild(el('b', null, o[1])); text.appendChild(el('small', null, o[2]));
+      tile.appendChild(r); tile.appendChild(text);
+      tiles.appendChild(tile);
     });
-    choice.disabled = !d.host_view_editable;
-    card.appendChild(field('Host panel', choice));
+    card.appendChild(tiles);
     if (d.host_view_editable) {
-      var save = el('button', 'secondary', 'Save');
+      var save = el('button', null, 'Save');
       save.type = 'button';
-      save.addEventListener('click', function () { change('api/setup/kiosk', { host_view: choice.value }); });
+      save.disabled = picked === d.host_view;
+      save.addEventListener('click', function () {
+        post('api/setup/kiosk', { host_view: picked }).then(function (j) {
+          notice = (j && j.error) || null;
+          if (!notice) hostViewChoice = null;
+          load();
+        });
+      });
       var line = el('div', 'buttons'); line.appendChild(save); card.appendChild(line);
+    } else {
+      card.appendChild(el('p', 'muted', 'Give the bridge a data folder to change it here.'));
     }
-    card.appendChild(el('p', 'muted', 'Only for the built-in layout; panels set in bridge.toml stay as they are. '
-      + (d.host_view_editable ? 'Needs a restart of the bridge.' : 'Give the bridge a data folder to change it here.')));
-
     return card;
   }
 
@@ -994,40 +1040,51 @@
     return c;
   }
 
-  // Ticker settings (they apply after a restart), a fixed test alert, and where
-  // alerts can come from. The test button can only raise or clear its own alert.
+  // The alert settings (they apply to open dashboards at once), a fixed test
+  // alert, and where alerts can come from. The test button can only raise or
+  // clear its own alert.
+  var alertsError = null; // why the last Save of the alert settings was refused
   function alertsSection(d) {
-    var a = d.alerts, box = el('div');
-    var two = el('div', 'two');
+    var a = d.alerts;
     var card = el('section', 'card');
-    card.appendChild(el('h2', null, 'Alerts in the header'));
-    var ticker = checkbox(a.ticker, !a.editable), source = checkbox(a.show_source, !a.editable);
-    var dismiss = checkbox(a.dismiss, !a.editable), httpInput = checkbox(a.http_input, !a.editable);
-    var failedPill = checkbox(a.failed_pill, !a.editable), failedAlerts = checkbox(a.failed_as_alerts, !a.editable);
+    card.appendChild(el('h2', null, 'Alert settings'));
+    var ticker = keep(checkbox(a.ticker, !a.editable), 'alerts-ticker'), source = keep(checkbox(a.show_source, !a.editable), 'alerts-source');
+    var dismiss = keep(checkbox(a.dismiss, !a.editable), 'alerts-dismiss'), httpInput = keep(checkbox(a.http_input, !a.editable), 'alerts-http');
+    var failedPill = keep(checkbox(a.failed_pill, !a.editable), 'alerts-failed-pill'), failedAlerts = keep(checkbox(a.failed_as_alerts, !a.editable), 'alerts-failed-list');
     var max = el('input'); max.type = 'number'; max.min = '1'; max.max = '50'; max.value = String(a.max_active); max.disabled = !a.editable;
-    max.className = 'narrow';
+    max.className = 'narrow'; keep(max, 'alerts-max');
+    card.appendChild(el('h3', 'subhead', 'Header'));
     card.appendChild(settingRow('Show the latest alert', 'The most urgent alert is a coloured pill in the header bar of the dashboard', ticker));
     card.appendChild(settingRow('Show the source', 'Adds "via homeassistant" behind each alert', source));
     card.appendChild(settingRow('Most alerts kept', 'When there are more, the least urgent and oldest drops first (1 to 50)', max));
     card.appendChild(settingRow('Dismiss on the dashboard', 'A Dismiss button per alert in the Alerts menu. It clears the alert on every screen', dismiss));
+    card.appendChild(el('h3', 'subhead', 'Failed runs'));
     card.appendChild(settingRow('Show the Failed chip in the header', 'The red "N failed" chip next to Open PRs. The red notice for the latest failed run stays; with more than one run it unfolds into a list of them, each linking to its pipeline', failedPill));
-    card.appendChild(settingRow('Also show failed runs in the Alerts box', 'Each failed run that is not dismissed is listed as a critical alert, in the Alerts box and the Alerts menu. Dismissing it dismisses the run', failedAlerts));
-    card.appendChild(settingRow('Accept alerts on the web address', 'POST /api/alert with the same JSON as MQTT. No login: for a trusted network only', httpInput));
+    card.appendChild(settingRow('Also list failed runs as alerts', 'Each failed run that is not dismissed is listed as a critical alert, in the Alerts box and the Alerts menu. Dismissing it dismisses the run', failedAlerts));
+    card.appendChild(el('h3', 'subhead', 'Web address'));
+    card.appendChild(settingRow('Accept alerts on the web address', 'POST /api/alert with the same JSON as MQTT. Without a login anyone on your network can send one; with a login it needs an alert key (Access)', httpInput));
     if (a.editable) {
       var save = el('button', null, 'Save');
       save.type = 'button';
       save.addEventListener('click', function () {
+        var n = Number(max.value);
+        if (!(n >= 1 && n <= 50 && Math.floor(n) === n)) { alertsError = 'Most alerts kept must be a whole number from 1 to 50.'; render(last); return; }
         post('api/setup/alerts', {
           ticker: ticker.checked, show_source: source.checked,
           dismiss: dismiss.checked, http_input: httpInput.checked,
-          failed_pill: failedPill.checked, failed_as_alerts: failedAlerts.checked, max_active: parseInt(max.value, 10) || 0
-        }).then(function (j) { notice = (j && j.error) || null; load(); });
+          failed_pill: failedPill.checked, failed_as_alerts: failedAlerts.checked, max_active: n
+        }).then(function (j) {
+          alertsError = (j && j.error) || null;
+          if (!alertsError) forget('alerts-');
+          load();
+        });
       });
       var line = el('div', 'buttons'); line.appendChild(save); card.appendChild(line);
+      if (alertsError) { var e = el('p', 'err', alertsError); e.setAttribute('role', 'alert'); card.appendChild(e); }
+      card.appendChild(el('p', 'muted small', 'Open dashboards pick up a saved change within a few seconds.'));
+    } else {
+      card.appendChild(el('p', 'muted small', 'Give the bridge a data folder to change these here.'));
     }
-    card.appendChild(el('p', 'muted', a.editable ? 'Needs a restart of the bridge.'
-      : 'Give the bridge a data folder to change these here.'));
-    two.appendChild(card);
 
     var tryIt = el('section', 'card');
     tryIt.appendChild(el('h2', null, 'Try it'));
@@ -1038,18 +1095,16 @@
     send.disabled = clear.disabled = !a.test_available;
     function test(action) {
       post('api/setup/alerts/test', { action: action }).then(function (j) {
-        alertNote = j && j.error ? j.error : (action === 'send'
-          ? 'Test alert sent. Look at the header of the dashboard (' + (a.ticker ? 'the pill next to the badges' : 'the header pill is switched off') + ').' : 'Test alert cleared.');
+        alertNote = j && j.error ? { error: j.error } : { ok: action === 'send'
+          ? 'Test alert sent. Look at the header of the dashboard (' + (a.ticker ? 'the pill next to the badges' : 'the header pill is switched off') + ').' : 'Test alert cleared.' };
         if (last) render(last);
       });
     }
     send.addEventListener('click', function () { test('send'); });
     clear.addEventListener('click', function () { test('clear'); });
     var buttons = el('div', 'buttons'); buttons.appendChild(send); buttons.appendChild(clear); tryIt.appendChild(buttons);
-    if (alertNote) { var n = el('p', null, alertNote); n.setAttribute('role', 'status'); tryIt.appendChild(n); }
+    if (alertNote) tryIt.appendChild(note(alertNote));
     if (!d.kiosk) tryIt.appendChild(el('p', 'muted', 'The dashboard is off ([kiosk] enabled in bridge.toml), so there is no header to look at.'));
-    two.appendChild(tryIt);
-    box.appendChild(two);
 
     var src = el('section', 'card');
     src.appendChild(el('h2', null, 'Where alerts come from'));
@@ -1059,17 +1114,15 @@
     else if (!a.mqtt_enabled) mqtt = pill('MQTT is off', 'muted');
     else mqtt = pill(a.mqtt_connected ? 'broker connected' : 'no broker connection', a.mqtt_connected ? 'ok' : 'warn');
     row(dl, 'MQTT', mqtt);
-    row(dl, 'Topic', 'deskpanel/alert (Home Assistant blueprints or any script, see docs/home-assistant.md)');
+    row(dl, 'Topic', el('code', null, 'deskpanel/alert'));
     row(dl, 'Web address', a.enabled ? pill(a.http_input ? 'on: POST /api/alert' : 'off', a.http_input ? 'ok' : 'muted') : pill('alerts off ([alerts] enabled in bridge.toml)', 'muted'));
-    row(dl, 'Example', 'curl -X POST http://<bridge>:8787/api/alert -d \'{"v":2,"id":"x","severity":"warning","title":"Hello"}\' (see docs/home-assistant.md)');
     src.appendChild(dl);
-    src.appendChild(el('p', 'muted', 'Failed pipeline runs count in the Failed chip. Switch on "Also show failed runs in the Alerts box" above to list them as alerts too.'));
-    box.appendChild(src);
-    return box;
+    src.appendChild(el('p', 'muted small', 'Home Assistant blueprints or any script can send them; see docs/home-assistant.md for examples. '
+      + 'Failed pipeline runs count in the Failed chip; switch on "Also list failed runs as alerts" to list them as alerts too.'));
+    return columns([card], [tryIt, src]);
   }
 
   function bridgeSection(d) {
-    var box = el('div', 'two');
     var info = el('section', 'card');
     info.appendChild(el('h2', null, 'Bridge'));
     var dl = el('dl');
@@ -1084,14 +1137,11 @@
     row(dl, 'Web listener', d.http_listen);
     row(dl, 'Data folder', d.data_folder || 'not set (nothing can be saved from here yet)');
     info.appendChild(dl);
-    box.appendChild(info);
 
     var card = el('section', 'card');
     card.appendChild(el('h2', null, 'Restart'));
     if (d.can_restart) {
       var line = el('div', 'buttons'); line.appendChild(restartButton()); card.appendChild(line);
-      if (confirming === 'restart') card.appendChild(confirmBox('restart', 'Restart the bridge now?',
-        'The dashboard and the panel are offline for a few seconds.', 'Yes, restart', restartBridge));
       card.appendChild(el('p', 'muted', 'The bridge says goodbye to the broker and exits; the container or service manager has to start it again '
         + '(Docker with restart: unless-stopped or on-failure, as in the compose files in deploy/; systemd with Restart=on-failure). '
         + 'Without a restart policy it stays stopped and has to be started by hand. This page cannot restart the Docker host or pull a new image.'));
@@ -1106,31 +1156,32 @@
       p.appendChild(document.createTextNode(' in bridge.toml and restart once by hand (for Docker: docker compose restart deskwatch-bridge). It is off by default because it stops the bridge.'));
       card.appendChild(p);
     }
-    box.appendChild(card);
 
     var chk = el('section', 'card');
     chk.appendChild(el('h2', null, 'Update check'));
-    var check = checkbox(d.updates.check, !d.updates.editable);
+    var check = keep(checkbox(d.updates.check, !d.updates.editable), 'updates-check');
     chk.appendChild(settingRow('Tell me about new versions', 'Once a day the bridge asks GitHub for the latest release number. Nothing about this install is sent. Turn off for a server without internet', check));
     if (d.updates.editable) {
       var usave = el('button', null, 'Save');
       usave.type = 'button';
       usave.addEventListener('click', function () {
-        post('api/setup/updates', { check: check.checked }).then(function (j) { notice = (j && j.error) || null; load(); });
+        post('api/setup/updates', { check: check.checked }).then(function (j) {
+          notice = (j && j.error) || null;
+          if (!notice) forget('updates-');
+          load();
+        });
       });
       var uline = el('div', 'buttons'); uline.appendChild(usave); chk.appendChild(uline);
     }
-    chk.appendChild(el('p', 'muted', d.updates.editable ? 'Needs a restart of the bridge.'
+    chk.appendChild(el('p', 'muted small', d.updates.editable ? 'Applies after a restart of the bridge.'
       : 'Give the bridge a data folder to change this here, or set check = false under [updates] in bridge.toml.'));
-    box.appendChild(chk);
-    return box;
+    return columns([info, chk], [card]);
   }
 
 
   // ---- Backup: export and import of the settings ----
   var backup = { withSecrets: false };
   function backupSection(d) {
-    var box = el('div', 'two');
     var out = el('section', 'card');
     out.appendChild(el('h2', null, 'Export'));
     out.appendChild(el('p', 'muted', 'Download your settings as one file: sources, broker, alerts, dashboard layouts and sign-in rules. '
@@ -1149,8 +1200,7 @@
     var go = el('button', null, 'Download backup'); go.type = 'button'; go.disabled = !d.can_edit;
     go.addEventListener('click', function () { backup.withSecrets ? exportSealed() : exportPlain(); });
     var line = el('div', 'buttons'); line.appendChild(go); out.appendChild(line);
-    out.appendChild(el('p', 'muted', 'Never included: administrator and viewer passwords, API keys and sessions. Set those up again on the new install.'));
-    box.appendChild(out);
+    out.appendChild(el('p', 'muted small', 'Never included: administrator and viewer passwords, API keys and sessions. Set those up again on the new install.'));
 
     var inn = el('section', 'card');
     inn.appendChild(el('h2', null, 'Import'));
@@ -1160,8 +1210,8 @@
     var pick = el('button', 'secondary', 'Choose backup file…'); pick.type = 'button'; pick.disabled = !d.can_edit;
     pick.addEventListener('click', function () { file.click(); });
     var l2 = el('div', 'buttons'); l2.appendChild(pick); inn.appendChild(l2);
-    inn.appendChild(el('p', 'muted', 'Importing replaces your sources, alerts and layouts with the ones in the file. The bridge needs a restart afterwards.'));
-    box.appendChild(inn);
+    inn.appendChild(el('p', 'muted small', 'Importing replaces your sources, alerts and layouts with the ones in the file. The bridge needs a restart afterwards.'));
+    var box = columns([out], [inn]);
     if (!d.can_edit) {
       var none = el('p', 'muted', 'Give the bridge a data folder to make or restore a backup here ([data] dir, see docs/data-dir.md).');
       var wrap = el('div'); wrap.appendChild(none); wrap.appendChild(box); return wrap;
@@ -1261,34 +1311,36 @@
   }
 
   function secretsSection(d) {
-    var card = el('section', 'card');
-    card.appendChild(el('h2', null, 'Stored secrets'));
+    var box = el('div');
     if (!d.can_edit) {
-      card.appendChild(el('p', 'muted', 'Without a data folder nothing is stored by the bridge.'));
-      return card;
+      box.appendChild(el('p', 'muted lead', 'Without a data folder nothing is stored by the bridge.'));
+      return box;
     }
-    card.appendChild(el('p', 'muted', 'Files in the data folder\'s credentials folder. Values are never shown. A secret that is in use goes away when you remove its source or login; one that nothing uses can be deleted here.'));
+    box.appendChild(el('p', 'muted lead', 'Files in the data folder\'s credentials folder. Values are never shown. A secret that is in use goes away when you remove its source or login; one that nothing uses can be deleted here.'));
+    var card = el('section', 'card');
     if (!d.secrets.length) card.appendChild(el('p', 'muted', 'Nothing is stored.'));
     d.secrets.forEach(function (s) {
       var line = el('div', 'secret');
       var left = el('span');
-      left.appendChild(document.createTextNode(s.name));
-      left.appendChild(el('br'));
-      left.appendChild(el('small', null, s.used_by ? 'used by ' + s.used_by : 'not used by anything'));
+      left.appendChild(el('code', null, s.name));
+      left.appendChild(el('small', null, s.used_by ? 'Used by ' + s.used_by : 'Not used by anything'));
       line.appendChild(left);
       if (s.used_by) {
-        line.appendChild(el('small', null, 'in use'));
+        line.appendChild(pill('in use', 'muted'));
       } else {
-        var del = el('button', 'secondary danger', 'Delete');
-        del.type = 'button'; del.addEventListener('click', function () { ask('secret:' + s.name); });
-        line.appendChild(del);
+        var acts = el('div', 'rowacts');
+        var del = iconButton('trash', 'Delete', 'danger');
+        del.addEventListener('click', function () {
+          confirmModal('Delete ' + s.name + '?', 'The file is deleted from the data folder. This cannot be undone.', 'Yes, delete',
+            function () { change('api/setup/secret/delete', { name: s.name }); });
+        });
+        acts.appendChild(del);
+        line.appendChild(acts);
       }
       card.appendChild(line);
-      if (confirming === 'secret:' + s.name) card.appendChild(confirmBox('secret:' + s.name, 'Delete ' + s.name + '?',
-        'The file is deleted from the data folder. This cannot be undone.', 'Yes, delete',
-        function () { change('api/setup/secret/delete', { name: s.name }); }));
     });
-    return card;
+    box.appendChild(card);
+    return box;
   }
 
   function loadAccess() {
@@ -1327,7 +1379,7 @@
     var f = el('form', 'accessform');
     if (title) f.appendChild(el('h3', null, title));
     fields.forEach(function (x) { f.appendChild(x); });
-    var b = el('button', 'secondary', button); b.type = 'submit';
+    var b = el('button', null, button); b.type = 'submit';
     f.appendChild(b);
     f.addEventListener('submit', function (ev) { ev.preventDefault(); onSubmit(f); });
     return f;
@@ -1337,8 +1389,7 @@
     var card = el('section', 'card');
     if (!access) { loadAccess(); card.appendChild(el('p', 'muted', 'Loading…')); return card; }
     if (accessNote) {
-      var n = el('p', accessNote.error ? 'err' : 'banner', accessNote.error || accessNote.ok);
-      n.setAttribute('role', 'status'); card.appendChild(n);
+      card.appendChild(note(accessNote));
       if (accessNote.key) {
         card.appendChild(el('p', 'muted', 'Copy this key now. It is shown once and cannot be read again:'));
         var code = el('code', null, accessNote.key); code.style.wordBreak = 'break-all';
@@ -1696,14 +1747,11 @@
     var card = el('section', 'card');
     if (!oauth) { loadOauth(); card.appendChild(el('p', 'muted', 'Loading…')); return card; }
     if (oauth.unavailable) {
-      card.appendChild(el('p', 'muted', 'Only the administrator can change the sign-in providers, and a login password must be set first (see Access).'));
+      card.appendChild(el('p', 'muted', 'Only the administrator can change the sign-in options, and a login password must be set first (see Access).'));
       return card;
     }
     var box = el('div');
-    if (oauthNote) {
-      var n = el('p', oauthNote.error ? 'err' : 'banner', oauthNote.error || oauthNote.ok);
-      n.setAttribute('role', 'status'); box.appendChild(n);
-    }
+    if (oauthNote) box.appendChild(note(oauthNote));
     box.appendChild(el('p', 'muted lead', 'Let people sign in with GitHub or Microsoft. Nobody gets in by default: list who is allowed. Someone who matches an administrator rule is an administrator, an operator rule can also dismiss alerts and failed runs, and anyone else who is allowed can only look. The local password always keeps working.'));
 
     var addr = el('section', 'card');
@@ -1720,7 +1768,7 @@
     var g = oauth.github, m = oauth.microsoft, two = el('div', 'two');
     two.appendChild(providerCard('github', 'GitHub', 'GH', g, g ? [
       ['Client ID', g.client_id], ['Client secret', g.secret_set ? 'set' : 'missing'],
-      ['May sign in', who([count(g.users, 'user', 'users'), count(g.orgs, 'organisation', 'organisations'), count(g.teams, 'team', 'teams')])],
+      ['May sign in', who([count(g.users, 'user', 'users'), count(g.orgs, 'organization', 'organizations'), count(g.teams, 'team', 'teams')])],
       ['Operators', who([count(g.operator_users, 'user', 'users'), count(g.operator_teams, 'team', 'teams')])],
       ['Administrators', who([count(g.admin_users, 'user', 'users'), count(g.admin_teams, 'team', 'teams')])]
     ] : [], githubModal));
@@ -1759,11 +1807,11 @@
     var gsec = input('password', 'g_secret', 'new-password'); gsec.placeholder = g && g.secret_set ? 'set, leave empty to keep' : '';
     app.appendChild(labelled('Client ID', gid));
     app.appendChild(labelled('Client secret (never shown again)', gsec));
-    var allow = group('Who may sign in', 'One per line. Organisations and teams only work when the organisation approves this OAuth app (Organization settings, Third-party access).');
+    var allow = group('Who may sign in', 'One per line. Organizations and teams only work when the organization approves this OAuth app (Organization settings, Third-party access).');
     var gUsers = textarea('g_users', 2, g && g.users), gOrgs = textarea('g_orgs', 2, g && g.orgs), gTeams = textarea('g_teams', 2, g && g.teams);
     allow.appendChild(labelled('GitHub users', gUsers));
-    allow.appendChild(labelled('Organisations', gOrgs));
-    allow.appendChild(labelled('Teams (organisation/team)', gTeams));
+    allow.appendChild(labelled('Organizations', gOrgs));
+    allow.appendChild(labelled('Teams (organization/team)', gTeams));
     var roles = group('Roles', 'Everyone else who may sign in is a viewer.');
     var gOU = textarea('g_ou', 2, g && g.operator_users), gOT = textarea('g_ot', 2, g && g.operator_teams);
     var gAU = textarea('g_au', 2, g && g.admin_users), gAT = textarea('g_at', 2, g && g.admin_teams);
@@ -1813,28 +1861,33 @@
     return SECTIONS.indexOf(id) >= 0 ? id : 'sources';
   }
 
-  // The page is redrawn every few seconds. A drop-down marked with
-  // `data-keep` that the user changed but did not save yet keeps its choice
-  // across a redraw, instead of jumping back to the first or saved value.
-  // (Drop-downs that save on change, such as a user's role, are not marked.)
+  // The page is redrawn every few seconds. A field marked with `keep` (a
+  // check box, a number) or a drop-down marked with `data-keep` that the user
+  // changed but did not save yet keeps its value across a redraw, instead of
+  // jumping back to the saved value. (Drop-downs that save on change, such as
+  // a user's role, are not marked.)
+  var kept = {};
+  function keep(input, key) { input.dataset.keep = key; return input; }
+  function forget(prefix) { Object.keys(kept).forEach(function (k) { if (k.indexOf(prefix) === 0) delete kept[k]; }); }
+  function valueOf(i) { return i.type === 'checkbox' ? (i.checked ? '1' : '') : i.value; }
   function keptChoices() {
-    var kept = {};
-    app.querySelectorAll('select[data-keep]').forEach(function (s) {
-      if (s.value !== s.dataset.initial) kept[s.dataset.keep] = s.value;
+    app.querySelectorAll('[data-keep]').forEach(function (i) {
+      var v = valueOf(i);
+      if (v !== i.dataset.initial) kept[i.dataset.keep] = v; else delete kept[i.dataset.keep];
     });
-    return kept;
   }
-  function restoreChoices(kept) {
-    app.querySelectorAll('select[data-keep]').forEach(function (s) {
-      var want = kept[s.dataset.keep];
-      var has = want != null && Array.prototype.some.call(s.options, function (o) { return o.value === want; });
-      s.dataset.initial = s.value;
-      if (has && !s.disabled) s.value = want;
+  function restoreChoices() {
+    app.querySelectorAll('[data-keep]').forEach(function (i) {
+      var want = kept[i.dataset.keep];
+      i.dataset.initial = valueOf(i);
+      if (want == null || i.disabled) return;
+      if (i.type === 'checkbox') i.checked = want === '1';
+      else if (i.tagName !== 'SELECT' || Array.prototype.some.call(i.options, function (o) { return o.value === want; })) i.value = want;
     });
   }
 
   function render(d) {
-    var kept = keptChoices();
+    keptChoices();
     last = d;
     document.getElementById('build').textContent = 'version ' + d.build;
     document.getElementById('dashboard-link').hidden = !d.kiosk;
@@ -1856,9 +1909,6 @@
       }
     }
     if (banner) { banner.setAttribute('role', 'status'); app.appendChild(banner); }
-    if (confirming === 'restart' && section !== 'bridge') {
-      app.appendChild(confirmBox('restart', 'Restart the bridge now?', 'The dashboard and the panel are offline for a few seconds.', 'Yes, restart', restartBridge));
-    }
 
     var layout = el('div', 'sidebar');
     var nav = el('nav', 'side');
@@ -1879,7 +1929,8 @@
       nav.appendChild(a);
     }
     layout.appendChild(nav);
-    var content = el('div', 'content');
+    // Sections with one small card stay narrow instead of a long thin strip.
+    var content = el('div', 'content' + (['mqtt', 'dashboard', 'secrets'].indexOf(section) >= 0 ? ' narrow' : ''));
     var head = el('div', 'sectionhead');
     head.appendChild(el('h2', 'sectiontitle', TITLES[section]));
     if (section === 'sources' && d.can_edit) {
@@ -1892,10 +1943,10 @@
                            access: accessSection, signin: signinSection, backup: backupSection, bridge: bridgeSection, secrets: secretsSection })[section](d));
     layout.appendChild(content);
     app.appendChild(layout);
-    restoreChoices(kept);
+    restoreChoices();
   }
 
-  window.addEventListener('hashchange', function () { closeModal(); form = null; confirming = null; if (last) render(last); });
+  window.addEventListener('hashchange', function () { closeModal(); form = null; notice = null; if (last) render(last); });
 
   function load() {
     clearTimeout(timer);

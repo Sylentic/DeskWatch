@@ -7,10 +7,29 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **The setup page is tidier.** Cards no longer repeat the section title, two-column sections stack their cards
+  without empty gaps, small sections stay narrow, Save buttons look the same everywhere, and every "are you sure?"
+  question is a pop-up. Source cards show the credential file name instead of its full path, the add-source form asks
+  for the repositories before the optional Firefox container, and the broker form starts with "Connect to the broker".
+  The alert settings are grouped (Header, Failed runs, Web address), and the host panel choice is two tiles.
+- **Alert settings and the host panel apply without a restart.** Saving them on the setup page updates open
+  dashboards within a few seconds, including the web address for alerts (`http_input`) and the Dismiss buttons. The
+  update check and the MQTT broker still need a restart.
+- `[alerts] ticker_speed` is no longer used (the header shows a pill, not a scrolling line). It is still accepted, so
+  an old config keeps working.
+
 ### Fixed
 
 - **A custom GPU name now also shows for a host with one GPU.** Before, the name from Setup (Hosts, Edit) only
   appeared on hosts with two or more GPUs. With one GPU it now labels the GPU bar, its temperature and the graph key.
+- **A tick on the setup page no longer jumps back.** A box ticked on Alerts or Update check, or a changed number, was
+  undone by the page's refresh every few seconds when you clicked elsewhere before Save.
+- **Save in a host's Edit pop-up saves only that host.** It used to save unsaved ticks and the order of the other
+  machines too.
+- A refused save on the setup page no longer stays as a banner on every other section, and a success message is green
+  instead of amber.
 
 ## [1.0.12]
 
