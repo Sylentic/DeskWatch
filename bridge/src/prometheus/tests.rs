@@ -252,6 +252,106 @@ fn values_are_clamped() {
     assert_eq!(stats.ram_pct, Some(0.0));
 }
 
+#[test]
+fn several_gpus_are_listed_and_the_plain_figures_stay_the_busiest() {
+    let config = config();
+    let host = &config.hosts[0];
+    let gpu = |i: &str, name: &str, v: f64| {
+        sample(
+            &[("instance", "node-a:9100"), ("gpu", i), ("modelName", name)],
+            v,
+        )
+    };
+    let answers = Answers {
+        up: vec![sample(&[("instance", "node-a:9100")], 1.0)],
+        // Listed out of order on purpose: index 10 must sort after 2.
+        gpu_pct: vec![
+            gpu("10", "Third", 5.0),
+            gpu("1", "Second", 80.4),
+            gpu("0", "First", 12.0),
+        ],
+        gpu_mem_pct: vec![
+            sample(&[("instance", "node-a:9100"), ("gpu", "0")], 30.0),
+            sample(&[("instance", "node-a:9100"), ("gpu", "1")], 55.0),
+        ],
+        gpu_temp_c: vec![sample(&[("instance", "node-a:9100"), ("gpu", "1")], 71.0)],
+        ..Answers::default()
+    };
+    let stats = host_stats(host, &answers);
+    assert_eq!(stats.gpu_pct, Some(80.4));
+    assert_eq!(stats.gpu_mem_pct, Some(55.0));
+    assert_eq!(stats.gpu_temp_c, Some(71.0));
+    let names: Vec<_> = stats.gpus.iter().map(|g| g.name.as_deref()).collect();
+    assert_eq!(names, [Some("First"), Some("Second"), Some("Third")]);
+    let labels: Vec<_> = stats.gpus.iter().map(|g| g.label.as_str()).collect();
+    assert_eq!(labels, ["GPU 0", "GPU 1", "GPU 10"]);
+    assert!(!stats.gpu_plain);
+    assert_eq!(stats.gpus[1].pct, Some(80.4));
+    assert_eq!(stats.gpus[1].mem_pct, Some(55.0));
+    assert_eq!(stats.gpus[1].temp_c, Some(71.0));
+    assert_eq!(stats.gpus[0].temp_c, None);
+}
+
+#[test]
+fn custom_gpu_names_replace_the_labels_and_detail_can_be_switched_off() {
+    let config = Config::from_toml(&CONFIG.replace(
+        "\"node-b:9100\",",
+        "{ instance = \"node-b:9100\", gpu_names = [\"3060\", \"\"], gpu_detail = false },",
+    ))
+    .unwrap()
+    .source
+    .prometheus
+    .remove(0);
+    let gpu = |i: &str| sample(&[("instance", "node-b:9100"), ("gpu", i)], 50.0);
+    let answers = Answers {
+        gpu_pct: vec![gpu("0"), gpu("1")],
+        ..Answers::default()
+    };
+    let stats = host_stats(&config.hosts[1], &answers);
+    let labels: Vec<_> = stats.gpus.iter().map(|g| g.label.as_str()).collect();
+    assert_eq!(labels, ["3060", "GPU 1"]);
+    assert!(stats.gpu_plain);
+}
+
+#[test]
+fn one_gpu_adds_no_list() {
+    let config = config();
+    let answers = Answers {
+        up: vec![sample(&[("instance", "node-a:9100")], 1.0)],
+        gpu_pct: vec![sample(
+            &[
+                ("instance", "node-a:9100"),
+                ("gpu", "0"),
+                ("modelName", "Solo"),
+            ],
+            40.0,
+        )],
+        ..Answers::default()
+    };
+    let stats = host_stats(&config.hosts[0], &answers);
+    assert_eq!(stats.gpu_pct, Some(40.0));
+    assert!(stats.gpus.is_empty());
+}
+
+#[test]
+fn gpu_figures_hidden_by_show_hide_the_list_too() {
+    let config = Config::from_toml(&CONFIG.replace(
+        "\"node-b:9100\",",
+        "{ instance = \"node-b:9100\", show = [\"cpu\"] },",
+    ))
+    .unwrap()
+    .source
+    .prometheus
+    .remove(0);
+    let host = &config.hosts[1];
+    let gpu = |i: &str| sample(&[("instance", "node-b:9100"), ("gpu", i)], 50.0);
+    let answers = Answers {
+        gpu_pct: vec![gpu("0"), gpu("1")],
+        ..Answers::default()
+    };
+    assert!(host_stats(host, &answers).gpus.is_empty());
+}
+
 fn sample(labels: &[(&str, &str)], value: f64) -> Sample {
     Sample {
         labels: labels

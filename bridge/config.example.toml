@@ -174,6 +174,7 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 # interrupt = true              # true, false, or a list such as ["your-user/repo-a"]
 # notify_new_prs = true         # flash "New PR" for new non-draft PRs
 # alert_new_issues = true       # new issues in the alerts list until dismissed
+# alert_finished_runs = ["pipeline.yml"]  # info alert when a push run of these workflows succeeds (off unless listed)
 # # Self-hosted runners for the kiosk `runners` widget (docs/runners.md). Off unless listed.
 # # Needs more token rights: repo runners "Administration: read", org runners "Self-hosted runners: read".
 # # runners = ["repo:your-user/repo-a", "org:your-org"]   # do not list overlapping scopes

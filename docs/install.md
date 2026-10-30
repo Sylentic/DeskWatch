@@ -48,7 +48,7 @@ aarch64, the Raspberry Pi, see [raspberry-pi.md](raspberry-pi.md)) and a checksu
 file (the Windows zip is covered in [windows.md](windows.md)). It is built on Ubuntu 22.04, so it runs on Debian 12 and newer. It needs nothing but the system C library.
 
 ```sh
-VERSION=v1.0.11       # the release you want
+VERSION=v1.0.12       # the release you want
 cd "$(mktemp -d)"
 curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-x86_64-linux.tar.gz"
 curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-x86_64-linux.tar.gz.sha256"
@@ -72,7 +72,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 git clone https://github.com/Sylentic/DeskWatch.git
 cd DeskWatch
-git checkout v1.0.11             # or dev for the newest code that is not released yet
+git checkout v1.0.12             # or dev for the newest code that is not released yet
 cargo build --release --locked -p deskwatch-bridge
 ```
 
@@ -231,6 +231,11 @@ Pipelines card and count in the red Failed badge but do not take over the screen
 Gitea; a new non-draft PR flashes "New PR" unless `notify_new_prs = false`. Only the first 100 open PRs per
 repository are counted. A new issue goes to the alerts list until dismissed, unless `alert_new_issues = false` (one
 extra request per repository per poll; the token needs **Issues: Read**).
+
+To get an info alert when a build and publish finishes (for example a release or the `:dev` image), list the
+workflow file in `alert_finished_runs`, such as `alert_finished_runs = ["pipeline.yml"]`. It is off unless listed, and
+only push runs that end successfully count; pull request runs, failed runs (they already show red) and runs that
+finished before the bridge started do not. It costs no extra requests.
 
 ### GitLab
 

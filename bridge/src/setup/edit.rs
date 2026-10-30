@@ -467,6 +467,10 @@ pub struct HostEdit {
     pub name: String,
     /// What to show; `None` is everything the host reports.
     pub show: Option<Vec<String>>,
+    /// Short names for the GPU bars (empty entry: "GPU 0", "GPU 1", ...).
+    pub gpu_names: Vec<String>,
+    /// The line under each GPU bar (VRAM bar, model, temperature).
+    pub gpu_detail: bool,
 }
 
 /// Replace the hosts of Prometheus source `name` in `sources.toml`. What the
@@ -508,6 +512,13 @@ pub fn set_hosts(current: &str, name: &str, hosts: &[HostEdit]) -> Result<String
                 "a host cannot show {item:?}"
             );
         }
+        for custom in &host.gpu_names {
+            anyhow::ensure!(
+                crate::config::valid_gpu_name(custom),
+                "the GPU name {custom:?} must be at most {} characters",
+                crate::config::GPU_NAME_MAX
+            );
+        }
         let mut table = old
             .iter()
             .find(|v| instance_of(v).as_deref() == Some(instance))
@@ -526,6 +537,24 @@ pub fn set_hosts(current: &str, name: &str, hosts: &[HostEdit]) -> Result<String
             ),
             None => table.remove("show"),
         };
+        // Names only matter when one is set; trailing empty ones are dropped.
+        let mut names = host.gpu_names.clone();
+        while names.last().is_some_and(String::is_empty) {
+            names.pop();
+        }
+        if names.is_empty() {
+            table.remove("gpu_names");
+        } else {
+            table.insert(
+                "gpu_names".into(),
+                toml::Value::Array(names.into_iter().map(toml::Value::String).collect()),
+            );
+        }
+        if host.gpu_detail {
+            table.remove("gpu_detail");
+        } else {
+            table.insert("gpu_detail".into(), toml::Value::Boolean(false));
+        }
         let plain = table.len() == 2 && host.name == crate::config::default_host_name(instance);
         out.push(if plain {
             toml::Value::String(instance.into())

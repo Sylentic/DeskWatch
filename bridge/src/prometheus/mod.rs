@@ -33,7 +33,7 @@ use tracing::{info, warn};
 
 use crate::config::{HostConfig, PrometheusConfig};
 use crate::fleet::{Down, HostFacts, StatsReport};
-use crate::model::{NetData, StatsData};
+use crate::model::{GpuData, NetData, StatsData};
 use crate::source::{self, FactSink, Health, Source, SourceId};
 use api::{HttpApi, Sample};
 
@@ -174,7 +174,9 @@ pub struct Queries {
     pub ram_pct: String,
     pub disk_pct: String,
     /// GPU queries default to the NVIDIA DCGM exporter; hosts without it
-    /// simply return no data and the GPU figures stay hidden.
+    /// simply return no data and the GPU figures stay hidden. They return
+    /// one series per GPU (label `gpu`, and `modelName` or `name` for the
+    /// name); a query without those labels counts as a single GPU.
     pub gpu_pct: String,
     pub gpu_mem_pct: String,
     pub gpu_temp_c: String,
@@ -241,16 +243,16 @@ impl Queries {
             // GPU transcoding video on NVENC/NVDEC would read close to 0 %.
             gpu_pct: pick(
                 "gpu_pct",
-                "max by (instance) ({__name__=~\"DCGM_FI_DEV_(GPU|ENC|DEC)_UTIL\"})".into(),
+                "max by (instance, gpu, modelName) ({__name__=~\"DCGM_FI_DEV_(GPU|ENC|DEC)_UTIL\"})".into(),
             ),
             gpu_mem_pct: pick(
                 "gpu_mem_pct",
-                "100 * max by (instance) (DCGM_FI_DEV_FB_USED / (DCGM_FI_DEV_FB_USED + DCGM_FI_DEV_FB_FREE))"
+                "100 * max by (instance, gpu) (DCGM_FI_DEV_FB_USED / (DCGM_FI_DEV_FB_USED + DCGM_FI_DEV_FB_FREE))"
                     .into(),
             ),
             gpu_temp_c: pick(
                 "gpu_temp_c",
-                "max by (instance) (DCGM_FI_DEV_GPU_TEMP)".into(),
+                "max by (instance, gpu) (DCGM_FI_DEV_GPU_TEMP)".into(),
             ),
             uptime_s: pick(
                 "uptime_s",
@@ -554,15 +556,20 @@ fn host_stats(host: &HostConfig, answers: &Answers) -> StatsData {
         disk_pct: value(&answers.disk_pct)
             .map(percent)
             .filter(|_| shown("disk")),
-        gpu_pct: value(&answers.gpu_pct)
+        gpu_pct: gpu_max(&answers.gpu_pct, instance)
             .map(percent)
             .filter(|_| shown("gpu")),
-        gpu_mem_pct: value(&answers.gpu_mem_pct)
+        gpu_mem_pct: gpu_max(&answers.gpu_mem_pct, instance)
             .map(percent)
             .filter(|_| shown("gpu")),
-        gpu_temp_c: value(&answers.gpu_temp_c)
+        gpu_temp_c: gpu_max(&answers.gpu_temp_c, instance)
             .map(round1)
             .filter(|_| shown("gpu")),
+        gpus: if shown("gpu") {
+            gpus(answers, instance, &host.gpu_names)
+        } else {
+            Vec::new()
+        },
         uptime_s: value(&answers.uptime_s)
             .map(|s| s.max(0.0) as u64)
             .filter(|_| shown("uptime")),
@@ -577,6 +584,7 @@ fn host_stats(host: &HostConfig, answers: &Answers) -> StatsData {
         reboot_needed: value(&answers.reboot_needed)
             .map(|n| n >= 1.0)
             .filter(|_| shown("reboot")),
+        gpu_plain: !host.gpu_detail,
         hide,
     }
 }
@@ -594,6 +602,75 @@ fn first_value(samples: &[Sample], instance: &str) -> Option<f64> {
         .iter()
         .find(|s| s.label("instance") == Some(instance))
         .map(|s| s.value)
+}
+
+/// The highest value over all series (GPUs) of `instance`: the busiest or
+/// hottest GPU, which is also what a host with one GPU reports.
+fn gpu_max(samples: &[Sample], instance: &str) -> Option<f64> {
+    samples
+        .iter()
+        .filter(|s| s.label("instance") == Some(instance))
+        .map(|s| s.value)
+        .reduce(f64::max)
+}
+
+/// Which GPU a series belongs to: the `gpu` index, else the UUID, else the
+/// empty key (a query that does not split per GPU).
+fn gpu_key(sample: &Sample) -> &str {
+    sample
+        .label("gpu")
+        .or_else(|| sample.label("uuid"))
+        .or_else(|| sample.label("UUID"))
+        .unwrap_or("")
+}
+
+/// Every GPU of `instance`, but only when there is more than one: a host with
+/// one GPU is fully described by the plain `gpu_*` figures.
+fn gpus(answers: &Answers, instance: &str, names: &[String]) -> Vec<GpuData> {
+    fn mine<'a>(samples: &'a [Sample], instance: &str) -> Vec<&'a Sample> {
+        samples
+            .iter()
+            .filter(|s| s.label("instance") == Some(instance))
+            .collect()
+    }
+    let (pct, mem, temp) = (
+        mine(&answers.gpu_pct, instance),
+        mine(&answers.gpu_mem_pct, instance),
+        mine(&answers.gpu_temp_c, instance),
+    );
+    let mut keys: Vec<&str> = pct
+        .iter()
+        .chain(&mem)
+        .chain(&temp)
+        .map(|s| gpu_key(s))
+        .collect();
+    // Index order (0, 1, 2, ... 10), then anything else by text.
+    keys.sort_by_key(|k| (k.parse::<u32>().unwrap_or(u32::MAX), *k));
+    keys.dedup();
+    if keys.len() < 2 {
+        return Vec::new();
+    }
+    let find =
+        |list: &[&Sample], key: &str| list.iter().find(|s| gpu_key(s) == key).map(|s| s.value);
+    keys.into_iter()
+        .enumerate()
+        .map(|(at, key)| GpuData {
+            label: match names.get(at) {
+                Some(custom) if !custom.is_empty() => custom.clone(),
+                // The GPU's own index when it has one, else its place in the list.
+                _ => format!("GPU {}", key.parse::<u32>().unwrap_or(at as u32)),
+            },
+            name: pct
+                .iter()
+                .find(|s| gpu_key(s) == key)
+                .and_then(|s| s.label("modelName").or_else(|| s.label("name")))
+                .filter(|n| !n.is_empty())
+                .map(str::to_string),
+            pct: find(&pct, key).map(percent),
+            mem_pct: find(&mem, key).map(percent),
+            temp_c: find(&temp, key).map(round1),
+        })
+        .collect()
 }
 
 /// Receive and transmit rates of the busiest device (the one with the most

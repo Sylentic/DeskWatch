@@ -40,6 +40,7 @@
   var skew = 0;                // server clock minus client clock, in seconds
   var build = null;            // bridge version, to reload the page after an upgrade
   var history = {};            // host name -> recent CPU readings
+  var gpuLines = {};           // host name -> one list of readings per GPU, for a host with several GPUs
   var gpuHistory = {};         // host name -> recent GPU readings, same timing as `history`
   var historyAt = {};          // host name -> client time of the last reading
   var cards = {};              // card key -> { el, html }
@@ -171,14 +172,16 @@
     var vals = history[host.name] || [];
     var peak = vals.length ? Math.round(Math.max.apply(null, vals)) + '%' : '--';
     var fresh = s.uptime_s != null && s.uptime_s < REBOOT_S;
+    var many = s.gpus && s.gpus.length > 1;
     var gauges = (show('cpu') ? gauge('CPU', s.cpu_pct, 70, 90) : '') + (show('memory') ? gauge('MEM', s.ram_pct, 80, 90) : '') +
       (show('disk') ? gauge('DISK', s.disk_pct, 80, 90) : '') +
-      // GPU rows only for hosts that report a GPU.
-      (s.gpu_pct == null ? '' : gauge('GPU', s.gpu_pct, 80, 95)) +
-      (s.gpu_mem_pct == null ? '' : gauge('VRAM', s.gpu_mem_pct, 80, 95));
+      // GPU rows only for hosts that report a GPU. With several, each gets its own load bar and a line below it.
+      (many ? gpuRows(s.gpus, s.gpu_plain) :
+        (s.gpu_pct == null ? '' : gauge('GPU', s.gpu_pct, 80, 95)) +
+        (s.gpu_mem_pct == null ? '' : gauge('VRAM', s.gpu_mem_pct, 80, 95)));
     var cells = (show('uptime') ? '<div><span class="l">Uptime</span><span' + (fresh ? ' class="warn-text"' : '') + '>' + uptime(s.uptime_s) + '</span></div>' : '') +
       (show('temperature') ? '<div><span class="l">Temp</span><span>' + (s.cpu_temp_c == null ? '--' : Math.round(s.cpu_temp_c) + ' &deg;C') + '</span></div>' : '') +
-      (s.gpu_temp_c == null ? '' : '<div><span class="l">GPU temp</span><span>' + Math.round(s.gpu_temp_c) + ' &deg;C</span></div>') +
+      (many || s.gpu_temp_c == null ? '' : '<div><span class="l">GPU temp</span><span>' + Math.round(s.gpu_temp_c) + ' &deg;C</span></div>') +
       (show('network') ? '<div><span class="l">Net in</span><span>' + (s.net ? rate(s.net.rx_bps) : '--') + '</span></div>' +
         '<div><span class="l">Net out</span><span>' + (s.net ? rate(s.net.tx_bps) : '--') + '</span></div>' : '') +
       // Only for hosts that report them (see docs/hosts.md).
@@ -187,8 +190,8 @@
       (s.reboot_needed ? '<div><span class="l">Restart</span><span class="warn-text">needed</span></div>' : '');
     return (gauges ? '<div class="gauges">' + gauges + '</div>' : '') +
       (cells ? '<div class="stat-grid">' + cells + '</div>' : '') +
-      (show('cpu') ? '<div class="sparkhead"><span>CPU' + (gpuHistory[host.name] && gpuHistory[host.name].some(function (g) { return g != null; }) ? ' <span class="gpu-key">&amp; GPU</span>' : '') + ' &middot; ' + spanLabel(vals.length) + '</span><span>PEAK ' + peak + '</span></div>' +
-        sparkline(vals, gpuHistory[host.name]) : '');
+      (show('cpu') ? '<div class="sparkhead"><span>CPU' + (many ? s.gpus.map(function (g, i) { return ' <span class="gpu-key g' + (i % 4) + '">&amp; ' + esc(g.label) + '</span>'; }).join('') : gpuHistory[host.name] && gpuHistory[host.name].some(function (g) { return g != null; }) ? ' <span class="gpu-key">&amp; GPU</span>' : '') + ' &middot; ' + spanLabel(vals.length) + '</span><span>PEAK ' + peak + '</span></div>' +
+        sparkline(vals, many ? null : gpuHistory[host.name], many ? gpuLines[host.name] : null) : '');
   }
 
   // How much time the graph covers: one reading per 5 s, at most HISTORY.
@@ -251,14 +254,27 @@
     return (snap.sources || []).some(function (s) { return s.health !== 'ok' && /^(gitea|github|gitlab|bitbucket|azure_devops):/.test(s.id); });
   }
 
-  function gauge(label, value, warn, crit) {
+  function gauge(label, value, warn, crit, labelClass) {
     var w = value == null ? 0 : Math.max(0, Math.min(100, value));
-    return '<div class="gauge"><span class="l">' + label + '</span>' +
+    return '<div class="gauge"><span class="l' + (labelClass ? ' ' + labelClass : '') + '">' + esc(label) + '</span>' +
       '<div class="bar"><i style="--p:' + w + '%;--c:' + level(value, warn, crit) + '"></i></div>' +
       '<span class="v">' + pct(value) + '</span></div>';
   }
 
-  function sparkline(values, gpuValues) {
+  // One GPU of a host with several: load bar and VRAM bar, then model and temperature in small print.
+  // `plain` (set on the setup page) leaves only the load bar.
+  function gpuRows(gpus, plain) {
+    return gpus.map(function (g, i) {
+      if (plain) return gauge(g.label, g.pct, 80, 95, 'g' + (i % 4));
+      var meta = [g.name, g.temp_c == null ? null : Math.round(g.temp_c) + ' &deg;C']
+        .filter(function (m) { return m; }).join(' &middot; ');
+      return '<div class="gpu-group">' + gauge(g.label, g.pct, 80, 95, 'g' + (i % 4)) +
+        (g.mem_pct == null ? '' : gauge('VRAM', g.mem_pct, 80, 95)) +
+        (meta ? '<div class="gpu-meta">' + meta + '</div>' : '') + '</div>';
+    }).join('');
+  }
+
+  function sparkline(values, gpuValues, lines) {
     if (!values || values.length < 2) return '<svg class="spark"></svg>';
     // The readings so far fill the whole width, so the graph is not a small
     // line at the right edge for the first minutes after a reload.
@@ -275,6 +291,12 @@
       gpuValues.forEach(function (g, i) { if (g != null) gpts.push((off + i * step).toFixed(1) + ',' + y(g)); });
       if (gpts.length > 1) gpuLine = '<polyline class="gpu" points="' + gpts.join(' ') + '"/>';
     }
+    // A host with several GPUs: a line per GPU, each in its own colour.
+    if (lines) lines.forEach(function (l, n) {
+      var lp = [];
+      l.forEach(function (g, i) { if (g != null) lp.push((off + i * step).toFixed(1) + ',' + y(g)); });
+      if (l.length === values.length && lp.length > 1) gpuLine += '<polyline class="gpu g' + (n % 4) + '" points="' + lp.join(' ') + '"/>';
+    });
     return '<svg class="spark" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
       '<path d="M' + pts.join(' L') + ' L' + (off + (values.length - 1) * step).toFixed(1) + ',' + h + ' L' + off.toFixed(1) + ',' + h + ' Z"/>' +
       '<polyline points="' + pts.join(' ') + '"/>' + gpuLine + '</svg>';
@@ -302,6 +324,8 @@
   // How long a finished run stays in Running now as "Done", a just-finished
   // row stays tinted, and an open PR carries NEW.
   var DONE_S = 30, FRESH_S = 30, NEW_PR_S = 3600;
+  // Runs Running now shows at once when the panel sets no `rows`.
+  var RUNS_MAX = 3;
 
   var widgets = {
     stats: function (p) {
@@ -376,10 +400,28 @@
         if (byKey[g]) { byKey[g].jobs.push(j); return; }
         groups.push(byKey[g] = { jobs: [j], lanes: j.group ? lanes[j.group] : null });
       });
-      var max = p.rows;
-      var shown = max ? groups.slice(0, max) : groups;
+      // A newer run of the same pipeline and branch replaces the older one: a
+      // new push does not stack a second set of jobs under the first.
+      var newest = {}, replaced = [];
+      groups.forEach(function (g) {
+        if (g.done) return;
+        var j = g.jobs[0];
+        if (!j.ref) return;
+        var k = j.source + '\n' + j.project + '\n' + j.pipeline + '\n' + j.ref, t = groupStart(g);
+        if (!newest[k] || t > groupStart(newest[k])) newest[k] = g;
+      });
+      groups = groups.filter(function (g) {
+        if (g.done) return true;
+        var j = g.jobs[0];
+        if (!j.ref || newest[j.source + '\n' + j.project + '\n' + j.pipeline + '\n' + j.ref] === g) return true;
+        replaced.push(g);
+        return false;
+      });
+      var max = p.rows || RUNS_MAX;
+      var shown = groups.slice(0, max);
       var html = shown.map(function (g) { return g.done ? doneGroup(g.done) : runGroup(g); }).join('');
-      if (max && groups.length > max) html += '<div class="more">+' + (groups.length - max) + ' more running</div>';
+      if (groups.length > max) html += '<div class="more">+' + (groups.length - max) + ' more running</div>';
+      if (replaced.length) html += replacedNote(replaced);
       var running = groups.length - done.length;
       return { title: 'Running now', count: running + (done.length ? ' · ' + done.length + ' done' : ''), stale: ciStale(), body: html };
     },
@@ -546,6 +588,25 @@
       });
     }
     return '<div class="jgroup">' + groupHead(j.source, j.project, j.kind, ref, sum, j.url) + '<div class="jrows">' + rows.join('') + '</div></div>';
+  }
+
+  function groupStart(g) { return Math.min.apply(null, g.jobs.map(function (x) { return x.started; })); }
+
+  // One dashed line for the runs a newer run of the same branch replaced, with
+  // how many of their jobs had failed or were skipped.
+  function replacedNote(gs) {
+    var bad = 0, skipped = 0;
+    gs.forEach(function (g) {
+      (g.lanes || []).forEach(function (l) {
+        var st = runStatus(l.status);
+        if (st === 'failed') bad++; else if (st === 'neutral') skipped++;
+      });
+    });
+    var parts = [];
+    if (bad) parts.push(bad + ' failed');
+    if (skipped) parts.push(skipped + ' skipped');
+    return '<div class="replaced">&#8635; ' + (gs.length === 1 ? '1 older run replaced' : gs.length + ' older runs replaced') +
+      ' by a newer one on the same branch' + (parts.length ? ' (' + parts.join(', ') + ')' : '') + '</div>';
   }
 
   function doneGroup(r) {
@@ -1050,6 +1111,17 @@
       var glist = gpuHistory[h.name] = gpuHistory[h.name] || [];
       glist.push(g == null ? null : g);
       if (glist.length > HISTORY) glist.shift();
+      // A host with several GPUs: one line each, kept the same way.
+      var many = h.stats.gpus && h.stats.gpus.length > 1;
+      if (!many) { delete gpuLines[h.name]; return; }
+      var lines = gpuLines[h.name] = gpuLines[h.name] || [];
+      h.stats.gpus.forEach(function (gpu, i) {
+        var l = lines[i] = lines[i] || [];
+        // A GPU that appears later is padded so every line ends at the same sample.
+        while (l.length < list.length - 1) l.push(null);
+        l.push(gpu.pct == null ? null : gpu.pct);
+        if (l.length > HISTORY) l.shift();
+      });
     });
 
     var layout = snap.layout || { columns: 4, rows: 3, panels: [] };

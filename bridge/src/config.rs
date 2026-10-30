@@ -934,6 +934,11 @@ pub struct GithubConfig {
     /// Put a new issue in the alerts list until it is dismissed.
     #[serde(default = "yes")]
     pub alert_new_issues: bool,
+    /// Workflow files (such as `"pipeline.yml"`) whose push runs raise an
+    /// info alert when they finish successfully: a release or a dev image
+    /// that is built and published. Empty (default): no such alerts.
+    #[serde(default)]
+    pub alert_finished_runs: Vec<String>,
     /// Self-hosted runner lists for the kiosk `runners` widget:
     /// `"repo:<owner>/<name>"` or `"org:<name>"`. Needs extra token rights
     /// (docs/runners.md). Empty means runners are not polled. Do not list
@@ -1251,6 +1256,20 @@ pub struct HostConfig {
     /// What the host card shows, from `HOST_SHOW`. `None`: everything the
     /// host reports.
     pub show: Option<Vec<String>>,
+    /// Short names for the GPU bars of a host with several GPUs, in GPU
+    /// order (at most `GPU_NAME_MAX` characters each); an empty or missing one
+    /// leaves "GPU 0", "GPU 1" and so on.
+    pub gpu_names: Vec<String>,
+    /// Show the line under each GPU bar (model, VRAM, temperature).
+    pub gpu_detail: bool,
+}
+
+/// Longest custom GPU name: what fits next to the bar.
+pub const GPU_NAME_MAX: usize = 5;
+
+/// A custom GPU name: empty (use the default) or up to `GPU_NAME_MAX` characters.
+pub fn valid_gpu_name(name: &str) -> bool {
+    name.trim() == name && name.chars().count() <= GPU_NAME_MAX
 }
 
 /// The parts of a host card the setup page can switch off per host.
@@ -1283,6 +1302,14 @@ struct HostTable {
     #[serde(default)]
     expect_containers: Vec<String>,
     show: Option<Vec<String>>,
+    #[serde(default)]
+    gpu_names: Vec<String>,
+    #[serde(default = "default_true")]
+    gpu_detail: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl From<HostSpec> for HostConfig {
@@ -1294,6 +1321,8 @@ impl From<HostSpec> for HostConfig {
                 cadvisor: None,
                 expect_containers: Vec::new(),
                 show: None,
+                gpu_names: Vec::new(),
+                gpu_detail: true,
             },
             HostSpec::Table(table) => table,
         };
@@ -1306,6 +1335,8 @@ impl From<HostSpec> for HostConfig {
             cadvisor: table.cadvisor,
             expect_containers: table.expect_containers,
             show: table.show,
+            gpu_names: table.gpu_names,
+            gpu_detail: table.gpu_detail,
         }
     }
 }

@@ -374,6 +374,8 @@ body.lost .grid { opacity: .45; filter: grayscale(.7); }
 .gauges { display: grid; gap: 0.45rem; }
 .gauge { display: grid; grid-template-columns: 2.6rem 1fr 2.8rem; align-items: center; gap: 0.55rem; }
 .gauge .l { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
+.gpu-group { display: grid; gap: 0.3rem; margin-top: 0.2rem; }
+.gpu-meta { margin: -0.1rem 0 0.1rem 3.15rem; font-family: var(--mono); font-size: 0.66rem; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gauge .v { text-align: right; font-weight: 600; font-size: 0.92rem; }
 .bar { height: 0.4rem; border-radius: 0.2rem; background: var(--track); overflow: hidden; }
 .bar i { display: block; height: 100%; width: var(--p); background: var(--c); border-radius: 0.2rem; transition: width .8s; }
@@ -389,6 +391,12 @@ body.lost .grid { opacity: .45; filter: grayscale(.7); }
 .spark polyline { fill: none; stroke: var(--blue); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
 .spark polyline.gpu { stroke: var(--red); stroke-width: 1.5; }
 .sparkhead .gpu-key { color: var(--red); }
+/* One colour per GPU of a host with several: the bar label, the legend and the graph line match. */
+:root { --gpu-0: #f87171; --gpu-1: #c084fc; --gpu-2: #22d3ee; --gpu-3: #f472b6; }
+:root[data-scheme="light"] { --gpu-0: #b91c1c; --gpu-1: #7e22ce; --gpu-2: #0e7490; --gpu-3: #be185d; }
+.g0 { --gc: var(--gpu-0); } .g1 { --gc: var(--gpu-1); } .g2 { --gc: var(--gpu-2); } .g3 { --gc: var(--gpu-3); }
+.gauge .l.g0, .gauge .l.g1, .gauge .l.g2, .gauge .l.g3, .sparkhead .gpu-key.g0, .sparkhead .gpu-key.g1, .sparkhead .gpu-key.g2, .sparkhead .gpu-key.g3 { color: var(--gc); }
+.spark polyline.gpu.g0, .spark polyline.gpu.g1, .spark polyline.gpu.g2, .spark polyline.gpu.g3 { stroke: var(--gc); }
 .spark path { fill: color-mix(in srgb, var(--blue) 14%, transparent); stroke: none; }
 .sparkhead { display: flex; margin-top: 0.65rem; font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.08em; color: var(--dim); }
 .sparkhead span:last-child { margin-left: auto; }
@@ -538,6 +546,8 @@ a.link:active { background: rgba(255, 255, 255, .08); }
 .jrow.running { background: var(--orange-bg); border-color: color-mix(in srgb, var(--orange) 35%, transparent); } .jrow.running .s { color: var(--text); }
 .jrow.review { background: var(--amber-bg); border-color: var(--amber-edge); }
 .jrow.queued .n, .jrow.neutral .n { color: var(--dim); }
+
+.replaced { margin-top: 0.6rem; padding: 0.5rem 0.9rem; border: 1px dashed var(--track); border-radius: 0.6rem; font-family: var(--mono); font-size: 0.8rem; color: var(--dim); }
 
 .kind { flex: none; font-family: var(--mono); font-size: 0.62rem; font-weight: 600; letter-spacing: 0.08em; padding: 0.12rem 0.38rem; border-radius: 0.3rem; background: var(--track); color: var(--text); text-transform: uppercase; }
 .kind.deploy, .kind.build { background: var(--orange-bg); color: var(--orange); }

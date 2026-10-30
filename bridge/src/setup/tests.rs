@@ -1190,7 +1190,7 @@ async fn hosts_are_discovered_chosen_renamed_and_saved() {
     let v: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(
         v["sources"][0]["configured"][0],
-        json!({ "instance": "office-pc:9182", "name": "Office PC", "show": ["cpu", "updates"] })
+        json!({ "instance": "office-pc:9182", "name": "Office PC", "show": ["cpu", "updates"], "gpu_names": [], "gpu_detail": true })
     );
 
     // A bad name or an unknown part is refused and nothing changes.

@@ -128,6 +128,26 @@ impl Screen {
     }
 }
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+/// One GPU of a host with several. `None` values are left out.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct GpuData {
+    /// Text for the bar: "GPU 0" or the short name chosen on the setup page.
+    pub label: String,
+    /// Model name when the exporter gives one, for example "GeForce RTX 3060".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pct: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mem_pct: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temp_c: Option<f32>,
+}
+
 /// Stats of one machine. `None` values become `null` and the kiosk draws `--`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct StatsData {
@@ -143,6 +163,14 @@ pub struct StatsData {
     pub gpu_mem_pct: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gpu_temp_c: Option<f32>,
+    /// Every GPU of the host, only when it has more than one. The three
+    /// `gpu_*` figures above then hold the busiest/hottest of them, so a
+    /// reader that knows nothing about this list keeps working.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub gpus: Vec<GpuData>,
+    /// `true` when the host's setup says no line under each GPU bar.
+    #[serde(skip_serializing_if = "is_false")]
+    pub gpu_plain: bool,
     pub uptime_s: Option<u64>,
     pub net: Option<NetData>,
     /// Pending OS updates and a pending restart, only for hosts that report

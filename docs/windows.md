@@ -32,7 +32,7 @@ a `.sha256` file next to it. The zip holds `deskwatch-bridge.exe`, the example c
 `deploy/`, `homeassistant/`, `docs/` and the licenses.
 
 ```powershell
-$Version = "v1.0.11"       # the release you want
+$Version = "v1.0.12"       # the release you want
 $Name = "deskwatch-$Version-x86_64-windows"
 cd $env:TEMP
 $Base = "https://github.com/Sylentic/DeskWatch/releases/download/$Version"
@@ -58,7 +58,7 @@ Studio Build Tools ("Desktop development with C++"),, plus [Git](https://git-scm
 ```powershell
 git clone https://github.com/Sylentic/DeskWatch.git
 cd DeskWatch
-git checkout v1.0.11             # or dev for the newest code that is not released yet
+git checkout v1.0.12             # or dev for the newest code that is not released yet
 cargo build --release --locked -p deskwatch-bridge
 ```
 

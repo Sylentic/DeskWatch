@@ -60,6 +60,8 @@ pub struct WorkflowRun {
     pub path: String,
     pub head_branch: Option<String>,
     pub head_sha: String,
+    /// What started the run: `push`, `pull_request`, `schedule`, ...
+    pub event: Option<String>,
     /// `requested`, `queued`, `waiting`, `pending`, `in_progress` or `completed`.
     pub status: Option<String>,
     /// `success`, `failure`, `timed_out`, `cancelled`, `skipped`, ... once completed.
