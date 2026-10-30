@@ -29,7 +29,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 
-use crate::alerts::{IssueWatch, NewIssue};
+use crate::alerts::{AlertMessage, IssueWatch, NewIssue, activity_id};
 use tokio::time::{Instant, MissedTickBehavior};
 use tracing::{debug, info, warn};
 
@@ -117,7 +117,8 @@ impl Source for Github {
             unix_now(),
         )
         .with_api_base(&config.base_url)
-        .with_issue_alerts(config.alert_new_issues);
+        .with_issue_alerts(config.alert_new_issues)
+        .with_finished_run_alerts(config.alert_finished_runs.clone());
 
         let mut next_poll = Instant::now();
         let mut failures = 0;
@@ -327,6 +328,10 @@ pub struct GithubState {
     alert_new_issues: bool,
     /// Issue numbers seen, for "new issue" alerts.
     issues: IssueWatch,
+    /// Workflow files whose finished push runs raise an info alert.
+    alert_finished_runs: Vec<String>,
+    /// Runs that already raised a "finished" alert.
+    alerted_runs: HashSet<u64>,
     /// Unix seconds when the source started. Runs that finished before then
     /// show on the pipelines page and in the badge, but do not take over
     /// the screen: they are old news after a bridge restart.
@@ -367,6 +372,8 @@ impl GithubState {
             notify_new_prs,
             alert_new_issues: false,
             issues: IssueWatch::default(),
+            alert_finished_runs: Vec::new(),
+            alerted_runs: HashSet::new(),
             since,
             known_pulls: HashMap::new(),
             runs: HashMap::new(),
@@ -382,6 +389,13 @@ impl GithubState {
     /// Raise an alert for each new issue (`alert_new_issues`).
     pub fn with_issue_alerts(mut self, on: bool) -> Self {
         self.alert_new_issues = on;
+        self
+    }
+
+    /// Raise an info alert when a push run of one of these workflow files
+    /// finishes successfully (`alert_finished_runs`).
+    pub fn with_finished_run_alerts(mut self, workflows: Vec<String>) -> Self {
+        self.alert_finished_runs = workflows;
         self
     }
 
@@ -551,6 +565,9 @@ impl GithubState {
                 if finished.is_some() {
                     info!(source = %self.id, %repo, %pipeline, ?status, "run finished");
                 }
+                if let Some(alert) = self.finished_alert(repo, run, &fact) {
+                    out.push(Update::Alert { alert });
+                }
                 self.runs.insert(key.clone(), fact.clone());
                 out.push(Update::Run { key, run: fact });
             }
@@ -600,6 +617,35 @@ impl GithubState {
         self.failed_steps
             .retain(|(r, id), _| r != repo || listed.contains(id));
         out
+    }
+
+    /// The "finished" info alert for a run, once: a push run of a listed
+    /// workflow that succeeded after the source started (so a restart does
+    /// not repeat old news).
+    fn finished_alert(
+        &mut self,
+        repo: &str,
+        run: &WorkflowRun,
+        fact: &Run,
+    ) -> Option<AlertMessage> {
+        let listed = self.alert_finished_runs.contains(&fact.pipeline);
+        if !listed
+            || fact.status != RunStatus::Success
+            || run.event.as_deref() != Some("push")
+            || fact.finished.is_none_or(|f| f < self.since)
+            || !self.alerted_runs.insert(run.id)
+        {
+            return None;
+        }
+        let label = source::label(&self.alias, repo);
+        let git_ref = truncate(&fact.git_ref, MAX_TITLE_CHARS);
+        Some(AlertMessage::activity(
+            activity_id(&format!("{}:run-done:{repo}:{}", self.id, run.id)),
+            format!("{} finished", fact.pipeline),
+            format!("{label} {git_ref}: build and publish succeeded"),
+            KIND,
+            fact.url.clone(),
+        ))
     }
 
     /// Jobs of a watched run from a poll. Returns the updates and whether

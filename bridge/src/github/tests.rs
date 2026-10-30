@@ -660,3 +660,70 @@ fn parallel_jobs_are_listed_under_their_run() {
     apply(&mut facts, source.on_runs(REPO, runs, NOW + 60), NOW + 60);
     assert!(facts.run_jobs(group).is_none());
 }
+
+fn finished_run(id: u64, event: &str, conclusion: &str) -> WorkflowRun {
+    WorkflowRun {
+        id,
+        path: ".github/workflows/pipeline.yml".into(),
+        head_branch: Some("dev".into()),
+        event: Some(event.into()),
+        status: Some("completed".into()),
+        conclusion: Some(conclusion.into()),
+        run_started_at: Some("2026-10-30T10:00:00Z".into()),
+        updated_at: Some("2026-10-30T10:10:00Z".into()),
+        ..WorkflowRun::default()
+    }
+}
+
+fn alerts_in(updates: &[Update]) -> usize {
+    updates
+        .iter()
+        .filter(|u| matches!(u, Update::Alert { .. }))
+        .count()
+}
+
+#[test]
+fn finished_push_run_of_a_listed_workflow_raises_one_info_alert() {
+    let since = unix_seconds(Some("2026-10-30T09:00:00Z")).unwrap();
+    let mut state = state(true, since).with_finished_run_alerts(vec!["pipeline.yml".into()]);
+    let now = since + 3600;
+
+    // A pull request run, a failed run and an unlisted workflow: no alert.
+    assert_eq!(
+        alerts_in(&state.on_runs(
+            "me/app",
+            vec![finished_run(1, "pull_request", "success")],
+            now
+        )),
+        0
+    );
+    assert_eq!(
+        alerts_in(&state.on_runs("me/app", vec![finished_run(2, "push", "failure")], now)),
+        0
+    );
+
+    let updates = state.on_runs("me/app", vec![finished_run(3, "push", "success")], now);
+    assert_eq!(alerts_in(&updates), 1);
+    // The same run again: nothing new.
+    assert_eq!(
+        alerts_in(&state.on_runs("me/app", vec![finished_run(3, "push", "success")], now)),
+        0
+    );
+}
+
+#[test]
+fn finished_run_alerts_are_off_by_default_and_skip_old_runs() {
+    let since = unix_seconds(Some("2026-10-30T09:00:00Z")).unwrap();
+    let mut off = state(true, since);
+    assert_eq!(
+        alerts_in(&off.on_runs("me/app", vec![finished_run(1, "push", "success")], since)),
+        0
+    );
+    // Finished before the bridge started: old news.
+    let mut on = state(true, unix_seconds(Some("2026-10-30T11:00:00Z")).unwrap())
+        .with_finished_run_alerts(vec!["pipeline.yml".into()]);
+    assert_eq!(
+        alerts_in(&on.on_runs("me/app", vec![finished_run(1, "push", "success")], since)),
+        0
+    );
+}
