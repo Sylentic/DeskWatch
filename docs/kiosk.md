@@ -1,6 +1,6 @@
 # The kiosk dashboard (big screens)
 
-The **kiosk dashboard** is one web page that shows everything at once, for a monitor or TV (a Raspberry Pi with a browser in kiosk mode, a
+The **kiosk dashboard** is one web page that shows everything at once, for a monitor or TV (a Linux machine with a browser in kiosk mode, a
 wall tablet, or any browser on your desk). It is built into the bridge, so there is nothing extra to install, and
 it works on a LAN with no internet access (no CDN or scripts are loaded from elsewhere; the typefaces, Geist, Geist Mono
 and Space Grotesk, are built into the bridge and served on `/fonts/`, see `bridge/fonts/`; the tab icon is served on
@@ -9,7 +9,7 @@ and Space Grotesk, are built into the bridge and served on `/fonts/`, see `bridg
 The page does not need a broker.
 
 Contents: [1. What you get](#1-what-you-get) · [2. Turn it on](#2-turn-it-on) ·
-[3. Choose the widgets](#3-choose-the-widgets) · [4. Autostart on a Raspberry Pi](#4-autostart-on-a-raspberry-pi) ·
+[3. Choose the widgets](#3-choose-the-widgets) · [4. Autostart a full-screen browser on Linux](#4-autostart-a-full-screen-browser-on-linux) ·
 [5. Security](#5-security) · [6. When something goes wrong](#6-when-something-goes-wrong) ·
 [7. The data](#7-the-data-the-page-reads) · [8. What was and was not tested](#8-what-was-and-was-not-tested)
 
@@ -205,7 +205,7 @@ enabled = true
 ```
 
 Restart the bridge and open `http://<bridge host>:8787/` in a browser (`[http] listen` sets the address; port 8787
-by default). The page is served on the same listener as the webhooks, so there is no new port. On the Pi that runs
+by default). The page is served on the same listener as the webhooks, so there is no new port. On the machine that runs
 the bridge, use `http://localhost:8787/`.
 
 To try it with fake data and no sources, run the demo:
@@ -304,7 +304,7 @@ night_from = "22:00"  # auto only, HH:MM; the window may cross midnight
 night_to = "07:00"
 ```
 
-`auto` uses the clock of the **browser** (the same one as the clock in the header), not the bridge's, so a Pi in
+`auto` uses the clock of the **browser** (the same one as the clock in the header), not the bridge's, so a screen in
 another time zone dims at its own bedtime. The page checks every second and switches without a reload.
 `?theme=day`, `?theme=night` or `?theme=auto` on the page address overrides the config, which is handy to try the
 night look in the afternoon.
@@ -325,12 +325,12 @@ view is cut off by a few pixels. Off by default. For an OLED you should still sw
 With `[setup] enabled = true` the header also shows a cogwheel that opens the [setup page](setup-page.md); without it
 the icon is not there.
 
-## 4. Autostart on a Raspberry Pi
+## 4. Autostart a full-screen browser on Linux
 
-Two parts: the bridge runs somewhere ([raspberry-pi.md](raspberry-pi.md) lists the choices), and Chromium starts in kiosk mode when the Pi
-boots to the desktop. Use **Raspberry Pi OS with desktop, 64-bit**, set to log in automatically
-(`sudo raspi-config` > System Options > Boot / Auto Login > Desktop Autologin) and install the browser if it is
-missing: `sudo apt install chromium`. The package is called `chromium-browser` on older releases.
+Two parts: the bridge runs somewhere (usually in Docker on a server, see [docker.md](docker.md)), and a browser starts
+in kiosk mode when the screen's machine boots to the desktop. Use a Linux desktop (for example Debian 12 or newer) set to
+log in automatically, and install the browser if it is missing: `sudo apt install chromium`. The package is called
+`chromium-browser` on older releases.
 
 Copy the start script (it waits until the bridge answers, then opens Chromium full screen) and tell the desktop to
 run it at login:
@@ -338,31 +338,27 @@ run it at login:
 ```sh
 install -m 755 deploy/kiosk/deskwatch-kiosk.sh ~/deskwatch-kiosk.sh      # from a checkout of this repository
 mkdir -p ~/.config/labwc
-echo '~/deskwatch-kiosk.sh &' >> ~/.config/labwc/autostart                # Bookworm and newer (labwc, Wayland)
+echo '~/deskwatch-kiosk.sh &' >> ~/.config/labwc/autostart                # labwc (Wayland)
 ```
 
 [`deploy/kiosk/deskwatch-kiosk.sh`](../deploy/kiosk/deskwatch-kiosk.sh) opens `http://localhost:8787/`. For a bridge on
 another machine, set the address with an environment variable, for example
-`DESKWATCH_KIOSK_URL='http://bridge.example.lan:8787/' ~/deskwatch-kiosk.sh &`. With the [login](auth.md) on, create a **viewer** key under Setup, Access and put `?key=<key>` in the URL once. Without a password the page has no login, so a Pi
-on the same network needs nothing else ([security](#5-security)). Older releases, or Bookworm switched to X11 with LXDE, read
+`DESKWATCH_KIOSK_URL='http://bridge.example.lan:8787/' ~/deskwatch-kiosk.sh &`. With the [login](auth.md) on, create a **viewer** key under Setup, Access and put `?key=<key>` in the URL once. Without a password the page has no login, so a screen
+on the same network needs nothing else ([security](#5-security)). On an X11 desktop with LXDE, read
 `~/.config/lxsession/LXDE-pi/autostart` instead; see
 [`deploy/kiosk/lxde-autostart`](../deploy/kiosk/lxde-autostart), which also turns the X11 screen blanking off.
-If there is no checkout on the Pi, the script is short enough to copy from the repository page.
+If there is no checkout on that machine, the script is short enough to copy from the repository page.
 
 Things that make a kiosk last:
 
-- **Screen blanking.** Turn it off in `sudo raspi-config` > Display Options > Screen Blanking (the menu name varies
-  between releases), then check after an hour that the screen is still on. The LXDE file above covers X11.
+- **Screen blanking.** Turn it off in your desktop's power settings, then check after an hour that the screen is still
+  on. The LXDE file above covers X11.
 - **Mouse pointer.** The page hides it after 3 seconds without mouse movement and shows it again on the next
   movement; `sudo apt install unclutter` is only needed if it shows up at the edges.
 - **Chromium crash restore.** `--noerrdialogs --disable-session-crashed-bubble` keep the "restore pages" bubble
   away. A dedicated `--user-data-dir` keeps the kiosk's profile apart from yours.
 - **Bridge restarts and upgrades need no action.** The page reconnects by itself, and after an upgrade it reloads
   itself once it sees a new version.
-- **4K on a Pi 4.** The Pi 4 outputs 4K at 30 Hz unless you set `hdmi_enable_4kp60=1` in `/boot/firmware/config.txt`
-  (it runs hotter). 30 Hz is plenty for this page, which only animates a progress bar and a small spinner.
-- **Memory.** A Pi 4 with 2 GB or more, or a Pi 5, is the sensible floor for Chromium at 4K; use a 1080p output on
-  anything smaller. A Pi Zero 2 W is not enough for a browser.
 - **Burn-in.** The page is mostly static. On an OLED screen, turn on `pixel_shift` and the night theme
   ([section 3](#3-choose-the-widgets)), and switch the screen off at night
   (for example `wlr-randr --output HDMI-A-1 --off` from a cron job) rather than leaving it on for months.
@@ -377,8 +373,8 @@ once a login is set ([auth.md](auth.md)). The page shows PR titles, pipeline nam
   for other machines on your network). With the kiosk on and no password set, anyone who can reach the port can read the
   page. On a home network that is the intended trade-off, and the bridge logs one warning at startup saying so. **Never
   expose the port to the internet** (no router port forward, no tunnel or public reverse proxy) unless a login sits in
-  front of it: the built-in one ([auth.md](auth.md), with HTTPS) or the proxy's own. To keep the page local to the Pi, run the bridge there with
-  `[http] listen = "127.0.0.1:8787"`, which is fine when the Pi has no webhook source.
+  front of it: the built-in one ([auth.md](auth.md), with HTTPS) or the proxy's own. To keep the page local to one machine, run the bridge there with
+  `[http] listen = "127.0.0.1:8787"`, which is fine when that machine has no webhook source.
 - **The built-in login** ([auth.md](auth.md)) replaces the old `[kiosk] token_file`, `trusted_networks` and
   `session_days` (removed; see [Removed login settings](#removed-login-settings) below). Independent of it, the
   WebSocket refuses an `Origin` that is not the page's own host, so a website open in your browser cannot read the page
@@ -401,7 +397,7 @@ once a login is set ([auth.md](auth.md)). The page shows PR titles, pipeline nam
   and says how many sources have a problem, and the widgets built from that source's data are dimmed with a "may be out of date"
   look. Hosts that Prometheus reports as down get a red dot and a dimmed card.
 - **The bridge host's clock and the screen's clock differ.** Times such as "3 min ago" use the bridge's clock, so a
-  Pi with a wrong clock still shows correct ages. The clock in the header is the screen's own.
+  screen with a wrong clock still shows correct ages. The clock in the header is the screen's own.
 - <a id="removed-login-settings"></a>**The bridge refuses to start: "[kiosk] token_file is no longer supported".**
   `[kiosk] token_file`, `[kiosk] trusted_networks`, `[kiosk] session_days` and `[setup] token_file` were removed:
   those old settings no longer do anything. Delete the line the message names from the config. The bridge stops
@@ -458,8 +454,7 @@ scrolling on a real touchscreen, and the links of every source against a real se
 documented URL patterns and covered by unit tests with sample data; see
 [azure-devops-verify.md](azure-devops-verify.md) for what to click when you try Azure DevOps.
 
-**Not tested on real Raspberry Pi hardware**: Chromium on Raspberry Pi OS, the `labwc` and LXDE autostart snippets,
-Wayland and X11 behaviour, screen blanking, 4K at 30 or 60 Hz, memory use at 4K, the pointer hiding, and touch
-input. The memory and refresh-rate remarks above are estimates from the design notes, not measurements. Not tested
+**Not tested on a dedicated wall-display machine**: the `labwc` and LXDE autostart snippets, Wayland and X11
+behaviour, screen blanking, 4K, memory use at 4K, the pointer hiding, and touch input. Not tested
 at all: Firefox, Safari, and Chromium older than about version 90 (the page uses plain ES2015 and CSS grid, with
 no build step, so older browsers are expected to work but nobody has tried).

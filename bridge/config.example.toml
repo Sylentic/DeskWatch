@@ -60,7 +60,7 @@ listen = "0.0.0.0:8787"
 # [auth]
 # required = false
 
-# Dashboard page for a big screen (a Raspberry Pi with a monitor, a wall
+# Dashboard page for a big screen (a Linux machine with a monitor, a wall
 # tablet): all stats, jobs, PRs, pipelines and alerts at once, served on the
 # [http] listener above. Off by default. Guide: docs/kiosk.md
 # [kiosk]

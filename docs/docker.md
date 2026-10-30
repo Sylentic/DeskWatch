@@ -55,10 +55,9 @@ The first build takes a few minutes (it compiles all dependencies). The Dockerfi
 dependencies, from the manifests and `Cargo.lock` only, then your sources. A rebuild after a change in the bridge
 code therefore reuses the cached dependency layer and only compiles the bridge itself; the dependencies
 are rebuilt only when a `Cargo.toml` or `Cargo.lock` changes. The image is for the CPU you build it on, so
-building on a Raspberry Pi gives an arm64 image with no extra steps; `docker buildx` can build for another CPU. CI
+building on an ARM machine gives an arm64 image with no extra steps; `docker buildx` can build for another CPU. CI
 builds the image for amd64 and arm64 on every change (nothing pushed). The build stage cross-compiles instead of
-emulating the other CPU, so a multi-arch build is not much slower than a single one. The Pi side is in
-[raspberry-pi.md](raspberry-pi.md).
+emulating the other CPU, so a multi-arch build is not much slower than a single one.
 
 ## 2. Try the demo
 
@@ -209,7 +208,7 @@ one or more of these:
    your proxy (Caddy, Traefik, nginx) terminate TLS and do the access control (basic auth, or your SSO). Without a
    proxy login, do not publish the port to the internet. Make the proxy pass WebSocket upgrades on `/api/kiosk/ws`;
    without them the page falls back to polling `/api/kiosk` and still works, only slower to update.
-4. **Local only.** Publish `"127.0.0.1:8787:8787"` and open the page on the Docker host itself (a Pi with a screen
+4. **Local only.** Publish `"127.0.0.1:8787:8787"` and open the page on the Docker host itself (a Linux machine with a screen
    running the container).
 
 #### Reverse proxy examples

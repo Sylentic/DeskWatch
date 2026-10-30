@@ -12,7 +12,7 @@ Thanks for helping. The easiest ways, from small to large:
 ## Before you post
 
 - Remove tokens, passwords, hostnames, IP addresses and company names from logs, configs and screenshots.
-- Say which version you run and how (Docker, Linux, Windows, Raspberry Pi).
+- Say which version you run and how (Docker, Linux, Windows).
 
 ## Pull requests
 

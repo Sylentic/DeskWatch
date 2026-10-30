@@ -5,7 +5,7 @@ the details.
 
 **Words used in these docs.** The *dashboard* is the web page the bridge serves at `/` (also called the kiosk page; the
 config section is `[kiosk]`). The *setup page* is `/setup`, where you add sources. *Kiosk mode* is only a browser
-started full screen, for example on a Raspberry Pi. A *source* is one service the bridge reads (Gitea, GitHub,
+started full screen on a wall display. A *source* is one service the bridge reads (Gitea, GitHub,
 Prometheus and so on).
 
 ## 1. Look at it first
@@ -55,5 +55,5 @@ without a login). Then open the cogwheel in the header, or `/setup`:
 
 - Keep it on your home network, or set a password and HTTPS first: [auth.md](auth.md), [https.md](https.md).
 - Alerts from Home Assistant or scripts: [home-assistant.md](home-assistant.md).
-- A wall display on a Raspberry Pi: [raspberry-pi.md](raspberry-pi.md).
+- A wall display: a Linux machine with a screen and a browser in kiosk mode, see [kiosk.md](kiosk.md#4-autostart-a-full-screen-browser-on-linux).
 - Without Docker: [install.md](install.md) (Linux) or [windows.md](windows.md).

@@ -7,7 +7,6 @@ Start with the [project README](../README.md) for what DeskWatch is, a quick dem
 - [getting-started.md](getting-started.md): from nothing to your own sources, with Docker, in four steps
 - [docker.md](docker.md): the container, Compose files, the dashboard on a homelab (the easiest start)
 - [install.md](install.md): the whole setup on a Linux server with systemd
-- [raspberry-pi.md](raspberry-pi.md): a Pi with a monitor or TV as a wall display
 - [windows.md](windows.md): the release zip, Mosquitto
 - [hosts.md](hosts.md): Linux and Windows hosts through Prometheus, pending updates
 - [updates.md](updates.md): the quiet "update available" notice

@@ -24,7 +24,7 @@ body:
     id: install
     attributes:
       label: How do you run it?
-      options: [Docker, Linux binary, Windows, Raspberry Pi, From source]
+      options: [Docker, Linux binary, Windows, From source]
     validations:
       required: true
   - type: input
