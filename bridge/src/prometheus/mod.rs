@@ -585,6 +585,12 @@ fn host_stats(host: &HostConfig, answers: &Answers) -> StatsData {
             .map(|n| n >= 1.0)
             .filter(|_| shown("reboot")),
         gpu_plain: !host.gpu_detail,
+        gpu_label: host
+            .gpu_names
+            .first()
+            .filter(|n| !n.is_empty())
+            .cloned()
+            .filter(|_| shown("gpu")),
         hide,
     }
 }

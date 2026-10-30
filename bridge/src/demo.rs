@@ -202,6 +202,7 @@ pub fn stats(now: u64) -> StatsData {
         gpu_temp_c: Some(round(38.0 + 30.0 * wave(13.0, 0.7))),
         gpus: Vec::new(),
         gpu_plain: false,
+        gpu_label: None,
         uptime_s: Some(1_234_567 + now % 100_000),
         net: Some(NetData {
             iface: "eth0".into(),
