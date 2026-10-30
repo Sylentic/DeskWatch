@@ -7,6 +7,8 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.0.12]
+
 ### Changed
 
 - **Running now is calmer after a new push.** When a newer run of the same pipeline and branch is running, the older run
