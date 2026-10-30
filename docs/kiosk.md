@@ -80,8 +80,8 @@ narrow (one cell wide) the chosen host is shown above the list instead. In the `
 table: uptime, CPU, memory and disk, and the download and upload rates (as columns when the panel is two cells wide,
 else as a small line under each host).
 
-`[kiosk] host_view = "detailed"` or `"compact"` chooses the view, or the [setup page](setup-page.md) ("Dashboard
-hosts", needs a data folder and a restart of the bridge); the setup page's choice wins over `bridge.toml`. In your own
+`[kiosk] host_view = "detailed"` or `"compact"` chooses the view, or the [setup page](setup-page.md) (Dashboard,
+"Host panel", needs a data folder; open dashboards switch within a few seconds); the setup page's choice wins over `bridge.toml`. In your own
 `[[kiosk.panel]]` blocks a `hosts` panel takes `view = "detailed"` or `"compact"` the same way; without `view` it is the
 plain table (two cells wide it gets network columns). A `stats` panel keeps working as before: with a fixed `host` it
 shows that host, without one it has arrows (`‹ 1/3 ›`) to step through the hosts.

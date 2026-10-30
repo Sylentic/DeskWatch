@@ -100,9 +100,33 @@ nav.side a.on { background: var(--card-hi); color: var(--fg); font-weight: 600; 
 nav.side .n { color: var(--muted); font-family: var(--mono); font-size: .8rem; font-weight: 400; }
 .sectiontitle { font-size: 1.65rem; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 1rem; }
 .content { max-width: 72rem; }
+.content.narrow { max-width: 46rem; }
+/* Two columns of cards that stack on their own (setup.js columns()). */
+.cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; align-items: start; }
+.col { display: grid; gap: 1rem; min-width: 0; }
+.col .card { margin: 0; }
+@media (max-width: 1100px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+/* A result line: green when something worked, red when it failed. */
+.note { margin: 0 0 1rem; padding: .6rem .9rem; border-radius: 10px; border: 1px solid; font-size: .9rem; }
+.note.ok { background: var(--ok-bg); border-color: color-mix(in srgb, var(--ok) 35%, transparent); color: var(--fg); }
+.note.bad { background: var(--bad-bg); border-color: var(--bad-edge); color: var(--fg); }
+.card > .note:last-child { margin-bottom: 0; }
+.buttons + .note { margin-top: .75rem; }
+/* Credentials on a source card: the state, then the file name. */
+.cred { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .3rem .5rem; }
+.cred code { font-size: .82rem; color: var(--soft); }
+/* Two choices side by side, such as the host panel. */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr)); gap: .6rem; }
+.tile { display: flex; align-items: flex-start; gap: .7rem; padding: .8rem .9rem; border: 1px solid var(--field-line); border-radius: 10px; background: var(--field); cursor: pointer; }
+.tile:hover { background: var(--card-hi); }
+.tile.on { border-color: var(--muted); background: var(--card-hi); }
+.tile input { margin-top: .2rem; flex: none; }
+.tile b { display: block; font-weight: 600; }
+.tile small { display: block; color: var(--muted); font-size: .82rem; margin-top: .1rem; }
 .content > .card { margin-top: 0; }
-.srcgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(28rem, 100%), 1fr)); gap: .75rem; align-items: start; }
-.srcgrid .card { margin: 0; }
+/* Source cards flow down two columns, so a tall card leaves no hole next to it. */
+.srcgrid { columns: 2 26rem; column-gap: .75rem; }
+.srcgrid .card { margin: 0 0 .75rem; break-inside: avoid; }
 .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(24rem, 100%), 1fr)); gap: 1rem; align-items: start; }
 .two .card { margin: 0; }
 .addbar { display: flex; align-items: center; gap: .5rem 1rem; flex-wrap: wrap; margin: 0 0 1rem; }
@@ -112,8 +136,11 @@ button.restart { background: #b91c1c; color: #fff; }
 .confirm { background: var(--bad-bg); border: 1px solid var(--bad-edge); border-radius: 10px; padding: .8rem 1rem; margin-top: .75rem; }
 .confirm p { margin: .25rem 0; }
 .confirm .buttons { margin-top: .5rem; }
-.secret { display: flex; justify-content: space-between; align-items: center; gap: .5rem; padding: .65rem 0; border-top: 1px solid var(--line); font-family: var(--mono); font-size: .85rem; }
-.secret small { color: var(--muted); font-family: var(--sans); font-size: .8rem; }
+.secret { display: flex; justify-content: space-between; align-items: center; gap: .5rem; padding: .65rem 0; border-top: 1px solid var(--line); }
+.card > .secret:first-child { border-top: 0; padding-top: 0; }
+.card > .secret:last-child { padding-bottom: 0; }
+.secret code { font-size: .87rem; }
+.secret small { display: block; color: var(--muted); font-size: .8rem; }
 .banner { margin: 0 0 1rem; }
 code { font-family: var(--mono); font-size: .9em; }
 @media (max-width: 720px) {
@@ -122,12 +149,15 @@ code { font-family: var(--mono); font-size: .9em; }
   .secret { flex-wrap: wrap; }
 }
 .setting { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .75rem 0; border-top: 1px solid var(--line); }
-.setting:first-of-type { border-top: 0; }
+.setting:first-of-type, h3.subhead + .setting { border-top: 0; }
+h3.subhead + .setting { padding-top: .35rem; }
+.card > p.small { margin: .75rem 0 0; }
 .setting small { display: block; color: var(--muted); font-size: .8rem; }
 .setting input[type=checkbox] { width: 18px; height: 18px; flex: none; }
 .setting select, .setting input.narrow { flex: 0 0 8rem; width: 8rem; }
 
 form.accessform { display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; margin-top: 1rem; max-width: 30rem; }
+form.accessform > button { justify-self: start; }
 form.accessform h3, .card h3 { font-size: .93rem; font-weight: 600; margin: 1.25rem 0 .25rem; }
 label.field { display: grid; gap: .3rem; font-size: .85rem; color: var(--muted); }
 textarea { width: 100%; }
@@ -264,3 +294,8 @@ code.onekey { display: block; padding: .7rem .8rem; background: var(--field); bo
 .helpsteps { margin: .5rem 0; padding-left: 1.3rem; }
 .helpsteps li { margin: .5rem 0; }
 .helpsteps pre { margin: .5rem 0 0; padding: .7rem .8rem; background: var(--field); border: 1px solid var(--field-line); border-radius: 8px; font-family: var(--mono); font-size: .85em; overflow-x: auto; }
+
+/* Small group headings inside a card of settings (Alerts). */
+.card h3.subhead { margin: .4rem 0 0; padding-top: 1rem; border-top: 1px solid var(--line); font-family: var(--mono); font-size: .7rem; font-weight: 500;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.card h2 + h3.subhead { margin-top: .5rem; padding-top: 0; border-top: 0; }

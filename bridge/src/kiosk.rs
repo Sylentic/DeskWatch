@@ -22,6 +22,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -142,8 +143,11 @@ pub struct Kiosk {
     last: Option<Value>,
     /// Unix seconds when the last snapshot went out.
     sent_at: u64,
-    /// Where a dismissed alert goes, when `[alerts] dismiss` is on.
+    /// Where a dismissed alert goes. Used only while `dismiss` is on.
     alert_tx: Option<mpsc::Sender<Inbound>>,
+    /// `[alerts] dismiss`, shared with the routes so the setup page can turn
+    /// it on or off without a restart.
+    dismiss: Arc<AtomicBool>,
     /// A newer release found by the daily check, shown as a chip in the header.
     update: Option<crate::update::UpdateNotice>,
     /// Dismissed failed runs and muted sources, shared with the routes.
@@ -165,6 +169,7 @@ impl Kiosk {
             last: None,
             sent_at: 0,
             alert_tx: None,
+            dismiss: Arc::new(AtomicBool::new(false)),
             update: None,
             clicked: SharedClicked::default(),
             containers: None,
@@ -192,19 +197,37 @@ impl Kiosk {
         self
     }
 
-    /// Put the ticker settings in the layout. With `dismiss` on, the page may
+    /// Put the alert settings in the layout. With `dismiss` on, the page may
     /// dismiss an alert; that goes to the main loop as a clear message.
     pub fn with_alerts(mut self, config: &AlertsConfig, tx: mpsc::Sender<Inbound>) -> Self {
+        self.alert_tx = Some(tx);
+        self.set_alerts(config);
+        self
+    }
+
+    /// Change the alert settings while running (the setup page saved them).
+    /// Open pages pick them up with the next snapshot.
+    pub fn set_alerts(&mut self, config: &AlertsConfig) {
         self.layout["alerts"] = json!({
-            "ticker": config.ticker, "speed": config.ticker_speed.factor(),
+            "ticker": config.ticker,
             "show_source": config.show_source, "dismiss": config.dismiss,
             "failed_pill": config.failed_pill, "failed_as_alerts": config.failed_as_alerts,
         });
-        if config.dismiss {
-            self.alert_tx = Some(tx);
-        }
+        self.dismiss.store(config.dismiss, Ordering::Relaxed);
         self.send_layout();
-        self
+    }
+
+    /// Build the panels again from a changed `[kiosk]` (the setup page saved
+    /// another host view). The alert settings and the setup link stay.
+    pub fn set_panels(&mut self, config: &KioskConfig) {
+        let mut layout = layout_json(config);
+        for key in ["alerts", "setup"] {
+            if let Some(value) = self.layout.get(key) {
+                layout[key] = value.clone();
+            }
+        }
+        self.layout = layout;
+        self.send_layout();
     }
 
     /// Send the layout again as the first snapshot (before any real one).
@@ -231,6 +254,7 @@ impl Kiosk {
             rx: self.tx.subscribe(),
             slots: self.slots.clone(),
             alert_tx: self.alert_tx.clone(),
+            dismiss: self.dismiss.clone(),
             clicked: self.clicked.clone(),
         };
         let api = Router::new()
@@ -536,6 +560,7 @@ struct AppState {
     rx: watch::Receiver<Frame>,
     slots: Arc<Semaphore>,
     alert_tx: Option<mpsc::Sender<Inbound>>,
+    dismiss: Arc<AtomicBool>,
     clicked: SharedClicked,
 }
 
@@ -593,7 +618,11 @@ async fn mute_source_handler(State(state): State<AppState>, body: axum::body::By
 /// `POST /api/kiosk/alert/dismiss {"id": "..."}`: remove one active alert, for
 /// every screen. It can only clear; it cannot raise or change an alert.
 async fn dismiss_handler(State(state): State<AppState>, body: axum::body::Bytes) -> Response {
-    let Some(tx) = &state.alert_tx else {
+    let tx = state
+        .alert_tx
+        .as_ref()
+        .filter(|_| state.dismiss.load(Ordering::Relaxed));
+    let Some(tx) = tx else {
         return (
             StatusCode::CONFLICT,
             "dismissing alerts is off ([alerts] dismiss)",

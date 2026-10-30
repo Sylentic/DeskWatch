@@ -86,12 +86,36 @@ struct Shared {
     mqtt: MqttLink,
     /// Where the test alert goes: the main loop, like an alert from MQTT.
     alert_tx: Option<mpsc::Sender<Inbound>>,
+    /// Where saved alert and dashboard settings go, so they apply without a
+    /// restart. Without it (tests) they wait for a restart.
+    settings_tx: Option<mpsc::Sender<LiveSettings>>,
     /// A newer release found by the daily check, for the Bridge section.
     update: crate::update::UpdateNotice,
     /// Source id (`github:main`) to health name, kept current by the main loop.
     health: Mutex<BTreeMap<String, &'static str>>,
     /// Source id to the error behind a health that is not `ok`.
     reasons: Mutex<BTreeMap<String, String>>,
+}
+
+/// Settings the setup page saved that the running bridge takes over without a
+/// restart: `[alerts]` and the dashboard's host view.
+#[derive(Debug, Clone)]
+pub struct LiveSettings {
+    pub alerts: crate::config::AlertsConfig,
+    pub kiosk: crate::config::KioskConfig,
+}
+
+/// Hand the settings of a saved config to the main loop. False when there is
+/// nobody to take them (then they apply after a restart).
+fn apply_live(shared: &Shared, config: &Config) -> bool {
+    let Some(tx) = &shared.settings_tx else {
+        return false;
+    };
+    tx.try_send(LiveSettings {
+        alerts: config.alerts.clone(),
+        kiosk: config.kiosk.clone(),
+    })
+    .is_ok()
 }
 
 impl Setup {
@@ -121,6 +145,7 @@ impl Setup {
                 mqtt_enabled: config.mqtt.enabled,
                 mqtt,
                 alert_tx: None,
+                settings_tx: None,
                 update: crate::update::UpdateNotice::default(),
                 health: Mutex::new(BTreeMap::new()),
                 reasons: Mutex::new(BTreeMap::new()),
@@ -133,6 +158,15 @@ impl Setup {
     pub fn with_alert_sender(mut self, tx: mpsc::Sender<Inbound>) -> Self {
         if let Some(shared) = Arc::get_mut(&mut self.shared) {
             shared.alert_tx = Some(tx);
+        }
+        self
+    }
+
+    /// Apply saved alert and dashboard settings at once: they go to the main
+    /// loop, which hands them to the kiosk and the alerts. Call before `router`.
+    pub fn with_settings_sender(mut self, tx: mpsc::Sender<LiveSettings>) -> Self {
+        if let Some(shared) = Arc::get_mut(&mut self.shared) {
+            shared.settings_tx = Some(tx);
         }
         self
     }
@@ -283,7 +317,6 @@ async fn status(State(shared): State<Arc<Shared>>) -> Response {
         "mqtt_enabled": shared.mqtt_enabled,
         "mqtt_connected": shared.mqtt_enabled && shared.mqtt.is_up(),
         "ticker": effective.alerts.ticker,
-        "ticker_speed": effective.alerts.ticker_speed,
         "show_source": effective.alerts.show_source,
         "dismiss": effective.alerts.dismiss,
         "http_input": effective.alerts.http_input,
@@ -878,7 +911,7 @@ async fn save_mqtt(
 }
 
 /// Save how the dashboard's built-in layout shows the hosts. There is nothing
-/// to test, and the layout is built at startup, so it applies after a restart.
+/// to test; like the alert settings it applies at once when it can.
 async fn save_kiosk(
     State(shared): State<Arc<Shared>>,
     headers: HeaderMap,
@@ -902,25 +935,26 @@ async fn save_kiosk(
         Ok(text) => text,
         Err(err) => return refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
     };
-    if let Err(err) = shared.base.clone().with_overlay(&text) {
-        return refuse(StatusCode::BAD_REQUEST, format!("{err:#}"));
-    }
+    let config = match shared.base.clone().with_overlay(&text) {
+        Ok(config) => config,
+        Err(err) => return refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
+    };
     if let Err(err) = store.write_sources(&text) {
         return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}"));
     }
-    shared.changed.store(true, Ordering::Relaxed);
-    tracing::info!(
-        host_view = view,
-        "setup: host view saved (apply after a restart)"
-    );
+    let live = apply_live(&shared, &config);
+    if !live {
+        shared.changed.store(true, Ordering::Relaxed);
+    }
+    tracing::info!(host_view = view, live, "setup: host view saved");
     json_response(
         StatusCode::OK,
-        json!({ "saved": true, "id": "kiosk", "applied": true, "restart_needed": true }),
+        json!({ "saved": true, "id": "kiosk", "applied": true, "restart_needed": !live }),
     )
 }
 
-/// Save the ticker settings of `[alerts]`. The ticker is part of the layout
-/// and the limit lives in the composer, so it applies after a restart.
+/// Save the settings of `[alerts]`. With a main loop to hand them to they apply
+/// at once, otherwise after a restart.
 async fn save_alerts(
     State(shared): State<Arc<Shared>>,
     headers: HeaderMap,
@@ -943,17 +977,21 @@ async fn save_alerts(
         Ok(text) => text,
         Err(err) => return refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
     };
-    if let Err(err) = shared.base.clone().with_overlay(&text) {
-        return refuse(StatusCode::BAD_REQUEST, format!("{err:#}"));
-    }
+    let config = match shared.base.clone().with_overlay(&text) {
+        Ok(config) => config,
+        Err(err) => return refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
+    };
     if let Err(err) = store.write_sources(&text) {
         return refuse(StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}"));
     }
-    shared.changed.store(true, Ordering::Relaxed);
-    tracing::info!("setup: alert settings saved (apply after a restart)");
+    let live = apply_live(&shared, &config);
+    if !live {
+        shared.changed.store(true, Ordering::Relaxed);
+    }
+    tracing::info!(live, "setup: alert settings saved");
     json_response(
         StatusCode::OK,
-        json!({ "saved": true, "id": "alerts", "restart_needed": true }),
+        json!({ "saved": true, "id": "alerts", "applied": true, "restart_needed": !live }),
     )
 }
 

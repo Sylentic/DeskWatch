@@ -534,7 +534,6 @@ async fn alert_settings_are_saved_and_need_a_restart() {
     let (_, _, text) = send(&router, "GET", "/api/setup/status", &[], "").await;
     let v: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(v["alerts"]["ticker"], false);
-    assert_eq!(v["alerts"]["ticker_speed"], "fast");
     assert_eq!(v["alerts"]["max_active"], 5);
     assert_eq!(v["alerts"]["http_input"], true);
     assert_eq!(v["alerts"]["failed_pill"], false);
@@ -548,6 +547,37 @@ async fn alert_settings_are_saved_and_need_a_restart() {
     let evil = [("origin", "https://evil.example"), ("host", "bridge.lan")];
     let (status, ..) = send(&router, "POST", "/api/setup/alerts", &evil, "{}").await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn saved_alert_and_dashboard_settings_go_to_the_running_bridge() {
+    let temp = Temp::new("live-settings");
+    let data = temp.0.join("data");
+    let config = Config::from_toml("").unwrap();
+    let store = Store::open(&data).unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::channel(4);
+    let router = Setup::new(&config, MqttLink::default(), Some(store), None)
+        .with_settings_sender(tx)
+        .router();
+
+    let body = json!({ "ticker": false, "dismiss": false, "http_input": true, "max_active": 3 })
+        .to_string();
+    let (status, _, text) = send(&router, "POST", "/api/setup/alerts", &[], &body).await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["restart_needed"], false, "{text}");
+    let live = rx.try_recv().expect("the settings go to the main loop");
+    assert!(!live.alerts.ticker && !live.alerts.dismiss && live.alerts.http_input);
+    assert_eq!(live.alerts.max_active, 3);
+
+    let compact = json!({ "host_view": "compact" }).to_string();
+    let (status, _, text) = send(&router, "POST", "/api/setup/kiosk", &[], &compact).await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    let live = rx.try_recv().expect("the host view goes to the main loop");
+    assert_eq!(live.kiosk.host_view, crate::config::HostView::Compact);
+    let (_, _, text) = send(&router, "GET", "/api/setup/status", &[], "").await;
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["restart_needed"], false, "nothing waits for a restart");
 }
 
 #[tokio::test]
@@ -891,7 +921,7 @@ fn the_page_has_the_sections_the_confirm_boxes_and_the_restart_wait() {
         "api/setup/mqtt/delete",
         "api/setup/secret/delete",
         "api/setup/restart",
-        "confirmBox",
+        "confirmModal",
         "restarting.boot",
         "allow_restart = true",
     ] {
