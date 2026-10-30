@@ -85,7 +85,7 @@ hosts = [
 ```
 
 Per host, `gpu_names = ["3060", "1650"]` sets short names (up to 5 characters, in GPU order) for the bars of a host
-with several GPUs, and `gpu_detail = false` removes the VRAM bar and the line under each GPU.
+with several GPUs (a host with one GPU uses the first name for its GPU bar), and `gpu_detail = false` removes the VRAM bar and the line under each GPU.
 
 `show` takes `cpu`, `memory`, `disk`, `uptime`, `network`, `updates`, `reboot`, `temperature` and `gpu`; without it a
 host shows everything it reports.
