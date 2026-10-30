@@ -505,6 +505,10 @@ async fn the_host_view_is_saved_and_needs_a_restart() {
     assert_eq!(v["host_view_origin"], "data_folder");
     assert_eq!(v["restart_needed"], true);
 
+    let alerting = json!({ "host_view": "alerting" }).to_string();
+    let (status, _, text) = send(&router, "POST", "/api/setup/kiosk", &[], &alerting).await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+
     let bad = json!({ "host_view": "huge" }).to_string();
     let (status, ..) = send(&router, "POST", "/api/setup/kiosk", &[], &bad).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -1206,4 +1210,60 @@ async fn hosts_are_discovered_chosen_renamed_and_saved() {
         std::fs::read_to_string(temp.0.join("data/sources.toml")).unwrap(),
         saved
     );
+}
+
+#[tokio::test]
+async fn notices_are_added_ended_and_deleted() {
+    let temp = Temp::new("notices");
+    let data = temp.0.join("data");
+    let store = Store::open(&data).unwrap();
+    let notices = crate::notices::Notices::load(&data);
+    let config = Config::from_toml("").unwrap();
+    let router = Setup::new(&config, MqttLink::default(), Some(store), None)
+        .with_notices(Some(notices.clone()))
+        .router();
+
+    let add = json!({ "kind": "problem", "text": "The NAS is slow" }).to_string();
+    let (status, _, text) = send(&router, "POST", "/api/setup/notices", &[], &add).await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    let id = serde_json::from_str::<Value>(&text).unwrap()["notice"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    // The kiosk sees it at once, and it is kept in the data folder.
+    let now = crate::kiosk::unix_now();
+    assert_eq!(notices.current(now).len(), 1);
+    assert!(data.join("notices.json").exists());
+
+    let (_, _, text) = send(&router, "GET", "/api/setup/notices", &[], "").await;
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["notices"][0]["text"], "The NAS is slow");
+    assert_eq!(v["editable"], true);
+
+    let bad = json!({ "kind": "planned", "text": "" }).to_string();
+    let (status, ..) = send(&router, "POST", "/api/setup/notices", &[], &bad).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let wrong = json!({ "kind": "urgent", "text": "x" }).to_string();
+    let (status, ..) = send(&router, "POST", "/api/setup/notices", &[], &wrong).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let which = json!({ "id": id }).to_string();
+    let (status, ..) = send(&router, "POST", "/api/setup/notices/end", &[], &which).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(notices.current(crate::kiosk::unix_now() + 1).is_empty());
+    let (status, ..) = send(&router, "POST", "/api/setup/notices/delete", &[], &which).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, ..) = send(&router, "POST", "/api/setup/notices/delete", &[], &which).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // A page on another site may not add one.
+    let (status, ..) = send(
+        &router,
+        "POST",
+        "/api/setup/notices",
+        &[("origin", "https://evil.example"), ("host", "bridge:8787")],
+        &add,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
 }

@@ -39,6 +39,7 @@ pub mod icons;
 pub mod kiosk;
 pub mod model;
 pub mod mqtt;
+pub mod notices;
 pub mod probe;
 pub mod prometheus;
 pub mod setup;

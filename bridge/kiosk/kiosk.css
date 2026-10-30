@@ -304,6 +304,7 @@ a.rsrc:hover, a.rsrc:focus-visible { background: var(--card); }
 .rsrc.warn { border-color: var(--amber-edge); } .rsrc.warn .st { color: var(--amber); }
 .rsrc.bad { border-color: var(--red-edge); background: var(--red-bg); } .rsrc.bad .st { color: var(--red-fg); }
 #sources { display: contents; }
+.rail[hidden] { display: none; }
 .rail .end { margin-left: auto; }
 /* The connection state at the end of the bar. */
 #conn { font-size: 0.78rem; padding: 0.2rem 0.4rem; }
@@ -636,3 +637,45 @@ body.gesturing, body.gesturing * { cursor: grabbing !important; }
 
 /* A viewer cannot dismiss or mute (the bridge says no); hide those buttons. */
 .ro [data-dismiss], .ro [data-dismiss-all], .ro [data-dismiss-alert], .ro [data-dismiss-all-alerts], .ro [data-mute] { display: none; }
+
+/* Alerting Kiosk: a wall of small host cards. Calm and grey while all is well;
+   a host over a warning line lights amber, over a critical line (or down) red.
+   A host that just got worse blinks (10 s yellow, 30 s red), then stays steady. */
+.w-hosts .wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); grid-auto-rows: min-content; gap: 0.7rem; align-content: start; }
+.ah { border: 1px solid var(--card-edge); background: var(--card-hi); border-radius: 0.7rem; padding: 0.6rem 0.75rem; display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
+.ah .an { display: flex; align-items: center; gap: 0.5rem; }
+.ah .nm { font-size: 0.95rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ah .dot { flex: none; width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--green); }
+.ah .why { margin-left: auto; flex: none; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
+.ah .acs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.3rem 0.7rem; }
+.ah .ac { display: flex; flex-direction: column; gap: 0.1rem; }
+.ah .ac .l { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.08em; color: var(--dim); }
+.ah .ac .v { font-size: 1.35rem; font-weight: 600; color: var(--soft); }
+.ah .ac .v small { font-size: 0.7em; color: var(--dim); font-weight: 500; }
+.ah .ac .v.warn-text { color: var(--amber); }
+.ah .ac .v.crit-text { color: var(--red); }
+.ah .bar { height: 0.28rem; }
+.ah .af { font-family: var(--mono); font-size: 0.66rem; color: var(--dim); }
+.ah .af .y { color: var(--yellow); font-weight: 600; }
+.ah .gone { padding: 1.4rem 0; text-align: center; color: var(--red-fg); }
+.ah.warn { border-color: var(--yellow); background: linear-gradient(180deg, var(--yellow-bg), var(--card-hi) 75%); box-shadow: 0 0 1.2rem rgba(250, 204, 21, 0.16); }
+.ah.warn .dot { background: var(--yellow); }
+.ah.warn .why { color: var(--yellow-fg); }
+.ah.crit, .ah.down { border-color: var(--red); background: linear-gradient(180deg, var(--red-bg), var(--card-hi) 75%); box-shadow: 0 0 1.4rem rgba(248, 113, 113, 0.24); }
+.ah.crit .dot, .ah.down .dot { background: var(--red); }
+.ah.crit .why, .ah.down .why { color: var(--red-fg); }
+.ah.down { border-style: dashed; }
+@keyframes ah-blink { 50% { opacity: 0.35; } }
+.ah.blink { animation: ah-blink 0.9s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .ah.blink { animation: none; } }
+
+/* Notices on the Alerting Kiosk: yellow for a problem, blue for planned work. */
+.chip.npill { max-width: 34rem; min-width: 0; }
+.chip.npill::before { flex: none; }
+.chip.npill .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.chip.npill.problem { --c: var(--yellow); background: var(--yellow-bg); }
+.chip.npill.planned { --c: var(--blue); background: var(--blue-bg); }
+.chip.npill .until { color: var(--dim); font-weight: 500; }
+.chip.npill.more { --c: var(--dim); }
+.failed-pop .dot.n-problem { --c: var(--yellow); }
+.failed-pop .dot.n-planned { --c: var(--blue); }

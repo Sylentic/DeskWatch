@@ -386,11 +386,11 @@ pub fn set_mqtt(
     })
 }
 
-/// Set `host_view` in `[kiosk]` of `sources.toml`: `detailed` or `compact`.
+/// Set `host_view` in `[kiosk]` of `sources.toml`: `detailed`, `compact` or `alerting`.
 pub fn set_kiosk(current: &str, host_view: &str) -> Result<String> {
     anyhow::ensure!(
-        matches!(host_view, "detailed" | "compact"),
-        "host_view must be \"detailed\" or \"compact\""
+        matches!(host_view, "detailed" | "compact" | "alerting"),
+        "host_view must be \"detailed\", \"compact\" or \"alerting\""
     );
     let mut root = parse(current)?;
     let table = root

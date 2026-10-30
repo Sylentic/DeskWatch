@@ -95,7 +95,7 @@ const DISMISSED_FILE: &str = "dismissed.json";
 /// reported yet and no run looks failed.
 const DISMISSED_KEEP_S: u64 = 7 * 24 * 3600;
 
-fn unix_now() -> u64 {
+pub(crate) fn unix_now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs())
@@ -150,6 +150,8 @@ pub struct Kiosk {
     clicked: SharedClicked,
     /// Firefox container per source type, for the page's links.
     containers: Option<crate::supervisor::Containers>,
+    /// Notices typed on the setup page, shown on the Alerting Kiosk.
+    notices: Option<crate::notices::Notices>,
 }
 
 impl Kiosk {
@@ -168,6 +170,7 @@ impl Kiosk {
             update: None,
             clicked: SharedClicked::default(),
             containers: None,
+            notices: None,
         }
     }
 
@@ -183,6 +186,13 @@ impl Kiosk {
     /// when a source names one.
     pub fn with_containers(mut self, containers: crate::supervisor::Containers) -> Self {
         self.containers = Some(containers);
+        self
+    }
+
+    /// Send the notices from the setup page, as `"notices"`: the ones showing
+    /// or still to come. The page shows them on the Alerting Kiosk once started.
+    pub fn with_notices(mut self, notices: crate::notices::Notices) -> Self {
+        self.notices = Some(notices);
         self
     }
 
@@ -271,6 +281,12 @@ impl Kiosk {
                 value["containers"] = json!(*containers);
             }
         }
+        if let Some(notices) = &self.notices {
+            let current = notices.current(now);
+            if !current.is_empty() {
+                value["notices"] = json!(current);
+            }
+        }
         if let Some(update) = self.update.as_ref().and_then(|u| u.get()) {
             value["update"] = json!(update);
         }
@@ -348,6 +364,7 @@ fn layout_json(config: &KioskConfig) -> Value {
     };
     json!({
         "columns": config.columns, "rows": config.rows, "panels": panels,
+        "alerting": config.alerting(),
         "theme": { "mode": config.theme, "night_from": config.night_from, "night_to": config.night_to },
         "pixel_shift_s": shift_s,
     })

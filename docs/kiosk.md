@@ -68,6 +68,31 @@ GPU. In `bridge.toml` or `sources.toml` that is `gpu_names = ["3060", "1650"]` a
 The plain GPU, VRAM and GPU temp figures then show the busiest GPU, so the "needs a look" warning and the graph work as
 with one GPU. Several GPUs per host are only tested against mock data, not on a real multi-GPU machine.
 
+### Alerting Kiosk (planned for 1.1.0)
+
+`[kiosk] host_view = "alerting"`, or **Dashboard hosts** on the [setup page](setup-page.md), turns the whole screen into
+a wall of small host cards: CPU, RAM, disk and GPU (if the host has one) with a bar each, and a line for pending updates
+or a needed restart. It is off by default and only applies to the built-in layout (panels set in `bridge.toml` stay as
+they are). The Open PRs badge is not shown in this mode.
+
+- A host that is fine stays quiet grey. A host over a warning line (CPU 70, RAM 80, disk 80, GPU 80 %, restarted less
+  than an hour ago, or restart needed) is lit yellow; over a critical line (90 %, GPU 95 %) it is lit red; a host that
+  stops answering is a dimmed card with a dashed red edge. The tag at the top right says why (`DISK 93`).
+- Pending **security updates** (`2 SECURITY`) and a **restart that is needed** light a host yellow, and their text on
+  the card is yellow too. They blink for 10 seconds when they first appear, like any yellow warning.
+- Nothing else raises a flag here: the red "Failed" notice, the failed and alerts chips, the alert ticker and pill (so
+  Home Assistant, Alertmanager and script alerts), the Open PRs badge and the Sources bar are all off in this mode. The
+  host cards are the alerting. A source that goes down still gets its pill in the header.
+- Hosts that need a look come first, the worst first. The rest keep the order from the Hosts page of Setup.
+- A host that **gets worse** blinks: yellow for 10 seconds, red (or down) for 30 seconds. After that the card stays lit
+  and steady. What was already wrong when the page was opened does not blink. Browsers set to "reduce motion" do not
+  blink.
+- Windows hosts work through Prometheus with windows_exporter like any other host ([hosts.md](hosts.md)).
+- **Notices** typed on the [setup page](setup-page.md#dashboard-hosts) are the only pills at the top: yellow for a
+  problem ("The NAS is slow, end unknown"), blue for planned work ("Patching all servers, until 23:00"). Each shows
+  from its start until its end, problems first. At most three are shown; more go behind a "+N more" pill that opens
+  the full list. Times are entered in the browser's time zone on the setup page.
+
 ### Hosts: detailed or compact
 
 The built-in layout has one **Hosts** panel, two cells wide and two tall. In the `detailed` view (the default) a list

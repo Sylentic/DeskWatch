@@ -249,6 +249,86 @@
     };
   }
 
+
+  // ---- Alerting Kiosk: a wall of small host cards -------------------------
+  // How bad is a host: 0 fine, 1 yellow (a warning line crossed, restarted,
+  // restart needed), 2 red (a critical line crossed), 3 down. `why` names the
+  // first thing that put it there, for the tag on the card.
+  function hostLevel(h) {
+    var s = h.stats || {};
+    if (!h.up) return { lvl: 3, why: 'down' };
+    var out = { lvl: 0, why: '', kind: '' };
+    function check(label, v, warn, crit) {
+      if (v == null) return;
+      var lvl = v >= crit ? 2 : v >= warn ? 1 : 0;
+      if (lvl > out.lvl) out = { lvl: lvl, why: label + ' ' + Math.round(v), kind: '' };
+    }
+    check('CPU', s.cpu_pct, 70, 90);
+    check('RAM', s.ram_pct, 80, 90);
+    check('DISK', s.disk_pct, 80, 90);
+    check('GPU', s.gpu_pct, 80, 95);
+    // Security updates and a needed restart are warnings (yellow) like a full disk.
+    if (!out.lvl && s.updates_security > 0) out = { lvl: 1, why: s.updates_security + ' security', kind: '' };
+    if (!out.lvl && s.reboot_needed) out = { lvl: 1, why: 'restart needed', kind: '' };
+    if (!out.lvl && s.uptime_s != null && s.uptime_s < REBOOT_S) out = { lvl: 1, why: 'restarted', kind: '' };
+    return out;
+  }
+
+  // A host that gets worse blinks once: yellow for 10 s, red (or down) for
+  // 30 s, then it stays lit and steady. The first snapshot after the page
+  // opens never blinks: what was already wrong is not new.
+  var BLINK_MS = { 1: 10000, 2: 30000, 3: 30000 };
+  var hostSeen = null;   // host name -> level, null until the first snapshot
+  var hostBlink = {};    // host name -> when the blinking stops (ms)
+  function trackHostLevels() {
+    var first = hostSeen === null;
+    if (first) hostSeen = {};
+    var now = Date.now();
+    (snap.hosts || []).forEach(function (h) {
+      var lvl = hostLevel(h).lvl, was = hostSeen[h.name] || 0;
+      if (!first && lvl > was) {
+        hostBlink[h.name] = now + BLINK_MS[lvl];
+        // The blink class goes off by itself: redraw when it ends.
+        setTimeout(function () { if (snap) drawGrid(); }, BLINK_MS[lvl] + 100);
+      }
+      hostSeen[h.name] = lvl;
+    });
+  }
+
+  function hostsAlerting(hosts) {
+    var now = Date.now();
+    var rows = hosts.map(function (h, i) { return { h: h, i: i, v: hostLevel(h) }; });
+    // Hosts that need a look come first, the worst first; the rest keep the order from Setup.
+    rows.sort(function (a, b) { return (b.v.lvl - a.v.lvl) || (a.i - b.i); });
+    var html = '<div class="wall">';
+    rows.forEach(function (r) {
+      var h = r.h, s = h.stats || {}, hide = s.hide || [];
+      var show = function (part) { return hide.indexOf(part) < 0; };
+      var cls = ['ok', 'warn', 'crit', 'down'][r.v.lvl];
+      var blink = (hostBlink[h.name] || 0) > now && r.v.lvl > 0 ? ' blink' : '';
+      var cell = function (label, v, warn, crit) {
+        if (v == null) return '';
+        var c = v >= crit ? 'var(--red)' : v >= warn ? 'var(--amber)' : 'var(--green)';
+        return '<div class="ac"><span class="l">' + label + '</span><span class="v' + (v >= crit ? ' crit-text' : v >= warn ? ' warn-text' : '') + '">' + Math.round(v) + '<small>%</small></span>' +
+          '<div class="bar"><i style="--p:' + Math.max(0, Math.min(100, v)) + '%;--c:' + c + '"></i></div></div>';
+      };
+      var cells = h.up ? (show('cpu') ? cell('CPU', s.cpu_pct, 70, 90) : '') + (show('memory') ? cell('RAM', s.ram_pct, 80, 90) : '') +
+        (show('disk') ? cell('DISK', s.disk_pct, 80, 90) : '') + cell('GPU', s.gpu_pct, 80, 95) : '';
+      // Pending security updates and a needed restart are yellow, in the text too.
+      var yel = function (t) { return '<span class="y">' + t + '</span>'; };
+      var foot = !h.up ? '' : [s.updates ? s.updates + ' updates' : '', s.updates_security > 0 ? yel(s.updates_security + ' security') : '',
+        s.reboot_needed ? yel('restart needed') : ''].filter(Boolean).join(' &middot; ');
+      html += '<div class="ah ' + cls + blink + '"><div class="an"><span class="dot"></span><span class="nm">' + esc(h.name) + '</span>' +
+        (r.v.why ? '<span class="why">' + esc(r.v.why) + '</span>' : '') + '</div>' +
+        (h.up ? '<div class="acs">' + cells + '</div>' + (foot ? '<div class="af">' + foot + '</div>' : '') : '<div class="gone">not answering</div>') + '</div>';
+    });
+    html += '</div>';
+    var down = rows.filter(function (r) { return r.v.lvl === 3; }).length;
+    var look = rows.filter(function (r) { return r.v.lvl > 0 && r.v.lvl < 3; }).length;
+    return { title: 'Hosts', count: (hosts.length - down) + '/' + hosts.length + ' up',
+      tag: down ? down + ' down' : look ? look + (look === 1 ? ' needs' : ' need') + ' a look' : '', body: html };
+  }
+
   function ciStale() {
     // Only the CI sources: a Prometheus outage does not make the PR list old.
     return (snap.sources || []).some(function (s) { return s.health !== 'ok' && /^(gitea|github|gitlab|bitbucket|azure_devops):/.test(s.id); });
@@ -342,6 +422,7 @@
     },
 
     hosts: function (p) {
+      if (p && p.view === 'alerting' && (snap.hosts || []).length) return hostsAlerting(snap.hosts);
       if (p && p.view === 'detailed' && (snap.hosts || []).length) return hostsDetailed(snap.hosts);
       // The compact host view is a taller table: it adds the network rates, as
       // columns when it is two cells wide, else as a small line under each host.
@@ -772,8 +853,10 @@
       chip.hidden = true;
     };
   }
+  // The Alerting Kiosk is about hosts: pipeline failures are not shown there.
+  function alerting() { return !!(snap.layout && snap.layout.alerting); }
   function visibleFailed() {
-    return snap.failed || [];
+    return alerting() ? [] : snap.failed || [];
   }
   function dismissFailed(id) {
     // id null: dismiss everything that is listed now.
@@ -830,8 +913,9 @@
   var alertsOpen = false;
   var SEV_NAME = { critical: 'Critical', warn: 'Warning', info: 'Info' };
   // Real alerts only: the ticker and the "is there a critical alert" check use these.
+  // The Alerting Kiosk shows no alerts at all: the host cards are the alerting.
   function realAlerts() {
-    return snap.alerts || [];
+    return alerting() ? [] : snap.alerts || [];
   }
   // With `[alerts] failed_as_alerts` every failed run that is not dismissed is
   // also a critical alert in the Alerts box and menu. Dismissing one dismisses
@@ -890,6 +974,49 @@
     if (chip) pop.style.left = Math.max(8, Math.min(chip.getBoundingClientRect().left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
   }
 
+
+  // ---- Notices (Alerting Kiosk) ---------------------------------------------
+  // Messages typed on the setup page ("Patching all servers, until 23:00"):
+  // a pill each from their start until their end, problems (yellow) before
+  // planned work (blue). At most three; more go behind a "+N more" pill.
+  var MAX_NOTICE_PILLS = 3;
+  function activeNotices() {
+    var now = nowS();
+    return (snap.notices || []).filter(function (n) { return (n.start || 0) <= now && (n.end == null || n.end > now); })
+      .sort(function (a, b) { return (a.kind === b.kind ? 0 : a.kind === 'problem' ? -1 : 1) || ((a.start || a.created) - (b.start || b.created)); });
+  }
+  function noticeUntil(n) {
+    if (n.end == null) return n.kind === 'problem' ? 'end unknown' : '';
+    var d = new Date((n.end - skew) * 1000), today = new Date(nowS() * 1000);
+    var hm = (d.getHours() < 10 ? '0' : '') + d.getHours() + ':' + (d.getMinutes() < 10 ? '0' : '') + d.getMinutes();
+    return 'until ' + (d.toDateString() === today.toDateString() ? '' : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()] + ' ') + hm;
+  }
+  function noticePills() {
+    var list = activeNotices();
+    var html = list.slice(0, MAX_NOTICE_PILLS).map(function (n) {
+      var until = noticeUntil(n);
+      return '<span class="chip npill ' + esc(n.kind) + '" title="' + esc(n.text) + '"><span class="t">' + esc(n.text) + (until ? '<span class="until">, ' + until + '</span>' : '') + '</span></span>';
+    }).join('');
+    if (list.length > MAX_NOTICE_PILLS) {
+      html += '<button type="button" class="chip npill more action" data-alerts-toggle="1" aria-expanded="' + (alertsOpen ? 'true' : 'false') +
+        '" title="Show every notice">+' + (list.length - MAX_NOTICE_PILLS) + ' more</button>';
+    } else alertsOpen = false;
+    return html;
+  }
+  function renderNoticesPop() {
+    var pop = $('alerts-pop'), list = activeNotices();
+    if (!alertsOpen || list.length <= MAX_NOTICE_PILLS) { alertsOpen = false; pop.hidden = true; pop.innerHTML = ''; return; }
+    var html = '<div class="head"><b>Notices</b></div><ul>' + list.map(function (n) {
+      var until = noticeUntil(n);
+      return '<li><span class="what"><span class="dot n-' + esc(n.kind) + '"></span><b>' + esc(n.text) + '</b>' +
+        (until ? '<span class="sub">' + until + '</span>' : '') + '</span></li>';
+    }).join('') + '</ul>';
+    if (pop.innerHTML !== html) pop.innerHTML = html;
+    pop.hidden = false;
+    var chip = document.querySelector('[data-alerts-toggle]');
+    if (chip) pop.style.left = Math.max(8, Math.min(chip.getBoundingClientRect().left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
+  }
+
   function renderBadges() {
     var el = $('badges'), html = '';
     var names = { pr: 'open PRs', pipeline: 'failed', server: 'down', warn: 'with a problem', home: 'alerts' };
@@ -910,7 +1037,8 @@
           '" title="Show the failed runs">' + n + ' failed</button>';
         return;
       }
-      if (b.icon === 'pr' && !b.count) return; // no open PRs: no badge
+      if (alerting() && (b.icon === 'pipeline' || b.icon === 'pr')) return; // the Alerting Kiosk is about hosts: no PR or pipeline badges
+      if (b.icon === 'pr' && !b.count) return; // no open PRs: no badge; the Alerting Kiosk has no PR badge at all
       html += '<span class="chip ' + esc(b.status) + '">' + b.count + ' ' + (names[b.icon] || '') + '</span>';
     });
     // The Alerts chip: every active alert, worst colour wins. Gone at 0, like Failed and Open PRs.
@@ -918,10 +1046,12 @@
       : alerts.some(function (a) { return a.severity === 'warn'; }) ? 'warn' : alerts.length ? 'open' : 'ok';
     if (alerts.length) html += '<button type="button" class="chip ' + worst + ' action" data-alerts-toggle="1" aria-expanded="' + (alertsOpen ? 'true' : 'false') +
       '" title="Show the alerts">' + alerts.length + ' alerts</button>';
-    if (!alerts.length) alertsOpen = false;
+    if (!alerts.length && !alerting()) alertsOpen = false;
+    // The Alerting Kiosk shows the notices from the setup page instead of any badge.
+    if (alerting()) html = noticePills();
     if (el.innerHTML !== html) el.innerHTML = html;
     renderFailedPop();
-    renderAlertsPop();
+    if (alerting()) renderNoticesPop(); else renderAlertsPop();
   }
 
   // One listener each: the badge row and the popover are rebuilt on every snapshot.
@@ -978,7 +1108,7 @@
 
   function renderBanner() {
     var el = $('banner'), bar = $('progress');
-    var s = snap.screen, html = '', cls = '';
+    var s = alerting() ? null : snap.screen, html = '', cls = '';
     bar.hidden = true;
     if (s && s.level === 1 && s.data) {
       // A running job: the jobs widget has the detail, the header shows progress.
@@ -1124,6 +1254,7 @@
       });
     });
 
+    trackHostLevels();
     var layout = snap.layout || { columns: 4, rows: 3, panels: [] };
     var setupOk = layout.setup && (myRole == null || myRole === 'admin');
     $('setup-link').hidden = !setupOk;
@@ -1550,6 +1681,8 @@
   // each opens it.
   var SRC_STATE = { auth_failed: 'sign-in refused', unreachable: 'not answering' };
   function renderSources() {
+    // The Alerting Kiosk shows hosts only; a source that is down still gets the pill in the header.
+    $('rail').hidden = alerting();
     var setup = snap.layout && snap.layout.setup;
     var html = (snap.sources || []).map(function (s) {
       var kind = kindOf(s.id), name = String(s.id).split(':').slice(1).join(':') || kind;
