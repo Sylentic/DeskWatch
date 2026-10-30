@@ -663,6 +663,8 @@ fn hosts_are_replaced_and_what_the_page_does_not_know_is_kept() {
         instance: instance.into(),
         name: name.into(),
         show: show.map(|s| s.iter().map(|x| x.to_string()).collect()),
+        gpu_names: Vec::new(),
+        gpu_detail: true,
     };
     let text = set_hosts(
         current,
@@ -702,6 +704,8 @@ fn hosts_are_written_in_the_order_the_page_sends() {
         instance: instance.into(),
         name: crate::config::default_host_name(instance),
         show: None,
+        gpu_names: Vec::new(),
+        gpu_detail: true,
     };
     let text = set_hosts(
         current,
@@ -728,6 +732,8 @@ fn bad_hosts_are_refused() {
         instance: "a:9100".into(),
         name: name.into(),
         show,
+        gpu_names: Vec::new(),
+        gpu_detail: true,
     };
     assert!(set_hosts(current, "home", &[host("", None)]).is_err());
     assert!(set_hosts(current, "home", &[host(" padded", None)]).is_err());
@@ -735,4 +741,29 @@ fn bad_hosts_are_refused() {
     assert!(set_hosts(current, "home", &[host("ok", Some(vec!["fans".into()]))]).is_err());
     assert!(set_hosts(current, "nope", &[host("ok", None)]).is_err());
     assert!(set_hosts(current, "home", &[host("Office PC", None)]).is_ok());
+}
+
+#[test]
+fn gpu_names_and_detail_are_saved_and_checked() {
+    let current = "[[source.prometheus]]\nname = \"home\"\nurl = \"http://p\"\n";
+    let host = |names: &[&str], detail: bool| HostEdit {
+        instance: "a:9100".into(),
+        name: "a".into(),
+        show: None,
+        gpu_names: names.iter().map(|n| n.to_string()).collect(),
+        gpu_detail: detail,
+    };
+    let text = set_hosts(current, "home", &[host(&["3060", ""], false)]).unwrap();
+    let config = crate::config::Config::from_toml("")
+        .unwrap()
+        .with_overlay(&text)
+        .unwrap();
+    let saved = &config.source.prometheus[0].hosts[0];
+    assert_eq!(saved.gpu_names, ["3060"], "{text}");
+    assert!(!saved.gpu_detail);
+    // Defaults leave no trace in the file.
+    let text = set_hosts(current, "home", &[host(&["", ""], true)]).unwrap();
+    assert!(!text.contains("gpu_"), "{text}");
+    assert!(set_hosts(current, "home", &[host(&["toolong"], true)]).is_err());
+    assert!(set_hosts(current, "home", &[host(&[" 306"], true)]).is_err());
 }

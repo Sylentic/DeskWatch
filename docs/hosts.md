@@ -84,6 +84,9 @@ hosts = [
 ]
 ```
 
+Per host, `gpu_names = ["3060", "1650"]` sets short names (up to 5 characters, in GPU order) for the bars of a host
+with several GPUs, and `gpu_detail = false` removes the VRAM bar and the line under each GPU.
+
 `show` takes `cpu`, `memory`, `disk`, `uptime`, `network`, `updates`, `reboot`, `temperature` and `gpu`; without it a
 host shows everything it reports.
 
@@ -105,6 +108,11 @@ The PromQL for each field can be changed per source with `queries = { ... }`; th
 GPU figures (GPU %, VRAM, GPU temperature) only show up when Prometheus has GPU metrics for the host. A normal
 node_exporter or windows_exporter does not report an NVIDIA GPU, so you need one extra exporter on the machine with the
 GPU. Without it the GPU lines stay hidden. This is the usual reason for "no GPU stats".
+
+**More than one GPU.** The default queries return one series per GPU (grouped by the `gpu` label, with `modelName`
+or `name` as the model name), and the host card then lists every GPU, see [kiosk.md](kiosk.md#gpu-on-the-host-card).
+A query you replace under `queries` should do the same: `max by (instance, gpu)`. A query without a `gpu` (or `uuid`)
+label counts as one GPU, so existing overrides keep working.
 
 **NVIDIA (default).** DeskWatch expects the [DCGM exporter](https://github.com/NVIDIA/dcgm-exporter). It needs the
 NVIDIA driver and the NVIDIA Container Toolkit on the host. GPU % is the busiest of the shader, encoder and decoder

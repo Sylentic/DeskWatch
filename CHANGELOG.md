@@ -7,6 +7,12 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **A host card can show several GPUs.** A machine with more than one GPU gets a load bar, a VRAM bar and a line with
+  the model and temperature for each GPU. On the Hosts page, Edit lets you give each GPU a short name and switch the
+  extra lines off. One-GPU hosts look the same as before. Only tested against mock data. See [kiosk.md](docs/kiosk.md#gpu-on-the-host-card).
+
 ## [1.0.11]
 
 ### Security
