@@ -7,6 +7,11 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Header icons and clock stay at the right in Safari.** The right side of the top bar no longer relies on a spacer
+  element, so the Customize and Setup icons and the clock cannot end up next to the title.
+
 ### Changed
 
 - **The docs are consistent again.** The README, kiosk, setup, Docker, Windows, Home Assistant and source guides no
