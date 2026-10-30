@@ -455,13 +455,15 @@ pub struct KioskConfig {
 /// What the hosts panel of the built-in layout shows. `detailed`: the chosen
 /// host in detail (bars, temperature, load, network, a CPU graph) with every
 /// host as a list below it; tapping a host in the list chooses it. `compact`:
-/// only that list, with the network rates.
+/// only that list, with the network rates. `alerting`: the whole screen is one
+/// wall of small host cards that light up when a host needs a look (no PR badge).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum HostView {
     #[default]
     Detailed,
     Compact,
+    Alerting,
 }
 
 /// Colour theme of the kiosk page.
@@ -569,10 +571,21 @@ impl KioskConfig {
         Ok(())
     }
 
+    /// Is the Alerting Kiosk on: the built-in layout with `host_view = "alerting"`.
+    pub fn alerting(&self) -> bool {
+        self.panel.is_empty() && self.host_view == HostView::Alerting
+    }
+
     /// The widgets to show: the configured ones, or the default layout for a
     /// 4x3 grid.
     pub fn panels(&self) -> Vec<PanelConfig> {
-        if self.panel.is_empty() {
+        if self.panel.is_empty() && self.alerting() {
+            // The wall of host cards fills the whole grid.
+            vec![PanelConfig {
+                view: Some(HostView::Alerting),
+                ..panel(Widget::Hosts, [self.columns, self.rows])
+            }]
+        } else if self.panel.is_empty() {
             default_panels(self.host_view)
         } else {
             self.panel.clone()
@@ -2603,6 +2616,28 @@ title = "Reviews"
                 .with_overlay("hidden = [\"nonsense\"]\n")
                 .is_err()
         );
+    }
+
+    #[test]
+    fn the_alerting_kiosk_is_one_hosts_panel_over_the_whole_grid() {
+        // Off unless asked for.
+        assert!(!KioskConfig::default().alerting());
+        let config =
+            Config::from_toml("[kiosk]\nhost_view = \"alerting\"\ncolumns = 6\nrows = 4\n")
+                .unwrap();
+        assert!(config.kiosk.alerting());
+        let panels = config.kiosk.panels();
+        assert_eq!(panels.len(), 1);
+        assert_eq!(
+            (panels[0].widget, panels[0].span, panels[0].view),
+            (Widget::Hosts, [6, 4], Some(HostView::Alerting))
+        );
+        // Panels set by hand win.
+        let own = Config::from_toml(
+            "[kiosk]\nhost_view = \"alerting\"\n[[kiosk.panel]]\nwidget = \"alerts\"\n",
+        )
+        .unwrap();
+        assert!(!own.kiosk.alerting());
     }
 
     #[test]

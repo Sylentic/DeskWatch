@@ -505,6 +505,10 @@ async fn the_host_view_is_saved_and_needs_a_restart() {
     assert_eq!(v["host_view_origin"], "data_folder");
     assert_eq!(v["restart_needed"], true);
 
+    let alerting = json!({ "host_view": "alerting" }).to_string();
+    let (status, _, text) = send(&router, "POST", "/api/setup/kiosk", &[], &alerting).await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+
     let bad = json!({ "host_view": "huge" }).to_string();
     let (status, ..) = send(&router, "POST", "/api/setup/kiosk", &[], &bad).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);

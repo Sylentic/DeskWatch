@@ -348,6 +348,7 @@ fn layout_json(config: &KioskConfig) -> Value {
     };
     json!({
         "columns": config.columns, "rows": config.rows, "panels": panels,
+        "alerting": config.alerting(),
         "theme": { "mode": config.theme, "night_from": config.night_from, "night_to": config.night_to },
         "pixel_shift_s": shift_s,
     })

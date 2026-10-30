@@ -249,6 +249,81 @@
     };
   }
 
+
+  // ---- Alerting Kiosk: a wall of small host cards -------------------------
+  // How bad is a host: 0 fine, 1 yellow (a warning line crossed, restarted,
+  // restart needed), 2 red (a critical line crossed), 3 down. `why` names the
+  // first thing that put it there, for the tag on the card.
+  function hostLevel(h) {
+    var s = h.stats || {};
+    if (!h.up) return { lvl: 3, why: 'down' };
+    var out = { lvl: 0, why: '' };
+    function check(label, v, warn, crit) {
+      if (v == null) return;
+      var lvl = v >= crit ? 2 : v >= warn ? 1 : 0;
+      if (lvl > out.lvl) out = { lvl: lvl, why: label + ' ' + Math.round(v) };
+    }
+    check('CPU', s.cpu_pct, 70, 90);
+    check('RAM', s.ram_pct, 80, 90);
+    check('DISK', s.disk_pct, 80, 90);
+    check('GPU', s.gpu_pct, 80, 95);
+    if (!out.lvl && s.uptime_s != null && s.uptime_s < REBOOT_S) out = { lvl: 1, why: 'restarted' };
+    if (!out.lvl && s.reboot_needed) out = { lvl: 1, why: 'restart needed' };
+    return out;
+  }
+
+  // A host that gets worse blinks once: yellow for 10 s, red (or down) for
+  // 30 s, then it stays lit and steady. The first snapshot after the page
+  // opens never blinks: what was already wrong is not new.
+  var BLINK_MS = { 1: 10000, 2: 30000, 3: 30000 };
+  var hostSeen = null;   // host name -> level, null until the first snapshot
+  var hostBlink = {};    // host name -> when the blinking stops (ms)
+  function trackHostLevels() {
+    var first = hostSeen === null;
+    if (first) hostSeen = {};
+    var now = Date.now();
+    (snap.hosts || []).forEach(function (h) {
+      var lvl = hostLevel(h).lvl, was = hostSeen[h.name] || 0;
+      if (!first && lvl > was) {
+        hostBlink[h.name] = now + BLINK_MS[lvl];
+        // The blink class goes off by itself: redraw when it ends.
+        setTimeout(function () { if (snap) drawGrid(); }, BLINK_MS[lvl] + 100);
+      }
+      hostSeen[h.name] = lvl;
+    });
+  }
+
+  function hostsAlerting(hosts) {
+    var now = Date.now();
+    var rows = hosts.map(function (h, i) { return { h: h, i: i, v: hostLevel(h) }; });
+    // Hosts that need a look come first, the worst first; the rest keep the order from Setup.
+    rows.sort(function (a, b) { return (b.v.lvl - a.v.lvl) || (a.i - b.i); });
+    var html = '<div class="wall">';
+    rows.forEach(function (r) {
+      var h = r.h, s = h.stats || {}, hide = s.hide || [];
+      var show = function (part) { return hide.indexOf(part) < 0; };
+      var cls = ['ok', 'warn', 'crit', 'down'][r.v.lvl];
+      var blink = (hostBlink[h.name] || 0) > now && r.v.lvl > 0 ? ' blink' : '';
+      var cell = function (label, v, warn, crit) {
+        if (v == null) return '';
+        var c = v >= crit ? 'var(--red)' : v >= warn ? 'var(--amber)' : 'var(--green)';
+        return '<div class="ac"><span class="l">' + label + '</span><span class="v' + (v >= crit ? ' crit-text' : v >= warn ? ' warn-text' : '') + '">' + Math.round(v) + '<small>%</small></span>' +
+          '<div class="bar"><i style="--p:' + Math.max(0, Math.min(100, v)) + '%;--c:' + c + '"></i></div></div>';
+      };
+      var cells = h.up ? (show('cpu') ? cell('CPU', s.cpu_pct, 70, 90) : '') + (show('memory') ? cell('RAM', s.ram_pct, 80, 90) : '') +
+        (show('disk') ? cell('DISK', s.disk_pct, 80, 90) : '') + cell('GPU', s.gpu_pct, 80, 95) : '';
+      var foot = !h.up ? '' : (s.updates ? s.updates + ' updates' : '') + (s.reboot_needed ? (s.updates ? ' &middot; ' : '') + 'restart needed' : '');
+      html += '<div class="ah ' + cls + blink + '"><div class="an"><span class="dot"></span><span class="nm">' + esc(h.name) + '</span>' +
+        (r.v.why ? '<span class="why">' + esc(r.v.why) + '</span>' : '') + '</div>' +
+        (h.up ? '<div class="acs">' + cells + '</div>' + (foot ? '<div class="af">' + foot + '</div>' : '') : '<div class="gone">not answering</div>') + '</div>';
+    });
+    html += '</div>';
+    var down = rows.filter(function (r) { return r.v.lvl === 3; }).length;
+    var look = rows.filter(function (r) { return r.v.lvl > 0 && r.v.lvl < 3; }).length;
+    return { title: 'Hosts', count: (hosts.length - down) + '/' + hosts.length + ' up',
+      tag: down ? down + ' down' : look ? look + (look === 1 ? ' needs' : ' need') + ' a look' : '', body: html };
+  }
+
   function ciStale() {
     // Only the CI sources: a Prometheus outage does not make the PR list old.
     return (snap.sources || []).some(function (s) { return s.health !== 'ok' && /^(gitea|github|gitlab|bitbucket|azure_devops):/.test(s.id); });
@@ -342,6 +417,7 @@
     },
 
     hosts: function (p) {
+      if (p && p.view === 'alerting' && (snap.hosts || []).length) return hostsAlerting(snap.hosts);
       if (p && p.view === 'detailed' && (snap.hosts || []).length) return hostsDetailed(snap.hosts);
       // The compact host view is a taller table: it adds the network rates, as
       // columns when it is two cells wide, else as a small line under each host.
@@ -910,7 +986,7 @@
           '" title="Show the failed runs">' + n + ' failed</button>';
         return;
       }
-      if (b.icon === 'pr' && !b.count) return; // no open PRs: no badge
+      if (b.icon === 'pr' && (!b.count || (snap.layout && snap.layout.alerting))) return; // no open PRs: no badge; the Alerting Kiosk has no PR badge at all
       html += '<span class="chip ' + esc(b.status) + '">' + b.count + ' ' + (names[b.icon] || '') + '</span>';
     });
     // The Alerts chip: every active alert, worst colour wins. Gone at 0, like Failed and Open PRs.
@@ -1124,6 +1200,7 @@
       });
     });
 
+    trackHostLevels();
     var layout = snap.layout || { columns: 4, rows: 3, panels: [] };
     var setupOk = layout.setup && (myRole == null || myRole === 'admin');
     $('setup-link').hidden = !setupOk;

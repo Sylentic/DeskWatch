@@ -956,7 +956,8 @@
     }
     var choice = el('select'); choice.dataset.keep = 'host-view';
     [['detailed', 'Detailed: a list of hosts with the chosen host in detail next to it (tap a host to switch)'],
-     ['compact', 'Compact: one table of all hosts, with uptime and network rates']].forEach(function (o) {
+     ['compact', 'Compact: one table of all hosts, with uptime and network rates'],
+     ['alerting', 'Alerting Kiosk: the whole screen is small host cards that light up when a host needs a look']].forEach(function (o) {
       var opt = el('option', null, o[1]);
       opt.value = o[0];
       opt.selected = d.host_view === o[0];
