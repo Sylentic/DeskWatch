@@ -232,6 +232,11 @@ Gitea; a new non-draft PR flashes "New PR" unless `notify_new_prs = false`. Only
 repository are counted. A new issue goes to the alerts list until dismissed, unless `alert_new_issues = false` (one
 extra request per repository per poll; the token needs **Issues: Read**).
 
+To get an info alert when a build and publish finishes (for example a release or the `:dev` image), list the
+workflow file in `alert_finished_runs`, such as `alert_finished_runs = ["pipeline.yml"]`. It is off unless listed, and
+only push runs that end successfully count; pull request runs, failed runs (they already show red) and runs that
+finished before the bridge started do not. It costs no extra requests.
+
 ### GitLab
 
 For gitlab.com and self-managed GitLab the bridge polls open merge requests (counted as the open PRs) and pipelines

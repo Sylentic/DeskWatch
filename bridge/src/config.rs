@@ -934,6 +934,11 @@ pub struct GithubConfig {
     /// Put a new issue in the alerts list until it is dismissed.
     #[serde(default = "yes")]
     pub alert_new_issues: bool,
+    /// Workflow files (such as `"pipeline.yml"`) whose push runs raise an
+    /// info alert when they finish successfully: a release or a dev image
+    /// that is built and published. Empty (default): no such alerts.
+    #[serde(default)]
+    pub alert_finished_runs: Vec<String>,
     /// Self-hosted runner lists for the kiosk `runners` widget:
     /// `"repo:<owner>/<name>"` or `"org:<name>"`. Needs extra token rights
     /// (docs/runners.md). Empty means runners are not polled. Do not list
