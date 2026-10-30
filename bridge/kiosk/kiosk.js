@@ -267,9 +267,9 @@
     check('RAM', s.ram_pct, 80, 90);
     check('DISK', s.disk_pct, 80, 90);
     check('GPU', s.gpu_pct, 80, 95);
-    // Security updates are a warning like a full disk. A restart that is needed has its own colour (purple).
-    if (!out.lvl && s.updates_security > 0) out = { lvl: 1, why: s.updates_security + ' security', kind: 'sec' };
-    if (!out.lvl && s.reboot_needed) out = { lvl: 1, why: 'restart needed', kind: 'restart' };
+    // Security updates and a needed restart are warnings (yellow) like a full disk.
+    if (!out.lvl && s.updates_security > 0) out = { lvl: 1, why: s.updates_security + ' security', kind: '' };
+    if (!out.lvl && s.reboot_needed) out = { lvl: 1, why: 'restart needed', kind: '' };
     if (!out.lvl && s.uptime_s != null && s.uptime_s < REBOOT_S) out = { lvl: 1, why: 'restarted', kind: '' };
     return out;
   }
@@ -304,7 +304,7 @@
     rows.forEach(function (r) {
       var h = r.h, s = h.stats || {}, hide = s.hide || [];
       var show = function (part) { return hide.indexOf(part) < 0; };
-      var cls = r.v.kind === 'restart' ? 'restart' : ['ok', 'warn', 'crit', 'down'][r.v.lvl];
+      var cls = ['ok', 'warn', 'crit', 'down'][r.v.lvl];
       var blink = (hostBlink[h.name] || 0) > now && r.v.lvl > 0 ? ' blink' : '';
       var cell = function (label, v, warn, crit) {
         if (v == null) return '';
@@ -314,7 +314,10 @@
       };
       var cells = h.up ? (show('cpu') ? cell('CPU', s.cpu_pct, 70, 90) : '') + (show('memory') ? cell('RAM', s.ram_pct, 80, 90) : '') +
         (show('disk') ? cell('DISK', s.disk_pct, 80, 90) : '') + cell('GPU', s.gpu_pct, 80, 95) : '';
-      var foot = !h.up ? '' : (s.updates ? s.updates + ' updates' + (s.updates_security > 0 ? ' (' + s.updates_security + ' security)' : '') : '') + (s.reboot_needed ? (s.updates ? ' &middot; ' : '') + 'restart needed' : '');
+      // Pending security updates and a needed restart are yellow, in the text too.
+      var yel = function (t) { return '<span class="y">' + t + '</span>'; };
+      var foot = !h.up ? '' : [s.updates ? s.updates + ' updates' : '', s.updates_security > 0 ? yel(s.updates_security + ' security') : '',
+        s.reboot_needed ? yel('restart needed') : ''].filter(Boolean).join(' &middot; ');
       html += '<div class="ah ' + cls + blink + '"><div class="an"><span class="dot"></span><span class="nm">' + esc(h.name) + '</span>' +
         (r.v.why ? '<span class="why">' + esc(r.v.why) + '</span>' : '') + '</div>' +
         (h.up ? '<div class="acs">' + cells + '</div>' + (foot ? '<div class="af">' + foot + '</div>' : '') : '<div class="gone">not answering</div>') + '</div>';

@@ -78,8 +78,8 @@ they are). The Open PRs badge is not shown in this mode.
 - A host that is fine stays quiet grey. A host over a warning line (CPU 70, RAM 80, disk 80, GPU 80 %, restarted less
   than an hour ago, or restart needed) is lit yellow; over a critical line (90 %, GPU 95 %) it is lit red; a host that
   stops answering is a dimmed card with a dashed red edge. The tag at the top right says why (`DISK 93`).
-- Pending **security updates** light a host yellow (`2 SECURITY`). A host that **needs a restart** lights purple, so it
-  is not mistaken for a full disk. Both blink for 10 seconds when they first appear, like any yellow warning.
+- Pending **security updates** (`2 SECURITY`) and a **restart that is needed** light a host yellow, and their text on
+  the card is yellow too. They blink for 10 seconds when they first appear, like any yellow warning.
 - Nothing else raises a flag here: the red "Failed" notice, the failed and alerts chips, the alert ticker and pill (so
   Home Assistant, Alertmanager and script alerts), the Open PRs badge and the Sources bar are all off in this mode. The
   host cards are the alerting. A source that goes down still gets its pill in the header.
