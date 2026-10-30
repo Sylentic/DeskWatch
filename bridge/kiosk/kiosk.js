@@ -910,12 +910,9 @@
   var alertsOpen = false;
   var SEV_NAME = { critical: 'Critical', warn: 'Warning', info: 'Info' };
   // Real alerts only: the ticker and the "is there a critical alert" check use these.
-  // The Alerting Kiosk is about hosts: alerts that come from the Git hosts
-  // (new issue, PR comment) are left out; Alertmanager, Home Assistant and scripts stay.
-  var GIT_SOURCES = ['gitea', 'github', 'gitlab', 'bitbucket', 'azure_devops'];
+  // The Alerting Kiosk shows no alerts at all: the host cards are the alerting.
   function realAlerts() {
-    var list = snap.alerts || [];
-    return alerting() ? list.filter(function (a) { return GIT_SOURCES.indexOf(a.source) < 0; }) : list;
+    return alerting() ? [] : snap.alerts || [];
   }
   // With `[alerts] failed_as_alerts` every failed run that is not dismissed is
   // also a critical alert in the Alerts box and menu. Dismissing one dismisses
