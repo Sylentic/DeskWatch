@@ -659,6 +659,9 @@ body.gesturing, body.gesturing * { cursor: grabbing !important; }
 .ah.warn { border-color: var(--yellow); background: linear-gradient(180deg, var(--yellow-bg), var(--card-hi) 75%); box-shadow: 0 0 1.2rem rgba(250, 204, 21, 0.16); }
 .ah.warn .dot { background: var(--yellow); }
 .ah.warn .why { color: var(--yellow-fg); }
+.ah.restart { border-color: var(--purple); background: linear-gradient(180deg, rgba(167, 139, 250, 0.14), var(--card-hi) 75%); box-shadow: 0 0 1.2rem rgba(167, 139, 250, 0.2); }
+.ah.restart .dot { background: var(--purple); }
+.ah.restart .why { color: var(--purple); }
 .ah.crit, .ah.down { border-color: var(--red); background: linear-gradient(180deg, var(--red-bg), var(--card-hi) 75%); box-shadow: 0 0 1.4rem rgba(248, 113, 113, 0.24); }
 .ah.crit .dot, .ah.down .dot { background: var(--red); }
 .ah.crit .why, .ah.down .why { color: var(--red-fg); }
