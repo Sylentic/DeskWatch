@@ -3,8 +3,7 @@
 DeskWatch supports **Linux and Windows**. The Linux guide is [install.md](install.md); this one covers
 Windows 10 and 11 (and Windows Server 2019 or newer), x86_64 only.
 
-**macOS is not covered yet.** Nothing in the bridge is knowingly Linux- or Windows-only apart from the local
-server stats (see below), so it may well work, but nobody has written or tested the instructions. If you use a
+**macOS is not covered yet.** Nothing in the bridge is knowingly Linux- or Windows-only so it may well work, but nobody has written or tested the instructions. If you use a
 Mac, a pull request with a `docs/macos.md` is very welcome.
 
 > **How much of this is verified?** The bridge was compiled and linted for a Windows target on Linux, and the
@@ -16,7 +15,8 @@ Mac, a pull request with a `docs/macos.md` is very welcome.
 What you need:
 
 - Windows with PowerShell (the built-in Windows PowerShell 5.1 is fine; commands below also work in PowerShell 7).
-- A Mosquitto broker the bridge can reach. For a first test, install it on the same PC.
+- A Mosquitto broker the bridge can reach, only if you want alerts over MQTT (Home Assistant). The dashboard alone needs
+  none: set `[mqtt] enabled = false`. For a first test, install it on the same PC.
 
 Contents: [1. Get the programs](#1-get-the-programs) · [2. Mosquitto](#2-mosquitto) ·
 [3. Quick test with the demo](#3-quick-test-the-demo) · [4. A real config](#4-a-real-config) ·
@@ -53,7 +53,7 @@ downloaded the zip in a browser, right click it, choose Properties, and tick "Un
 ### Option B: build from source
 
 You need [Rust](https://rustup.rs) 1.88 or newer with the MSVC toolchain, which rustup sets up with the Visual
-Studio Build Tools ("Desktop development with C++"),, plus [Git](https://git-scm.com).
+Studio Build Tools ("Desktop development with C++"), plus [Git](https://git-scm.com).
 
 ```powershell
 git clone https://github.com/Sylentic/DeskWatch.git

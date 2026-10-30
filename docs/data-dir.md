@@ -57,8 +57,7 @@ This is also the right choice under a stack manager that deploys from git (Komod
 manager's checkout of your repository, so a relative bind mount such as `./data` puts the data folder inside a git
 working tree, where an update can wipe it or conflict with it. A named volume lives outside it. (A volume that already
 existed and is owned by root is not changed. Fix it once with
-`docker run --rm -v <volume>:/d busybox chown 10001:10001 /d`; this applies to a volume created with an image older than
-0.9.14 too.)
+`docker run --rm -v <volume>:/d busybox chown 10001:10001 /d`.)
 
 A **bind mount** works as well, but then the host folder decides the owner and you make uid 10001 the owner yourself:
 

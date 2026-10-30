@@ -6,7 +6,7 @@ installs. There are two ways to turn it on. Pick one.
 | | Bridge serves TLS | Caddy in front |
 |---|---|---|
 | Setting | `[http.tls]` in `bridge.toml` | `deploy/docker-compose.https.yml` |
-| Works for | Docker, Pi, Windows, Linux | Docker (or any host with Caddy) |
+| Works for | Docker, Windows, Linux | Docker (or any host with Caddy) |
 | Certificate | you supply the PEM files | Caddy makes one (internal CA or Let's Encrypt) |
 
 ## Route 1: the bridge serves HTTPS
@@ -51,9 +51,9 @@ You have no public DNS for `*.lan` names, so a normal certificate authority cann
 
 - **Home Assistant and scripts that POST `/api/alert`** must use `https://` and trust the certificate (or skip the
   check, for example `curl -k`). With an internal CA, install the root in Home Assistant too.
-- **Raspberry Pi kiosk:** the autostart URL (`deploy/kiosk/deskwatch-kiosk.sh`) defaults to
-  `http://localhost:8787/`. On the Pi itself, keep plain HTTP on localhost; otherwise set `DESKWATCH_KIOSK_URL` to
-  the `https://` name, which needs the root certificate on the Pi.
+- **Full-screen browser on Linux:** the autostart URL (`deploy/kiosk/deskwatch-kiosk.sh`) defaults to
+  `http://localhost:8787/`. On the machine that runs the bridge, keep plain HTTP on localhost; otherwise set `DESKWATCH_KIOSK_URL` to
+  the `https://` name, which needs the root certificate on that machine.
 - **Bookmarks and compose files** that say `http://` have to change.
 - The same-origin check on the WebSocket and POSTs keeps working: it compares `Origin` with `Host`.
 

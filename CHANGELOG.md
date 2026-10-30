@@ -9,6 +9,12 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ### Changed
 
+- **The docs are consistent again.** The README, kiosk, setup, Docker, Windows, Home Assistant and source guides no
+  longer mention stats of the bridge machine, a per-browser failed-run dismiss, phones, or mock-only testing for
+  sources that run on real servers. New [getting started](docs/getting-started.md) page with the words used in the
+  docs. The dashboard Compose file now pulls the published image instead of building from source.
+- **The Raspberry Pi guide is gone.** A Pi is a Linux machine: install Docker like anywhere else. The wall-display tips
+  in [kiosk.md](docs/kiosk.md#4-autostart-a-full-screen-browser-on-linux) are now about any Linux machine with a screen.
 - **The setup page is tidier.** Cards no longer repeat the section title, two-column sections stack their cards
   without empty gaps, small sections stay narrow, Save buttons look the same everywhere, and every "are you sure?"
   question is a pop-up. Source cards show the credential file name instead of its full path, the add-source form asks

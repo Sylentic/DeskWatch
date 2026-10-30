@@ -1,14 +1,14 @@
 #!/bin/sh
 # Opens the DeskWatch kiosk page full screen in Chromium. Started from the
-# desktop autostart on a Raspberry Pi (see docs/kiosk.md, section 4).
+# desktop autostart on a Linux machine with a screen (see docs/kiosk.md, section 4).
 #
 #   install -m 755 deploy/kiosk/deskwatch-kiosk.sh ~/deskwatch-kiosk.sh
 #
-# URL: the bridge on this Pi, or http://<bridge host>:8787/ for a bridge on
+# URL: the bridge on this machine, or http://<bridge host>:8787/ for a bridge on
 # another machine. Override with DESKWATCH_KIOSK_URL. The page has no login.
 URL="${DESKWATCH_KIOSK_URL:-http://localhost:8787/}"
 
-# The browser is called `chromium` on Raspberry Pi OS Bookworm and newer, and
+# The browser is called `chromium` on Debian 12 and newer, and
 # `chromium-browser` on older releases.
 BROWSER=chromium
 command -v "$BROWSER" >/dev/null 2>&1 || BROWSER=chromium-browser

@@ -13,22 +13,22 @@ placeholders.
 
 ## Quick start: the dashboard with fake data
 
-Releases publish an image to `ghcr.io` (section 10). Without one, Docker builds it from the source once (a few minutes, the Rust compile). Then:
+One command, using the published image (section 10):
+
+```sh
+docker run --rm -p 8787:8787 ghcr.io/sylentic/deskwatch-bridge:latest --demo --kiosk --no-mqtt
+```
+
+Open <http://localhost:8787/>. You see a busy dashboard with demo data (a running job, a failed run, PRs, an
+alert). Nothing else is needed: no config, no broker, no secrets. Stop it with Ctrl+C. To build the image from the
+source instead (a few minutes of Rust compile), use the demo Compose file:
 
 ```sh
 git clone https://github.com/Sylentic/DeskWatch.git && cd DeskWatch
 docker compose -f deploy/docker-compose.demo.yml up --build
 ```
 
-Open <http://localhost:8787/>. You see a busy dashboard with demo data (a running job, a failed run, PRs, an
-alert). Nothing else is needed: no config, no broker, no secrets. Stop it with Ctrl+C. The same without Compose:
-
-```sh
-docker build -t deskwatch-bridge .
-docker run --rm -p 8787:8787 deskwatch-bridge --demo --kiosk --no-mqtt
-```
-
-(The log may warn that the page "has no login". That is expected for the demo: no password is set and the Compose file
+(The log may warn that the page "has no login". That is expected for the demo: no password is set. The demo has no real data, and the demo Compose file
 publishes the port on `127.0.0.1` only. Section 3 covers who can see the page in a real setup.)
 
 Contents: [1. Build the image](#1-build-the-image) · [2. Try the demo](#2-try-the-demo) ·
@@ -55,17 +55,15 @@ The first build takes a few minutes (it compiles all dependencies). The Dockerfi
 dependencies, from the manifests and `Cargo.lock` only, then your sources. A rebuild after a change in the bridge
 code therefore reuses the cached dependency layer and only compiles the bridge itself; the dependencies
 are rebuilt only when a `Cargo.toml` or `Cargo.lock` changes. The image is for the CPU you build it on, so
-building on a Raspberry Pi gives an arm64 image with no extra steps; `docker buildx` can build for another CPU. CI
+building on an ARM machine gives an arm64 image with no extra steps; `docker buildx` can build for another CPU. CI
 builds the image for amd64 and arm64 on every change (nothing pushed). The build stage cross-compiles instead of
-emulating the other CPU, so a multi-arch build is not much slower than a single one. The Pi side is in
-[raspberry-pi.md](raspberry-pi.md).
+emulating the other CPU, so a multi-arch build is not much slower than a single one.
 
 ## 2. Try the demo
 
-`--demo` plays fake data instead of real sources. Two variants:
+`--demo` plays fake data instead of real sources. The dashboard page only (no broker): open <http://localhost:8787/>.
 
 ```sh
-# The dashboard page only (no broker): open http://localhost:8787/
 docker run --rm -p 8787:8787 deskwatch-bridge --demo --kiosk --no-mqtt
 ```
 
@@ -81,15 +79,15 @@ mkdir -p dashboard/credentials
 cp deploy/dashboard.example.toml dashboard/bridge.toml          # edit: display_name, sources
 # one file per source secret, for example a read-only GitHub token (see section 4 for the file rules):
 #   (umask 077; printf %s 'THE-TOKEN' > dashboard/credentials/github-personal) && sudo chown 10001 dashboard/credentials/github-personal
-docker compose -f deploy/docker-compose.dashboard.yml up -d --build
+docker compose -f deploy/docker-compose.dashboard.yml up -d
 docker compose -f deploy/docker-compose.dashboard.yml logs
 ```
 
 The Compose file reads the config and secrets from `${DESKWATCH_CONFIG_DIR}`, which defaults to `../dashboard` (the
 folder from the steps above, next to the file). To run it from anywhere else, or paste it into Portainer or Dockge,
 point the variable at an absolute folder that holds `bridge.toml` and `credentials/` (`DESKWATCH_CONFIG_DIR=/srv/deskwatch
-docker compose -f docker-compose.dashboard.yml up -d`, or a line in a `.env` file next to the Compose file) and use the
-published image instead of `build:`, see section 10.
+docker compose -f docker-compose.dashboard.yml up -d`, or a line in a `.env` file next to the Compose file). The Compose
+file pulls the published image (section 10); to build from your checkout instead, see the comments in the file.
 
 Then open `http://<docker host>:8787/`. With a new, empty data volume the first visit asks you to create the
 administrator account (or to continue without a login). Until a password is set there is no login, so a kiosk that
@@ -123,7 +121,7 @@ file, create the folder owned by the container user (uid 10001), uncomment the `
 mkdir -p dashboard/data && sudo chown 10001 dashboard/data
 ```
 
-A named volume (`data:/var/lib/deskwatch` plus a top-level `volumes: { data: }`) needs no `chown` from 0.9.14 on, and is
+A named volume (`data:/var/lib/deskwatch` plus a top-level `volumes: { data: }`) needs no `chown`, and is
 the better choice when a stack manager (Komodo, Portainer) deploys the Compose file from git, because a relative
 `./data` would then sit inside the manager's checkout. See [data-dir.md](data-dir.md#docker).
 
@@ -185,7 +183,7 @@ Stack managers such as Komodo and Portainer can run a Compose file with the conf
 
 **The data folder.** Use a named volume as in the example, not `./data`: under a stack manager `.` is its checkout of
 your repository, and an update can wipe or conflict with a folder inside it. A named volume is writable for the bridge
-without a `chown` from 0.9.14 on ([data-dir.md](data-dir.md#docker)).
+without a `chown` ([data-dir.md](data-dir.md#docker)).
 
 **Who can open it.** Until you set an administrator password ([auth.md](auth.md)) the port has no login, and neither
 does the setup page. The setup page and `POST /api/alert` also refuse clients outside the local network (`[http]
@@ -195,7 +193,7 @@ internet without a password.
 
 ### Protecting the page
 
-The page is read-only (nothing on it can change anything), but it shows PR titles, pipeline names, host stats and
+The page mostly shows data (the few things it can change need the right role once a login is set), but it shows PR titles, pipeline names, host stats and
 alert text. Out of the box there is no login, which is fine on a home network and is why a new install just works.
 The bridge has a built-in login that is off until you set an administrator password ([auth.md](auth.md)); the old
 `token_file` setting was removed and a config that still sets it is refused at startup. The live WebSocket refuses a
@@ -210,7 +208,7 @@ one or more of these:
    your proxy (Caddy, Traefik, nginx) terminate TLS and do the access control (basic auth, or your SSO). Without a
    proxy login, do not publish the port to the internet. Make the proxy pass WebSocket upgrades on `/api/kiosk/ws`;
    without them the page falls back to polling `/api/kiosk` and still works, only slower to update.
-4. **Local only.** Publish `"127.0.0.1:8787:8787"` and open the page on the Docker host itself (a Pi with a screen
+4. **Local only.** Publish `"127.0.0.1:8787:8787"` and open the page on the Docker host itself (a Linux machine with a screen
    running the container).
 
 #### Reverse proxy examples
@@ -444,19 +442,17 @@ monitor such as Uptime Kuma pointed at the page can act on it.
 
 ## 10. The published image
 
-Every version tag (from 0.9.6 on, except 0.9.8, which was never built) is built for amd64 and arm64 by the
+Every version tag is built for amd64 and arm64 by the
 `publish image` job in [`pipeline.yml`](../.github/workflows/pipeline.yml) and pushed to GitHub's registry:
 
 ```sh
-docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 1.0.12; no "v"
+docker pull ghcr.io/sylentic/deskwatch-bridge:<version>      # for example 1.0.0; no "v"
 docker run --rm -p 8787:8787 ghcr.io/sylentic/deskwatch-bridge:<version> --demo --kiosk --no-mqtt
 ```
 
 Tags are the version without the `v` and, for tags without a suffix such as `-rc.1`, `latest`. `latest` moves with
 each release, so `docker compose pull` updates it; to stay on one version, use the version tag instead.
-[`deploy/docker-compose.yml`](../deploy/docker-compose.yml) already uses the image with `latest`. The dashboard and demo Compose files build from the checkout they sit in, which is
-repeatable as long as you stay on one commit; to use the image there, replace their `build:` block with
-`image: ghcr.io/sylentic/deskwatch-bridge:latest`. An updater such as Renovate or Watchtower can bump the tag.
+[`deploy/docker-compose.yml`](../deploy/docker-compose.yml) and the dashboard file use the image with `latest`. The demo Compose file builds from the checkout it sits in. An updater such as Renovate or Watchtower can bump the tag.
 The package on `ghcr.io` is public, so servers pull it without a login. (A fork publishing its own image has to make
 the package public once in its package settings, because a new package starts private.) The image exists only after
 the pipeline has finished for that tag; check that the pull works before you update. For pull
@@ -500,7 +496,7 @@ If the image does not suit you (your own changes, another CPU), section 1 builds
 
 ## 11. Update and remove
 
-With the published image (the default in `deploy/docker-compose.yml`): read [CHANGELOG.md](../CHANGELOG.md) first, a
+With the published image (the default in `deploy/docker-compose.yml` and `deploy/docker-compose.dashboard.yml`): read [CHANGELOG.md](../CHANGELOG.md) first, a
 new release may add config keys, then run (the Compose file uses `latest`; if you pinned a version, change it in the
 `image:` line first):
 
