@@ -324,6 +324,8 @@
   // How long a finished run stays in Running now as "Done", a just-finished
   // row stays tinted, and an open PR carries NEW.
   var DONE_S = 30, FRESH_S = 30, NEW_PR_S = 3600;
+  // Runs Running now shows at once when the panel sets no `rows`.
+  var RUNS_MAX = 3;
 
   var widgets = {
     stats: function (p) {
@@ -398,10 +400,28 @@
         if (byKey[g]) { byKey[g].jobs.push(j); return; }
         groups.push(byKey[g] = { jobs: [j], lanes: j.group ? lanes[j.group] : null });
       });
-      var max = p.rows;
-      var shown = max ? groups.slice(0, max) : groups;
+      // A newer run of the same pipeline and branch replaces the older one: a
+      // new push does not stack a second set of jobs under the first.
+      var newest = {}, replaced = [];
+      groups.forEach(function (g) {
+        if (g.done) return;
+        var j = g.jobs[0];
+        if (!j.ref) return;
+        var k = j.source + '\n' + j.project + '\n' + j.pipeline + '\n' + j.ref, t = groupStart(g);
+        if (!newest[k] || t > groupStart(newest[k])) newest[k] = g;
+      });
+      groups = groups.filter(function (g) {
+        if (g.done) return true;
+        var j = g.jobs[0];
+        if (!j.ref || newest[j.source + '\n' + j.project + '\n' + j.pipeline + '\n' + j.ref] === g) return true;
+        replaced.push(g);
+        return false;
+      });
+      var max = p.rows || RUNS_MAX;
+      var shown = groups.slice(0, max);
       var html = shown.map(function (g) { return g.done ? doneGroup(g.done) : runGroup(g); }).join('');
-      if (max && groups.length > max) html += '<div class="more">+' + (groups.length - max) + ' more running</div>';
+      if (groups.length > max) html += '<div class="more">+' + (groups.length - max) + ' more running</div>';
+      if (replaced.length) html += replacedNote(replaced);
       var running = groups.length - done.length;
       return { title: 'Running now', count: running + (done.length ? ' · ' + done.length + ' done' : ''), stale: ciStale(), body: html };
     },
@@ -568,6 +588,25 @@
       });
     }
     return '<div class="jgroup">' + groupHead(j.source, j.project, j.kind, ref, sum, j.url) + '<div class="jrows">' + rows.join('') + '</div></div>';
+  }
+
+  function groupStart(g) { return Math.min.apply(null, g.jobs.map(function (x) { return x.started; })); }
+
+  // One dashed line for the runs a newer run of the same branch replaced, with
+  // how many of their jobs had failed or were skipped.
+  function replacedNote(gs) {
+    var bad = 0, skipped = 0;
+    gs.forEach(function (g) {
+      (g.lanes || []).forEach(function (l) {
+        var st = runStatus(l.status);
+        if (st === 'failed') bad++; else if (st === 'neutral') skipped++;
+      });
+    });
+    var parts = [];
+    if (bad) parts.push(bad + ' failed');
+    if (skipped) parts.push(skipped + ' skipped');
+    return '<div class="replaced">&#8635; ' + (gs.length === 1 ? '1 older run replaced' : gs.length + ' older runs replaced') +
+      ' by a newer one on the same branch' + (parts.length ? ' (' + parts.join(', ') + ')' : '') + '</div>';
   }
 
   function doneGroup(r) {

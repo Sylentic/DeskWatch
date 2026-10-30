@@ -7,6 +7,13 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Running now is calmer after a new push.** When a newer run of the same pipeline and branch is running, the older run
+  is hidden and one dashed line says how many runs were replaced (and how many of their jobs had failed or were
+  skipped). Without a `rows` setting the panel shows at most 3 runs, with "+N more running" below. Only tested with
+  mock data.
+
 ### Added
 
 - **A host card can show several GPUs.** A machine with more than one GPU gets a load bar, a VRAM bar and a line with

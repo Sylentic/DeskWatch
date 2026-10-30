@@ -547,6 +547,8 @@ a.link:active { background: rgba(255, 255, 255, .08); }
 .jrow.review { background: var(--amber-bg); border-color: var(--amber-edge); }
 .jrow.queued .n, .jrow.neutral .n { color: var(--dim); }
 
+.replaced { margin-top: 0.6rem; padding: 0.5rem 0.9rem; border: 1px dashed var(--track); border-radius: 0.6rem; font-family: var(--mono); font-size: 0.8rem; color: var(--dim); }
+
 .kind { flex: none; font-family: var(--mono); font-size: 0.62rem; font-weight: 600; letter-spacing: 0.08em; padding: 0.12rem 0.38rem; border-radius: 0.3rem; background: var(--track); color: var(--text); text-transform: uppercase; }
 .kind.deploy, .kind.build { background: var(--orange-bg); color: var(--orange); }
 /* Progress of a running job; a sweep when the source does not know how far. */
