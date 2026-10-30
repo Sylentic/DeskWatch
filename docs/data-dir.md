@@ -14,6 +14,7 @@ variable. The bridge creates the folder and stops at startup, with the reason, i
   auth.toml             login: password hashes and API key hashes, mode 0600 (auth.md)
   sessions.json         signed-in sessions, by hash of the id, mode 0600 (auth.md)
   dismissed.json        failed runs dismissed on the kiosk, so they stay away after a restart
+  notices.json          notices for the Alerting Kiosk, typed on the setup page, mode 0600 (kiosk.md)
   layouts.json          each signed-in user's own dashboard layout, mode 0600 (kiosk.md)
   oauth.toml            GitHub/Microsoft sign-in rules, no secrets (auth.md)
 ```

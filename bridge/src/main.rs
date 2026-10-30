@@ -227,6 +227,11 @@ async fn main() -> Result<()> {
     // The tab icon: no login either, the login page shows it.
     hooks.add("/favicon.svg", deskwatch_bridge::icons::router());
     let mut kiosk = None;
+    // Notices for colleagues (the Alerting Kiosk): typed on the setup page,
+    // kept in the data folder.
+    let notices = config
+        .data_dir()
+        .map(|dir| deskwatch_bridge::notices::Notices::load(&dir));
     if config.kiosk.enabled {
         if warn_no_login(auth.enabled(), config.http.listen.ip().is_loopback()) {
             warn!(
@@ -239,6 +244,9 @@ async fn main() -> Result<()> {
         let mut built = Kiosk::new(&config.kiosk);
         if let Some(dir) = config.data_dir() {
             built = built.with_data_dir(&dir);
+        }
+        if let Some(notices) = &notices {
+            built = built.with_notices(notices.clone());
         }
         let built = built
             .with_setup_link(config.setup.is_on())
@@ -284,7 +292,8 @@ async fn main() -> Result<()> {
             Some(supervisor.clone()),
         )
         .with_alert_sender(inbound_tx.clone())
-        .with_update(update.clone());
+        .with_update(update.clone())
+        .with_notices(notices.clone());
         hooks.add(
             "/setup",
             built

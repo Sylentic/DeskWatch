@@ -88,6 +88,10 @@ they are). The Open PRs badge is not shown in this mode.
   and steady. What was already wrong when the page was opened does not blink. Browsers set to "reduce motion" do not
   blink.
 - Windows hosts work through Prometheus with windows_exporter like any other host ([hosts.md](hosts.md)).
+- **Notices** typed on the [setup page](setup-page.md#dashboard-hosts) are the only pills at the top: yellow for a
+  problem ("The NAS is slow, end unknown"), blue for planned work ("Patching all servers, until 23:00"). Each shows
+  from its start until its end, problems first. At most three are shown; more go behind a "+N more" pill that opens
+  the full list. Times are entered in the browser's time zone on the setup page.
 
 ### Hosts: detailed or compact
 

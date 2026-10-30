@@ -58,6 +58,7 @@
   var oauthNote = null;
   var access = null;     // last answer of api/auth/status (the Access section)
   var accessNote = null; // result line and one-time key of the Access section
+  var notices = null;    // last answer of api/setup/notices (the Dashboard section)
   var alertNote = null;  // result of the last test alert button press
 
   function el(tag, cls, text) {
@@ -77,7 +78,10 @@
     edit: [['path', { d: 'M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z' }], ['path', { d: 'M13.5 6.5l4 4' }]],
     trash: [['path', { d: 'M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3' }]],
     key: [['circle', { cx: '8', cy: '15', r: '4' }], ['path', { d: 'M11 12l9-9M17 6l3 3M15 8l2 2' }]],
-    power: [['path', { d: 'M12 3v9' }], ['path', { d: 'M6.3 7.3a8 8 0 1 0 11.4 0' }]]
+    power: [['path', { d: 'M12 3v9' }], ['path', { d: 'M6.3 7.3a8 8 0 1 0 11.4 0' }]],
+    problem: [['path', { d: 'M12 4 2.5 20h19z' }], ['path', { d: 'M12 10v4M12 17v.01' }]],
+    planned: [['rect', { x: '3.5', y: '5', width: '17', height: '15', rx: '2' }], ['path', { d: 'M3.5 10h17M8 3v4M16 3v4' }]],
+    stop: [['rect', { x: '6', y: '6', width: '12', height: '12', rx: '2' }]]
   };
   function svg(name) {
     var NS = 'http://www.w3.org/2000/svg';
@@ -946,6 +950,217 @@
     return box;
   }
 
+
+  // ---- Notices (the Alerting Kiosk) ----
+  // Short messages for colleagues: a pill at the top of the Alerting Kiosk from
+  // their start until their end. Kept by the bridge in the data folder.
+  var noticesShowEnded = false;
+  var noticesNote = null;
+  function loadNotices() {
+    return fetch('api/setup/notices', { cache: 'no-store', credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        j.skew = (j.now || 0) - Date.now() / 1000;
+        notices = j;
+        if (last) render(last);
+      }, function () { /* the card says it cannot load */ });
+  }
+  function noticeNow() { return Math.floor(Date.now() / 1000 + ((notices && notices.skew) || 0)); }
+  var DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function two(n) { return (n < 10 ? '0' : '') + n; }
+  // "Today 14:00", "Tomorrow 06:00", "Sat 1 Nov 06:00".
+  function noticeTime(t, withDay) {
+    var d = new Date(t * 1000), now = new Date(noticeNow() * 1000);
+    var hm = two(d.getHours()) + ':' + two(d.getMinutes());
+    if (!withDay) return hm;
+    var day = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var diff = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - day) / 86400000);
+    var name = diff === 0 ? 'Today' : diff === 1 ? 'Tomorrow' : diff === -1 ? 'Yesterday'
+      : DAYS[d.getDay()] + ' ' + d.getDate() + ' ' + MONTHS[d.getMonth()];
+    return name + ' ' + hm;
+  }
+  // "today 14:00" after Since or Starts.
+  function lowerDay(text) { return text.replace(/^(Today|Tomorrow|Yesterday)/, function (w) { return w.toLowerCase(); }); }
+  function sameDay(a, b) { return new Date(a * 1000).toDateString() === new Date(b * 1000).toDateString(); }
+  // "in 8 h 30 min", "in 2 days".
+  function inTime(s) {
+    if (s < 3600) return Math.max(1, Math.round(s / 60)) + ' min';
+    if (s < 86400) { var h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60); return h + ' h' + (m ? ' ' + m + ' min' : ''); }
+    var dd = Math.round(s / 86400); return dd + (dd === 1 ? ' day' : ' days');
+  }
+  function noticeWhen(n, now) {
+    var start = n.start || n.created;
+    if (n.end != null && n.end <= now) {
+      return noticeTime(start, true) + ' to ' + (sameDay(start, n.end) ? noticeTime(n.end) : noticeTime(n.end, true));
+    }
+    if (start > now) {
+      return 'Starts ' + lowerDay(noticeTime(start, true)) + (n.end != null ? ' · ends ' + (sameDay(start, n.end) ? noticeTime(n.end) : noticeTime(n.end, true)) : ' · no end time')
+        + ' · in ' + inTime(start - now);
+    }
+    if (n.end == null) return 'Since ' + lowerDay(noticeTime(start, true)) + ' · no end time';
+    return noticeTime(start, true) + ' to ' + (sameDay(start, n.end) ? noticeTime(n.end) : noticeTime(n.end, true)) + ' · ends in ' + inTime(n.end - now);
+  }
+  function noticeCall(url, body, done) {
+    return post(url, body).then(function (j) {
+      noticesNote = j.error ? { error: j.error } : { ok: done };
+      return loadNotices();
+    });
+  }
+  function noticeRow(n, now, state) {
+    var line = el('div', 'urow nrow' + (state === 'ended' ? ' ended' : ''));
+    var icon = el('span', 'av nicon ' + n.kind); icon.appendChild(svg(n.kind));
+    icon.setAttribute('title', n.kind === 'problem' ? 'Something is wrong (yellow)' : 'Planned work (blue)');
+    line.appendChild(icon);
+    var who = el('div', 'who');
+    who.appendChild(el('b', null, n.text));
+    who.appendChild(el('small', null, noticeWhen(n, now)));
+    line.appendChild(who);
+    line.appendChild(state === 'showing' ? pill('Showing', 'ok') : state === 'coming' ? pill('Scheduled', 'plan') : pill('Ended', 'muted'));
+    var acts = el('div', 'rowacts');
+    if (state !== 'ended') {
+      var edit = iconButton('edit', 'Edit');
+      edit.addEventListener('click', function () { noticeModal(n); });
+      acts.appendChild(edit);
+    }
+    if (state === 'showing') {
+      var stop = iconButton('stop', 'End now');
+      stop.addEventListener('click', function () {
+        confirmModal('End this notice now?', '"' + n.text + '" leaves the screen and moves to the ended notices.', 'End now',
+          function () { noticeCall('api/setup/notices/end', { id: n.id }, 'The notice has ended.'); });
+      });
+      acts.appendChild(stop);
+    } else {
+      var del = iconButton('trash', 'Delete', 'danger');
+      del.addEventListener('click', function () {
+        confirmModal('Delete this notice?', '"' + n.text + '" is removed for good.', 'Yes, delete',
+          function () { noticeCall('api/setup/notices/delete', { id: n.id }, 'The notice is deleted.'); });
+      });
+      acts.appendChild(del);
+    }
+    line.appendChild(acts);
+    return line;
+  }
+  function noticesCard(d) {
+    var card = el('section', 'card notices');
+    var head = el('div', 'cardhead');
+    var t = el('div'); t.appendChild(el('h2', null, 'Notices'));
+    t.appendChild(el('p', 'muted', 'Short messages for colleagues, shown as pills at the top of the Alerting Kiosk.'));
+    head.appendChild(t);
+    if (!d.host_view_editable) {
+      card.appendChild(head);
+      card.appendChild(el('p', 'muted', 'Give the bridge a data folder to keep notices here.'));
+      return card;
+    }
+    var add = addButton('New notice');
+    add.addEventListener('click', function () { noticeModal(null); });
+    head.appendChild(add);
+    card.appendChild(head);
+    if (!notices) { loadNotices(); card.appendChild(el('p', 'muted', 'Loading…')); return card; }
+    if (noticesNote) {
+      var note = el('p', noticesNote.error ? 'err' : 'muted small', noticesNote.error || noticesNote.ok);
+      note.setAttribute('role', 'status'); card.appendChild(note);
+    }
+    var now = noticeNow();
+    var list = (notices.notices || []).slice();
+    var showing = [], coming = [], ended = [];
+    list.forEach(function (n) {
+      if (n.end != null && n.end <= now) ended.push(n);
+      else if ((n.start || 0) > now) coming.push(n);
+      else showing.push(n);
+    });
+    // Problems first, then by start.
+    var order = function (a, b) { return (a.kind === b.kind ? 0 : a.kind === 'problem' ? -1 : 1) || ((a.start || a.created) - (b.start || b.created)); };
+    showing.sort(order);
+    coming.sort(function (a, b) { return a.start - b.start; });
+    ended.sort(function (a, b) { return b.end - a.end; });
+    if (!showing.length && !coming.length) card.appendChild(el('p', 'muted', 'No notices. Press New notice to tell colleagues about planned work or a problem.'));
+    [['Showing now', showing, 'showing'], ['Coming up', coming, 'coming']].forEach(function (g) {
+      if (!g[1].length) return;
+      card.appendChild(el('div', 'ngroup', g[0]));
+      var box = el('div', 'ulist');
+      g[1].forEach(function (n) { box.appendChild(noticeRow(n, now, g[2])); });
+      card.appendChild(box);
+    });
+    if (ended.length) {
+      var more = el('div', 'nmore');
+      more.appendChild(el('span', 'muted', ended.length + (ended.length === 1 ? ' notice' : ' notices') + ' ended in the last 7 days. They are removed after that.'));
+      var toggle = el('button', 'secondary', noticesShowEnded ? 'Hide' : 'Show'); toggle.type = 'button';
+      toggle.setAttribute('aria-expanded', noticesShowEnded ? 'true' : 'false');
+      toggle.addEventListener('click', function () { noticesShowEnded = !noticesShowEnded; render(last); });
+      more.appendChild(toggle);
+      card.appendChild(more);
+      if (noticesShowEnded) {
+        var eb = el('div', 'ulist');
+        ended.forEach(function (n) { eb.appendChild(noticeRow(n, now, 'ended')); });
+        card.appendChild(eb);
+      }
+    }
+    return card;
+  }
+  // "2026-10-30T14:00" for a datetime-local field, in this browser's time.
+  function localValue(t) {
+    if (t == null) return '';
+    var d = new Date(t * 1000);
+    return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()) + 'T' + two(d.getHours()) + ':' + two(d.getMinutes());
+  }
+  function fromLocal(v) {
+    if (!v) return null;
+    var t = new Date(v).getTime();
+    return isNaN(t) ? undefined : Math.floor(t / 1000);
+  }
+  function noticeModal(n) {
+    var m = openModal(n ? 'Edit notice' : 'New notice');
+    var kind = n ? n.kind : 'planned';
+    var seg = el('div', 'seg'); seg.setAttribute('role', 'radiogroup'); seg.setAttribute('aria-label', 'Kind');
+    var tiles = {};
+    [['planned', 'Planned work', 'Blue pill'], ['problem', 'Something is wrong', 'Yellow pill']].forEach(function (o) {
+      var b = el('button', 'segtile'); b.type = 'button'; b.setAttribute('role', 'radio');
+      var icon = el('span', 'av nicon ' + o[0]); icon.appendChild(svg(o[0])); b.appendChild(icon);
+      var txt = el('span'); txt.appendChild(el('b', null, o[1])); txt.appendChild(el('small', null, o[2])); b.appendChild(txt);
+      b.addEventListener('click', function () { kind = o[0]; mark(); });
+      tiles[o[0]] = b; seg.appendChild(b);
+    });
+    function mark() {
+      Object.keys(tiles).forEach(function (k) { tiles[k].classList.toggle('on', k === kind); tiles[k].setAttribute('aria-checked', k === kind ? 'true' : 'false'); });
+    }
+    mark();
+    m.body.appendChild(seg);
+    var text = input('text', 'text'); text.maxLength = 80; text.value = n ? n.text : ''; text.autofocus = true;
+    var count = el('em', 'counter');
+    function counted() { count.textContent = text.value.length + ' / 80'; }
+    text.addEventListener('input', counted); counted();
+    var tl = labelled('Message', text); tl.firstChild.appendChild(count); tl.classList.add('gap');
+    m.body.appendChild(tl);
+    var start = input('datetime-local', 'start'); start.value = n ? localValue(n.start) : '';
+    var end = input('datetime-local', 'end'); end.value = n ? localValue(n.end) : '';
+    var dt = el('div', 'dt'); dt.appendChild(labelled('Starts', start)); dt.appendChild(labelled('Ends', end));
+    m.body.appendChild(dt);
+    var open = el('label', 'check gap'); var cb = input('checkbox', 'open'); cb.checked = n ? n.end == null : false;
+    open.appendChild(cb); open.appendChild(el('span', null, 'No end time yet. It stays until someone ends it.'));
+    function opened() { end.disabled = cb.checked; }
+    cb.addEventListener('change', opened); opened();
+    m.body.appendChild(open);
+    m.body.appendChild(el('p', 'muted small', 'Times are in this browser\'s time. Leave Starts empty to show it right away.'));
+    modalButtons(m, n ? 'Save notice' : 'Add notice');
+    m.form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var s = fromLocal(start.value), e = cb.checked ? null : fromLocal(end.value);
+      if (s === undefined || e === undefined) { modalError(m, 'A date or time is not valid.'); return; }
+      if (!cb.checked && e == null) { modalError(m, 'Fill in when it ends, or tick "No end time yet".'); return; }
+      var body = { kind: kind, text: text.value, start: s, end: e };
+      if (n) body.id = n.id;
+      var b = m.form.querySelector('button[type=submit]'); b.disabled = true;
+      post('api/setup/notices', body).then(function (j) {
+        b.disabled = false;
+        if (j.error) { modalError(m, j.error); return; }
+        closeModal();
+        noticesNote = { ok: n ? 'The notice is saved.' : 'The notice is added.' };
+        loadNotices();
+      });
+    });
+  }
+
   // How the dashboard's built-in layout shows the hosts. Applies after a restart.
   function dashboardSection(d) {
     var card = el('section', 'card');
@@ -974,7 +1189,11 @@
     card.appendChild(el('p', 'muted', 'Only for the built-in layout; panels set in bridge.toml stay as they are. '
       + (d.host_view_editable ? 'Needs a restart of the bridge.' : 'Give the bridge a data folder to change it here.')));
 
-    return card;
+    // Notices first: they change from day to day, the host panel hardly ever.
+    var box = el('div');
+    box.appendChild(noticesCard(d));
+    box.appendChild(card);
+    return box;
   }
 
   // ---- Alerts ----

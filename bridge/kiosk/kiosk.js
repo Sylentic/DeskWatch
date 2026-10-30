@@ -974,6 +974,49 @@
     if (chip) pop.style.left = Math.max(8, Math.min(chip.getBoundingClientRect().left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
   }
 
+
+  // ---- Notices (Alerting Kiosk) ---------------------------------------------
+  // Messages typed on the setup page ("Patching all servers, until 23:00"):
+  // a pill each from their start until their end, problems (yellow) before
+  // planned work (blue). At most three; more go behind a "+N more" pill.
+  var MAX_NOTICE_PILLS = 3;
+  function activeNotices() {
+    var now = nowS();
+    return (snap.notices || []).filter(function (n) { return (n.start || 0) <= now && (n.end == null || n.end > now); })
+      .sort(function (a, b) { return (a.kind === b.kind ? 0 : a.kind === 'problem' ? -1 : 1) || ((a.start || a.created) - (b.start || b.created)); });
+  }
+  function noticeUntil(n) {
+    if (n.end == null) return n.kind === 'problem' ? 'end unknown' : '';
+    var d = new Date((n.end - skew) * 1000), today = new Date(nowS() * 1000);
+    var hm = (d.getHours() < 10 ? '0' : '') + d.getHours() + ':' + (d.getMinutes() < 10 ? '0' : '') + d.getMinutes();
+    return 'until ' + (d.toDateString() === today.toDateString() ? '' : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()] + ' ') + hm;
+  }
+  function noticePills() {
+    var list = activeNotices();
+    var html = list.slice(0, MAX_NOTICE_PILLS).map(function (n) {
+      var until = noticeUntil(n);
+      return '<span class="chip npill ' + esc(n.kind) + '" title="' + esc(n.text) + '"><span class="t">' + esc(n.text) + (until ? '<span class="until">, ' + until + '</span>' : '') + '</span></span>';
+    }).join('');
+    if (list.length > MAX_NOTICE_PILLS) {
+      html += '<button type="button" class="chip npill more action" data-alerts-toggle="1" aria-expanded="' + (alertsOpen ? 'true' : 'false') +
+        '" title="Show every notice">+' + (list.length - MAX_NOTICE_PILLS) + ' more</button>';
+    } else alertsOpen = false;
+    return html;
+  }
+  function renderNoticesPop() {
+    var pop = $('alerts-pop'), list = activeNotices();
+    if (!alertsOpen || list.length <= MAX_NOTICE_PILLS) { alertsOpen = false; pop.hidden = true; pop.innerHTML = ''; return; }
+    var html = '<div class="head"><b>Notices</b></div><ul>' + list.map(function (n) {
+      var until = noticeUntil(n);
+      return '<li><span class="what"><span class="dot n-' + esc(n.kind) + '"></span><b>' + esc(n.text) + '</b>' +
+        (until ? '<span class="sub">' + until + '</span>' : '') + '</span></li>';
+    }).join('') + '</ul>';
+    if (pop.innerHTML !== html) pop.innerHTML = html;
+    pop.hidden = false;
+    var chip = document.querySelector('[data-alerts-toggle]');
+    if (chip) pop.style.left = Math.max(8, Math.min(chip.getBoundingClientRect().left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
+  }
+
   function renderBadges() {
     var el = $('badges'), html = '';
     var names = { pr: 'open PRs', pipeline: 'failed', server: 'down', warn: 'with a problem', home: 'alerts' };
@@ -1003,10 +1046,12 @@
       : alerts.some(function (a) { return a.severity === 'warn'; }) ? 'warn' : alerts.length ? 'open' : 'ok';
     if (alerts.length) html += '<button type="button" class="chip ' + worst + ' action" data-alerts-toggle="1" aria-expanded="' + (alertsOpen ? 'true' : 'false') +
       '" title="Show the alerts">' + alerts.length + ' alerts</button>';
-    if (!alerts.length) alertsOpen = false;
+    if (!alerts.length && !alerting()) alertsOpen = false;
+    // The Alerting Kiosk shows the notices from the setup page instead of any badge.
+    if (alerting()) html = noticePills();
     if (el.innerHTML !== html) el.innerHTML = html;
     renderFailedPop();
-    renderAlertsPop();
+    if (alerting()) renderNoticesPop(); else renderAlertsPop();
   }
 
   // One listener each: the badge row and the popover are rebuilt on every snapshot.

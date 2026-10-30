@@ -668,3 +668,14 @@ body.gesturing, body.gesturing * { cursor: grabbing !important; }
 @keyframes ah-blink { 50% { opacity: 0.35; } }
 .ah.blink { animation: ah-blink 0.9s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .ah.blink { animation: none; } }
+
+/* Notices on the Alerting Kiosk: yellow for a problem, blue for planned work. */
+.chip.npill { max-width: 34rem; min-width: 0; }
+.chip.npill::before { flex: none; }
+.chip.npill .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.chip.npill.problem { --c: var(--yellow); background: var(--yellow-bg); }
+.chip.npill.planned { --c: var(--blue); background: var(--blue-bg); }
+.chip.npill .until { color: var(--dim); font-weight: 500; }
+.chip.npill.more { --c: var(--dim); }
+.failed-pop .dot.n-problem { --c: var(--yellow); }
+.failed-pop .dot.n-planned { --c: var(--blue); }

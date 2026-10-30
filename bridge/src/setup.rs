@@ -92,6 +92,8 @@ struct Shared {
     health: Mutex<BTreeMap<String, &'static str>>,
     /// Source id to the error behind a health that is not `ok`.
     reasons: Mutex<BTreeMap<String, String>>,
+    /// Notices for the Alerting Kiosk; `None` without a data folder.
+    notices: Option<crate::notices::Notices>,
 }
 
 impl Setup {
@@ -124,6 +126,7 @@ impl Setup {
                 update: crate::update::UpdateNotice::default(),
                 health: Mutex::new(BTreeMap::new()),
                 reasons: Mutex::new(BTreeMap::new()),
+                notices: None,
             }),
         }
     }
@@ -133,6 +136,14 @@ impl Setup {
     pub fn with_alert_sender(mut self, tx: mpsc::Sender<Inbound>) -> Self {
         if let Some(shared) = Arc::get_mut(&mut self.shared) {
             shared.alert_tx = Some(tx);
+        }
+        self
+    }
+
+    /// Let the page list and change the notices. Call before `router`.
+    pub fn with_notices(mut self, notices: Option<crate::notices::Notices>) -> Self {
+        if let Some(shared) = Arc::get_mut(&mut self.shared) {
+            shared.notices = notices;
         }
         self
     }
@@ -192,6 +203,9 @@ impl Setup {
             .route("/api/setup/mqtt/delete", post(delete_mqtt))
             .route("/api/setup/secret/delete", post(delete_secret))
             .route("/api/setup/kiosk", post(save_kiosk))
+            .route("/api/setup/notices", get(list_notices).post(save_notice))
+            .route("/api/setup/notices/end", post(end_notice))
+            .route("/api/setup/notices/delete", post(delete_notice))
             .route("/api/setup/alerts", post(save_alerts))
             .route("/api/setup/alerts/test", post(test_alert))
             .route("/api/setup/updates", post(save_updates))
@@ -917,6 +931,101 @@ async fn save_kiosk(
         StatusCode::OK,
         json!({ "saved": true, "id": "kiosk", "applied": true, "restart_needed": true }),
     )
+}
+
+/// The notices for the Alerting Kiosk, ended ones of the last week included,
+/// with the bridge's clock so the page can tell what is showing.
+async fn list_notices(State(shared): State<Arc<Shared>>) -> Response {
+    let now = crate::kiosk::unix_now();
+    let list = shared
+        .notices
+        .as_ref()
+        .map(|n| n.all(now))
+        .unwrap_or_default();
+    json_response(
+        StatusCode::OK,
+        json!({ "notices": list, "now": now, "editable": shared.notices.is_some() }),
+    )
+}
+
+/// The notices handle for a change, or why there is none.
+#[allow(clippy::result_large_err)]
+fn notices_for_change<'a>(
+    shared: &'a Shared,
+    headers: &HeaderMap,
+    body: &[u8],
+) -> Result<(&'a crate::notices::Notices, Value), Response> {
+    let request = change_request(shared, headers, body)?;
+    let notices = shared.notices.as_ref().ok_or_else(|| {
+        refuse(
+            StatusCode::CONFLICT,
+            "no data folder is configured, so notices cannot be kept (docs/data-dir.md)",
+        )
+    })?;
+    Ok((notices, request))
+}
+
+/// Add a notice, or change one (with `id`). Shows on the kiosk at once.
+async fn save_notice(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let (notices, request) = match notices_for_change(&shared, &headers, &body) {
+        Ok(found) => found,
+        Err(response) => return response,
+    };
+    let input: crate::notices::Input = match serde_json::from_value(request) {
+        Ok(input) => input,
+        Err(err) => return refuse(StatusCode::BAD_REQUEST, format!("{err}")),
+    };
+    match notices.save(input, crate::kiosk::unix_now()) {
+        Ok(notice) => {
+            tracing::info!(id = notice.id, "setup: notice saved");
+            json_response(StatusCode::OK, json!({ "saved": true, "notice": notice }))
+        }
+        Err(err) => refuse(StatusCode::BAD_REQUEST, format!("{err:#}")),
+    }
+}
+
+/// The `id` of a request, for ending or deleting a notice.
+fn notice_id(request: &Value) -> &str {
+    request
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+}
+
+/// End a notice now: it leaves the kiosk and moves to the ended ones.
+async fn end_notice(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let (notices, request) = match notices_for_change(&shared, &headers, &body) {
+        Ok(found) => found,
+        Err(response) => return response,
+    };
+    match notices.end_now(notice_id(&request), crate::kiosk::unix_now()) {
+        Ok(()) => json_response(StatusCode::OK, json!({ "saved": true })),
+        Err(err) => refuse(StatusCode::NOT_FOUND, format!("{err:#}")),
+    }
+}
+
+/// Remove a notice for good.
+async fn delete_notice(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let (notices, request) = match notices_for_change(&shared, &headers, &body) {
+        Ok(found) => found,
+        Err(response) => return response,
+    };
+    match notices.delete(notice_id(&request)) {
+        Ok(()) => json_response(StatusCode::OK, json!({ "saved": true })),
+        Err(err) => refuse(StatusCode::NOT_FOUND, format!("{err:#}")),
+    }
 }
 
 /// Save the ticker settings of `[alerts]`. The ticker is part of the layout

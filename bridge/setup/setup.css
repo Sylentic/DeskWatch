@@ -264,3 +264,33 @@ code.onekey { display: block; padding: .7rem .8rem; background: var(--field); bo
 .helpsteps { margin: .5rem 0; padding-left: 1.3rem; }
 .helpsteps li { margin: .5rem 0; }
 .helpsteps pre { margin: .5rem 0 0; padding: .7rem .8rem; background: var(--field); border: 1px solid var(--field-line); border-radius: 8px; font-family: var(--mono); font-size: .85em; overflow-x: auto; }
+
+/* Notices (Setup > Dashboard): rows like the users on Access, grouped by
+   showing now / coming up, with the ended ones folded away. */
+.card.notices { margin-top: 0; }
+.ngroup { font-family: var(--mono); font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 1rem 0 .1rem; }
+.cardhead + .ngroup, .card.notices > p + .ngroup { margin-top: .25rem; }
+.urow.nrow { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+.urow.nrow.ended .who { opacity: .6; }
+.av.nicon { border-radius: .55rem; }
+.av.nicon.problem { background: #2a2414; color: #fcd34d; border-color: #3a2f12; }
+.av.nicon.planned { background: #10233a; color: #93c5fd; border-color: #1e3a5f; }
+:root[data-theme="light"] .av.nicon.problem { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+:root[data-theme="light"] .av.nicon.planned { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
+.pill.plan { background: #10233a; color: #93c5fd; }
+:root[data-theme="light"] .pill.plan { background: #dbeafe; color: #1d4ed8; }
+.pill.muted { color: var(--muted); }
+.nmore { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .7rem 0 0; margin-top: .2rem; border-top: 1px solid var(--line); font-size: .87rem; }
+.nmore button { min-height: 32px; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+button.segtile { display: flex; align-items: center; gap: .65rem; min-height: 0; padding: .65rem .8rem; text-align: left; font-weight: 400;
+  background: var(--field); color: var(--fg); border: 1px solid var(--field-line); border-radius: 10px; }
+button.segtile:hover { background: var(--card-hi); }
+button.segtile.on { border-color: var(--fg); background: var(--card-hi); }
+button.segtile b { display: block; font-weight: 600; }
+button.segtile small { display: block; color: var(--muted); font-size: .8rem; }
+.counter { float: right; font-style: normal; font-size: .8rem; }
+.field.gap, .check.gap { margin-top: 1rem; }
+.dt { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-top: 1rem; }
+.dt input:disabled { opacity: .45; }
+@media (max-width: 600px) { .seg, .dt { grid-template-columns: 1fr; } .urow.nrow { grid-template-columns: auto minmax(0, 1fr) auto; } .urow.nrow .pill { display: none; } }
