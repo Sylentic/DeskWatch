@@ -658,7 +658,7 @@ fn gpus(answers: &Answers, instance: &str, names: &[String]) -> Vec<GpuData> {
             label: match names.get(at) {
                 Some(custom) if !custom.is_empty() => custom.clone(),
                 // The GPU's own index when it has one, else its place in the list.
-                _ => format!("GPU {}", key.parse::<u32>().map_or(at as u32, |n| n)),
+                _ => format!("GPU {}", key.parse::<u32>().unwrap_or(at as u32)),
             },
             name: pct
                 .iter()
