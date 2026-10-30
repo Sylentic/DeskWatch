@@ -4,6 +4,7 @@ Start with the [project README](../README.md) for what DeskWatch is, a quick dem
 
 ## Installing
 
+- [getting-started.md](getting-started.md): from nothing to your own sources, with Docker, in four steps
 - [docker.md](docker.md): the container, Compose files, the dashboard on a homelab (the easiest start)
 - [install.md](install.md): the whole setup on a Linux server with systemd
 - [raspberry-pi.md](raspberry-pi.md): a Pi with a monitor or TV as a wall display
@@ -28,6 +29,7 @@ Start with the [project README](../README.md) for what DeskWatch is, a quick dem
 
 - [git-hosts.md](git-hosts.md): which Git hosts work, and which are tested
 - [gitlab.md](gitlab.md), [bitbucket.md](bitbucket.md), [azure-devops.md](azure-devops.md): setup per source
+- [azure-devops-auth.md](azure-devops-auth.md): sign in to Azure DevOps with an Entra service principal instead of a token
 - [azure-devops-verify.md](azure-devops-verify.md): checklist for trying Azure DevOps on a real organisation
 - [firefox-containers.md](firefox-containers.md): open the links of a source in a Firefox container
 

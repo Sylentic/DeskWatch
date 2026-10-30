@@ -118,4 +118,4 @@ returns. Whoever can run that or reach the data volume owns the install, which i
 
 ## Not built yet
 
-An audit page, and rights per source. See the design notes in the project files.
+An audit page, and rights per source.

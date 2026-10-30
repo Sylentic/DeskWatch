@@ -8,9 +8,41 @@ A host is a Linux machine running [node_exporter](https://github.com/prometheus/
 running [windows_exporter](https://github.com/prometheus-community/windows_exporter), collected by one Prometheus
 server. DeskWatch only talks to that Prometheus.
 
+## Choosing hosts on the setup page
+
+1. Under **Sources**, add your Prometheus (its address, for example `http://your-server:9090`).
+2. Open **Hosts**. DeskWatch lists the machines Prometheus collects from, with Linux or Windows, up or not answering,
+   and pending updates. Tick the ones to show and press **Save**.
+3. **Edit** changes the name shown on the dashboard and which parts to show. Only what Prometheus reports for that
+   machine can be ticked. **Refresh** asks Prometheus again.
+4. To change the order on the dashboard, drag a machine by the small dot grip on its left (or focus the grip and press
+   the up or down arrow), then press **Save**. The order is saved with the hosts, so `hosts = [...]` in
+   `sources.toml` lists them in that order too.
+
+Linux and Windows are told apart by the metrics a machine has, so there is no setting for it. A machine that is down
+cannot be recognised until it answers again; one you have already chosen stays in the list as "not answering".
+
+By hand, in `bridge.toml` or `sources.toml`:
+
+```toml
+[[source.prometheus]]
+name = "home"
+url = "http://prometheus.example.lan:9090"
+hosts = [
+  "nas:9100",
+  { instance = "office-pc:9182", name = "Office PC", show = ["cpu", "memory", "updates", "reboot"] },
+]
+```
+
+Per host, `gpu_names = ["3060", "1650"]` sets short names (up to 5 characters, in GPU order) for the bars of a host
+with several GPUs (a host with one GPU uses the first name for its GPU bar), and `gpu_detail = false` removes the VRAM bar and the line under each GPU.
+
+`show` takes `cpu`, `memory`, `disk`, `uptime`, `network`, `updates`, `reboot`, `temperature` and `gpu`; without it a
+host shows everything it reports.
+
 ## Add a new machine
 
-Do this when a machine is missing from the **Hosts** page. Prometheus is a small monitoring service: it asks every
+Do this when a machine is missing from the **Hosts** page (or when you start from nothing). Prometheus is a small monitoring service: it asks every
 machine you list for its numbers (CPU, memory, disk and so on) every few seconds. DeskWatch only reads from Prometheus,
 so a machine has to be known to Prometheus first.
 
@@ -57,38 +89,6 @@ says which.
 Wait a minute, open **Setup > Hosts**, press **Refresh**, tick the new machine and press **Save**.
 
 Want GPU numbers too? See [GPU](#gpu) below.
-
-## Choosing hosts on the setup page
-
-1. Under **Sources**, add your Prometheus (its address, for example `http://your-server:9090`).
-2. Open **Hosts**. DeskWatch lists the machines Prometheus collects from, with Linux or Windows, up or not answering,
-   and pending updates. Tick the ones to show and press **Save**.
-3. **Edit** changes the name shown on the dashboard and which parts to show. Only what Prometheus reports for that
-   machine can be ticked. **Refresh** asks Prometheus again.
-4. To change the order on the dashboard, drag a machine by the small dot grip on its left (or focus the grip and press
-   the up or down arrow), then press **Save**. The order is saved with the hosts, so `hosts = [...]` in
-   `sources.toml` lists them in that order too.
-
-Linux and Windows are told apart by the metrics a machine has, so there is no setting for it. A machine that is down
-cannot be recognised until it answers again; one you have already chosen stays in the list as "not answering".
-
-By hand, in `bridge.toml` or `sources.toml`:
-
-```toml
-[[source.prometheus]]
-name = "home"
-url = "http://prometheus.example.lan:9090"
-hosts = [
-  "nas:9100",
-  { instance = "office-pc:9182", name = "Office PC", show = ["cpu", "memory", "updates", "reboot"] },
-]
-```
-
-Per host, `gpu_names = ["3060", "1650"]` sets short names (up to 5 characters, in GPU order) for the bars of a host
-with several GPUs (a host with one GPU uses the first name for its GPU bar), and `gpu_detail = false` removes the VRAM bar and the line under each GPU.
-
-`show` takes `cpu`, `memory`, `disk`, `uptime`, `network`, `updates`, `reboot`, `temperature` and `gpu`; without it a
-host shows everything it reports.
 
 ## What is read
 

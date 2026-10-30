@@ -24,7 +24,8 @@ You can watch everything on the dashboard without any sources, see [Try it with 
 What you need:
 
 - A Linux server that stays on, with `systemd` (Debian 12 or newer is what the steps are written for).
-- A Mosquitto broker the bridge can reach (often the same server).
+- A Mosquitto broker the bridge can reach (often the same server), only for alerts over MQTT. The dashboard alone needs
+  none: set `[mqtt] enabled = false` and skip step 4.
 - At least one source: Gitea, GitHub or GitHub Enterprise, GitLab, Bitbucket Cloud, Azure DevOps, Prometheus, or only Home Assistant alerts. With no
   source at all the Hosts panel is empty: hosts come from a Prometheus source.
 
@@ -156,7 +157,7 @@ Each source is optional. Add the ones you use.
 
 ### Gitea (Actions and pull requests)
 
-Gitea tells the bridge about runs the moment they start and end, by webhook. Gitea 1.27 and 28.x are tested.
+Gitea tells the bridge about runs the moment they start and end, by webhook. Tested on a real Gitea server.
 
 1. Pick a random webhook secret and store it as the credential the config names:
 
@@ -377,7 +378,7 @@ and delete the broker users you created.
 | Webhook answers 401 | The secret in Gitea differs from the credential file |
 | **Source down** pill on the dashboard | A source cannot log in or connect: check the journal for the source's name; a GitHub token may have expired |
 | The dashboard shows nothing new after a Gitea run | Check the repository is not excluded by `interrupt`, and that the webhook has the **Workflow Run** and **Workflow Job** events |
-| The host card shows `--` for CPU on the first screen | Normal: CPU use and network rates need two samples |
+| A host card shows `--` for CPU or network right after a start | Normal: both need two samples from Prometheus |
 
 Logs are verbose on request: set `Environment=RUST_LOG=debug` in the unit (or `deskwatch_bridge=debug` to leave
 other crates quiet).

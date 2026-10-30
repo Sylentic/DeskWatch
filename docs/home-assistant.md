@@ -30,7 +30,7 @@ In any automation, add the action **Run script: DeskWatch alert** and fill in:
 |---|---|
 | Title | Required. Short heading, cut to 40 characters |
 | Message | One line of detail, cut to 40 characters |
-| Severity | `info` flashes a notice, `warning` shows yellow until it is dismissed, `critical` shows red above running jobs |
+| Severity | `info` shows blue (30 minutes by default), `warning` shows yellow until it is dismissed, `critical` shows red above running jobs |
 | Id | Optional name such as `washer`. The same id replaces the earlier alert; needed to clear it |
 | Duration | Optional minutes the alert stays. Empty: `info` 30 minutes, warning and critical until cleared |
 
@@ -61,8 +61,8 @@ automation:
           id: washer
 ```
 
-Dismissing a warning or critical alert on the dashboard takes it off the screen; it stays in the Alerts pill
-and list until the clear script runs with the same id (or its duration ends). Use `critical`
+Dismissing an alert on the dashboard clears it on every screen, the same as the clear script; the automation can raise
+it again with the same id. Use `critical`
 sparingly: it pre-empts everything. The bridge can restrict it to chosen ids (`critical_ids` in `[alerts]`), and
 shows any other critical alert as a warning.
 
@@ -81,7 +81,7 @@ mosquitto_pub -u homeassistant -P '...' -t deskpanel/alert -m '{"v":2,"id":"test
 
 Alerts can also arrive over HTTP, with the same JSON as on MQTT, for scripts, `curl`, Home Assistant's `rest_command`,
 Uptime Kuma or a cron job. It is off by default. Switch it on with `http_input = true` in `[alerts]`, or with the
-checkbox in the **Alerts** section of the [setup page](setup-page.md#alerts), then restart the bridge.
+checkbox in the **Alerts** section of the [setup page](setup-page.md#alerts) (applied at once). A change in `bridge.toml` needs a restart.
 
 ```sh
 curl -X POST http://<bridge>:8787/api/alert \

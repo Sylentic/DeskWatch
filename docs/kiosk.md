@@ -88,9 +88,7 @@ shows that host, without one it has arrows (`‹ 1/3 ›`) to step through the h
 
 ### Failed runs: look and dismiss
 
-The red **failed** counter in the header counts pipelines whose latest finished run failed. It used to stay until the
-pipeline turned green, so an old
-failure could sit there forever. Now the counter is a button: click or tap it for a list with, per failed run, the
+The red **failed** counter in the header counts pipelines whose latest finished run failed. The counter is a button: click or tap it for a list with, per failed run, the
 source, project and pipeline, branch, failing step and how long ago, each opening the run on its source in a new tab.
 **Dismiss** removes one run from the list and the counter, **Dismiss all** clears the list. Escape or a click outside
 closes it. With nothing left the counter shows `0 failed` with a green dot.
@@ -127,16 +125,15 @@ sits in a box in its severity colour (info blue, warning yellow, critical red; y
 running orange and waiting amber). Alerts that come from your Git hosts (a new issue, a new PR comment) are info alerts
 with the source's mark; they link to the issue or PR and stay until dismissed or for a week. In the menu every alert has a **Dismiss**
 button, plus **Dismiss all**. Dismissing clears the alert for every screen (the same as a `clear` message on MQTT,
-unlike Failed runs, which are hidden per browser) and works without MQTT. It can only clear, never raise or change an
+like dismissing a failed run, which is also kept on the bridge) and works without MQTT. It can only clear, never raise or change an
 alert. Switch it off with `dismiss = false` in `[alerts]`.
 The header pill on or off and "via source" are `[alerts]` settings too (`ticker`, `show_source`), also
 changeable on the [setup page](setup-page.md#alerts).
 
-**Failed runs.** The red "N failed" chip is on by default; `failed_pill = false` hides it. The red notice for the latest
-failed run stays. When more than one run has failed, click the notice: it unfolds as a window with every failed run
-(each links to its pipeline, with a Dismiss button and **Dismiss all**). With `failed_as_alerts = true` every failed run
-that is not dismissed is also listed as a critical alert in the Alerts box and menu; dismissing it there dismisses the
-run. Both are `[alerts]` settings and are on the setup page (Alerts > Alerts in the header).
+**Failed runs.** The red "N failed" chip (see [Failed runs](#failed-runs-look-and-dismiss)) is on by default;
+`failed_pill = false` hides it. With `failed_as_alerts = true` every failed run that is not dismissed is also listed as a
+critical alert in the Alerts box and menu; dismissing it there dismisses the run. Both are `[alerts]` settings and are
+on the setup page (Alerts > Failed runs).
 
 ### Customize your own dashboard
 
@@ -173,8 +170,8 @@ API: `GET /api/auth/layout`, `PUT /api/auth/layout`, `POST /api/auth/layout/rese
 ### Where things run: source marks and the sources bar
 
 Every job, run, pull request, runner and alert carries a two-letter mark for its source: **Gt** Gitea, **GH** GitHub,
-**GL** GitLab, **BB** Bitbucket, **AZ** Azure DevOps, **PM** Prometheus, **HA** Home Assistant, **LO** the bridge
-machine or a script. The bar under the header lists every source with its mark, its name and its state: how many jobs
+**GL** GitLab, **BB** Bitbucket, **AZ** Azure DevOps, **PM** Prometheus, **HA** Home Assistant, **LO** a script
+or anything else without a source. The bar under the header lists every source with its mark, its name and its state: how many jobs
 run there, `ok`, or what is wrong (`not answering`, `sign-in refused`). With the setup page on, each entry opens it.
 At the end of the bar the connection state says whether the page gets live data (`all sources ok`, `offline`,
 `polling, no live socket`).
@@ -192,11 +189,11 @@ the page shows the winner as a coloured **pill in the header**:
 - **NOTICE** (blue).
 
 While a job runs, a thin orange progress line under the header follows it. A run that finished well stays in Running
-now for 30 seconds as **Done**. In a run that is still going, a stage that passed or was skipped leaves the list 30 seconds after it ended, so running and failed stages stand out. A a row in Pipelines that just finished is tinted red or green for 30 seconds. An
+now for 30 seconds as **Done**. In a run that is still going, a stage that passed or was skipped leaves the list 30 seconds after it ended, so running and failed stages stand out. A row in Pipelines that just finished is tinted red or green for 30 seconds. An
 open PR younger than an hour carries **NEW**.
 
 The size follows the screen width, so the same layout is readable on 1080p and 4K and on a small 1280x720 screen.
-Under 900 px wide (a phone) it becomes a single scrolling column. The pointer hides after 3 seconds without mouse movement.
+Under 900 px wide it becomes a single scrolling column (phones are not a supported layout). The pointer hides after 3 seconds without mouse movement.
 
 ## 2. Turn it on
 
@@ -236,8 +233,7 @@ Without any, the default layout is used: `jobs` (Running now, 2 wide, 2 tall) an
 see [Hosts](#hosts-detailed-or-compact)) on top, `pipelines` (2 wide), `prs` and `alerts` (1 cell each) below them.
 The Alerts panel shows every active alert as a coloured box with a Dismiss button (when `[alerts] dismiss` is on). There
 is no Sources panel: the sources and their status are in the bar under the header, which opens the
-[setup page](setup-page.md) when it is on. The `alerts` and `health` widgets still
-exist for your own layout. Add a `runners` panel yourself (it needs a source with runner scopes set, see
+[setup page](setup-page.md) when it is on. The `health` widget exists for your own layout. Add a `runners` panel yourself (it needs a source with runner scopes set, see
 [runners.md](runners.md)); the default grid has no free cell for it.
 
 ```toml
@@ -407,7 +403,7 @@ once a login is set ([auth.md](auth.md)). The page shows PR titles, pipeline nam
 - **The bridge host's clock and the screen's clock differ.** Times such as "3 min ago" use the bridge's clock, so a
   Pi with a wrong clock still shows correct ages. The clock in the header is the screen's own.
 - <a id="removed-login-settings"></a>**The bridge refuses to start: "[kiosk] token_file is no longer supported".**
-  `[kiosk] token_file`, `[kiosk] trusted_networks`, `[kiosk] session_days` and `[setup] token_file` were removed: the
+  `[kiosk] token_file`, `[kiosk] trusted_networks`, `[kiosk] session_days` and `[setup] token_file` were removed:
   those old settings no longer do anything. Delete the line the message names from the config. The bridge stops
   instead of ignoring the line, so nobody keeps a login they believe is still active. If you need a login, set a
   password ([auth.md](auth.md)) or put a reverse proxy with its own in front ([docker.md](docker.md#protecting-the-page)).

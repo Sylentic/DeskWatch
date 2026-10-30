@@ -21,7 +21,7 @@ make changes in your browser (the `Origin` check, below).
 
 The page uses the whole screen: a menu on the left, in four groups: Connect (**Sources**, **Hosts**, **MQTT broker**), Display (**Dashboard**,
 **Alerts**), Security (**Access**, **Sign-in options**, **Stored secrets**) and Maintenance (**Backup**, **Bridge and restart**) and the chosen section next to it, in several columns on a wide screen and one column on
-a phone. **Add source** sits next to the title of the first section. The menu entry is kept in the address
+a narrow window. **Add source** sits next to the title of the first section. The menu entry is kept in the address
 (`/setup#mqtt`), so a link opens that section.
 
 The top bar has the same height and look as the dashboard's header. Its buttons are icons; hover over one (or reach it
@@ -132,7 +132,7 @@ The **Alerts** section has three cards.
   minute, and **Clear it now** removes it. The page sends no text of its own, only the action `send` or `clear`, so there
   is no way to create any other alert from here (without a password the setup page has no login). It needs no data folder.
 - **Where alerts come from**: whether MQTT is on and connected. Alerts arrive on the MQTT topic `deskpanel/alert`
-  ([home-assistant.md](home-assistant.md)). Failed pipeline runs are not alerts; they count in the Failed badge.
+  ([home-assistant.md](home-assistant.md)). Failed pipeline runs count in the Failed badge; with `failed_as_alerts` they are listed here too.
 
 ## Access and sign-in options
 
@@ -141,7 +141,7 @@ administrator password, **users** with a role each (viewer, operator or administ
 the key icon sets a new password, the bin removes the user), **API keys** for scripts (alerts) and screens (viewer
 keys; a new key is shown once, in a pop-up with a Copy button) and **Sessions** (**Sign out everywhere**). Everyone
 changes their own password on **My account** (the person icon in the top bar). **Sign-in
-providers** adds sign-in with GitHub or Microsoft and who may use it. Only an administrator sees these two sections once
+options** adds sign-in with GitHub or Microsoft and who may use it. Only an administrator sees these two sections once
 a login is set; without a password the page says so and offers the first-run form. Your own dashboard layout is not
 set here: every signed-in person customizes it with the grid icon on the dashboard ([kiosk.md](kiosk.md#customize-your-own-dashboard)).
 
@@ -201,8 +201,8 @@ restart once by hand (`docker compose restart deskwatch-bridge`). It needs the s
 ## Not yet
 
 - The kiosk layout and the listen address stay in `bridge.toml`; the page does not edit them.
-- Everything here is tested against mock servers and a fake broker, not against a real GitHub, GitLab, Bitbucket,
-  Azure DevOps or Mosquitto.
+- Adding, testing and removing sources is tested against mock servers and a fake broker, plus real Gitea, GitHub,
+  Azure DevOps and Prometheus servers by hand. GitLab, Bitbucket and a real Mosquitto login are not tried yet.
 
 ## Security
 

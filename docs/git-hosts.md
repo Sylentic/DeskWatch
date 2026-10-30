@@ -6,10 +6,10 @@ take.
 
 | Host | Source | State |
 |---|---|---|
-| Gitea | `gitea` | Works: webhooks for instant job start and end, polling for step progress and PRs. Tested on a real Gitea 28. |
-| GitHub, GitHub Enterprise Server, GHE.com | `github` | Works by polling. |
+| Gitea | `gitea` | Works: webhooks for instant job start and end, polling for step progress and PRs. Tested on a real Gitea server. |
+| GitHub, GitHub Enterprise Server, GHE.com | `github` | Works by polling. Tested on real repositories. |
 | GitLab (gitlab.com, self-managed) | `gitlab` | Built, tested against mock answers only. See [gitlab.md](gitlab.md). |
-| Azure DevOps Services | `azure_devops` | Built, tested against mock answers and a first connection. See [azure-devops.md](azure-devops.md). |
+| Azure DevOps Services | `azure_devops` | Works by polling. Tested on a real organisation. See [azure-devops.md](azure-devops.md). |
 | Forgejo, Codeberg | (`gitea`, in part) | Not tested, see below. |
 | Bitbucket Cloud | `bitbucket` | Built, tested against mock answers only. See [bitbucket.md](bitbucket.md). |
 | Bitbucket Data Center / Server | none | Not built, see below. |
@@ -28,7 +28,7 @@ linking to the item, kept until dismissed or for a week). Items that existed at 
 | Bitbucket Cloud | Yes, polled (issue tracker on, token needs **Issues: Read**) | No |
 | Azure DevOps | No | Yes, polled (your own comments are skipped) |
 
-Both are on by default and can be turned off per source. All of this has been tried against mock answers only.
+Both are on by default and can be turned off per source. New issues and PR comments are tested against mock answers only.
 
 ## Using only one host (Azure DevOps or GitHub Enterprise)
 
@@ -60,8 +60,8 @@ token_file = "azdo-work"     # or a service principal, see azure-devops-auth.md
 ```
 
 Several at once also works: add one block per host, and the dashboard and the badges merge them (the `source`
-filter of a `[[kiosk.panel]]` shows one host only). The Hosts panel stays; it shows this machine and any Prometheus
-hosts, and the `runners` widget shows self-hosted runners and agents of every source that has them listed.
+filter of a `[[kiosk.panel]]` shows one host only). The Hosts panel only shows machines that a Prometheus source
+reports, and the `runners` widget shows self-hosted runners and agents of every source that has them listed.
 
 ## Signing in without a person's token
 
@@ -78,53 +78,6 @@ A personal token acts as one person and stops when they leave or lose access. Wh
 GitLab, Bitbucket and Gitea already have the "service account" option, as a token you create on the bot or on the
 project, so they need no code. GitHub and Azure DevOps are the two where the token is easily a person's, which is why
 Azure DevOps got a real alternative.
-
-## Forgejo and Codeberg
-
-Forgejo is a fork of Gitea, and Codeberg runs Forgejo. Nobody has tried DeskWatch against one, so this is what the
-code and the Forgejo documentation suggest, not what was seen.
-
-Likely to work with a plain `[[source.gitea]]` block:
-
-- **The webhook.** Forgejo sends its own `X-Forgejo-*` headers and also the `X-Gitea-*` ones with the same values,
-  including the HMAC-SHA256 signature in `X-Gitea-Signature`, which is what the bridge checks
-  ([Forgejo webhook documentation](https://forgejo.org/docs/latest/user/webhooks/)).
-- **Open PRs.** The bridge polls `GET /api/v1/repos/{owner}/{repo}/pulls` and reads the total from `X-Total-Count`.
-  Forgejo keeps Gitea's API for this.
-- **Test connection** in Setup (`/version`, `/user`, `/repos/{owner}/{repo}`).
-
-Unlikely to work, unconfirmed:
-
-- **CI runs and the running-job card.** The Gitea source starts from the `workflow_run` and `workflow_job` webhook
-  events and then polls `GET /repos/{owner}/{repo}/actions/jobs/{id}`. As far as I know Forgejo Actions does not send
-  those two events (it has its own action run events) and may not have that endpoint, so the pipelines page, the
-  running card and the red and green alerts would stay empty. I could not confirm either point without a Forgejo
-  instance.
-- **Runner lists.** They use Gitea's `.../actions/runners` endpoints, which Forgejo may not offer.
-
-So today a Forgejo or Codeberg repository would give the PR count and nothing else. Making the CI part work would
-be a `forgejo` source that polls Forgejo's own run list (`GET /repos/{owner}/{repo}/actions/runs`, which Forgejo has
-been adding to its API) the way the GitHub and GitLab sources poll. That needs a Forgejo to read real answers from, so
-it waits until you have one. If you do, try the `gitea` block first, add one project, and tell me what shows.
-
-Woodpecker CI and Drone, which are often used next to Forgejo, are separate CI servers and are not supported.
-
-## Bitbucket
-
-Bitbucket Cloud (`bitbucket.org`) has its own source, see [bitbucket.md](bitbucket.md). It was written from
-Atlassian's published API description and tested against mock answers only, because nobody on the project uses
-Bitbucket. Feedback from a real workspace is what turns it from "built" into "works".
-
-**Bitbucket Data Center / Server** is a different API (`/rest/api/1.0/...`) and a different CI story (build
-statuses from Bamboo, Jenkins or others). It would be a separate source and is not planned.
-
-## Adding a host in general
-
-Every source ends in the same facts (open PRs, the latest run per pipeline, running jobs, runners), so the dashboard
-does not change. A new host is one module under `bridge/src/<host>/` (API client,
-payload types, a state machine, tests with fixtures), one config struct in `config.rs`, a line each in the
-supervisor, the Setup page and the connection test, and a docs page. `bridge/src/bitbucket/` is the most recent
-example to copy.
 
 ### GitHub App
 
@@ -148,3 +101,51 @@ The bridge signs a short token with the key, swaps it for an installation token 
 it runs out and gets a new one if GitHub revokes it. The key is stored like a token (the data folder's `credentials/`,
 never `sources.toml`) and never comes back to the browser. **This has been tried against mock answers only**, not
 against a real GitHub App. A key GitHub gave out as `BEGIN RSA PRIVATE KEY` or `BEGIN PRIVATE KEY` both work.
+
+## Forgejo and Codeberg
+
+Forgejo is a fork of Gitea, and Codeberg runs Forgejo. Nobody has tried DeskWatch against one, so this is what the
+code and the Forgejo documentation suggest, not what was seen.
+
+Likely to work with a plain `[[source.gitea]]` block:
+
+- **The webhook.** Forgejo sends its own `X-Forgejo-*` headers and also the `X-Gitea-*` ones with the same values,
+  including the HMAC-SHA256 signature in `X-Gitea-Signature`, which is what the bridge checks
+  ([Forgejo webhook documentation](https://forgejo.org/docs/latest/user/webhooks/)).
+- **Open PRs.** The bridge polls `GET /api/v1/repos/{owner}/{repo}/pulls` and reads the total from `X-Total-Count`.
+  Forgejo keeps Gitea's API for this.
+- **Test connection** in Setup (`/version`, `/user`, `/repos/{owner}/{repo}`).
+
+Unlikely to work, unconfirmed:
+
+- **CI runs and the running-job card.** The Gitea source starts from the `workflow_run` and `workflow_job` webhook
+  events and then polls `GET /repos/{owner}/{repo}/actions/jobs/{id}`. As far as the documentation shows, Forgejo Actions does not send
+  those two events (it has its own action run events) and may not have that endpoint, so the pipelines page, the
+  running card and the red and green alerts would stay empty. Neither point is confirmed without a Forgejo
+  instance.
+- **Runner lists.** They use Gitea's `.../actions/runners` endpoints, which Forgejo may not offer.
+
+So today a Forgejo or Codeberg repository would give the PR count and nothing else. Making the CI part work would
+be a `forgejo` source that polls Forgejo's own run list (`GET /repos/{owner}/{repo}/actions/runs`, which Forgejo has
+been adding to its API) the way the GitHub and GitLab sources poll. That needs a Forgejo to read real answers from, so
+it waits until someone has one. If you do, try the `gitea` block first, add one project, and
+[tell us what shows](https://github.com/Sylentic/DeskWatch/issues/new/choose).
+
+Woodpecker CI and Drone, which are often used next to Forgejo, are separate CI servers and are not supported.
+
+## Bitbucket
+
+Bitbucket Cloud (`bitbucket.org`) has its own source, see [bitbucket.md](bitbucket.md). It was written from
+Atlassian's published API description and tested against mock answers only, because nobody on the project uses
+Bitbucket. Feedback from a real workspace is what turns it from "built" into "works".
+
+**Bitbucket Data Center / Server** is a different API (`/rest/api/1.0/...`) and a different CI story (build
+statuses from Bamboo, Jenkins or others). It would be a separate source and is not planned.
+
+## Adding a host in general
+
+Every source ends in the same facts (open PRs, the latest run per pipeline, running jobs, runners), so the dashboard
+does not change. A new host is one module under `bridge/src/<host>/` (API client,
+payload types, a state machine, tests with fixtures), one config struct in `config.rs`, a line each in the
+supervisor, the Setup page and the connection test, and a docs page. `bridge/src/bitbucket/` is the most recent
+example to copy.
