@@ -304,6 +304,7 @@ a.rsrc:hover, a.rsrc:focus-visible { background: var(--card); }
 .rsrc.warn { border-color: var(--amber-edge); } .rsrc.warn .st { color: var(--amber); }
 .rsrc.bad { border-color: var(--red-edge); background: var(--red-bg); } .rsrc.bad .st { color: var(--red-fg); }
 #sources { display: contents; }
+.rail[hidden] { display: none; }
 .rail .end { margin-left: auto; }
 /* The connection state at the end of the bar. */
 #conn { font-size: 0.78rem; padding: 0.2rem 0.4rem; }

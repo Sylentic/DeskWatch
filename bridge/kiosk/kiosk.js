@@ -910,8 +910,12 @@
   var alertsOpen = false;
   var SEV_NAME = { critical: 'Critical', warn: 'Warning', info: 'Info' };
   // Real alerts only: the ticker and the "is there a critical alert" check use these.
+  // The Alerting Kiosk is about hosts: alerts that come from the Git hosts
+  // (new issue, PR comment) are left out; Alertmanager, Home Assistant and scripts stay.
+  var GIT_SOURCES = ['gitea', 'github', 'gitlab', 'bitbucket', 'azure_devops'];
   function realAlerts() {
-    return snap.alerts || [];
+    var list = snap.alerts || [];
+    return alerting() ? list.filter(function (a) { return GIT_SOURCES.indexOf(a.source) < 0; }) : list;
   }
   // With `[alerts] failed_as_alerts` every failed run that is not dismissed is
   // also a critical alert in the Alerts box and menu. Dismissing one dismisses
@@ -1632,6 +1636,8 @@
   // each opens it.
   var SRC_STATE = { auth_failed: 'sign-in refused', unreachable: 'not answering' };
   function renderSources() {
+    // The Alerting Kiosk shows hosts only; a source that is down still gets the pill in the header.
+    $('rail').hidden = alerting();
     var setup = snap.layout && snap.layout.setup;
     var html = (snap.sources || []).map(function (s) {
       var kind = kindOf(s.id), name = String(s.id).split(':').slice(1).join(':') || kind;

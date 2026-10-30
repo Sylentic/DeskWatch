@@ -80,7 +80,9 @@ they are). The Open PRs badge is not shown in this mode.
   stops answering is a dimmed card with a dashed red edge. The tag at the top right says why (`DISK 93`).
 - Pending **security updates** light a host yellow (`2 SECURITY`). A host that **needs a restart** lights purple, so it
   is not mistaken for a full disk. Both blink for 10 seconds when they first appear, like any yellow warning.
-- No pipeline failures here: the red "Failed" notice and the failed chip are off in this mode, as is the Open PRs badge.
+- No pipeline failures here: the red "Failed" notice and the failed chip are off in this mode, as is the Open PRs badge,
+  the Sources bar, and alerts that come from your Git hosts (new issues, PR comments). Alerts from Alertmanager, Home
+  Assistant and scripts stay, and a source that goes down still gets its pill in the header.
 - Hosts that need a look come first, the worst first. The rest keep the order from the Hosts page of Setup.
 - A host that **gets worse** blinks: yellow for 10 seconds, red (or down) for 30 seconds. After that the card stays lit
   and steady. What was already wrong when the page was opened does not blink. Browsers set to "reduce motion" do not
