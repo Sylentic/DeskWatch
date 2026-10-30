@@ -61,6 +61,13 @@ NVIDIA DCGM exporter by default; **GPU** is the busiest of the shader cores and 
 host transcoding video shows as busy. `gpu_pct`, `gpu_mem_pct` and `gpu_temp_c` can be replaced per host under `queries`
 ([install.md](install.md#prometheus-host-stats-and-containers)).
 
+A host with **more than one GPU** gets a load bar and a VRAM bar for each GPU, with the model name and temperature in
+small print under them. The bars are called "GPU 0", "GPU 1" and so on. On the Hosts page of Setup, **Edit** on such a
+machine lets you give each GPU a short name of up to 5 characters, and switch off the VRAM bar and the line under each
+GPU. In `bridge.toml` or `sources.toml` that is `gpu_names = ["3060", "1650"]` and `gpu_detail = false` on the host.
+The plain GPU, VRAM and GPU temp figures then show the busiest GPU, so the "needs a look" warning and the graph work as
+with one GPU. Several GPUs per host are only tested against mock data, not on a real multi-GPU machine.
+
 ### Hosts: detailed or compact
 
 The built-in layout has one **Hosts** panel, two cells wide and two tall. In the `detailed` view (the default) a list

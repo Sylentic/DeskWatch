@@ -518,6 +518,8 @@ async fn hosts(State(shared): State<Arc<Shared>>, headers: HeaderMap) -> Respons
                 "instance": h.instance,
                 "name": h.name,
                 "show": h.show,
+                "gpu_names": h.gpu_names,
+                "gpu_detail": h.gpu_detail,
             })).collect::<Vec<_>>(),
         }));
     }
@@ -575,6 +577,17 @@ async fn save_hosts(
             instance,
             name: host_name,
             show,
+            gpu_names: match item.get("gpu_names") {
+                Some(Value::Array(names)) => names
+                    .iter()
+                    .map(|n| n.as_str().unwrap_or_default().to_string())
+                    .collect(),
+                _ => Vec::new(),
+            },
+            gpu_detail: item
+                .get("gpu_detail")
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
         });
     }
     let _saving = shared.saving.lock().await;

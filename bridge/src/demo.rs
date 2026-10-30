@@ -21,7 +21,7 @@ use crate::ci::{
 };
 use crate::composer::Composer;
 use crate::fleet::{HostFacts, StatsReport};
-use crate::model::{JobData, JobKind, NetData, SCHEMA_VERSION, StatsData};
+use crate::model::{GpuData, JobData, JobKind, NetData, SCHEMA_VERSION, StatsData};
 use crate::source::{Health, SourceId};
 
 /// Length of one loop in seconds. The script starts over after this.
@@ -119,7 +119,28 @@ fn fake_fleet(composer: &mut Composer, now: u64) {
         StatsReport {
             hosts: vec![
                 host("demo-nas", 4.0 + 12.0 * wave(17.0, 1.0), 41.0, 82.0, 14),
-                host("demo-agent", 10.0 + 70.0 * wave(31.0, 2.0), 55.0, 47.0, 0),
+                // A machine with two GPUs, so the card's GPU list shows in the demo.
+                {
+                    let mut agent =
+                        host("demo-agent", 10.0 + 70.0 * wave(31.0, 2.0), 55.0, 47.0, 0);
+                    let gpu = |index: u32, name: &str, busy: f32, vram: f32| GpuData {
+                        label: format!("GPU {index}"),
+                        name: Some(name.into()),
+                        pct: Some(busy.round()),
+                        mem_pct: Some(vram.round()),
+                        temp_c: Some((40.0 + busy / 3.0).round()),
+                    };
+                    let gpus = vec![
+                        gpu(0, "GeForce RTX 3060", 8.0 + 80.0 * wave(13.0, 0.7), 62.0),
+                        gpu(1, "GeForce GTX 1650", 3.0 + 30.0 * wave(19.0, 1.4), 24.0),
+                    ];
+                    agent.stats.gpu_pct = gpus.iter().filter_map(|g| g.pct).reduce(f32::max);
+                    agent.stats.gpu_mem_pct =
+                        gpus.iter().filter_map(|g| g.mem_pct).reduce(f32::max);
+                    agent.stats.gpu_temp_c = gpus.iter().filter_map(|g| g.temp_c).reduce(f32::max);
+                    agent.stats.gpus = gpus;
+                    agent
+                },
             ],
             down: Vec::new(),
         },
@@ -179,6 +200,8 @@ pub fn stats(now: u64) -> StatsData {
         gpu_pct: Some(round(5.0 + 70.0 * wave(13.0, 0.7))),
         gpu_mem_pct: Some(round(30.0 + 25.0 * wave(29.0, 0.2))),
         gpu_temp_c: Some(round(38.0 + 30.0 * wave(13.0, 0.7))),
+        gpus: Vec::new(),
+        gpu_plain: false,
         uptime_s: Some(1_234_567 + now % 100_000),
         net: Some(NetData {
             iface: "eth0".into(),

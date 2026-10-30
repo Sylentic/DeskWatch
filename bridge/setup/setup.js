@@ -653,8 +653,8 @@
       hostsState.draft = {}; hostsState.order = {};
       j.sources.forEach(function (s) {
         var rows = {};
-        s.found.forEach(function (f) { rows[f.instance] = { on: false, name: defaultHostName(f.instance), show: null }; });
-        s.configured.forEach(function (c) { rows[c.instance] = { on: true, name: c.name, show: c.show }; });
+        s.found.forEach(function (f) { rows[f.instance] = { on: false, name: defaultHostName(f.instance), show: null, gpu_names: [], gpu_detail: true }; });
+        s.configured.forEach(function (c) { rows[c.instance] = { on: true, name: c.name, show: c.show, gpu_names: c.gpu_names || [], gpu_detail: c.gpu_detail !== false }; });
         hostsState.draft[s.name] = rows;
         // The saved order first (that is the order on the dashboard), then
         // what is only found, so a machine ticked later lands at the end.
@@ -852,6 +852,22 @@
       grid.appendChild(lab);
     });
     m.body.appendChild(grid);
+    // Only for a machine with a GPU. A host with one GPU ignores these; with several, the bars use them.
+    var gpuNames = [], gpuDetail = null;
+    if (reports.indexOf('gpu') >= 0) {
+      m.body.appendChild(el('p', 'muted', 'If this machine has more than one GPU, each gets its own bars. Give a GPU a short name (up to 5 characters), or leave it empty for "GPU 0", "GPU 1" and so on.'));
+      var names = el('div', 'partgrid');
+      for (var i = 0; i < 4; i++) {
+        var t = el('input'); t.type = 'text'; t.maxLength = 5; t.placeholder = 'GPU ' + i; t.value = row.gpu_names[i] || '';
+        gpuNames.push(t);
+        names.appendChild(t);
+      }
+      m.body.appendChild(names);
+      gpuDetail = checkbox(row.gpu_detail, false);
+      var dl = el('label', 'part');
+      dl.appendChild(gpuDetail); dl.appendChild(el('span', null, 'Show a VRAM bar and the model name under each GPU'));
+      m.body.appendChild(dl);
+    }
     var ok = modalButtons(m, 'Save');
     m.form.addEventListener('submit', function (e) {
       e.preventDefault();
@@ -860,6 +876,7 @@
       var picked = HOST_PARTS.map(function (p) { return p[0]; }).filter(function (k) { return boxes[k].checked; });
       var all = reports.length === picked.length && reports.every(function (k) { return picked.indexOf(k) >= 0; });
       row.name = text; row.show = all ? null : picked;
+      if (gpuDetail) { row.gpu_names = gpuNames.map(function (t) { return t.value.trim(); }); row.gpu_detail = gpuDetail.checked; }
       row.on = true;
       closeModal();
       saveHosts(s);
@@ -870,7 +887,7 @@
     var rows = hostsState.draft[s.name], list = [];
     (hostsState.order[s.name] || []).forEach(function (instance) {
       var r = rows[instance];
-      if (r.on) list.push({ instance: instance, name: r.name, show: r.show });
+      if (r.on) list.push({ instance: instance, name: r.name, show: r.show, gpu_names: r.gpu_names, gpu_detail: r.gpu_detail });
     });
     hostsState.saving = true; hostsState.message = null; render(last);
     post('api/setup/hosts', { source: s.name, hosts: list }).then(function (j) {
