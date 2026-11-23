@@ -1757,7 +1757,7 @@
     var addr = el('section', 'card');
     var ah = el('div', 'cardhead');
     var at = el('div'); at.appendChild(el('h2', null, 'Public address'));
-    at.appendChild(el('p', 'muted', 'The address people open, over HTTPS. The providers send them back to it.'));
+    at.appendChild(el('p', 'muted', 'The address people open, over HTTPS. The providers send them back to it. This only tells the sign-in where to return: it does not turn HTTPS on. The bridge itself serves plain HTTP unless you set up HTTPS or put a proxy in front (docs/https.md).'));
     ah.appendChild(at);
     var ae = el('div', 'rowacts'); var aeb = iconButton('edit', 'Change'); ae.appendChild(aeb); ah.appendChild(ae);
     addr.appendChild(ah);

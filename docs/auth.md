@@ -94,6 +94,10 @@ on, and a public address that starts with `https://`; plain `http://` only works
 `oauth.toml` in the data folder (no secrets), the client secrets in `credentials/oauth-github` and
 `credentials/oauth-microsoft`. The local admin account always keeps working, so a wrong rule never locks you out.
 
+The public address is only the address the providers send people back to. Filling it in does **not** turn HTTPS on:
+the bridge keeps serving plain HTTP until you set up HTTPS or a proxy in front of it ([https.md](https.md)), and the
+address has to reach the bridge through that.
+
 Nobody gets in by default: a person must match an allow rule. Plain rules give the **viewer** role, operator rules the
 **operator** role, administrator rules the **administrator** role; with several matches the highest wins. Roles are decided again at every sign-in, so removing
 someone from a team takes effect at their next sign-in.
