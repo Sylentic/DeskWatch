@@ -14,6 +14,9 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ### Changed
 
+- **The Public address on the setup page says what it does not do.** Saving it only tells the GitHub and
+  Microsoft sign-in where to send people back; it does not turn HTTPS on. The text next to it and
+  [auth.md](docs/auth.md) now say so and point to [https.md](docs/https.md).
 - **The docs are consistent again.** The README, kiosk, setup, Docker, Windows, Home Assistant and source guides no
   longer mention stats of the bridge machine, a per-browser failed-run dismiss, phones, or mock-only testing for
   sources that run on real servers. New [getting started](docs/getting-started.md) page with the words used in the
