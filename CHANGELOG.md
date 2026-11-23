@@ -7,10 +7,7 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
-### Fixed
-
-- **Header icons and clock stay at the right in Safari.** The right side of the top bar no longer relies on a spacer
-  element, so the Customize and Setup icons and the clock cannot end up next to the title.
+## [1.0.13]
 
 ### Changed
 
@@ -31,11 +28,14 @@ All notable changes to DeskWatch are listed here. The format follows
 - **Alert settings and the host panel apply without a restart.** Saving them on the setup page updates open
   dashboards within a few seconds, including the web address for alerts (`http_input`) and the Dismiss buttons. The
   update check and the MQTT broker still need a restart.
+- **Updated libraries.** `axum-server` 0.8 to 0.9 (the HTTPS listener) and `toml` 1.1 to 1.2.
 - `[alerts] ticker_speed` is no longer used (the header shows a pill, not a scrolling line). It is still accepted, so
   an old config keeps working.
 
 ### Fixed
 
+- **Header icons and clock stay at the right in Safari.** The right side of the top bar no longer relies on a spacer
+  element, so the Customize and Setup icons and the clock cannot end up next to the title.
 - **A custom GPU name now also shows for a host with one GPU.** Before, the name from Setup (Hosts, Edit) only
   appeared on hosts with two or more GPUs. With one GPU it now labels the GPU bar, its temperature and the graph key.
 - **A tick on the setup page no longer jumps back.** A box ticked on Alerts or Update check, or a changed number, was

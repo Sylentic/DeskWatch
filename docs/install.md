@@ -48,7 +48,7 @@ aarch64 for ARM servers; on a small ARM machine Docker is the easier way) and a 
 file (the Windows zip is covered in [windows.md](windows.md)). It is built on Ubuntu 22.04, so it runs on Debian 12 and newer. It needs nothing but the system C library.
 
 ```sh
-VERSION=v1.0.12       # the release you want
+VERSION=v1.0.13       # the release you want
 cd "$(mktemp -d)"
 curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-x86_64-linux.tar.gz"
 curl -fLO "https://github.com/Sylentic/DeskWatch/releases/download/$VERSION/deskwatch-bridge-$VERSION-x86_64-linux.tar.gz.sha256"
@@ -72,7 +72,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 git clone https://github.com/Sylentic/DeskWatch.git
 cd DeskWatch
-git checkout v1.0.12             # or dev for the newest code that is not released yet
+git checkout v1.0.13             # or dev for the newest code that is not released yet
 cargo build --release --locked -p deskwatch-bridge
 ```
 
