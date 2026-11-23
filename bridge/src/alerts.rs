@@ -14,12 +14,15 @@
 //! is cleared with `{"id": ..., "clear": true}` or its `ttl_s` runs out.
 
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
 use axum::Router;
 use axum::body::Bytes;
-use axum::extract::State;
+use axum::extract::{Request, State};
 use axum::http::{HeaderMap, StatusCode};
+use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use serde::Deserialize;
@@ -204,6 +207,20 @@ impl AlertMessage {
 /// Path of the web address that takes alerts (`[alerts] http_input`).
 pub const HTTP_PATH: &str = "/api/alert";
 
+/// `[alerts] http_input`, shared with the routes, so the setup page can turn
+/// the web addresses for alerts on and off without a restart.
+pub type HttpSwitch = Arc<AtomicBool>;
+
+/// Middleware for the alert web addresses: while `http_input` is off they
+/// answer 404, as if they were not there.
+pub async fn when_on(State(switch): State<HttpSwitch>, request: Request, next: Next) -> Response {
+    if switch.load(Ordering::Relaxed) {
+        next.run(request).await
+    } else {
+        StatusCode::NOT_FOUND.into_response()
+    }
+}
+
 /// `POST /api/alert`: the same JSON as on MQTT (schema section 4), for scripts,
 /// `curl`, Home Assistant's `rest_command` and anything else that can send an
 /// HTTP request. It has no login (like the dashboard), so a page on another
@@ -324,8 +341,18 @@ impl Alerts {
         };
         info!(id, ?severity, title = alert.title, "alert raised");
         self.active.insert(id, alert);
+        self.trim();
+    }
 
-        // Keep at most `max_active`: drop the least urgent, oldest one.
+    /// Change the settings while running (the setup page saved them). A lower
+    /// `max_active` drops the extra alerts at once.
+    pub fn set_config(&mut self, config: AlertsConfig) {
+        self.config = config;
+        self.trim();
+    }
+
+    /// Keep at most `max_active`: drop the least urgent, oldest one.
+    fn trim(&mut self) {
         while self.active.len() > self.config.max_active.max(1) {
             let drop = self
                 .active

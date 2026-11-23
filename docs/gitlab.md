@@ -20,7 +20,7 @@ What you get:
 - A refused or expired token, or an unreachable server, shows the **Source down** pill.
 
 Self-hosted runners can be shown on the kiosk `runners` widget (optional, needs more rights, see
-[runners.md](runners.md#5-gitlab-runners-in-this-version)).
+[runners.md](runners.md#5-gitlab-runners)).
 
 **What was tested.** The data shapes were written from the GitLab API documentation and tested against mock
 answers. Nobody has connected this source to a real GitLab yet, so what a real server sends is unconfirmed. In
@@ -39,7 +39,7 @@ Use a token that can only read.
 5. Create the token and copy it once; GitLab does not show it again.
 
 The user behind the token must be able to see each project you list. Runner lists need more, see
-[runners.md](runners.md#5-gitlab-runners-in-this-version). Leave `runners` out if you do not need them.
+[runners.md](runners.md#5-gitlab-runners). Leave `runners` out if you do not need them.
 
 ## 2. Store it on the server
 

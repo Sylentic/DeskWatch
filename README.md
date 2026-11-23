@@ -12,7 +12,7 @@ where.
 
 ![The DeskWatch dashboard with demo data](docs/dashboard.png)
 
-One small program, the **bridge**, collects the data and serves the dashboard. It runs on Linux, Windows, a Raspberry Pi
+One small program, the **bridge**, collects the data and serves the dashboard. It runs on Linux, Windows
 or in Docker, and needs no internet beyond the sources you point it at.
 
 ## What it shows
@@ -20,9 +20,9 @@ or in Docker, and needs no internet beyond the sources you point it at.
 - **Running now:** every CI job with its steps, elapsed time and where it runs. A run that just finished well stays for
   a moment as *Done*.
 - **Pipelines and pull requests** from Gitea, GitHub (and GitHub Enterprise), GitLab, Bitbucket Cloud and Azure DevOps.
-- **Hosts** from Prometheus and the bridge machine itself: CPU, memory, disk, GPU and VRAM (NVIDIA through the DCGM
-  exporter, AMD on the bridge machine), uptime, temperature, network. Hosts that
-  need a look (down, nearly full, just rebooted) come first.
+- **Hosts** from Prometheus (Linux and Windows): CPU, memory, disk, GPU and VRAM (NVIDIA through the DCGM exporter,
+  or your own queries), uptime, temperature, network, pending updates. Hosts that need a look (down, nearly full,
+  just rebooted) come first.
 - **One event at a time in the header:** a failed run or critical alert in red until you dismiss it, a warning in
   yellow, a success (or a *Fixed* after a failure) in green that goes away by itself.
 - **Alerts** from Home Assistant, Prometheus Alertmanager or any script, over MQTT or HTTP, and from your Git hosts: a new issue, or a new
@@ -48,9 +48,9 @@ Open <http://localhost:8787/> for the dashboard with fake data. Without Docker, 
 |---|---|
 | **Docker** on a homelab server (the easiest way to the dashboard; image on `ghcr.io/sylentic/deskwatch-bridge`) | [docs/docker.md](docs/docker.md) |
 | **Linux** with systemd (release binaries for x86_64 and aarch64) | [docs/install.md](docs/install.md) |
-| **Raspberry Pi** with a monitor or TV as a wall display | [docs/raspberry-pi.md](docs/raspberry-pi.md), [docs/kiosk.md](docs/kiosk.md) |
 | **Windows** (release zip, can run as a service) | [docs/windows.md](docs/windows.md) |
 
+New here? [docs/getting-started.md](docs/getting-started.md) goes from nothing to your own sources in four steps.
 Then add your sources, on the [setup page](docs/setup-page.md) or in the config file
 ([`bridge/config.example.toml`](bridge/config.example.toml)). Secrets never go in the config: they are read from
 credential files.
@@ -79,10 +79,7 @@ GitHub, GitLab and Bitbucket can also list their self-hosted runners ([docs/runn
 DeskWatch is at **1.0**: the dashboard, the setup page, the login and the sources above work and run on the author's
 homelab. Not done yet:
 
-- The dashboard on a real Raspberry Pi (built and tested in Chromium on a PC), and GitLab and Bitbucket against real
-  servers.
-- Local stats of the bridge machine on Windows (the host card shows dashes; Prometheus hosts work, see
-  [docs/windows.md](docs/windows.md)).
+- GitLab and Bitbucket against real servers.
 - Release binaries for macOS and 32-bit ARM (build from source).
 
 What changed in each version is in the [changelog](CHANGELOG.md). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md); security problems go through [SECURITY.md](SECURITY.md).
@@ -97,8 +94,7 @@ or feature" form. A short "works for me" helps as much as a bug report. Never po
 |---|---|---|
 | GitLab (gitlab.com or self-managed) | Merge requests, pipelines and runners against a real server | [docs/gitlab.md](docs/gitlab.md) |
 | Bitbucket Cloud | PRs, pipelines and runners | [docs/bitbucket.md](docs/bitbucket.md) |
-| GPU rows | NVIDIA through the DCGM exporter, or AMD on the bridge machine | [docs/git-hosts.md](docs/git-hosts.md) |
-| Raspberry Pi | The dashboard on a real Pi with a monitor or TV | [docs/raspberry-pi.md](docs/raspberry-pi.md) |
+| GPU rows | NVIDIA through the DCGM exporter, several GPUs in one host, or your own GPU queries | [docs/git-hosts.md](docs/git-hosts.md) |
 | Microsoft Entra sign-in | A real login with your tenant, and Entra for Azure DevOps | [docs/auth.md](docs/auth.md), [docs/azure-devops-auth.md](docs/azure-devops-auth.md) |
 | GitHub App | A GitHub source signed in as an installed App | [docs/git-hosts.md](docs/git-hosts.md) |
 | Alertmanager | Alerts from a real Alertmanager webhook | [docs/alertmanager.md](docs/alertmanager.md) |

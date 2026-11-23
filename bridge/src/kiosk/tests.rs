@@ -839,7 +839,6 @@ fn setup_link_is_in_the_layout_only_when_asked() {
 fn ticker_settings_travel_in_the_layout() {
     let (tx, _rx) = tokio::sync::mpsc::channel(4);
     let alerts = crate::config::AlertsConfig {
-        ticker_speed: crate::config::TickerSpeed::Slow,
         show_source: false,
         ..Default::default()
     };
@@ -850,7 +849,47 @@ fn ticker_settings_travel_in_the_layout() {
     assert_eq!(layout["dismiss"], true);
     assert_eq!(layout["failed_pill"], true);
     assert_eq!(layout["failed_as_alerts"], false);
-    assert!(layout["speed"].as_f64().unwrap() < 1.0);
+    assert!(
+        layout.get("speed").is_none(),
+        "the ticker speed is no longer used"
+    );
+}
+
+#[tokio::test]
+async fn saved_settings_change_the_layout_and_dismiss_while_running() {
+    let (tx, _rx) = tokio::sync::mpsc::channel(4);
+    let mut kiosk = kiosk()
+        .with_setup_link(true)
+        .with_alerts(&crate::config::AlertsConfig::default(), tx);
+    let router = kiosk.router();
+    let off = crate::config::AlertsConfig {
+        ticker: false,
+        dismiss: false,
+        ..Default::default()
+    };
+    kiosk.set_alerts(&off);
+    let compact = crate::config::KioskConfig {
+        host_view: crate::config::HostView::Compact,
+        ..Default::default()
+    };
+    kiosk.set_panels(&compact);
+    let layout = &json_of(&kiosk)["layout"];
+    assert_eq!(layout["alerts"]["ticker"], false);
+    assert_eq!(layout["setup"], true, "the setup link stays");
+    assert!(
+        layout["panels"].to_string().contains("\"compact\""),
+        "{layout}"
+    );
+    // The routes were made before the change and still follow it.
+    let (status, _) = send(
+        &router,
+        "POST",
+        "/api/kiosk/alert/dismiss",
+        &[],
+        r#"{"id":"door"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
 }
 
 #[tokio::test]

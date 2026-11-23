@@ -17,14 +17,14 @@ body:
     id: version
     attributes:
       label: DeskWatch version
-      description: "The release you downloaded or the Docker image tag, for example 1.0.11."
+      description: "The release you downloaded or the Docker image tag, for example 1.0.0."
     validations:
       required: true
   - type: dropdown
     id: install
     attributes:
       label: How do you run it?
-      options: [Docker, Linux binary, Windows, Raspberry Pi, From source]
+      options: [Docker, Linux binary, Windows, From source]
     validations:
       required: true
   - type: input

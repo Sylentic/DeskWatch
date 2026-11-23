@@ -14,6 +14,8 @@
 //! composer instead, for watching the dashboard page.
 
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -29,7 +31,7 @@ use deskwatch_bridge::health;
 use deskwatch_bridge::hooks::Hooks;
 use deskwatch_bridge::kiosk::Kiosk;
 use deskwatch_bridge::mqtt::{self, Inbound};
-use deskwatch_bridge::setup::Setup;
+use deskwatch_bridge::setup::{LiveSettings, Setup};
 use deskwatch_bridge::source::unix_now;
 use deskwatch_bridge::store::Store;
 use deskwatch_bridge::supervisor::Supervisor;
@@ -185,6 +187,8 @@ async fn main() -> Result<()> {
     // sender stays alive here either way, so with MQTT off the receiver just
     // waits forever.
     let (inbound_tx, mut inbound_rx) = mpsc::channel(16);
+    // Alert and dashboard settings saved on the setup page, applied while running.
+    let (settings_tx, mut settings_rx) = mpsc::channel::<LiveSettings>(4);
     // The daily "newer version" look (docs/updates.md). Not in the demo.
     let update = deskwatch_bridge::update::UpdateNotice::default();
     if config.updates.check && !args.demo {
@@ -251,28 +255,43 @@ async fn main() -> Result<()> {
     // `/healthz` (the Docker health probe) reports the broker connection, so
     // the listener also opens for a bridge that only talks to a broker.
     let mqtt_link = health::MqttLink::default();
-    // Alerts over HTTP: off unless `[alerts] http_input`.
-    if config.alerts.enabled && config.alerts.http_input {
+    // Alerts over HTTP: off unless `[alerts] http_input`. The routes are there
+    // whenever alerts are on, so the setup page can switch them without a
+    // restart; while off they answer 404.
+    let http_switch: deskwatch_bridge::alerts::HttpSwitch =
+        Arc::new(AtomicBool::new(config.alerts.http_input));
+    if config.alerts.enabled {
+        let switched = || {
+            axum::middleware::from_fn_with_state(
+                http_switch.clone(),
+                deskwatch_bridge::alerts::when_on,
+            )
+        };
         hooks.add(
             deskwatch_bridge::alerts::HTTP_PATH,
             deskwatch_bridge::alerts::http_router(inbound_tx.clone())
                 .layer(local_only.clone())
-                .layer(guard(Need::AlertKey)),
+                .layer(guard(Need::AlertKey))
+                .layer(switched()),
         );
         hooks.add(
             deskwatch_bridge::alertmanager::HTTP_PATH,
             deskwatch_bridge::alertmanager::http_router(inbound_tx.clone())
                 .layer(local_only.clone())
-                .layer(guard(Need::AlertKey)),
+                .layer(guard(Need::AlertKey))
+                .layer(switched()),
         );
-        if warn_no_login(auth.enabled(), config.http.listen.ip().is_loopback()) {
-            warn!(
-                "POST {} on {} has no login: anyone who can reach this port can put alerts on the dashboard. \
-                 That is fine on a home network. Do not expose the port to the internet",
-                deskwatch_bridge::alerts::HTTP_PATH,
-                config.http.listen
-            );
-        }
+    }
+    if config.alerts.enabled
+        && config.alerts.http_input
+        && warn_no_login(auth.enabled(), config.http.listen.ip().is_loopback())
+    {
+        warn!(
+            "POST {} on {} has no login: anyone who can reach this port can put alerts on the dashboard. \
+             That is fine on a home network. Do not expose the port to the internet",
+            deskwatch_bridge::alerts::HTTP_PATH,
+            config.http.listen
+        );
     }
     // The setup page (docs/setup-page.md): off unless `[setup] enabled`.
     let mut setup = None;
@@ -284,6 +303,7 @@ async fn main() -> Result<()> {
             Some(supervisor.clone()),
         )
         .with_alert_sender(inbound_tx.clone())
+        .with_settings_sender(settings_tx.clone())
         .with_update(update.clone());
         hooks.add(
             "/setup",
@@ -363,6 +383,17 @@ async fn main() -> Result<()> {
             Some(msg) = inbound_rx.recv() => match msg {
                 Inbound::Alert(alert) => composer.alert(alert, unix_now()),
             },
+            Some(settings) = settings_rx.recv() => {
+                http_switch.store(settings.alerts.http_input, Ordering::Relaxed);
+                if let Some(kiosk) = &mut kiosk {
+                    kiosk.set_alerts(&settings.alerts);
+                    kiosk.set_panels(&settings.kiosk);
+                }
+                if demo.is_none() {
+                    composer.alerts.set_config(settings.alerts);
+                }
+                info!("applied the alert and dashboard settings saved on the setup page");
+            }
             _ = shutdown.wait() => break,
             _ = async {
                 match &restart {

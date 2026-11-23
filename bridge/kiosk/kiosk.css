@@ -177,7 +177,10 @@ body.idle, body.idle * { cursor: none !important; }
   border-bottom: 1px solid var(--line);
 }
 .brand { font-family: var(--brand); font-weight: 700; font-size: 1.25rem; letter-spacing: -0.02em; text-transform: uppercase; white-space: nowrap; }
-.spacer { flex: 1; }
+.hl { display: flex; align-items: center; gap: 1rem; flex: none; min-width: 0; }
+/* The right side fills the rest of the bar and pushes its items to the end with justify-content, not with a spacer
+   or auto margins, which Safari did not always honour. */
+.hr { display: flex; align-items: center; justify-content: flex-end; gap: 1rem; flex: 1 1 0; min-width: 0; }
 
 /* The badges sit in one segmented bar. */
 .badges {
@@ -563,7 +566,7 @@ a.link:active { background: rgba(255, 255, 255, .08); }
   :root { font-size: 16px; }
   body { overflow: auto; }
   #top { flex-wrap: wrap; height: auto; padding: 0.6rem 1rem; gap: 0.6rem; }
-  .spacer { display: none; }
+  .hl, .hr { display: contents; }
   /* With the spacer gone, the icons and the clock stay at the right end of the line. */
   #edit-btn { margin-left: auto; }
   .banner { flex-basis: 100%; max-width: none; }

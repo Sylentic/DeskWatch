@@ -1,5 +1,5 @@
 name: I tested a source or feature
-description: Report that GitLab, Bitbucket, GPU, Raspberry Pi, Entra, GitHub App, Alertmanager, Backup or Forgejo works (or does not) on your system.
+description: Report that GitLab, Bitbucket, GPU, Entra, GitHub App, Alertmanager, Backup or Forgejo works (or does not) on your system.
 labels: [testing]
 body:
   - type: markdown
@@ -15,7 +15,6 @@ body:
         - GitLab
         - Bitbucket Cloud
         - GPU rows (NVIDIA DCGM or AMD)
-        - Raspberry Pi kiosk
         - Microsoft Entra sign-in
         - GitHub sign-in
         - GitHub App

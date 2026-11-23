@@ -21,8 +21,8 @@ the GitHub release. A merge into `main` without a new version releases nothing.
    places:
    - `version` in the root `Cargo.toml`, and `Cargo.lock` with it (the pipeline builds with `--locked`);
    - `Unreleased` in `CHANGELOG.md`, turned into the new version section (the release notes are that section; the pipeline adds the closing line "Something not working? Open an issue" by itself);
-   - the version examples in `docs/install.md` (two) and `docs/windows.md` (two), and the
-     example in `docs/docker.md` section 10.
+   - the version examples in `docs/install.md` (two) and `docs/windows.md` (two). The examples in
+     `docs/docker.md`, `deploy/docker-compose.yml` and the bug report form use a fixed old number on purpose.
 2. Open the release pull request **from `dev` into `main`**, titled "Release x.y.z". Merge it with a merge commit
    once the pipeline is green (it also builds the image for both CPUs). The workflow `release-pr.yml` fills in the description from the
    CHANGELOG section when the pull request is opened, as long as nobody typed one yet.
@@ -73,8 +73,3 @@ git push origin v1.0.1
 `deploy/docker-compose.yml` uses the `latest` tag, so a release needs no change there. The pipeline moves `latest` to a
 new release (not to a pre-release such as `-rc.1`) once it has finished for the tag, so check that
 `ghcr.io/sylentic/deskwatch-bridge:<version>` can be pulled before announcing the release.
-
-## v0.9.8 was never released
-
-The `v0.9.8` tag was pushed on the commit before the release PR was merged, so every job stopped at the version check.
-No binaries, image or GitHub release exist for 0.9.8, and the tag was left as it is. Its changes shipped in 0.9.9.

@@ -7,6 +7,45 @@ All notable changes to DeskWatch are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.0.13]
+
+### Changed
+
+- **The Public address on the setup page says what it does not do.** Saving it only tells the GitHub and
+  Microsoft sign-in where to send people back; it does not turn HTTPS on. The text next to it and
+  [auth.md](docs/auth.md) now say so and point to [https.md](docs/https.md).
+- **The docs are consistent again.** The README, kiosk, setup, Docker, Windows, Home Assistant and source guides no
+  longer mention stats of the bridge machine, a per-browser failed-run dismiss, phones, or mock-only testing for
+  sources that run on real servers. New [getting started](docs/getting-started.md) page with the words used in the
+  docs. The dashboard Compose file now pulls the published image instead of building from source.
+- **The Raspberry Pi guide is gone.** A Pi is a Linux machine: install Docker like anywhere else. The wall-display tips
+  in [kiosk.md](docs/kiosk.md#4-autostart-a-full-screen-browser-on-linux) are now about any Linux machine with a screen.
+- **The setup page is tidier.** Cards no longer repeat the section title, two-column sections stack their cards
+  without empty gaps, small sections stay narrow, Save buttons look the same everywhere, and every "are you sure?"
+  question is a pop-up. Source cards show the credential file name instead of its full path, the add-source form asks
+  for the repositories before the optional Firefox container, and the broker form starts with "Connect to the broker".
+  The alert settings are grouped (Header, Failed runs, Web address), and the host panel choice is two tiles.
+- **Alert settings and the host panel apply without a restart.** Saving them on the setup page updates open
+  dashboards within a few seconds, including the web address for alerts (`http_input`) and the Dismiss buttons. The
+  update check and the MQTT broker still need a restart.
+- **Updated libraries.** `axum-server` 0.8 to 0.9 (the HTTPS listener), `toml` 1.1 to 1.2 and `url` 2.5.8 to 2.5.9, which
+  fixes a crash on specially built `blob:` addresses (RUSTSEC-2026-0592).
+- `[alerts] ticker_speed` is no longer used (the header shows a pill, not a scrolling line). It is still accepted, so
+  an old config keeps working.
+
+### Fixed
+
+- **Header icons and clock stay at the right in Safari.** The right side of the top bar no longer relies on a spacer
+  element, so the Customize and Setup icons and the clock cannot end up next to the title.
+- **A custom GPU name now also shows for a host with one GPU.** Before, the name from Setup (Hosts, Edit) only
+  appeared on hosts with two or more GPUs. With one GPU it now labels the GPU bar, its temperature and the graph key.
+- **A tick on the setup page no longer jumps back.** A box ticked on Alerts or Update check, or a changed number, was
+  undone by the page's refresh every few seconds when you clicked elsewhere before Save.
+- **Save in a host's Edit pop-up saves only that host.** It used to save unsaved ticks and the order of the other
+  machines too.
+- A refused save on the setup page no longer stays as a banner on every other section, and a success message is green
+  instead of amber.
+
 ## [1.0.12]
 
 ### Changed

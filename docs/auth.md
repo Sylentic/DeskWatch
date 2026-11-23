@@ -12,7 +12,7 @@ It needs the [data folder](data-dir.md), because the password hash is saved ther
 A **new install** (a data folder with no `auth.toml`, `sources.toml`, `oauth.toml` or `layouts.json`) opens on the
 first-run page by itself: `/` and `/setup` send a browser there, and after you save the first account you land on
 Setup to add sources. Under the form is a **Continue without a login** link, which keeps the old behaviour and is
-remembered in `auth.toml`. To skip the page for good, for example on a Pi kiosk that should need nothing typed on first
+remembered in `auth.toml`. To skip the page for good, for example on a wall screen that should need nothing typed on first
 boot, put this in `bridge.toml`:
 
 ```toml
@@ -63,7 +63,7 @@ Setup, Access, **API keys** creates a key (shown once, only its hash is stored).
 - An **alert** key lets a script `POST /api/alert` with `Authorization: Bearer <key>` (or `X-API-Key: <key>`). Home
   Assistant: put that header in the `rest_command` ([home-assistant.md](home-assistant.md)).
 - A **viewer** key lets a screen open the dashboard once: `https://host/?key=<key>` signs the browser in (a viewer
-  session for seven days) and redirects to the page without the key. Use it for the Raspberry Pi kiosk URL
+  session for seven days) and redirects to the page without the key. Use it for the URL of a wall screen
   (`DESKWATCH_KIOSK_URL`, [kiosk.md](kiosk.md)).
 
 ## Sessions and safety
@@ -94,6 +94,10 @@ on, and a public address that starts with `https://`; plain `http://` only works
 `oauth.toml` in the data folder (no secrets), the client secrets in `credentials/oauth-github` and
 `credentials/oauth-microsoft`. The local admin account always keeps working, so a wrong rule never locks you out.
 
+The public address is only the address the providers send people back to. Filling it in does **not** turn HTTPS on:
+the bridge keeps serving plain HTTP until you set up HTTPS or a proxy in front of it ([https.md](https.md)), and the
+address has to reach the bridge through that.
+
 Nobody gets in by default: a person must match an allow rule. Plain rules give the **viewer** role, operator rules the
 **operator** role, administrator rules the **administrator** role; with several matches the highest wins. Roles are decided again at every sign-in, so removing
 someone from a team takes effect at their next sign-in.
@@ -118,4 +122,4 @@ returns. Whoever can run that or reach the data volume owns the install, which i
 
 ## Not built yet
 
-An audit page, and rights per source. See the design notes in the project files.
+An audit page, and rights per source.

@@ -60,7 +60,7 @@ listen = "0.0.0.0:8787"
 # [auth]
 # required = false
 
-# Dashboard page for a big screen (a Raspberry Pi with a monitor, a wall
+# Dashboard page for a big screen (a Linux machine with a monitor, a wall
 # tablet): all stats, jobs, PRs, pipelines and alerts at once, served on the
 # [http] listener above. Off by default. Guide: docs/kiosk.md
 # [kiosk]
@@ -151,7 +151,7 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 #   # host name (defaults to the instance without its port).
 #   # With `cadvisor` (that machine's cAdvisor instance) and
 #   # `expect_containers`, a container that stopped shows on the kiosk
-#   # "down" list and in the `server` badge.
+#   # "down" list.
 #   # `show = ["cpu", "memory", "updates"]` limits what the card shows (see docs/hosts.md).
 #   { instance = "node-exporter:9100", name = "home", cadvisor = "cadvisor:8080", expect_containers = ["gitea", "mosquitto"] },
 #   "nas.example.lan:9100",
@@ -163,7 +163,7 @@ max_active = 10                 # 1 to 50; least urgent, oldest alert is dropped
 
 # GitHub, GitHub Enterprise Server or GHE.com: open PRs and Actions runs, by
 # polling (GitHub cannot reach your server, so no webhook). Setup is in the
-# docs/install.md. Uncomment and adjust; add one block per account or instance.
+# docs/install.md (section 5). Uncomment and adjust; add one block per account or instance.
 # [[source.github]]
 # name = "personal"             # required: used in logs
 # base_url = "https://api.github.com"  # default; GHES: https://ghe.example.com/api/v3

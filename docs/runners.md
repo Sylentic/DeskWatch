@@ -1,15 +1,14 @@
 # Runners and agent pools
 
-Which of your CI runners are up, busy or down, on the kiosk dashboard. This page is the design for all three CI
-systems and the guide for the parts that exist today: **Gitea runners**, **GitHub self-hosted runners**, **Azure DevOps agent pools**, **GitLab runners** and **Bitbucket runners**.
+Which of your CI runners are up, busy or down, on the kiosk dashboard. This page is the guide for **Gitea runners**, **GitHub self-hosted runners**, **Azure DevOps agent pools**, **GitLab runners** and **Bitbucket runners**.
 
 | Source | What it lists | State |
 |---|---|---|
-| Gitea | Runners of a user, organisation, repository or the whole instance | In this version |
-| GitHub, GitHub Enterprise | Self-hosted runners of a repository or organisation | In this version |
-| Azure DevOps | Agents of the self-hosted agent pools | In this version, built against mock responses only, with the number of jobs waiting per pool |
-| GitLab | Runners of a project, a group or the whole instance | In this version, built against mock responses only |
-| Bitbucket Cloud | Self-hosted runners of a repository or a workspace | In this version, built against mock responses only |
+| Gitea | Runners of a user, organisation, repository or the whole instance | Works |
+| GitHub, GitHub Enterprise | Self-hosted runners of a repository or organisation | Works |
+| Azure DevOps | Agents of the self-hosted agent pools | Built against mock responses only, with the number of jobs waiting per pool |
+| GitLab | Runners of a project, a group or the whole instance | Built against mock responses only |
+| Bitbucket Cloud | Self-hosted runners of a repository or a workspace | Built against mock responses only |
 
 ## 1. How it fits
 
@@ -46,7 +45,7 @@ The kiosk snapshot has a top-level `runners` list (version stays 1, a page that 
 - **Queued jobs per pool** are in for Azure DevOps (section 4), on the `runners` widget only. Gitea and GitHub do
   not offer a cheap count.
 
-## 2. Gitea runners (this version)
+## 2. Gitea runners
 
 Gitea 28.1.0 lists runners on four endpoints, one per scope. Each answers `{ "runners": [...], "total_count": n }`
 and each runner has `name`, `status`, `busy`, `disabled`, `ephemeral` and `labels`. The names and shapes were read
@@ -89,7 +88,7 @@ span = [1, 1]
 
 Gitea pages its answers (50 per page by default). The bridge reads every page, at most 20.
 
-## 3. GitHub self-hosted runners (in this version)
+## 3. GitHub self-hosted runners
 
 Same `Runner` fact, same `runners = [...]` grammar as Gitea, but only `"repo:<owner>/<name>"` and `"org:<name>"`
 (GitHub has no user or admin list here). `runner_poll_s` defaults to 300.
@@ -124,7 +123,7 @@ costs 1 request per scope; conditional requests with an ETag do not count agains
 GitHub Enterprise Server and GHE.com use the same paths below their `base_url`. Mapping: `offline` is offline;
 `online` with `busy` is busy; `online` otherwise is idle.
 
-## 4. Azure DevOps agent pools (in this version)
+## 4. Azure DevOps agent pools
 
 Azure DevOps calls them agents in pools. Only **self-hosted** pools matter (a Microsoft-hosted pool is `isHosted`
 and skipped).
@@ -174,7 +173,7 @@ waiting request has neither `assignTime` nor `finishTime`. If the last one is wr
 or zero; nothing else depends on it. "Waiting for runner" on the pipelines page (matching a queued run to a pool
 by label) is not built.
 
-## 5. GitLab runners (in this version)
+## 5. GitLab runners
 
 `runners = [...]` takes `"project:<group>/<name>"`, `"group:<path>"` (a group or `group/subgroup`) and `"instance"`
 (every runner of the server). `runner_poll_s` defaults to 300. Same `Runner` fact as the other sources.
@@ -210,7 +209,7 @@ request fails the runner stays idle. The runner's tags are only in a per-runner 
 label on the card is the kind of runner (`project`, `group` or `instance`). The name is the runner's description,
 else its name.
 
-## 6. Bitbucket runners (in this version)
+## 6. Bitbucket runners
 
 `runners = [...]` takes `"repo:<workspace>/<repo>"` and `"workspace:<workspace>"`. `runner_poll_s` defaults to 300.
 
@@ -232,15 +231,7 @@ offline. The list has **no busy flag**, so a Bitbucket runner is never shown as 
 (at most 8). The cards have no link, because the runner page address is not known. Do not list a repository and its
 workspace together, a runner would show twice.
 
-## 7. Order of the work
-
-1. **Done:** the `Runner` fact and the kiosk widget, with Gitea as the first source.
-2. **Done:** GitHub runners, with their own token scope.
-3. **Done:** Azure DevOps pools and queued jobs per pool, against mock answers only; the shapes still need checking against a real organisation.
-   **Done:** GitLab and Bitbucket runners, against mock answers only.
-4. **Open:** "waiting for runner" on the pipelines page.
-
-## 8. Try it without any CI
+## 7. Try it without any CI
 
 ```sh
 deskwatch-bridge --demo --kiosk --no-mqtt config.toml    # config with a `runners` panel

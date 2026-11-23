@@ -177,11 +177,11 @@
       (show('disk') ? gauge('DISK', s.disk_pct, 80, 90) : '') +
       // GPU rows only for hosts that report a GPU. With several, each gets its own load bar and a line below it.
       (many ? gpuRows(s.gpus, s.gpu_plain) :
-        (s.gpu_pct == null ? '' : gauge('GPU', s.gpu_pct, 80, 95)) +
+        (s.gpu_pct == null ? '' : gauge(s.gpu_label || 'GPU', s.gpu_pct, 80, 95)) +
         (s.gpu_mem_pct == null ? '' : gauge('VRAM', s.gpu_mem_pct, 80, 95)));
     var cells = (show('uptime') ? '<div><span class="l">Uptime</span><span' + (fresh ? ' class="warn-text"' : '') + '>' + uptime(s.uptime_s) + '</span></div>' : '') +
       (show('temperature') ? '<div><span class="l">Temp</span><span>' + (s.cpu_temp_c == null ? '--' : Math.round(s.cpu_temp_c) + ' &deg;C') + '</span></div>' : '') +
-      (many || s.gpu_temp_c == null ? '' : '<div><span class="l">GPU temp</span><span>' + Math.round(s.gpu_temp_c) + ' &deg;C</span></div>') +
+      (many || s.gpu_temp_c == null ? '' : '<div><span class="l">' + esc(s.gpu_label ? s.gpu_label + ' temp' : 'GPU temp') + '</span><span>' + Math.round(s.gpu_temp_c) + ' &deg;C</span></div>') +
       (show('network') ? '<div><span class="l">Net in</span><span>' + (s.net ? rate(s.net.rx_bps) : '--') + '</span></div>' +
         '<div><span class="l">Net out</span><span>' + (s.net ? rate(s.net.tx_bps) : '--') + '</span></div>' : '') +
       // Only for hosts that report them (see docs/hosts.md).
@@ -190,7 +190,7 @@
       (s.reboot_needed ? '<div><span class="l">Restart</span><span class="warn-text">needed</span></div>' : '');
     return (gauges ? '<div class="gauges">' + gauges + '</div>' : '') +
       (cells ? '<div class="stat-grid">' + cells + '</div>' : '') +
-      (show('cpu') ? '<div class="sparkhead"><span>CPU' + (many ? s.gpus.map(function (g, i) { return ' <span class="gpu-key g' + (i % 4) + '">&amp; ' + esc(g.label) + '</span>'; }).join('') : gpuHistory[host.name] && gpuHistory[host.name].some(function (g) { return g != null; }) ? ' <span class="gpu-key">&amp; GPU</span>' : '') + ' &middot; ' + spanLabel(vals.length) + '</span><span>PEAK ' + peak + '</span></div>' +
+      (show('cpu') ? '<div class="sparkhead"><span>CPU' + (many ? s.gpus.map(function (g, i) { return ' <span class="gpu-key g' + (i % 4) + '">&amp; ' + esc(g.label) + '</span>'; }).join('') : gpuHistory[host.name] && gpuHistory[host.name].some(function (g) { return g != null; }) ? ' <span class="gpu-key">&amp; ' + esc(s.gpu_label || 'GPU') + '</span>' : '') + ' &middot; ' + spanLabel(vals.length) + '</span><span>PEAK ' + peak + '</span></div>' +
         sparkline(vals, many ? null : gpuHistory[host.name], many ? gpuLines[host.name] : null) : '');
   }
 

@@ -21,7 +21,7 @@ make changes in your browser (the `Origin` check, below).
 
 The page uses the whole screen: a menu on the left, in four groups: Connect (**Sources**, **Hosts**, **MQTT broker**), Display (**Dashboard**,
 **Alerts**), Security (**Access**, **Sign-in options**, **Stored secrets**) and Maintenance (**Backup**, **Bridge and restart**) and the chosen section next to it, in several columns on a wide screen and one column on
-a phone. **Add source** sits next to the title of the first section. The menu entry is kept in the address
+a narrow window. **Add source** sits next to the title of the first section. The menu entry is kept in the address
 (`/setup#mqtt`), so a link opens that section.
 
 The top bar has the same height and look as the dashboard's header. Its buttons are icons; hover over one (or reach it
@@ -85,7 +85,7 @@ With a data folder configured ([data-dir.md](data-dir.md)) the page can change s
   token file belongs to `bridge.toml` and stays. **Switch on again** undoes it. To delete such a source for good,
   remove its block from `bridge.toml` and restart. A mounted credential with the same name
   as a page-managed one is refused, because the mounted one would win and hide the change.
-- **Everything that deletes asks first**, in a pop-up or a box on the page (not a browser dialog): removing a source, switching
+- **Everything that deletes asks first**, in a pop-up (not a browser dialog): removing a source, switching
   one off, removing the broker login, resetting the broker settings, deleting a stored secret and restarting.
 - Every save or removal is logged (source id, which secret files were written; never a value).
 - **No restart needed.** A saved source starts at once, an edited one is replaced (its facts and warnings are dropped
@@ -95,12 +95,12 @@ With a data folder configured ([data-dir.md](data-dir.md)) the page can change s
   restart will show the same error. Settings outside `[[source.*]]` (the MQTT broker, the listen address)
   are still read at startup.
 
-## Dashboard hosts
+## Dashboard
 
-With a data folder, the **Dashboard hosts** card chooses how the built-in dashboard layout shows the hosts:
-**detailed** (one host in detail on top, every host as a list below, tap a host to switch) or
-**compact** (only the list of hosts, with their network rates). It is stored as `host_view` in a `[kiosk]` table in `sources.toml` and
-applies after a restart, like the broker settings. Panels set with `[[kiosk.panel]]` in `bridge.toml` are not
+With a data folder, the **Host panel** card on the Dashboard section chooses how the built-in dashboard layout shows the
+hosts: **Detailed** (one host in detail on top, every host as a list below, tap a host to switch) or
+**Compact** (only the list of hosts, with their network rates). Pick one and press **Save**. It is stored as `host_view`
+in a `[kiosk]` table in `sources.toml` and open dashboards switch within a few seconds, no restart needed. Panels set with `[[kiosk.panel]]` in `bridge.toml` are not
 touched. See [kiosk.md](kiosk.md#hosts-detailed-or-compact).
 
 ## Hosts
@@ -119,27 +119,29 @@ is listed but its hosts are set in that file. See [hosts.md](hosts.md).
 
 The **Alerts** section has three cards.
 
-- **Alerts in the header** (needs a data folder): show the latest alert pill or not, whether
-  "via <source>" is shown, the most alerts kept (1 to 50) and whether the Alerts menu on the dashboard has Dismiss buttons. They are stored
-  under `[alerts]` in `sources.toml` (`ticker`, `show_source`, `max_active`, `dismiss`) and apply
-  after a restart. `enabled` and `critical_ids` stay in `bridge.toml`. The same card has the two failed-run switches:
-  the Failed chip in the header (`failed_pill`, on) and failed runs also listed in the Alerts box (`failed_as_alerts`, off).
-  The same card has **Accept alerts on the web address** (`http_input`): `POST /api/alert` with the MQTT JSON, off by
-  default, see [home-assistant.md](home-assistant.md#without-mqtt-the-web-address).
+- **Alert settings** (needs a data folder), in three groups. **Header**: show the latest alert pill or not, whether
+  "via <source>" is shown, the most alerts kept (1 to 50) and whether the Alerts menu on the dashboard has Dismiss
+  buttons. **Failed runs**: the Failed chip in the header (`failed_pill`, on) and failed runs also listed as alerts
+  (`failed_as_alerts`, off). **Web address**: accept alerts on `POST /api/alert` with the MQTT JSON (`http_input`, off
+  by default, see [home-assistant.md](home-assistant.md#without-mqtt-the-web-address)). They are stored under `[alerts]`
+  in `sources.toml` (`ticker`, `show_source`, `max_active`, `dismiss`, `failed_pill`, `failed_as_alerts`,
+  `http_input`) and apply at once: open dashboards pick them up within a few seconds, no restart needed. `enabled` and
+  `critical_ids` stay in `bridge.toml`. A box you tick keeps its tick until you press **Save**, also while the page
+  refreshes.
 - **Try it**: **Send test alert** raises one fixed warning ("Test alert", source "setup") that goes away by itself after a
   minute, and **Clear it now** removes it. The page sends no text of its own, only the action `send` or `clear`, so there
   is no way to create any other alert from here (without a password the setup page has no login). It needs no data folder.
 - **Where alerts come from**: whether MQTT is on and connected. Alerts arrive on the MQTT topic `deskpanel/alert`
-  ([home-assistant.md](home-assistant.md)). Failed pipeline runs are not alerts; they count in the Failed badge.
+  ([home-assistant.md](home-assistant.md)). Failed pipeline runs count in the Failed badge; with `failed_as_alerts` they are listed here too.
 
-## Access and sign-in providers
+## Access and sign-in options
 
 With a data folder, the **Access** section is where the login is turned on and managed ([auth.md](auth.md)): the first
 administrator password, **users** with a role each (viewer, operator or administrator; **New user** opens a pop-up,
 the key icon sets a new password, the bin removes the user), **API keys** for scripts (alerts) and screens (viewer
 keys; a new key is shown once, in a pop-up with a Copy button) and **Sessions** (**Sign out everywhere**). Everyone
 changes their own password on **My account** (the person icon in the top bar). **Sign-in
-providers** adds sign-in with GitHub or Microsoft and who may use it. Only an administrator sees these two sections once
+options** adds sign-in with GitHub or Microsoft and who may use it. Only an administrator sees these two sections once
 a login is set; without a password the page says so and offers the first-run form. Your own dashboard layout is not
 set here: every signed-in person customizes it with the grid icon on the dashboard ([kiosk.md](kiosk.md#customize-your-own-dashboard)).
 
@@ -199,8 +201,8 @@ restart once by hand (`docker compose restart deskwatch-bridge`). It needs the s
 ## Not yet
 
 - The kiosk layout and the listen address stay in `bridge.toml`; the page does not edit them.
-- Everything here is tested against mock servers and a fake broker, not against a real GitHub, GitLab, Bitbucket,
-  Azure DevOps or Mosquitto.
+- Adding, testing and removing sources is tested against mock servers and a fake broker, plus real Gitea, GitHub,
+  Azure DevOps and Prometheus servers by hand. GitLab, Bitbucket and a real Mosquitto login are not tried yet.
 
 ## Security
 

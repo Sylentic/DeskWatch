@@ -712,7 +712,7 @@ pub struct AlertsConfig {
     pub critical_ids: Option<Vec<String>>,
     /// Show the alert ticker in the kiosk header.
     pub ticker: bool,
-    /// How fast the ticker moves.
+    /// Accepted for old configs; the header shows a pill now, not a moving line.
     pub ticker_speed: TickerSpeed,
     /// Show "via <source>" behind each alert in the ticker.
     pub show_source: bool,

@@ -18,7 +18,7 @@ What you get:
 - A refused or expired token, or an unreachable server, shows the **Source down** pill.
 
 Self-hosted runners can be shown on the kiosk `runners` widget (optional, needs one more right, see
-[runners.md](runners.md#6-bitbucket-runners-in-this-version)).
+[runners.md](runners.md#6-bitbucket-runners)).
 
 **What was tested.** Nobody working on DeskWatch uses Bitbucket. The data shapes were taken from Atlassian's
 published API description (the OpenAPI file of the Cloud REST API 2.0) and tested against mock answers. Nothing has
