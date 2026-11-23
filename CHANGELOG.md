@@ -28,7 +28,8 @@ All notable changes to DeskWatch are listed here. The format follows
 - **Alert settings and the host panel apply without a restart.** Saving them on the setup page updates open
   dashboards within a few seconds, including the web address for alerts (`http_input`) and the Dismiss buttons. The
   update check and the MQTT broker still need a restart.
-- **Updated libraries.** `axum-server` 0.8 to 0.9 (the HTTPS listener) and `toml` 1.1 to 1.2.
+- **Updated libraries.** `axum-server` 0.8 to 0.9 (the HTTPS listener), `toml` 1.1 to 1.2 and `url` 2.5.8 to 2.5.9, which
+  fixes a crash on specially built `blob:` addresses (RUSTSEC-2026-0592).
 - `[alerts] ticker_speed` is no longer used (the header shows a pill, not a scrolling line). It is still accepted, so
   an old config keeps working.
 
